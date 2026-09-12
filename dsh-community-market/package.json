@@ -29,6 +29,10 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./policy": {
+      "types": "./lib/policy.d.ts",
+      "default": "./lib/policy.js"
+    },
     "./contracts": {
       "types": "./lib/contracts/index.d.ts",
       "default": "./lib/contracts/index.js"

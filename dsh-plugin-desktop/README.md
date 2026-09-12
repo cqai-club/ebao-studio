@@ -117,13 +117,15 @@ node lib/bin.js --version
 
 ## Plugin workflow
 
-Manage any profile with the ordinary DSH command:
+Manage a CLI-owned profile with the ordinary DSH command:
 
 ```sh
-dsh plugin --profile desktop add third-party-plugin
-dsh plugin --profile desktop remove third-party-plugin
-dsh plugin --profile desktop update
+dsh plugin --profile cqai-dev add third-party-plugin
+dsh plugin --profile cqai-dev remove third-party-plugin
+dsh plugin --profile cqai-dev update
 ```
+
+The reserved `desktop` profile is managed exclusively by the Electron application and cannot be changed with an explicit `dsh plugin --profile desktop` command. Create or select another profile in Desktop before using the CLI for local plugin development.
 
 The application starts with `desktop` by default. Choose another Web-capable profile from the tray's **Profile** submenu; switching profiles restarts the application. The generated DSH terminal defaults bare commands to the currently active profile, so the shorter forms below modify that profile directly:
 

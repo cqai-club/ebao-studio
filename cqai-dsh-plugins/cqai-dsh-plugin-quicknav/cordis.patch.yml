@@ -1,0 +1,4 @@
+# Mount the CQAI plugin into the current DSH profile.
+- insert:
+    - id: cqai-dsh-plugin-quicknav
+      name: cqai-dsh-plugin-quicknav

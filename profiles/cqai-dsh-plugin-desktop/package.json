@@ -1,0 +1,27 @@
+{
+  "name": "cqai-dsh-plugin-desktop-profile",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "dsh-plugin-desktop": "file:../../dsh-plugin-desktop",
+    "dsh-community-market": "file:../../dsh-community-market",
+    "dsh-better-sidebar": "^0.19.0",
+    "cqai-dsh-plugin-quicknav": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-quicknav",
+    "cqai-dsh-plugin-market": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-market"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "dsh-plugin-desktop",
+        "dsh-community-market",
+        "dsh-better-sidebar",
+        "cqai-dsh-plugin-quicknav",
+        "cqai-dsh-plugin-market"
+      ],
+      "patchReload": "live"
+    }
+  }
+}

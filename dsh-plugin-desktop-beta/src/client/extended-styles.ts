@@ -134,7 +134,29 @@ body[data-dsh-desktop-mode="extended"]:not([data-dsh-desktop-material="off"]) {
   transform: translateX(-50%);
   pointer-events: none;
 }
-.dshDesktopFrameProduct { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.dshDesktopFrameProductLogo {
+  display: block;
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 120px;
+  height: 20px;
+  object-fit: contain;
+}
+.dshDesktopBrandMark {
+  display: block;
+  flex: 0 0 auto;
+}
+.dshDesktopBrandName {
+  display: block;
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 100%;
+  height: 24px;
+  object-fit: contain;
+}
+body[data-ds-dark-theme] .dshDesktopFrameProductLogo,
+body[data-ds-dark-theme] .dshDesktopBrandMark,
+body[data-ds-dark-theme] .dshDesktopBrandName { filter: invert(1); }
 .dshDesktopFrameVersion {
   min-height: 22px;
   padding: 2px 5px;

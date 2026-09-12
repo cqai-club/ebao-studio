@@ -1,6 +1,9 @@
 import type { CatalogSnapshot } from './contracts/generated/catalog-snapshot.js'
 import type { CatalogSourceManifest } from './contracts/generated/catalog-source.js'
 import type { LocalSourceRecord } from './contracts/types.js'
+import type { CommunityMarketPolicy } from './policy.js'
+
+export type MarketCatalogItem = CatalogSnapshot['items'][number]
 
 export interface MarketBuiltInProvider {
   readonly key: string
@@ -33,6 +36,7 @@ export interface MarketSourceView extends LocalSourceRecord {
 export interface MarketStateResponse {
   readonly sources: readonly MarketSourceView[]
   readonly builtIns: readonly MarketBuiltInProvider[]
+  readonly policies?: readonly CommunityMarketPolicy[]
   readonly desktopActions: {
     readonly openTerminal: boolean
     readonly requestRestart: boolean

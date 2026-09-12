@@ -13,6 +13,7 @@ import {
   type MarketDesktopPnpm,
   type MarketDesktopProfile,
 } from './install/service.js'
+import { CommunityMarketPolicyRegistry } from './policy.js'
 
 export const name = 'community-market'
 export const inject = ['webServer', 'settings']
@@ -32,6 +33,9 @@ const npmRegistryHttp = createRestrictedHttpClient({
 })
 
 export function apply(ctx: Context): void {
+  const policies = new CommunityMarketPolicyRegistry()
+  const provide = (ctx as Context & { provide?: (name: string, value: unknown) => void }).provide
+  if (provide !== undefined) provide.call(ctx, 'communityMarket', policies)
   const scope = registerMarketSettings(ctx)
   let installService: MarketInstallService | undefined
   let desktopActions: DesktopActionsCapability | undefined
@@ -40,7 +44,7 @@ export function apply(ctx: Context): void {
   const desktopActionsProvider = { get: () => desktopActions }
   const desktopPluginsProvider = { get: () => desktopPlugins }
   ctx.effect(
-    () => registerMarketRoutes(ctx, scope, installProvider, desktopActionsProvider, desktopPluginsProvider),
+    () => registerMarketRoutes(ctx, scope, installProvider, desktopActionsProvider, desktopPluginsProvider, policies),
     'community-market: routes',
   )
   ctx.inject(['desktopActions'], (desktopCtx) => {
@@ -88,5 +92,6 @@ export { marketRoutes } from './host/routes.js'
 export { BUILT_IN_PROVIDERS, DefaultCatalogService } from './catalog/service.js'
 export { dsh1024StoreAdapter } from './adapters/dsh-1024store.js'
 export { dshfindAdapter } from './adapters/dshfind.js'
+export type * from './policy.js'
 export type * from './api-types.js'
 export * from './contracts/index.js'

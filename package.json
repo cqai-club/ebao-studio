@@ -11,7 +11,8 @@
     "dsh-plugin-desktop",
     "dsh-plugin-desktop-beta",
     "dsh-community-fabric",
-    "dsh-community-market"
+    "dsh-community-market",
+    "cqai-dsh-plugins/*"
   ],
   "resolutions": {
     "app-builder-lib@npm:26.15.7": "patch:app-builder-lib@npm%3A26.15.7#./patches/app-builder-lib@26.15.7.patch",
@@ -584,9 +585,12 @@
     }
   },
   "scripts": {
-    "build": "yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop build && yarn workspace dsh-plugin-desktop-beta build",
-    "typecheck": "yarn workspace dsh-plugin-desktop typecheck && yarn workspace dsh-plugin-desktop-beta typecheck && yarn workspace dsh-community-market typecheck",
-    "test": "yarn workspace dsh-plugin-desktop test && yarn workspace dsh-plugin-desktop-beta test && yarn workspace dsh-community-market test",
+    "build": "yarn workspace dsh-community-market build && yarn build:cqai-plugins && yarn workspace dsh-plugin-desktop build && yarn workspace dsh-plugin-desktop-beta build",
+    "build:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run build",
+    "typecheck": "yarn workspace dsh-plugin-desktop typecheck && yarn workspace dsh-plugin-desktop-beta typecheck && yarn workspace dsh-community-market typecheck && yarn typecheck:cqai-plugins",
+    "typecheck:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run typecheck",
+    "test": "yarn workspace dsh-plugin-desktop test && yarn workspace dsh-plugin-desktop-beta test && yarn workspace dsh-community-market test && yarn test:cqai-plugins",
+    "test:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run test",
     "test:bilingual-docs": "node --test scripts/bilingual-docs.test.mjs",
     "check:bilingual-docs": "yarn test:bilingual-docs && node scripts/verify-bilingual-docs.mjs",
     "test:architecture-gates": "node --test scripts/market-dependency-direction.test.mjs",

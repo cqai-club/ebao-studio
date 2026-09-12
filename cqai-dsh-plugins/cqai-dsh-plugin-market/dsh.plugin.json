@@ -1,0 +1,12 @@
+{
+  "id": "cqai-dsh-plugin-market",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "CQAI branding and curated policy for the DSH Community Market",
+  "engines": {
+    "dsh": ">=0.1.5-rc.1"
+  },
+  "client": {
+    "main": "./lib/client.js"
+  }
+}

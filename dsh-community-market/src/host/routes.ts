@@ -40,6 +40,7 @@ import { createRestrictedImageFetcher } from '../media/restricted-image.js'
 import { createMarketMediaService } from '../media/service.js'
 import { MarketInstallError, type MarketInstallService } from '../install/service.js'
 import { manualInstallHints } from '../install/manual.js'
+import type { CommunityMarketService } from '../policy.js'
 
 export const MARKET_SETTINGS_NAMESPACE = 'dsh-community-market'
 const SOURCE_SCHEMA = z.object({
@@ -651,6 +652,7 @@ export function registerMarketRoutes(
   installProvider?: MarketInstallServiceProvider,
   desktopActionsProvider?: MarketDesktopActionsProvider,
   desktopPluginsProvider?: MarketDesktopPluginsProvider,
+  marketPolicies?: CommunityMarketService,
 ): () => void {
   const expectedPort = ctx.webServer.port
   const generationController = new AbortController()
@@ -723,9 +725,11 @@ export function registerMarketRoutes(
       }
       try {
         const desktopActions = desktopActionsProvider?.get()
+        const policies = marketPolicies?.listPolicies() ?? []
         const response: MarketStateResponse = {
           sources: await service.listSources(),
           builtIns: viewBuiltIns(),
+          ...(policies.length === 0 ? {} : { policies }),
           desktopActions: {
             openTerminal: desktopActions !== undefined,
             requestRestart: desktopActions !== undefined

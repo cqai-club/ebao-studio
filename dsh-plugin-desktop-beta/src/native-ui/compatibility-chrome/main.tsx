@@ -4,6 +4,7 @@ import { CSPProvider } from '@base-ui/react/csp-provider'
 import { createRoot } from 'react-dom/client'
 import { useEffect, useState } from 'react'
 import type { CompatibilityChromeBridge, CompatibilityChromeCommand, CompatibilityChromeState } from '../../compatibility-chrome-contract.ts'
+import { DesktopBrandWordmark } from '../../client/desktop-brand.tsx'
 import { DesktopFrameTitlebarView } from '../../client/DesktopFrameTitlebarView.tsx'
 import { en, zh } from '../../client/desktop-settings-locales.ts'
 import { installChromeOverlay } from './overlay.ts'
@@ -38,7 +39,10 @@ export function Chrome() {
     document.documentElement.lang = state?.locale === 'zh' ? 'zh-CN' : 'en'
   }, [state?.locale])
   const copy = state?.locale === 'zh' ? zh : en
-  if (!state) return <header className="dshDesktopFrameTitlebar">DSH Desktop {failed && <span role="alert">{copy.operationFailed}</span>}</header>
+  if (!state) return <header className="dshDesktopFrameTitlebar">
+    <DesktopBrandWordmark />
+    {failed && <span role="alert">{copy.operationFailed}</span>}
+  </header>
   return <DesktopFrameTitlebarView
     key={generation}
     api={api}

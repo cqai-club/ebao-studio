@@ -1,0 +1,4 @@
+# Mount the CQAI curated market policy into the current DSH profile.
+- insert:
+    - id: cqai-dsh-plugin-market
+      name: cqai-dsh-plugin-market

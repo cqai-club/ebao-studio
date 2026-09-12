@@ -1,0 +1,12 @@
+{
+  "id": "cqai-dsh-plugin-quicknav",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "CQAI quick navigation and dsh-better-sidebar workbench entry",
+  "engines": {
+    "dsh": ">=0.1.5-rc.1"
+  },
+  "client": {
+    "main": "./lib/client.js"
+  }
+}

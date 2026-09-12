@@ -241,7 +241,7 @@ function mergeInstallablePages(
   }
 }
 
-export function MarketSurface({ initialView = 'installable', readLocale, t, showHeader = true }: MarketSurfaceProps) {
+export function MarketSurface({ initialView = 'discover', readLocale, t, showHeader = true }: MarketSurfaceProps) {
   const [view, setView] = useState<MarketView>(initialView)
   const [state, setState] = useState<MarketStateResponse>()
   const [catalog, setCatalog] = useState<MarketCatalogResponse>()
@@ -293,6 +293,12 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
   const desktopActionRequest = useRef<AbortController>()
   const selectedKeyRef = useRef<string>()
   const viewRef = useRef<MarketView>(initialView)
+  const branding = useMemo(
+    () => state?.policies?.find(policy => policy.branding !== undefined)?.branding,
+    [state],
+  )
+  const marketTitle = branding?.title ?? t('title')
+  const marketSubtitle = branding?.subtitle ?? t('subtitle')
 
   const rememberCategories = useCallback((next: MarketCatalogResponse) => {
     setCategoryOptions([...next.categories]
@@ -889,19 +895,19 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
   return (
     <section
       className="dshMarketRoot"
-      aria-label={t('title')}
+      aria-label={marketTitle}
       aria-busy={loading || loadingMore || mutationPending || installationsLoading || operationPending || desktopActionPending}
     >
       {showHeader && (
         <header className="dshMarketHeader">
           <div className="dshMarketHeaderTitle">
-            <h2>{t('title')}</h2>
-            <p>{t('subtitle')}</p>
+            <h2>{marketTitle}</h2>
+            <p>{marketSubtitle}</p>
           </div>
         </header>
       )}
       <div className="dshMarketViewBar">
-        <div className="dshMarketViewSwitch" role="group" aria-label={t('title')}>
+        <div className="dshMarketViewSwitch" role="group" aria-label={marketTitle}>
           <Pill active={view === 'discover'} aria-pressed={view === 'discover'} onClick={() => selectMarketView('discover')}>
             <IconDataOutline16 size={14} /><span>{t('discover')}</span>
           </Pill>

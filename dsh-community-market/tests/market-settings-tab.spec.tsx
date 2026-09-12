@@ -242,32 +242,50 @@ function catalogForSource(
 const catalog = catalogForSource(firstSource)
 
 describe('MarketSettingsTab', () => {
-  it('opens on Installable by default', async () => {
+  it('opens on Discover by default', async () => {
     vi.mocked(readMarketState).mockResolvedValue(enabledState)
-    vi.mocked(readMarketInstallable).mockResolvedValue(installableResponse([]))
+    vi.mocked(readMarketCatalog).mockResolvedValue(catalog)
 
     render(<MarketSettingsTab {...({ t, readLocale: () => 'en' } as MarketSettingsTabProps)} />)
 
-    expect((await screen.findByRole('button', { name: en.installable })).getAttribute('aria-pressed')).toBe('true')
-    await waitFor(() => expect(readMarketInstallable).toHaveBeenCalledOnce())
-    expect(readMarketCatalog).not.toHaveBeenCalled()
+    expect((await screen.findByRole('button', { name: en.discover })).getAttribute('aria-pressed')).toBe('true')
+    await waitFor(() => expect(readMarketCatalog).toHaveBeenCalledOnce())
+    expect(readMarketInstallable).not.toHaveBeenCalled()
   })
 
-  it('loads the catalog when leaving the default Installable view for Discover', async () => {
+  it('uses the active policy branding for the storefront header', async () => {
+    vi.mocked(readMarketState).mockResolvedValue({
+      ...enabledState,
+      policies: [{
+        id: 'cqai-curated',
+        featuredCategories: ['tools'],
+        branding: {
+          title: 'CQAI Plugin Market',
+          subtitle: 'Discover CQAI plugins',
+        },
+      }],
+    })
+    vi.mocked(readMarketCatalog).mockResolvedValue(catalog)
+
+    render(<MarketSettingsTab {...({ t, readLocale: () => 'en' } as MarketSettingsTabProps)} />)
+
+    expect(await screen.findByRole('heading', { name: 'CQAI Plugin Market' })).toBeTruthy()
+    expect(screen.getByText('Discover CQAI plugins')).toBeTruthy()
+  })
+
+  it('loads installable items when leaving the default Discover view', async () => {
     vi.mocked(readMarketState).mockResolvedValue(enabledState)
     vi.mocked(readMarketInstallable).mockResolvedValue(installableResponse([]))
     vi.mocked(readMarketCatalog).mockResolvedValue(catalog)
     render(<MarketSettingsTab {...({ t, readLocale: () => 'en' } as MarketSettingsTabProps)} />)
 
-    await waitFor(() => expect(readMarketInstallable).toHaveBeenCalledOnce())
-    fireEvent.click(screen.getByRole('button', { name: en.discover }))
+    await waitFor(() => expect(readMarketCatalog).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: en.installable }))
 
-    expect(await screen.findByRole('button', { name: /Fixture Plugin/u })).toBeTruthy()
-    expect(readMarketCatalog).toHaveBeenCalledWith(
-      firstSource.sourceRecordId,
-      '',
+    await waitFor(() => expect(readMarketInstallable).toHaveBeenCalledOnce())
+    expect(readMarketInstallable).toHaveBeenCalledWith(
       'en',
-      [],
+      { refresh: false },
       expect.any(AbortSignal),
     )
   })

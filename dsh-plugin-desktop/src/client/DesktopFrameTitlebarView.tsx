@@ -4,6 +4,7 @@ import { LayoutTemplate, PanelTop, RefreshCw, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import type { DesktopSettingsApi } from './desktop-settings-api.ts'
 import type { DesktopClientEnvironment, DesktopClientMode } from './environment.ts'
+import { DesktopBrandWordmark } from './desktop-brand.tsx'
 import { DesktopNativeActions } from './DesktopNativeActions.tsx'
 import { Button } from '../native-ui/components/ui/button.tsx'
 import type { DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
@@ -175,7 +176,7 @@ export function DesktopFrameTitlebarView({ api, environment, setMode, t, remoteC
       data-material={environment.material}
     >
       <div className="dshDesktopFrameIdentity">
-        <span className="dshDesktopFrameProduct">DSH Desktop</span>
+        <DesktopBrandWordmark />
         <DesktopVersionControl version={environment.version} checkForUpdates={api.checkForUpdates} t={t} />
         <DesktopModeControl
           mode={environment.mode}

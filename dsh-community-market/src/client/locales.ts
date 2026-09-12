@@ -1,7 +1,7 @@
 export const zh = {
-  tab: '插件市场',
-  title: '社区插件市场',
-  subtitle: '从你选择的来源发现 DeepSeek Harness 插件',
+  tab: 'CQAI 插件市场',
+  title: 'CQAI 插件市场',
+  subtitle: '发现、安装和管理 CQAI 精选插件',
   close: '关闭',
   closeMarket: '关闭插件市场',
   discover: '发现',
@@ -138,9 +138,9 @@ export const zh = {
 export type MarketLocaleKey = keyof typeof zh
 
 export const en: Record<MarketLocaleKey, string> = {
-  tab: 'Plugin Market',
-  title: 'Community Plugin Market',
-  subtitle: 'Discover DeepSeek Harness plugins from sources you choose',
+  tab: 'CQAI Plugin Market',
+  title: 'CQAI Plugin Market',
+  subtitle: 'Discover, install, and manage CQAI plugins',
   close: 'Close',
   closeMarket: 'Close Plugin Market',
   discover: 'Discover',

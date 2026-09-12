@@ -75,6 +75,20 @@ function runtimePeerRanges() {
   return Object.fromEntries([...values].map(([name, ranges]) => [name, [...ranges].join(' || ')]))
 }
 
+function runtimeResolutions(peerRanges) {
+  const resolutions = {}
+  for (const name of peerPackages) {
+    const version = peerRanges[name]
+    // The Desktop manifests currently use exact runtime versions. Keep the
+    // staging project on those same versions when a published package asks
+    // for a caret range; otherwise Yarn may install a second runtime copy
+    // under dsh-session and TypeScript will merge duplicate Cordis services.
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) continue
+    resolutions[`${name}@npm:^${version}`] = `npm:${version}`
+  }
+  return resolutions
+}
+
 function patchManifest(packagePath, peerRanges) {
   const manifest = readJson(join(packagePath, 'package.json'))
   const sourceVersion = manifest.version
@@ -83,6 +97,7 @@ function patchManifest(packagePath, peerRanges) {
   // requires Server/Web/Python fixtures that are not part of a release build.
   if (manifest.scripts) { delete manifest.scripts.prepack; delete manifest.scripts.postpack }
   manifest.peerDependencies = { ...manifest.peerDependencies, ...peerRanges }
+  manifest.resolutions = { ...manifest.resolutions, ...runtimeResolutions(peerRanges) }
   writeFileSync(join(packagePath, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
   return { sourceVersion }
 }
