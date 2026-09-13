@@ -136,7 +136,7 @@
   },
   "dependencies": {
     "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.cb413330914fb.rcda81994.tgz",
-    "@cqaiclub/dsn-account": "workspace:*",
+    "@cqaiclub/dsn-account": "0.1.1",
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/cordis-plugin-group": "1.0.2",
     "@deepseek-ai/cordis-plugin-include": "1.0.7",
@@ -279,6 +279,7 @@
     "@deepseek-ai/dsh-workspace": "0.1.5-rc.1",
     "@deepseek-ai/schemastery": "^3.18.2",
     "adm-zip": "^0.6.0",
+    "cqai-dsh-plugin-market": "0.1.0",
     "dsh-community-market": "0.1.0-dev.0",
     "dshmarket": "1.38.1",
     "fs-ext": "2.1.1",
@@ -400,10 +401,10 @@
     "win": {
       "asarUnpack": [
         "build/app-icon.png",
-        "build/tray-icon-blue.png",
-        "build/tray-icon-blue@1.25x.png",
-        "build/tray-icon-blue@1.5x.png",
-        "build/tray-icon-blue@2x.png",
+        "build/tray-icon-white.png",
+        "build/tray-icon-white@1.25x.png",
+        "build/tray-icon-white@1.5x.png",
+        "build/tray-icon-white@2x.png",
         "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
       ],
       "target": [

@@ -218,6 +218,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
+      'cqai-dsh-plugin-market',
       'third-party-one',
       'third-party-two',
     ])
@@ -245,6 +246,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
+      'cqai-dsh-plugin-market',
       'third-party-plugin',
     ])
     expect(repaired.dependencies).toEqual({ 'third-party-plugin': '^1.2.3' })
@@ -277,6 +279,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
+      'cqai-dsh-plugin-market',
     ])
   })
 
@@ -550,18 +553,21 @@ virtualStoreDirMaxLength: 60
     )).toThrow('LAN address "desktop.internal" is not an IPv4 literal')
   })
 
-  it('keeps both Market providers absent until the user explicitly enables one', () => {
+  it('enables the community Market provider by product default', () => {
     const home = temporaryHome()
     const prepared = prepareDesktopProfile(undefined, home, 'darwin')
     const rows = composeEntries([prepared.patches])
 
     expect(prepared.market).toEqual({
-      requested: 'disabled',
-      effective: 'disabled',
+      requested: 'community-market',
+      effective: 'community-market',
       legacyDefaulted: true,
     })
-    expect(rows.some(row => row.id === DESKTOP_MARKET_IDENTITIES.community.rowId
-      || row.id === DESKTOP_MARKET_IDENTITIES.dshMarket.rowId)).toBe(false)
+    expect(rows.filter(row => row.id === DESKTOP_MARKET_IDENTITIES.community.rowId)).toEqual([{
+      id: DESKTOP_MARKET_IDENTITIES.community.rowId,
+      name: DESKTOP_MARKET_IDENTITIES.community.packageName,
+    }])
+    expect(rows.some(row => row.id === DESKTOP_MARKET_IDENTITIES.dshMarket.rowId)).toBe(false)
   })
 
   it('inserts the community Market as one canonical row only after explicit selection', () => {
@@ -715,7 +721,7 @@ virtualStoreDirMaxLength: 60
     }))
   })
 
-  it('filters an unselected dshmarket bundle before resolving or parsing its patch', () => {
+  it('filters an unselected dshmarket bundle while retaining the community default', () => {
     const home = temporaryHome()
     const dir = ensureDesktopProfile(home)
     const manifestPath = join(dir, 'package.json')
@@ -729,7 +735,8 @@ virtualStoreDirMaxLength: 60
     const prepared = prepareDesktopProfile(undefined, home, 'darwin')
     const rows = composeEntries([prepared.patches])
 
-    expect(prepared.market.effective).toBe('disabled')
+    expect(prepared.market.effective).toBe('community-market')
+    expect(rows.some(row => row.id === DESKTOP_MARKET_IDENTITIES.community.rowId)).toBe(true)
     expect(rows.some(row => row.id === DESKTOP_MARKET_IDENTITIES.dshMarket.rowId)).toBe(false)
   })
 

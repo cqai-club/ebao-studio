@@ -95,7 +95,9 @@ flowchart LR
 
 Manifest 描述 provider 能力，不控制本地策略。公开 v1 标准来源只支持匿名访问：契约不包含 bearer token、cookie、request header、secret 字段、可执行 mapping 或动态 JavaScript。
 
-来源 manifest URL 与目录 endpoint 是两个不同地址。添加 manifest URL 必须来自用户明确操作。Host 生成全新 `sourceRecordId`，校验 manifest 后将注册时副本与该本地用户来源记录一起保存，在来源管理中展示其披露字段，并且只有用户选择后才把它设为当前来源。
+来源 manifest URL 与目录 endpoint 是两个不同地址。Manifest URL 通常来自用户明确操作；本地产品策略也可以声明一个首次使用默认 URL，但 Host 只会在来源设置从未初始化且为空时应用它。Host 生成全新 `sourceRecordId`，校验 manifest 后将注册时副本与该本地用户来源记录一起保存，并在来源管理中展示其披露字段。用户添加的来源只有被选择后才会成为当前来源；经过校验的首次产品默认来源会在创建时被选择。
+
+应用或评估产品默认来源时会写入一条 provider 无法控制的本地标记；已有来源会保持原样，同时记录该标记，每次成功的用户来源修改也会记录它。因此，产品策略不能覆盖用户后续的选择、禁用或删除。默认 Manifest 请求失败时不写标记，只允许在后续 Host generation 做有界重试；它不会阻止启动，也不会退回其他来源。
 
 标准直接接入时，用户只需要登记 manifest URL。建议的最小 manifest 只使用一个公开 GET endpoint，只声明 `q`、`category`、`cursor` 和 `limit`，把示例中的两个 page limit 都设为 50，并将 `sorts` 留空。50 是方便起步的值，不是标准来源上限；manifest 可以在 Schema 安全上限 200 以内声明 limit。Capability、sort、locale、图标和更丰富的展示字段仍是可选扩展。参见[最小来源 manifest](examples/catalog-source.example.json)与[最小 provider page](examples/catalog-provider-page.minimal.example.json)。
 
@@ -338,7 +340,7 @@ Provider 与 adapter 作者可以直接使用对应的[最小来源 manifest](ex
 
 - [x] 持久化用户拥有的来源记录，以及 provider 无法控制的一条本地选择标记。
 - [x] 提供添加、检查、选择、切换、重试、排序和删除操作。
-- [x] 首次启动不预选来源，并显示明确的来源选择状态。
+- [x] 仅当产品为从未初始化的空 registry 声明默认来源时采用经过校验的默认值；否则显示明确的来源选择状态。
 - [x] 在来源管理中展示来源声明、endpoint host、adapter 类型和最近结果，并在目录与安装界面保留 provenance。
 - [x] 让失败归属于当前已选来源，不自动替换或兜底。
 
@@ -373,6 +375,8 @@ Provider 与 adapter 作者可以直接使用对应的[最小来源 manifest](ex
 | 范围 | 用例 | 预期结果 |
 | --- | --- | --- |
 | 无默认来源 | 新 profile 没有已选来源 | 显示来源选择空状态；不发网络请求，也不兜底 |
+| 产品默认来源 | 全新、从未初始化的 profile 有一个本地策略默认值 | 校验一次标准 Manifest，保存并选择该来源，同时记录默认值已应用 |
+| 产品默认来源 | 已有来源，或用户之后删除默认来源 | 保留用户状态，永不再次添加或选择产品来源 |
 | 选择 | 用户保存两个来源并选择其中一个 | 只请求已选来源；另一个来源保持已保存且不活动 |
 | 选择 | 用户从来源 A 切换到来源 B | 取消 A 的请求；重置列表、搜索、分类和 cursor 后再请求 B |
 | 选择 | 远程 manifest 包含 `selected`、`enabled`、`priority`、auth、header、script 或 install 字段 | Strict schema 拒绝该 manifest |

@@ -35,6 +35,7 @@ const spec: DesktopShellSpec = {
   iconPath: '/tmp/app-icon.png',
   trayIcons: {
     templatePath: '/tmp/tray-iconTemplate.png',
+    whitePath: '/tmp/tray-icon-white.png',
     bluePath: '/tmp/tray-icon-blue.png',
   },
   readLocalePreference: () => undefined,

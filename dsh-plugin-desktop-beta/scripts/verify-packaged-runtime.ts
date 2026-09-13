@@ -149,8 +149,17 @@ export const REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES = [
   'build/tray-iconTemplate@2x.png',
 ] as const
 
-/** Windows/Linux desktop assets, including nativeImage scale variants. */
-export const REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES = [
+/** Windows desktop assets, including white notification-area DPI variants. */
+export const REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES = [
+  'build/app-icon.png',
+  'build/tray-icon-white.png',
+  'build/tray-icon-white@1.25x.png',
+  'build/tray-icon-white@1.5x.png',
+  'build/tray-icon-white@2x.png',
+] as const
+
+/** Linux desktop assets, including brand-color DPI variants. */
+export const REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon.png',
   'build/tray-icon-blue.png',
   'build/tray-icon-blue@1.25x.png',
@@ -161,7 +170,8 @@ export const REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES = [
 /** Complete cross-platform asset surface, used only as a closed allowlist. */
 export const REQUIRED_UNPACKED_RUNTIME_ENTRIES = [
   ...REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
-  ...REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES,
+  ...REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
+  ...REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES,
 ] as const
 
 /** Ordinary modules that must stay archived to prevent a full physical mirror regression. */
@@ -758,7 +768,9 @@ export function verifyPackagedRuntime(
   }
   const desktopPhysicalEntries = context.electronPlatformName === 'darwin'
     ? REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES
-    : REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES
+    : context.electronPlatformName === 'win32'
+      ? REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES
+      : REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES
   const posixFsExtEntry = context.electronPlatformName === 'darwin'
     || context.electronPlatformName === 'linux'
     ? context.arch === 1

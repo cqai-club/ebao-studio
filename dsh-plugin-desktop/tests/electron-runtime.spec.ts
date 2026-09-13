@@ -108,6 +108,10 @@ const electron = vi.hoisted(() => {
     isEmpty: vi.fn(() => false),
     setTemplateImage: vi.fn(),
   }
+  const whiteIcon = {
+    isEmpty: vi.fn(() => false),
+    setTemplateImage: vi.fn(),
+  }
   const webContents = {
     id: 73,
     session: { fetch: sessionFetch, webRequest },
@@ -218,6 +222,7 @@ const electron = vi.hoisted(() => {
   const createFromPath = vi.fn((path: string) => {
     if (path.endsWith('app-icon.png')) return appIcon
     if (path.endsWith('tray-iconTemplate.png')) return templateIcon
+    if (path.endsWith('tray-icon-white.png')) return whiteIcon
     if (path.endsWith('tray-icon-blue.png')) return blueIcon
     throw new Error(`unexpected image path ${path}`)
   })
@@ -290,6 +295,7 @@ const electron = vi.hoisted(() => {
     trays,
     webContents,
     webRequest,
+    whiteIcon,
   }
 })
 
@@ -341,6 +347,7 @@ const spec: DesktopShellSpec = {
   iconPath: '/tmp/app-icon.png',
   trayIcons: {
     templatePath: '/tmp/tray-iconTemplate.png',
+    whitePath: '/tmp/tray-icon-white.png',
     bluePath: '/tmp/tray-icon-blue.png',
   },
   readLocalePreference: vi.fn(() => undefined),
@@ -763,7 +770,7 @@ describe('Electron desktop runtime', () => {
     await release()
   })
 
-  it('uses the Windows caption, hidden menu bar, removed menu, and fixed blue tray image', async () => {
+  it('uses the Windows caption, hidden menu bar, removed menu, and white tray image', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
@@ -779,7 +786,7 @@ describe('Electron desktop runtime', () => {
     expect(electron.browserWindows[0]?.removeMenu).toHaveBeenCalledOnce()
     expect(electron.app.dock.setIcon).not.toHaveBeenCalled()
     expect(electron.Menu.setApplicationMenu).not.toHaveBeenCalled()
-    expect(electron.trays[0]?.image).toBe(electron.blueIcon)
+    expect(electron.trays[0]?.image).toBe(electron.whiteIcon)
     expect(electron.templateIcon.setTemplateImage).not.toHaveBeenCalled()
 
     await release()

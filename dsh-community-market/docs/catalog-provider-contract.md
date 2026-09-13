@@ -95,7 +95,9 @@ A standard source publishes a static manifest validated by [`catalog-source.sche
 
 The manifest describes provider capability; it does not control local policy. Public v1 sources are anonymous: the contract has no bearer token, cookies, request headers, secret fields, executable mapping, or dynamic JavaScript.
 
-The source manifest URL and catalog endpoint are distinct. Adding the manifest URL is an explicit user action. The Host generates a fresh `sourceRecordId`, validates and stores a registration-time copy of the manifest with that local user-added record, exposes its disclosure fields in source management, and does not select it until the user chooses it.
+The source manifest URL and catalog endpoint are distinct. A manifest URL normally comes from an explicit user action. A local product policy may instead declare one first-use default URL; the Host applies it only when source settings have never been initialized and are empty. The Host generates a fresh `sourceRecordId`, validates and stores a registration-time copy of the manifest with that local user-added record, and exposes its disclosure fields in source management. User-added sources remain inactive until selected, while the validated first-use product default is selected when it is created.
+
+Applying or considering a product default writes a provider-inaccessible local marker. Existing sources are preserved while recording that marker, and every successful user source mutation records it as well. Consequently, later user selections, disablement, or removal cannot be overridden by the product policy. A failed default Manifest fetch leaves the marker unset for a bounded retry on a later Host generation; it does not block startup or fall back to another source.
 
 For direct standard integration, the user registers only the manifest URL. The smallest recommended manifest uses one public GET endpoint, advertises only `q`, `category`, `cursor`, and `limit`, sets both example page limits to 50, and leaves `sorts` empty. Fifty is a convenient starter value, not a standard-source ceiling: a manifest may declare limits through the Schema safety maximum of 200. Capability, sort, locale, icons, and richer display fields remain optional extensions. See the [minimal source manifest](examples/catalog-source.example.json) and [minimal provider page](examples/catalog-provider-page.minimal.example.json).
 
@@ -338,7 +340,7 @@ The current package implements and tests every capability below.
 
 - [x] Persist user-owned source records and one provider-inaccessible local selection marker.
 - [x] Provide add, inspect, select, switch, retry, reorder, and remove actions.
-- [x] Start with no source selected and show an explicit source-choice state.
+- [x] Start with the validated product default only when one is declared for a never-initialized empty registry; otherwise show an explicit source-choice state.
 - [x] Show attribution, endpoint host, adapter type, and last result in source management and preserve source provenance in catalog and install surfaces.
 - [x] Keep failures attached to the selected source without automatic replacement or fallback.
 
@@ -373,6 +375,8 @@ The current automated contract, adapter, Host, Client, media, and installation s
 | Area | Case | Expected result |
 | --- | --- | --- |
 | No default | Fresh profile has no selected source | Explicit source-choice empty state; no network request and no fallback |
+| Product default | Fresh, never-initialized profile has one local policy default | Validate the standard Manifest once, save and select it, and record that the default was applied |
+| Product default | Sources already exist, or the user later removes the default | Preserve the user's state and never add or select the product source again |
 | Selection | User saves two sources and selects one | Only the selected source is requested; the other remains saved and idle |
 | Selection | User switches from source A to source B | A's request is cancelled; list, search, categories, and cursor reset before B is fetched |
 | Selection | Remote manifest contains `selected`, `enabled`, `priority`, auth, header, script, or install fields | Manifest rejected by the strict schema |

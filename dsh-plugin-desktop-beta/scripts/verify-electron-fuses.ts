@@ -209,6 +209,13 @@ function requestedArchitectures(
   const targetNames = new Set(
     [...targets.keys()].filter((name): name is string => typeof name === 'string'),
   )
+  // Platform packagers omit NoOpTarget (`--dir`) from BuildResult entirely, so
+  // its target map is empty even though one unpacked application was produced.
+  // Match electron-builder's own default: prefer an explicit platform default,
+  // then use the architecture of the Node process running the build.
+  if (targetNames.size === 0) {
+    return [architectureNumber(result.configuration[key]?.defaultArch ?? process.arch, description)]
+  }
   const fromConfiguration = configuredTargetArchitectures(
     result.configuration[key],
     targetNames,
@@ -216,9 +223,8 @@ function requestedArchitectures(
   )
   if (fromConfiguration.length > 0) return fromConfiguration
 
-  // electron-builder's NoOpTarget (used by --dir) deliberately retains neither
-  // the arch nor its packager. With no explicit target.arch, electron-builder
-  // itself defaults that target to the Node process architecture.
+  // Some platform implementations retain a named NoOpTarget. With no explicit
+  // target.arch, electron-builder defaults that target to the Node architecture.
   if (targetNames.has(DIR_TARGET)) return [architectureNumber(process.arch, description)]
 
   throw new Error(

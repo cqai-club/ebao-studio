@@ -1211,7 +1211,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@cqaiclub/dsn-account@workspace:*, @cqaiclub/dsn-account@workspace:cqai-dsh-plugins/cqai-dsh-plugin-account":
+"@cqaiclub/dsn-account@npm:0.1.1, @cqaiclub/dsn-account@workspace:cqai-dsh-plugins/cqai-dsh-plugin-account":
   version: 0.0.0-use.local
   resolution: "@cqaiclub/dsn-account@workspace:cqai-dsh-plugins/cqai-dsh-plugin-account"
   dependencies:
@@ -1234,6 +1234,7 @@ __metadata:
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:^18.3.0"
     "@types/react-dom": "npm:^18.3.0"
+    jsdom: "npm:29.1.1"
     react: "npm:18.3.1"
     react-dom: "npm:18.3.1"
     tsdown: "npm:^0.22.2"
@@ -2142,10 +2143,10 @@ __metadata:
 
 "@deepseek-ai/dsh-client-ui-directory-picker-browse@patch:@deepseek-ai/dsh-client-ui-directory-picker-browse@file%3Avendor/dsh-runtime/0.1.5-rc.1/deepseek-ai-dsh-client-ui-directory-picker-browse-0.1.5-rc.1.tgz#./patches/dsh-client-ui-directory-picker-browse@0.1.5-rc.1.patch::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.1.5-rc.1
-  resolution: "@deepseek-ai/dsh-client-ui-directory-picker-browse@patch:@deepseek-ai/dsh-client-ui-directory-picker-browse@file%3Avendor/dsh-runtime/0.1.5-rc.1/deepseek-ai-dsh-client-ui-directory-picker-browse-0.1.5-rc.1.tgz%23vendor/dsh-runtime/0.1.5-rc.1/deepseek-ai-dsh-client-ui-directory-picker-browse-0.1.5-rc.1.tgz%3A%3Ahash=fcb7a3&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-directory-picker-browse@0.1.5-rc.1.patch::version=0.1.5-rc.1&hash=d18d2b&locator=deepseek-harness-desktop%40workspace%3A."
+  resolution: "@deepseek-ai/dsh-client-ui-directory-picker-browse@patch:@deepseek-ai/dsh-client-ui-directory-picker-browse@file%3Avendor/dsh-runtime/0.1.5-rc.1/deepseek-ai-dsh-client-ui-directory-picker-browse-0.1.5-rc.1.tgz%23vendor/dsh-runtime/0.1.5-rc.1/deepseek-ai-dsh-client-ui-directory-picker-browse-0.1.5-rc.1.tgz%3A%3Ahash=fcb7a3&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-directory-picker-browse@0.1.5-rc.1.patch::version=0.1.5-rc.1&hash=d4adb7&locator=deepseek-harness-desktop%40workspace%3A."
   peerDependencies:
     "@deepseek-ai/cordis": ^4.0.2
-  checksum: 10c0/7fe5fea9c7d6733df5a42245276937d510a1dd1bb94203d2b52872461d3af2ffb30fd47438dd8a80bafe44eaa5b460b2b08038e52044469dd2ad848a4fb4905f
+  checksum: 10c0/f74fbadb1205019e02ffe42b2a6448f8f56f87ece9b085814836fbd8dfec7c64efea35ba0f8c40527dcbc90d2c8c8cfb1b62aff3113c6d7916d6a2fd4f55faad
   languageName: node
   linkType: hard
 
@@ -9641,7 +9642,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cqai-dsh-plugin-market@workspace:cqai-dsh-plugins/cqai-dsh-plugin-market":
+"cqai-dsh-plugin-market@npm:0.1.0, cqai-dsh-plugin-market@workspace:cqai-dsh-plugins/cqai-dsh-plugin-market":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-market@workspace:cqai-dsh-plugins/cqai-dsh-plugin-market"
   dependencies:
@@ -10690,7 +10691,7 @@ __metadata:
   dependencies:
     "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.cb413330914fb.rcda81994.tgz"
     "@base-ui/react": "npm:^1.7.0"
-    "@cqaiclub/dsn-account": "workspace:*"
+    "@cqaiclub/dsn-account": "npm:0.1.1"
     "@deepseek-ai/cordis": "npm:4.0.2"
     "@deepseek-ai/cordis-plugin-group": "npm:1.0.2"
     "@deepseek-ai/cordis-plugin-include": "npm:1.0.7"
@@ -10847,6 +10848,7 @@ __metadata:
     builder-util: "npm:26.15.3"
     class-variance-authority: "npm:^0.7.1"
     clsx: "npm:^2.1.1"
+    cqai-dsh-plugin-market: "npm:0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dshmarket: "npm:1.38.1"
     electron: "npm:43.3.0"
@@ -10888,7 +10890,7 @@ __metadata:
   dependencies:
     "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.cb413330914fb.rcda81994.tgz"
     "@base-ui/react": "npm:^1.7.0"
-    "@cqaiclub/dsn-account": "workspace:*"
+    "@cqaiclub/dsn-account": "npm:0.1.1"
     "@deepseek-ai/cordis": "npm:4.0.2"
     "@deepseek-ai/cordis-plugin-group": "npm:1.0.2"
     "@deepseek-ai/cordis-plugin-include": "npm:1.0.7"
@@ -11045,6 +11047,7 @@ __metadata:
     builder-util: "npm:26.15.3"
     class-variance-authority: "npm:^0.7.1"
     clsx: "npm:^2.1.1"
+    cqai-dsh-plugin-market: "npm:0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dshmarket: "npm:1.38.1"
     electron: "npm:43.3.0"

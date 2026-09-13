@@ -23,12 +23,13 @@ import {
   MAX_UNPACKED_RUNTIME_FILES,
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
+  REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNIVERSAL_ENTRIES,
-  REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_POSIX_FS_EXT_ENTRIES,
   REQUIRED_UNPACKED_RUNTIME_ENTRIES,
+  REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
   resolvePackagedAsarPath,
   resolvePackagedExecutablePath,
@@ -141,7 +142,9 @@ function completeArchiveEntries(): string[] {
 function requiredPhysicalEntries(runtimeContext: PackagedRuntimeContext): string[] {
   const desktopAssets = runtimeContext.electronPlatformName === 'darwin'
     ? REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES
-    : REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES
+    : runtimeContext.electronPlatformName === 'win32'
+      ? REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES
+      : REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES
   if (runtimeContext.electronPlatformName === 'win32') {
     return [
       ...desktopAssets,
@@ -506,7 +509,7 @@ describe('packaged desktop runtime verification', () => {
       REQUIRED_POSIX_FS_EXT_ENTRIES.darwin.arm64,
     ])
     expect(requiredPhysicalEntries(windows)).toEqual([
-      ...REQUIRED_NON_MACOS_UNPACKED_RUNTIME_ENTRIES,
+      ...REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
       ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
     ])
     expect(requiredPhysicalEntries(mac)).not.toContain('build/app-icon.png')
@@ -652,7 +655,7 @@ describe('packaged desktop runtime verification', () => {
 
   it.each([
     'build/app-icon.png',
-    'build/tray-icon-blue@2x.png',
+    'build/tray-icon-white@2x.png',
     'node_modules/@vscode/ripgrep-win32-x64/bin/rg.exe',
     'node_modules/node-pty/prebuilds/win32-x64/conpty.node',
   ])('fails loud when selective physical entry %s is absent', (missing) => {

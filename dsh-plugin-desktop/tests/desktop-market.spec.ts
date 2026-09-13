@@ -82,12 +82,23 @@ describe('Desktop Market state path and parser', () => {
 })
 
 describe('Desktop Market fail-safe reads', () => {
+  it('uses the community Market product default when no state exists', () => {
+    const userData = temporaryUserData()
+    const statePath = desktopMarketStatePath(userData)
+
+    expect(readDesktopMarketStateForUserData(userData)).toEqual({
+      requested: 'community-market',
+      effective: 'community-market',
+      legacyDefaulted: true,
+    })
+    expect(existsSync(statePath)).toBe(false)
+  })
+
   it.each([
-    ['missing', () => {}],
     ['malformed JSON', (path: string) => writeFileSync(path, '{broken', 'utf8')],
     ['unknown version', (path: string) => writeFileSync(path, '{"version":2,"requested":"disabled","legacyDefaulted":false}\n', 'utf8')],
     ['invalid provider', (path: string) => writeFileSync(path, '{"version":1,"requested":"other","legacyDefaulted":false}\n', 'utf8')],
-  ])('defaults %s to disabled without writing a migration', (_label, prepare) => {
+  ])('fails safe for %s without writing a migration', (_label, prepare) => {
     const userData = temporaryUserData()
     const statePath = desktopMarketStatePath(userData)
     mkdirSync(join(userData, 'desktop-market'), { recursive: true })

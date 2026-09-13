@@ -18,6 +18,12 @@ export interface MarketCatalogCache {
 export interface MarketSettingsDocument {
   readonly sources: readonly LocalSourceRecord[]
   readonly catalogCache?: MarketCatalogCache
+  /** Prevent product defaults from overriding later explicit source choices. */
+  readonly defaultSourceApplied?: boolean
+}
+
+export interface MarketSourceSaveOptions {
+  readonly markDefaultSourceApplied?: true
 }
 
 /**
@@ -45,10 +51,16 @@ export class SettingsCatalogSourceStore implements CatalogSourceStore {
     return normalizeActiveSourceRecords(records)
   }
 
-  async save(records: readonly LocalSourceRecord[]): Promise<void> {
+  async save(
+    records: readonly LocalSourceRecord[],
+    options: MarketSourceSaveOptions = {},
+  ): Promise<void> {
     const normalized = normalizeActiveSourceRecords(records)
     validateLocalSourceRecords(normalized)
-    await this.scope.update({ sources: normalized })
+    await this.scope.update({
+      sources: normalized,
+      ...(options.markDefaultSourceApplied === true ? { defaultSourceApplied: true } : {}),
+    })
   }
 }
 

@@ -38,6 +38,7 @@ type RuntimeHarness = {
     saveSelection: ReturnType<typeof vi.fn>
     saveCategorySelections: ReturnType<typeof vi.fn>
   }
+  setDefaultSelection: (selection: DsnDefaultModelSelection) => void
 }
 
 function makeRuntime(options: {
@@ -100,6 +101,9 @@ function makeRuntime(options: {
       if (options.updateGlobal === true) globalDefault = { ...selection }
     }),
   }
+  const setDefaultSelection = (selection: DsnDefaultModelSelection): void => {
+    globalDefault = { ...selection }
+  }
   const emit = vi.fn()
   const root = {
     root: undefined,
@@ -130,7 +134,7 @@ function makeRuntime(options: {
     requestTimeoutMs: 1000,
   })
   if (flow === undefined || rpc === undefined) throw new Error('runtime test harness did not capture registrations')
-  return { runtime, flow, rpc, records, emit, defaultModel }
+  return { runtime, flow, rpc, records, emit, defaultModel, setDefaultSelection }
 }
 
 async function waitForSignedIn(runtime: DsnAccountServiceRuntime): Promise<void> {
@@ -309,6 +313,14 @@ describe('DsnAccountServiceRuntime', () => {
       ok: true,
       value: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     })
+
+    await expect(harness.rpc('models/default/adopt-onboarding', {}, new AbortController().signal)).resolves.toMatchObject({
+      ok: true,
+      value: { provider: 'cqaiclub', model: 'chat-model' },
+    })
+    expect(harness.defaultModel.saveSelection).toHaveBeenCalledWith({ provider: 'cqaiclub', model: 'chat-model' })
+
+    harness.defaultModel.saveSelection.mockClear()
     await expect(harness.rpc('models/default/set', { model: 'chat-model' }, new AbortController().signal)).resolves.toMatchObject({
       ok: true,
       value: { provider: 'cqaiclub', model: 'chat-model' },
@@ -319,6 +331,14 @@ describe('DsnAccountServiceRuntime', () => {
       ok: false,
       error: { code: 'DSN_MODEL_UNAVAILABLE' },
     })
+
+    harness.setDefaultSelection({ provider: 'another-provider', model: 'custom-model' })
+    harness.defaultModel.saveSelection.mockClear()
+    await expect(harness.rpc('models/default/adopt-onboarding', {}, new AbortController().signal)).resolves.toMatchObject({
+      ok: true,
+      value: { provider: 'another-provider', model: 'custom-model' },
+    })
+    expect(harness.defaultModel.saveSelection).not.toHaveBeenCalled()
   })
 
   it('reads and saves category defaults, merging text with multimodal and only updating global for text', async () => {
