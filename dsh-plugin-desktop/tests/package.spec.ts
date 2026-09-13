@@ -848,6 +848,8 @@ describe('published package surface', () => {
   it('separates unsigned smoke packaging from the signed macOS release', () => {
     const packageDir = readFileSync(new URL('scripts/package-dir.mjs', packageRoot), 'utf8')
 
+    expect(manifest.scripts?.build).toContain('yarn workspace @cqaiclub/dsn-account build')
+    expect(manifest.scripts?.build).toContain('yarn workspace cqai-dsh-plugin-market build')
     expect(manifest.scripts?.build).toContain('node scripts/generate-windows-app-icon.mjs')
     expect(manifest.scripts?.build).toContain('node scripts/generate-mac-app-icon.mjs')
     expect(manifest.scripts?.['package:dir']).toBe('yarn run build && yarn run prepare:electron-native && node scripts/package-dir.mjs')
