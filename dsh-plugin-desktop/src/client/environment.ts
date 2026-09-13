@@ -25,6 +25,17 @@ const MODES = new Set<DesktopClientMode>(['compatibility', 'extended', 'advanced
 const PLATFORMS = new Set<DesktopClientPlatform>(['darwin', 'win32', 'linux'])
 const MATERIAL_MARKERS = new Set(['off', 'transparent', 'acrylic', 'mica'])
 const VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u
+const DEVELOPER_ACTIONS_MARKER = 'dsh-desktop-developer-actions'
+
+/** Whether the Electron-owned launch URL enables settings-only developer actions. */
+export function desktopDeveloperActionsEnabled(search: string): boolean {
+  const values = new URLSearchParams(search).getAll(DEVELOPER_ACTIONS_MARKER)
+  if (values.length === 0) return false
+  if (values.length !== 1 || (values[0] !== '0' && values[0] !== '1')) {
+    throw new Error(`dsh-plugin-desktop: invalid ${DEVELOPER_ACTIONS_MARKER} marker`)
+  }
+  return values[0] === '1'
+}
 
 /**
  * Validate the Electron-owned query marker before any desktop client effects run.

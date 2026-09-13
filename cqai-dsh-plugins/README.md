@@ -14,6 +14,7 @@ cqai-dsh-plugin-<capability>
 
 - `cqai-dsh-plugin-quicknav`
 - `cqai-dsh-plugin-market`
+- `@cqaiclub/dsn-account`
 
 ## 创建新插件
 
@@ -34,3 +35,7 @@ cqai-dsh-plugin-example/
 ```
 
 只有真正需要 Host 能力时才实现 `src/index.ts`；纯客户端插件也应保留一个轻量 Host entry，以便通过标准 DSH bundle 流程安装。
+
+`@cqaiclub/dsn-account` 是来自 [cqai-club/cqaiclub-dsh-plugin](https://github.com/cqai-club/cqaiclub-dsh-plugin)
+的 CQAI Club 共享账号插件。它由 Desktop 作为默认产品 bundle 纳入，负责 OAuth/PKCE 登录、账号与额度快照、模型目录和
+`cqaiclub` LLM Provider；其他 CQAI 业务插件通过 Host 服务复用登录态，不应自行保存或传递 Token。

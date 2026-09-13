@@ -1,0 +1,19 @@
+# CQAI Club shared account plugin. clientId must be a Native app using
+# Authorization Code + PKCE. Allow the loopback redirect below with any port:
+# http://127.0.0.1/cqaiclub-dsn-account/oauth/callback
+- insert:
+    - id: authorization
+      name: '@deepseek-ai/dsh-authorization'
+    - id: cqaiclub-dsn-account
+      name: '@cqaiclub/dsn-account'
+      config:
+        issuer: 'https://auth.cqaiclub.asia/oidc'
+        clientId: '8hm6gea0xg6gb2syles6v'
+        resource: 'https://account.cqaiclub.asia'
+        accountServiceUrl: 'https://account.cqaiclub.asia'
+        scopes:
+          - openid
+          - offline_access
+          - profile
+          - email
+          - ai:invoke

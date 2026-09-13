@@ -3,13 +3,13 @@ export const DESKTOP_RELEASE_IDENTITIES = Object.freeze({
   stable: Object.freeze({
     releaseChannel: 'stable' as const,
     packageName: 'dsh-plugin-desktop',
-    productName: 'DSH Desktop',
+    productName: '易宝工坊',
     appId: 'ai.deepseek.dsh.desktop',
   }),
   beta: Object.freeze({
     releaseChannel: 'beta' as const,
     packageName: 'dsh-plugin-desktop-beta',
-    productName: 'DSH Desktop Beta',
+    productName: '易宝工坊 Beta',
     appId: 'ai.deepseek.dsh.desktop.beta',
   }),
 })

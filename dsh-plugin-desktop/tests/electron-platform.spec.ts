@@ -46,7 +46,7 @@ describe('electronPlatformStrategy', () => {
     expect(strategy.canPickDirectory).toBe(true)
     expect(strategy.canToggleShellMode).toBe(true)
 
-    strategy.configureApplication(icon, 'DSH Desktop')
+    strategy.configureApplication(icon, '易宝工坊')
     strategy.configureWindow(window as never)
     strategy.refreshThemeMaterial(window as never, 'mica')
 
@@ -68,7 +68,7 @@ describe('electronPlatformStrategy', () => {
     expect(strategy.canPickDirectory).toBe(false)
     expect(strategy.canToggleShellMode).toBe(true)
 
-    strategy.configureApplication(icon, 'DSH Desktop')
+    strategy.configureApplication(icon, '易宝工坊')
     strategy.configureWindow(window as never)
     strategy.refreshThemeMaterial(window as never, 'transparent')
 
@@ -88,7 +88,7 @@ describe('electronPlatformStrategy', () => {
     expect(strategy.canPickDirectory).toBe(false)
     expect(strategy.canToggleShellMode).toBe(false)
 
-    strategy.configureApplication({} as never, 'DSH Desktop')
+    strategy.configureApplication({} as never, '易宝工坊')
     strategy.configureWindow(window as never)
     strategy.refreshThemeMaterial(window as never, 'off')
 

@@ -91,6 +91,11 @@ const AA_ROW_ID = 'agents-anywhere-bridge-next'
 const BIN_NAME = DESKTOP_PACKAGE_NAME
 const REQUIRED_BUNDLES = requiredWebBundles()
 const REQUIRED_BUNDLE_SET = new Set(REQUIRED_BUNDLES)
+const CQAI_ACCOUNT_PACKAGE = '@cqaiclub/dsn-account'
+const DEFAULT_PRODUCT_BUNDLES = [CQAI_ACCOUNT_PACKAGE] as const
+const DEFAULT_PRODUCT_BUNDLE_SET = new Set<string>(DEFAULT_PRODUCT_BUNDLES)
+const OFFICIAL_DEEPSEEK_LLM_ROW_ID = 'llm-deepseek'
+const OFFICIAL_DEEPSEEK_LLM_PACKAGE = '@deepseek-ai/dsh-llm-deepseek'
 const OBSOLETE_DESKTOP_BUNDLE_SET = new Set(['@deepseek-ai/dsh-desktop-app'])
 // Electron's patched fs/module APIs read this logical ASAR path directly. The
 // Desktop resolver bridges out-of-tree Profile plugins back into this virtual
@@ -327,9 +332,10 @@ export interface SkippedOptionalEntry {
  */
 export function desktopBundleList(current: readonly string[]): string[] {
   const thirdParty = current.filter(name => !REQUIRED_BUNDLE_SET.has(name)
+    && !DEFAULT_PRODUCT_BUNDLE_SET.has(name)
     && !DESKTOP_PACKAGE_NAMES.has(name)
     && !OBSOLETE_DESKTOP_BUNDLE_SET.has(name))
-  return [...REQUIRED_BUNDLES, ...thirdParty]
+  return [...REQUIRED_BUNDLES, ...DEFAULT_PRODUCT_BUNDLES, ...thirdParty]
 }
 
 /** Return whether two ordered string lists are identical. */
@@ -979,7 +985,14 @@ export function prepareDesktopProfile(
       aaFailure = marketFailureMessage(cause)
     }
   }
-  const patches: PatchOptions[] = [...ordinary.patches, ...aaPatches]
+  // CQAI Desktop does not expose the upstream DeepSeek provider. Keep this
+  // policy last so profile and machine patches cannot reactivate its adapter;
+  // independently loaded providers such as CQAI Club remain untouched.
+  const patches: PatchOptions[] = [...ordinary.patches, ...aaPatches, {
+    id: OFFICIAL_DEEPSEEK_LLM_ROW_ID,
+    name: OFFICIAL_DEEPSEEK_LLM_PACKAGE,
+    disabled: true,
+  }]
   const composedRows = composeEntries([patches])
   assertUniqueEntryIds(composedRows)
   assertEffectiveMarketRows(composedRows, effectiveMarket)

@@ -32,7 +32,7 @@ describe('desktop npm launcher', () => {
   })
 
   it('names the installed product and selected profile behavior', () => {
-    expect(DESKTOP_CLI_HELP).toContain('DSH Desktop Beta')
+    expect(DESKTOP_CLI_HELP).toContain('易宝工坊 Beta')
     expect(DESKTOP_CLI_HELP).toContain('Usage: dsh-plugin-desktop-beta')
     expect(DESKTOP_CLI_HELP).toContain('selected Web-capable profile')
     expect(DESKTOP_CLI_HELP).toContain('--export-diagnostics')
@@ -40,9 +40,9 @@ describe('desktop npm launcher', () => {
 
   it('resolves the packaged Desktop user-data directory without Electron', () => {
     expect(defaultDesktopUserDataDirectory('win32', { APPDATA: 'C:\\Users\\Example\\AppData\\Roaming' }, 'ignored'))
-      .toBe('C:\\Users\\Example\\AppData\\Roaming\\DSH Desktop Beta')
+      .toBe('C:\\Users\\Example\\AppData\\Roaming\\易宝工坊 Beta')
     expect(defaultDesktopUserDataDirectory('darwin', {}, '/Users/example'))
-      .toBe('/Users/example/Library/Application Support/DSH Desktop Beta')
+      .toBe('/Users/example/Library/Application Support/易宝工坊 Beta')
   })
 
   it('exports diagnostics without launching Electron', async () => {

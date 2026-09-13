@@ -4,7 +4,7 @@
 
 ## 问题
 
-DSH Desktop 原本始终准备并启动产品自有的 `desktop` profile。已有 DSH 用户可能已经拥有 `web` profile，或者拥有多个由不同 bundle 与 patch 组成的专用 Web profile。普通官方 profile 中的 sessions、settings 与 storage 默认已经使用同一个 DSH home；在 profile 之间复制记录既会重复数据，也会错误表达 profile 的职责。真正缺少的能力，是选择由哪套插件组合承载 desktop generation。
+易宝工坊 原本始终准备并启动产品自有的 `desktop` profile。已有 DSH 用户可能已经拥有 `web` profile，或者拥有多个由不同 bundle 与 patch 组成的专用 Web profile。普通官方 profile 中的 sessions、settings 与 storage 默认已经使用同一个 DSH home；在 profile 之间复制记录既会重复数据，也会错误表达 profile 的职责。真正缺少的能力，是选择由哪套插件组合承载 desktop generation。
 
 Profile 选择发生在 Host Cordis 树及其 settings provider 创建之前，因此不能存放在被选 profile 的 settings namespace 中。若被选 profile 启动失败，在 renderer 与托盘都无法挂载时也必须能够恢复。
 
@@ -48,4 +48,4 @@ Focused test 覆盖只读发现、bundle 顺序、损坏与重复 desktop layer�
 
 ## 结果
 
-DSH Desktop 现在可以管理多个 Web-capable profile，而不接管其插件 roster 或记录。切换具有明确的重启边界，终端跟随激活 profile，失败的 pending 选择会恢复到最近成功挂载的 profile。Launcher 增加了一份很小的持久化控制文档与一个 Host 托盘 contribution；上游 checkout 与 renderer 隔离保持不变。
+易宝工坊 现在可以管理多个 Web-capable profile，而不接管其插件 roster 或记录。切换具有明确的重启边界，终端跟随激活 profile，失败的 pending 选择会恢复到最近成功挂载的 profile。Launcher 增加了一份很小的持久化控制文档与一个 Host 托盘 contribution；上游 checkout 与 renderer 隔离保持不变。

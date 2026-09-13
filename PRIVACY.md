@@ -1,13 +1,13 @@
-# DSH Desktop Privacy Policy
+# 易宝工坊 Privacy Policy
 
 [中文](PRIVACY.zh.md)
 
 - **Version:** 1.0
 - **Effective and last updated:** August 26, 2026
 
-DSH Desktop is a local-first, open-source desktop application. This policy explains what information the official DSH Desktop distribution and official online services process, why they process it, who receives it, and what choices you have.
+易宝工坊 is a local-first, open-source desktop application. This policy explains what information the official 易宝工坊 distribution and official online services process, why they process it, who receives it, and what choices you have.
 
-In this policy, “we” means the **Anywhere Labs project maintainer team** that maintains and publishes the official DSH Desktop distribution under the [`anywhere-labs`](https://github.com/anywhere-labs) GitHub organization and operates the official `dshdesktop.cn` services. DSH Desktop is an independent community project and has no affiliation, partnership, authorization, or endorsement relationship with DeepSeek.
+In this policy, “we” means the **Anywhere Labs project maintainer team** that maintains and publishes the official 易宝工坊 distribution under the [`anywhere-labs`](https://github.com/anywhere-labs) GitHub organization and operates the official `dshdesktop.cn` services. 易宝工坊 is an independent community project and has no affiliation, partnership, authorization, or endorsement relationship with DeepSeek.
 
 For privacy questions or rights requests, email [t4wefan@qq.com](mailto:t4wefan@qq.com). Do not put installation identifiers, logs, credentials, or other private information in a public GitHub Issue.
 
@@ -15,7 +15,7 @@ For privacy questions or rights requests, email [t4wefan@qq.com](mailto:t4wefan@
 
 This policy applies to:
 
-- DSH Desktop provided through the [official GitHub repository](https://github.com/anywhere-labs/dsh-desktop) and official release channels;
+- 易宝工坊 provided through the [official GitHub repository](https://github.com/anywhere-labs/dsh-desktop) and official release channels;
 - the official website, version-check service, and download redirects under `https://www.dshdesktop.cn/`; and
 - privacy requests, support email, or issue reports that you voluntarily send to the project maintainers.
 
@@ -23,12 +23,12 @@ This policy does not control processing performed by third-party forks, modified
 
 ## 2. Summary
 
-- DSH Desktop profiles, settings, workspaces, sessions, logs, and crash files remain on your device by default.
-- The official update service does not require a DSH Desktop account. Its version-check code does not intentionally send prompts, responses, file contents, workspace paths, profile names, session contents, API keys, MAC addresses, or hardware serial numbers.
+- 易宝工坊 profiles, settings, workspaces, sessions, logs, and crash files remain on your device by default.
+- The official update service does not require a 易宝工坊 account. Its version-check code does not intentionally send prompts, responses, file contents, workspace paths, profile names, session contents, API keys, MAC addresses, or hardware serial numbers.
 - Packaged macOS and Windows builds check for updates by default and send a locally generated, persistently stored random installation UUID. This is a pseudonymous identifier that may qualify as personal data under applicable law. It is not a hardware ID and does not guarantee one value per physical machine.
 - Installer downloads do not receive that installation UUID from Desktop, although the website, download host, and network infrastructure still receive ordinary network metadata.
-- Diagnostic archives are created locally only when you export them and are never uploaded automatically by DSH Desktop.
-- Model services, plugins, marketplace sources, and package services that you choose process data under their own terms. They do not become subject to this policy merely because DSH Desktop can connect to them.
+- Diagnostic archives are created locally only when you export them and are never uploaded automatically by 易宝工坊.
+- Model services, plugins, marketplace sources, and package services that you choose process data under their own terms. They do not become subject to this policy merely because 易宝工坊 can connect to them.
 
 ## 3. Official version checks
 
@@ -67,8 +67,8 @@ The installation UUID:
 
 Default locations are:
 
-- macOS: `~/Library/Application Support/DSH Desktop/identity/installation-id`;
-- Windows: `%APPDATA%\DSH Desktop\identity\installation-id`.
+- macOS: `~/Library/Application Support/易宝工坊/identity/installation-id`;
+- Windows: `%APPDATA%\易宝工坊\identity\installation-id`.
 
 Deleting this file only causes a new UUID to be generated at the next launch. It **does not stop later version checks or prevent the new UUID from being sent**.
 
@@ -81,7 +81,7 @@ Version-check data may be used only to:
 - maintain service reliability, investigate abnormal requests, and prevent abuse; and
 - meet applicable legal obligations.
 
-We do not use the installation UUID for advertising profiles or cross-service tracking, and we do not sell it. A version check requires no login, and the client sends no name, email address, or DSH Desktop account ID in that request.
+We do not use the installation UUID for advertising profiles or cross-service tracking, and we do not sell it. A version check requires no login, and the client sends no name, email address, or 易宝工坊 account ID in that request.
 
 ## 4. Installer downloads, the website, and project communications
 
@@ -107,7 +107,7 @@ The following information remains on your device by default rather than being up
 | Desktop logs | Stored below the Electron user-data directory. A file rotates at 10 MiB; files older than seven days are removed at startup; and the log directory is held below 200 MiB. Logs can still contain paths, workspace IDs, session IDs, commands, or plugin messages. |
 | Local crash files | Electron Crashpad collects them locally and is configured not to upload to a crash server. They may contain fragments of process memory. |
 | Diagnostic ZIP archives | Created only when you export one. They may contain logs, system and version information, paths, workspace or session IDs, bounded lifecycle and plugin IDs, and crash files within a shared 50 MiB evidence budget. The application retains the three newest archives that it manages; copies you make elsewhere are outside that limit. |
-| System notifications | Turn and job notices use generic completion or failure copy without session names, user text, job contents, or error details; update notices include the available version. The operating system handles them locally without a DSH Desktop remote-push service. Notification history or cross-device synchronization depends on your system account settings. |
+| System notifications | Turn and job notices use generic completion or failure copy without session names, user text, job contents, or error details; update notices include the available version. The operating system handles them locally without a 易宝工坊 remote-push service. Notification history or cross-device synchronization depends on your system account settings. |
 | Installation UUID | Stored as described in Section 3 and sent to the official update endpoint during a version check. |
 
 Credential masking reduces risk but cannot guarantee that a log or diagnostic archive contains no sensitive information. Review an archive and remove information you do not want a recipient to see before sharing it.
@@ -116,7 +116,7 @@ Uninstalling the application may leave Electron user data, the DSH home, profile
 
 ## 6. Third-party services you choose
 
-DSH Desktop is a composable plugin platform. The following transfers are triggered by services, sources, plugins, or actions you choose. Each recipient processes information under its own privacy terms.
+易宝工坊 is a composable plugin platform. The following transfers are triggered by services, sources, plugins, or actions you choose. Each recipient processes information under its own privacy terms.
 
 ### 6.1 Model and tool services
 
@@ -211,7 +211,7 @@ We do not make decisions with legal or similarly significant effects about you s
 
 ## 12. Children
 
-DSH Desktop is a tool for developers and people able to manage a local computing environment and is not directed specifically to children. Minors should use it with a guardian's guidance. If you believe we processed a child's personal data without satisfying applicable requirements, contact us so that we can investigate and take appropriate action.
+易宝工坊 is a tool for developers and people able to manage a local computing environment and is not directed specifically to children. Minors should use it with a guardian's guidance. If you believe we processed a child's personal data without satisfying applicable requirements, contact us so that we can investigate and take appropriate action.
 
 ## 13. Changes to this policy
 

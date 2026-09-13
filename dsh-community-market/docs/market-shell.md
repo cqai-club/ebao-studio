@@ -2,7 +2,7 @@
 
 [中文说明](market-shell.zh.md)
 
-Status: delivered and built into DSH Desktop.
+Status: delivered and built into 易宝工坊.
 
 ## Ownership
 

@@ -11,8 +11,8 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
   const removeMountPoint = vi.fn()
   const value: MacReleaseVerificationOptions = {
     distDir: '/release/dist',
-    productName: 'DSH Desktop Beta',
-    listDmgs: () => ['/release/dist/DSH-Desktop-Beta-2.0.0-universal.dmg'],
+    productName: '易宝工坊 Beta',
+    listDmgs: () => ['/release/dist/易宝工坊-Beta-2.0.0-universal.dmg'],
     makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
@@ -24,28 +24,28 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
 describe('macOS release artifact verification', () => {
   it('mounts one DMG and verifies signature, Gatekeeper, and the stapled ticket', () => {
     const harness = options()
-    const appPath = join('/private/tmp/dsh-desktop-dmg-test', 'DSH Desktop Beta.app')
+    const appPath = join('/private/tmp/dsh-desktop-dmg-test', '易宝工坊 Beta.app')
 
     expect(verifyMacRelease(harness.value)).toEqual({
       appPath,
-      dmgPath: '/release/dist/DSH-Desktop-Beta-2.0.0-universal.dmg',
+      dmgPath: '/release/dist/易宝工坊-Beta-2.0.0-universal.dmg',
     })
 
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
         args: [
-          'attach', '/release/dist/DSH-Desktop-Beta-2.0.0-universal.dmg',
+          'attach', '/release/dist/易宝工坊-Beta-2.0.0-universal.dmg',
           '-mountpoint', '/private/tmp/dsh-desktop-dmg-test', '-nobrowse', '-readonly',
         ],
       },
       {
         command: 'lipo',
-        args: [join(appPath, 'Contents', 'MacOS', 'DSH Desktop Beta'), '-verify_arch', 'x86_64'],
+        args: [join(appPath, 'Contents', 'MacOS', '易宝工坊 Beta'), '-verify_arch', 'x86_64'],
       },
       {
         command: 'lipo',
-        args: [join(appPath, 'Contents', 'MacOS', 'DSH Desktop Beta'), '-verify_arch', 'arm64'],
+        args: [join(appPath, 'Contents', 'MacOS', '易宝工坊 Beta'), '-verify_arch', 'arm64'],
       },
       ...MACOS_UNIVERSAL_NATIVE_ENTRIES.map(entry => ({
         command: 'lipo',

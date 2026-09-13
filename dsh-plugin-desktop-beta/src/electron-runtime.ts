@@ -70,6 +70,7 @@ import {
   FileMainWindowStateStore,
   type MainWindowStateStore,
 } from './main-window-state.ts'
+import { DESKTOP_LOGIN_COMPLETION_URL } from './desktop-protocol.ts'
 
 /**
  * Read the desktop package version instead of Electron's development-app version.
@@ -94,10 +95,11 @@ const PRODUCT_VERSION = desktopProductVersion()
 /** Main-process deadline for one Renderer generation to settle its client Loader. */
 export const RENDERER_BOOT_TIMEOUT_MS = 30_000
 
-/** Native adapter used by the DSH Desktop launcher and owned by its Cordis shell plugin. */
+/** Native adapter used by the 易宝工坊 launcher and owned by its Cordis shell plugin. */
 export class ElectronDesktopRuntime implements DesktopRuntime {
   readonly platform: DesktopPlatform
   readonly windowsBuild: number | undefined
+  readonly loginCompletionUrl = DESKTOP_LOGIN_COMPLETION_URL
   private readonly platformStrategy: ElectronPlatformStrategy
   readonly updates: DesktopUpdateAdapter
 
@@ -301,6 +303,20 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   /** @inheritdoc */
   notifyAttention(notification: DesktopNotification): void {
     this.generation?.notifyAttention(notification)
+  }
+
+  /** @inheritdoc */
+  async openExternal(target: string): Promise<void> {
+    let url: URL
+    try {
+      url = new URL(target)
+    } catch {
+      throw new TypeError('dsh-plugin-desktop: external target must be an absolute URL')
+    }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      throw new TypeError('dsh-plugin-desktop: external target must use HTTP(S)')
+    }
+    await shell.openExternal(url.href)
   }
 
   /** @inheritdoc */

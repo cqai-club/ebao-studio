@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-DSH Desktop 需要原生应用生命周期，同时兼容模式必须保持未经修改的官方 Web 呈现。由于高级模式使用 desktop 自有呈现，该 package 仍需发布 Client face；但在兼容模式下加载同一 artifact 时，安全路径不能依赖产品自有 root、layout、sidebar 或样式。
+易宝工坊 需要原生应用生命周期，同时兼容模式必须保持未经修改的官方 Web 呈现。由于高级模式使用 desktop 自有呈现，该 package 仍需发布 Client face；但在兼容模式下加载同一 artifact 时，安全路径不能依赖产品自有 root、layout、sidebar 或样式。
 
 ## Decision
 
@@ -32,7 +32,7 @@ Cordis disposal 会先释放 Client effect、Host row、托盘与窗口；仅当
 
 ## Native lifecycle and security
 
-兼容适配器创建普通 `BrowserWindow`，并且不设置自定义边框、标题栏、透明、vibrancy 或原生材质选项。macOS 会阻止可见页面标题更新。Windows 保留原生标题栏图标与固定的 `DeepSeek Harness Desktop` 标题，同时移除窗口菜单栏。原生标题栏颜色与外观由操作系统拥有。
+兼容适配器创建普通 `BrowserWindow`，并且不设置自定义边框、标题栏、透明、vibrancy 或原生材质选项。macOS 会阻止可见页面标题更新。Windows 保留原生标题栏图标与固定的 `易宝工坊` 标题，同时移除窗口菜单栏。原生标题栏颜色与外观由操作系统拥有。
 
 Windows 与 Linux 保持使用未经修改的 iOS Default 应用图标。macOS 使用构建派生且带透明视觉边距的副本；打包、运行中的 Dock 与窗口 spec 都使用同一个按平台选择的路径。托盘在 macOS 使用由品牌 SVG 派生的模板图，在 Windows 与 Linux 使用固定品牌蓝图。兼容模式仍保留 renderer 隔离、Chromium sandbox、禁用 Node integration、精确同源导航、托盘所有权、关闭后隐藏、单实例唤醒，以及显式退出时有界 dispose Cordis 的行为。
 

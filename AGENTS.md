@@ -1,4 +1,4 @@
-# DSH Desktop repository rules
+# 易宝工坊 repository rules
 
 This repository owns the desktop product around an unmodified DeepSeek Harness checkout.
 

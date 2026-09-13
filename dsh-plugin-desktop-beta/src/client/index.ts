@@ -13,7 +13,7 @@ import { startRendererBootReporter } from './boot-health.ts'
 import { applyDesktopBrand } from './desktop-brand.tsx'
 import { applyDesktopSettings } from './desktop-settings.ts'
 import { installDesktopDirectoryPickerBridge } from './directory-picker.ts'
-import { parseDesktopClientEnvironment } from './environment.ts'
+import { desktopDeveloperActionsEnabled, parseDesktopClientEnvironment } from './environment.ts'
 import { applyExtendedShell } from './extended-shell.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
 
@@ -55,7 +55,7 @@ export {
   startRendererBootReporter,
 } from './boot-health.ts'
 export type { RendererBootLoader, RendererBootReport } from './boot-health.ts'
-export { parseDesktopClientEnvironment } from './environment.ts'
+export { desktopDeveloperActionsEnabled, parseDesktopClientEnvironment } from './environment.ts'
 export type {
   DesktopClientEnvironment,
   DesktopClientMaterial,
@@ -90,7 +90,11 @@ export function apply(ctx: ClientContext): void {
     () => provideDesktopWindow(ctx, desktopWindowService(environment)),
     'dsh-plugin-desktop: native window geometry service',
   )
-  const desktopSettings = applyDesktopSettings(ctx, environment)
+  const desktopSettings = applyDesktopSettings(
+    ctx,
+    environment,
+    desktopDeveloperActionsEnabled(window.location.search),
+  )
   ctx.effect(
     () => startRendererBootReporter(ctx.loader),
     'dsh-plugin-desktop: renderer boot health report',

@@ -6,9 +6,7 @@ import type { SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps } from '@de
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import {
   DESKTOP_BRAND_MARK_DATA_URI,
-  DESKTOP_BRAND_NAME,
   DESKTOP_BRAND_NAME_DATA_URI,
-  DESKTOP_BRAND_WORDMARK_DATA_URI,
 } from './desktop-brand-assets.ts'
 
 /** Lower priorities render first, so the desktop product owns the brand slots. */
@@ -44,23 +42,6 @@ export function DesktopBrandName(_props: SidebarBrandNameOwnerProps) {
     src={DESKTOP_BRAND_NAME_DATA_URI}
     style={{ display: 'block', flex: '0 1 auto', width: 'auto', maxWidth: '100%', height: 24, objectFit: 'contain' }}
     alt=""
-  />
-}
-
-export interface DesktopBrandWordmarkProps {
-  readonly className?: string
-  /** Keep the titlebar artwork discoverable to assistive technology. */
-  readonly decorative?: boolean
-}
-
-/** Render the complete supplied wordmark for desktop-owned chrome. */
-export function DesktopBrandWordmark({ className, decorative = false }: DesktopBrandWordmarkProps) {
-  return <img
-    aria-hidden={decorative ? 'true' : undefined}
-    className={withClassName('dshDesktopFrameProductLogo', className)}
-    draggable={false}
-    src={DESKTOP_BRAND_WORDMARK_DATA_URI}
-    alt={decorative ? '' : DESKTOP_BRAND_NAME}
   />
 }
 

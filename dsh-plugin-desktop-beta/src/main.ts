@@ -1,4 +1,4 @@
-/** DSH Desktop executable: minimal Electron bootstrap around the Host Cordis root. */
+/** 易宝工坊 executable: minimal Electron bootstrap around the Host Cordis root. */
 
 import { startIsolatedDesktopHost } from './host-process.ts'
 import { app, crashReporter, safeStorage, shell } from 'electron'
@@ -205,6 +205,11 @@ import {
   DESKTOP_RELEASE_CHANNEL,
 } from './product-identity.ts'
 import { desktopRecoveryCopy } from './recovery-copy.ts'
+import {
+  desktopProtocolRegistrationFailureMessage,
+  isDesktopActivationUrl,
+  registerDesktopProtocolClient,
+} from './desktop-protocol.ts'
 
 const BIN_NAME = DESKTOP_PACKAGE_NAME
 const PRODUCT_NAME = DESKTOP_PRODUCT_NAME
@@ -389,6 +394,16 @@ async function start(): Promise<void> {
     app.quit()
     return
   }
+  if (!registerDesktopProtocolClient(app)) {
+    process.stderr.write(`${desktopProtocolRegistrationFailureMessage()}\n`)
+  }
+
+  let activateFromProtocol: (() => void) | undefined
+  app.on('open-url', (event, target) => {
+    if (!isDesktopActivationUrl(target)) return
+    event.preventDefault()
+    activateFromProtocol?.()
+  })
 
   let shutdown: DesktopShutdown | undefined
   let removeShutdownRequests: (() => void) | undefined
@@ -617,6 +632,9 @@ async function start(): Promise<void> {
       return true
     }
     return false
+  }
+  activateFromProtocol = () => {
+    if (!showPreHostSurface()) runtime.show()
   }
   app.on('activate', () => { showPreHostSurface() })
   if (process.platform === 'darwin') app.on('did-become-active', () => { showPreHostSurface() })
