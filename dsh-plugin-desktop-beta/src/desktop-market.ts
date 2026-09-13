@@ -52,7 +52,13 @@ export interface DesktopMarketSnapshot {
   readonly legacyDefaulted: boolean
 }
 
-const DEFAULT_SNAPSHOT: DesktopMarketSnapshot = Object.freeze({
+const PRODUCT_DEFAULT_SNAPSHOT: DesktopMarketSnapshot = Object.freeze({
+  requested: 'community-market',
+  effective: 'community-market',
+  legacyDefaulted: true,
+})
+
+const FAIL_SAFE_SNAPSHOT: DesktopMarketSnapshot = Object.freeze({
   requested: 'disabled',
   effective: 'disabled',
   legacyDefaulted: true,
@@ -153,8 +159,10 @@ export function readDesktopMarketState(statePath: string): DesktopMarketSnapshot
   assertDesktopMarketStatePath(statePath)
   try {
     return snapshot(parseDesktopMarketState(readRawState(statePath)).requested, false)
-  } catch {
-    return DEFAULT_SNAPSHOT
+  } catch (cause) {
+    return (cause as NodeJS.ErrnoException).code === 'ENOENT'
+      ? PRODUCT_DEFAULT_SNAPSHOT
+      : FAIL_SAFE_SNAPSHOT
   }
 }
 

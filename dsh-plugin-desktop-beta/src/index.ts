@@ -245,6 +245,7 @@ export function apply(ctx: Context, config: Config): void {
   const iconPath = fileURLToPath(new URL(`../build/${iconFilename}`, import.meta.url))
   const trayIcons = {
     templatePath: fileURLToPath(new URL('../build/tray-iconTemplate.png', import.meta.url)),
+    whitePath: fileURLToPath(new URL('../build/tray-icon-white.png', import.meta.url)),
     bluePath: fileURLToPath(new URL('../build/tray-icon-blue.png', import.meta.url)),
   }
   const settings = ctx.settings.register(

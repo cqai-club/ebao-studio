@@ -40,6 +40,8 @@ Renderer 在安装时不会提交 package name 或 package-manager 命令，只�
 
 任何人都可以发布符合公开 [`catalog-source`](docs/schemas/catalog-source.schema.json) 与 [`catalog-provider-page`](docs/schemas/catalog-provider-page.schema.json) 合同的来源；现有 API 也可以通过经过审查的本地 adapter 接入。远端数据会在 Client 看到前完成标准化，provider 命令永远不会被展示或执行。
 
+本地产品策略可以声明一个标准 Manifest URL 作为首次使用默认值。只有来源配置从未初始化且为空时，Host 才会校验并选择它。已有来源，以及用户后续的选择、禁用或删除始终优先，绝不会被自动覆盖或恢复。
+
 [DSH 1024Store](https://github.com/imsai-sh/awesome-deepseek-harness-plugins) 是可选合作来源。Desktop 使用当前分页的 `/api/v2/plugins` 目录完成浏览、搜索、排序和分类，不再依赖冻结在 500 条的 v1 兼容 feed。v2 命令绝不会被执行：只有严格匹配纯文本 `dsh plugin --profile … add <npm-package>` 的形状才会贡献 npm package 身份，安装 preview 仍以 npm `latest` 为版本权威。仅有 GitHub 目标的条目保持可浏览，但不会被标成可自动安装。
 
 [dshfind](https://dshfind.com) 是另一个可选合作来源。它的 adapter 会遍历带版本的 REST 页面，并从结构化字段标准化 npm 身份，不执行 provider 命令。Provider 版本只作信息展示；自动安装仍然解析 npm `latest`。

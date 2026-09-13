@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   type DsnAccountSnapshot,
   type DsnTopUpHistory,
@@ -85,6 +85,15 @@ const zh = {
   billingTab: '充值',
   configurationError: '当前插件尚未完成管理员配置。',
   unavailable: '账号服务暂时不可用。',
+  onboardingTitle: '登录 CQAI Club',
+  onboardingDescription: '优先连接 CQAI Club，登录后会自动加载会员模型与额度。仅当你仍在使用出厂默认模型时，才会切换到推荐的 CQAI 模型。',
+  onboardingCloudModels: '使用 CQAI Club 账号提供的模型与额度',
+  onboardingPreserveChoice: '保留你已经设置的其他默认模型',
+  onboardingLater: '稍后登录',
+  onboardingPreparing: '正在准备 CQAI Club 模型…',
+  onboardingReady: '登录成功，正在进入应用…',
+  onboardingRetry: '重试模型准备',
+  onboardingContinue: '继续使用其他模型',
   ...modelsSettingsZh,
 } as const
 
@@ -144,6 +153,15 @@ const en: Record<keyof typeof zh, string> = {
   billingTab: 'Add funds',
   configurationError: 'The administrator has not finished configuring this plugin.',
   unavailable: 'The account service is temporarily unavailable.',
+  onboardingTitle: 'Sign in to CQAI Club',
+  onboardingDescription: 'Connect CQAI Club first to load your membership models and quota. The recommended CQAI model replaces only the untouched factory default.',
+  onboardingCloudModels: 'Use models and quota provided by your CQAI Club account',
+  onboardingPreserveChoice: 'Keep any other default model you already selected',
+  onboardingLater: 'Sign in later',
+  onboardingPreparing: 'Preparing CQAI Club models…',
+  onboardingReady: 'Signed in. Opening the app…',
+  onboardingRetry: 'Retry model setup',
+  onboardingContinue: 'Continue with another model',
   ...modelsSettingsEn,
 }
 
@@ -154,6 +172,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 type AccountSettingsSectionProps = PropsRuntime<'settings.section'> & PropsLocale<typeof NS> & {
+  readonly accountContext: ClientContext
+}
+type AccountOnboardingProps = PropsRuntime<'settings.onboarding'> & PropsLocale<typeof NS> & {
   readonly accountContext: ClientContext
 }
 type AccountTranslator = AccountSettingsSectionProps['t']
@@ -476,6 +497,203 @@ function statusPresentation(snapshot: DsnAccountSnapshot | undefined): {
   return { dot: 'idle', tone: 'neutral', key: 'signedOut' }
 }
 
+const ignoreOnboardingDismiss = (): void => {}
+
+function CqaiAccountOnboarding({ complete, t, accountContext: ctx }: AccountOnboardingProps) {
+  const [snapshot, setSnapshot] = useState<DsnAccountSnapshot>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  const completed = useRef(false)
+  const loginStarted = useRef(false)
+  const preparing = useRef(false)
+  const autoPrepareStarted = useRef(false)
+  const titleRef = useRef<HTMLHeadingElement | null>(null)
+  const onboardingVisible = snapshot !== undefined
+
+  const completeStep = useCallback(() => {
+    if (completed.current) return
+    completed.current = true
+    complete()
+  }, [complete])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void rpcCall<DsnAccountSnapshot>(ctx, 'snapshot/get', {}, controller.signal).then((next) => {
+      if (!controller.signal.aborted) setSnapshot(next)
+    }).catch(() => {
+      // A missing Host RPC must not indefinitely own the ordered onboarding
+      // slot. Continue to the next model setup step without painting chrome.
+      if (!controller.signal.aborted) completeStep()
+    })
+    return () => { controller.abort() }
+  }, [completeStep, ctx])
+
+  useEffect(() => {
+    if (snapshot?.state !== 'authorizing') return
+    let active = true
+    let timer: number | undefined
+    const poll = async () => {
+      try {
+        const next = await rpcCall<DsnAccountSnapshot>(ctx, 'snapshot/get', {})
+        if (active) {
+          setSnapshot(next)
+          setError(undefined)
+        }
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        if (active) timer = window.setTimeout(() => { void poll() }, 500)
+      }
+    }
+    void poll()
+    return () => {
+      active = false
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [ctx, snapshot?.state])
+
+  useEffect(() => {
+    if (!onboardingVisible) return
+    const appRoot = document.getElementById('root')
+    if (appRoot === null) return
+    const previous = appRoot.inert
+    appRoot.inert = true
+    return () => { appRoot.inert = previous }
+  }, [onboardingVisible])
+
+  useEffect(() => {
+    if (onboardingVisible) titleRef.current?.focus()
+  }, [onboardingVisible])
+
+  const prepareSignedInAccount = useCallback(async () => {
+    if (preparing.current || completed.current) return
+    preparing.current = true
+    setBusy(true)
+    setError(undefined)
+    let finished = false
+    try {
+      if (loginStarted.current) {
+        await rpcCall(ctx, 'models/default/adopt-onboarding', {})
+      }
+      finished = true
+      completeStep()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      preparing.current = false
+      if (!finished) setBusy(false)
+    }
+  }, [completeStep, ctx])
+
+  useEffect(() => {
+    if (snapshot?.state !== 'signed-in' || autoPrepareStarted.current) return
+    autoPrepareStarted.current = true
+    void prepareSignedInAccount()
+  }, [prepareSignedInAccount, snapshot?.state])
+
+  if (snapshot === undefined) return null
+
+  const startLogin = async () => {
+    loginStarted.current = true
+    autoPrepareStarted.current = false
+    setBusy(true)
+    setError(undefined)
+    try {
+      setSnapshot(await rpcCall<DsnAccountSnapshot>(ctx, 'authorization/start', {}))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const cancelLogin = async (leaveOnboarding: boolean) => {
+    if (snapshot.state !== 'authorizing') {
+      if (leaveOnboarding) completeStep()
+      return
+    }
+    setBusy(true)
+    setError(undefined)
+    let finished = false
+    try {
+      const next = await rpcCall<DsnAccountSnapshot>(ctx, 'authorization/cancel', { attemptId: snapshot.attemptId })
+      setSnapshot(next)
+      if (leaveOnboarding) {
+        finished = true
+        completeStep()
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      if (!finished) setBusy(false)
+    }
+  }
+
+  const authorizationUrl = snapshot.state === 'authorizing' ? snapshot.authorizationUrl : undefined
+  const displayError = error ?? snapshotMessage(snapshot, t)
+  const signedIn = snapshot.state === 'signed-in'
+
+  return (
+    <Modal open title={t('onboardingTitle')} onClose={ignoreOnboardingDismiss} headless>
+      <div style={{ display: 'grid', gap: 20, padding: '28px 28px 4px', color: 'var(--dsw-alias-label-primary, #18202a)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: 48, height: 48, flex: 'none', borderRadius: 15, background: 'linear-gradient(145deg, #1268dc, #6047c9)', color: '#fff', boxShadow: '0 8px 22px rgba(40, 91, 200, .24)', fontSize: 15, fontWeight: 750 }}>CQ</div>
+          <div>
+            <h2 ref={titleRef} tabIndex={-1} style={{ margin: 0, outline: 'none', fontSize: 20, lineHeight: 1.3 }}>{t('onboardingTitle')}</h2>
+            <p style={{ ...mutedTextStyle, margin: '5px 0 0', fontSize: 13 }}>{t('onboardingDescription')}</p>
+          </div>
+        </div>
+
+        {snapshot.state === 'authorizing' ? (
+          <div style={{ ...insetStyle, display: 'grid', justifyItems: 'center', gap: 9, padding: 20, textAlign: 'center' }}>
+            <StateDot state="ongoing" size={20} />
+            <strong style={{ fontSize: 14 }}>{t('waitingTitle')}</strong>
+            <span style={{ ...mutedTextStyle, fontSize: 12 }}>{t('waitingDescription')}</span>
+          </div>
+        ) : signedIn ? (
+          <div style={{ ...insetStyle, display: 'flex', alignItems: 'center', gap: 10, padding: 16 }} role="status">
+            <StateDot state={displayError === undefined ? 'ongoing' : 'warning'} />
+            <span style={{ ...mutedTextStyle, fontSize: 13 }}>{busy ? t('onboardingPreparing') : t('onboardingReady')}</span>
+          </div>
+        ) : (
+          <div style={{ ...insetStyle, display: 'grid', gap: 12, padding: '15px 16px' }}>
+            {[t('onboardingCloudModels'), t('onboardingPreserveChoice')].map((item, index) => (
+              <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 13 }}>
+                <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: 22, height: 22, flex: 'none', borderRadius: '50%', background: 'var(--dsw-alias-bg-layer-2, #fff)', color: 'var(--dsw-alias-state-business-primary, #2f6fda)', fontSize: 11, fontWeight: 700 }}>{index + 1}</span>
+                {item}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {displayError !== undefined ? (
+          <div role="alert" style={{ padding: '10px 12px', borderRadius: 9, background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary, #c63131) 8%, transparent)', color: 'var(--dsw-alias-state-error-primary, #b42318)', fontSize: 13, lineHeight: 1.5 }}>{displayError}</div>
+        ) : null}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+          {snapshot.state === 'authorizing' ? (
+            <>
+              <Button variant="ghost" disabled={busy} onClick={() => { void cancelLogin(true) }}>{t('onboardingLater')}</Button>
+              <Button variant="outline" disabled={busy} onClick={() => { void cancelLogin(false) }}>{t('cancel')}</Button>
+              <Button variant="primary" icon={<BrowserIcon />} disabled={busy || authorizationUrl === undefined} onClick={() => { if (authorizationUrl !== undefined) void window.open(authorizationUrl, '_blank', 'noopener,noreferrer') }}>{t('openLogin')}</Button>
+            </>
+          ) : signedIn && displayError !== undefined ? (
+            <>
+              <Button variant="outline" disabled={busy} onClick={completeStep}>{t('onboardingContinue')}</Button>
+              <Button variant="primary" disabled={busy} onClick={() => { void prepareSignedInAccount() }}>{t('onboardingRetry')}</Button>
+            </>
+          ) : signedIn ? null : (
+            <>
+              <Button variant="ghost" disabled={busy} onClick={completeStep}>{t('onboardingLater')}</Button>
+              <Button variant="primary" icon={<BrowserIcon />} disabled={busy} onClick={() => { void startLogin() }}>{busy ? t('openingBrowser') : t('login')}</Button>
+            </>
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function AccountSettingsTab({ t, accountContext: ctx }: AccountSettingsSectionProps) {
   const [snapshot, setSnapshot] = useState<DsnAccountSnapshot>()
   const [activeSection, setActiveSection] = useState<SignedInSection>('account')
@@ -687,6 +905,14 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({ accountContext: ctx }),
   }, (props) => <AccountSettingsTab {...props} />))
+
+  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
+    name: 'settings.onboarding',
+    id: 'cqaiclub-account',
+    order: -50,
+    locale: NS,
+    inject: () => ({ accountContext: ctx }),
+  }, (props) => <CqaiAccountOnboarding {...props} />))
 
   ctx.slots.inject('settings.models.footer', () => ctx.slots.register({
     name: 'settings.models.footer',

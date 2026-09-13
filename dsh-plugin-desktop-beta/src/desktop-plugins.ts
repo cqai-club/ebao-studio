@@ -44,6 +44,7 @@ const IMMUTABLE_BUNDLES = new Set([
   '@deepseek-ai/dsh-desktop-app',
   ...DESKTOP_PACKAGE_NAMES,
   '@cqaiclub/dsn-account',
+  'cqai-dsh-plugin-market',
   'dsh-community-market',
 ])
 

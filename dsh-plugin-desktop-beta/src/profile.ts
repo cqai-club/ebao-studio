@@ -92,7 +92,8 @@ const BIN_NAME = DESKTOP_PACKAGE_NAME
 const REQUIRED_BUNDLES = requiredWebBundles()
 const REQUIRED_BUNDLE_SET = new Set(REQUIRED_BUNDLES)
 const CQAI_ACCOUNT_PACKAGE = '@cqaiclub/dsn-account'
-const DEFAULT_PRODUCT_BUNDLES = [CQAI_ACCOUNT_PACKAGE] as const
+const CQAI_MARKET_PACKAGE = 'cqai-dsh-plugin-market'
+const DEFAULT_PRODUCT_BUNDLES = [CQAI_ACCOUNT_PACKAGE, CQAI_MARKET_PACKAGE] as const
 const DEFAULT_PRODUCT_BUNDLE_SET = new Set<string>(DEFAULT_PRODUCT_BUNDLES)
 const OFFICIAL_DEEPSEEK_LLM_ROW_ID = 'llm-deepseek'
 const OFFICIAL_DEEPSEEK_LLM_PACKAGE = '@deepseek-ai/dsh-llm-deepseek'
@@ -124,8 +125,8 @@ const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
 const UI_CONVERSATION_PACKAGE = '@deepseek-ai/dsh-client-ui-conversation'
 const DEFAULT_DESKTOP_MARKET_SNAPSHOT: DesktopMarketSnapshot = Object.freeze({
-  requested: 'disabled',
-  effective: 'disabled',
+  requested: 'community-market',
+  effective: 'community-market',
   legacyDefaulted: true,
 })
 const MARKET_ROW_IDS: ReadonlySet<string> = new Set([

@@ -16,7 +16,7 @@ function loadTrayIcon(path: string): NativeImage {
 
 /**
  * Load the tray images required by one native platform.
- * @param assets - generated template and brand-color asset paths.
+ * @param assets - generated platform-specific tray asset paths.
  * @param platform - current Electron platform.
  * @returns the image passed to the Tray constructor.
  */
@@ -29,5 +29,6 @@ export function prepareTrayIcon(
     template.setTemplateImage(true)
     return template
   }
+  if (platform === 'win32') return loadTrayIcon(assets.whitePath)
   return loadTrayIcon(assets.bluePath)
 }

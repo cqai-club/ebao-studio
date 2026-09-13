@@ -44,7 +44,9 @@ export interface DesktopWindowConfig {
 export interface DesktopTrayIcons {
   /** Black macOS template image with its Retina representation beside it. */
   templatePath: string
-  /** Brand-blue Windows/Linux image with DPI representations beside it. */
+  /** White Windows notification-area image with DPI representations beside it. */
+  whitePath: string
+  /** Brand-blue Linux image with DPI representations beside it. */
   bluePath: string
 }
 

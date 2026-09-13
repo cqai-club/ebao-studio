@@ -210,8 +210,10 @@ describe('published package surface', () => {
     expect(readFileSync(new URL('cordis.patch.yml', packageRoot), 'utf8')).toContain('name: dsh-plugin-desktop-beta/updates')
   })
 
-  it('pins both selectable Market providers in the published runtime', () => {
+  it('pins the CQAI defaults and both selectable Market providers in the published runtime', () => {
     expect(manifest.dependencies).toMatchObject({
+      '@cqaiclub/dsn-account': '0.1.1',
+      'cqai-dsh-plugin-market': '0.1.0',
       'dsh-community-market': '0.1.0-dev.0',
       dshmarket: '1.38.1',
     })
@@ -857,15 +859,22 @@ describe('published package surface', () => {
       'build/tray-iconTemplate@2x.png',
       'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**',
     ])
-    const windowsAndLinuxIcons = [
+    const windowsIcons = [
+      'build/app-icon.png',
+      'build/tray-icon-white.png',
+      'build/tray-icon-white@1.25x.png',
+      'build/tray-icon-white@1.5x.png',
+      'build/tray-icon-white@2x.png',
+    ]
+    const linuxIcons = [
       'build/app-icon.png',
       'build/tray-icon-blue.png',
       'build/tray-icon-blue@1.25x.png',
       'build/tray-icon-blue@1.5x.png',
       'build/tray-icon-blue@2x.png',
     ]
-    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsAndLinuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**'])
-    expect(manifest.build?.linux?.asarUnpack).toEqual([...windowsAndLinuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**'])
+    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**'])
+    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**'])
     expect(manifest.build?.electronFuses).toEqual({
       enableEmbeddedAsarIntegrityValidation: true,
       onlyLoadAppFromAsar: true,
@@ -921,6 +930,8 @@ describe('published package surface', () => {
   it('separates unsigned smoke packaging from the signed macOS release', () => {
     const packageDir = readFileSync(new URL('scripts/package-dir.mjs', packageRoot), 'utf8')
 
+    expect(manifest.scripts?.build).toContain('yarn workspace @cqaiclub/dsn-account build')
+    expect(manifest.scripts?.build).toContain('yarn workspace cqai-dsh-plugin-market build')
     expect(manifest.scripts?.build).toContain('node scripts/generate-mac-app-icon.mjs')
     expect(manifest.scripts?.['prepare:electron-native']).toBe('node scripts/prepare-fs-ext.ts')
     expect(manifest.scripts?.dev).toContain('yarn run prepare:electron-native')
@@ -1052,6 +1063,10 @@ describe('published package surface', () => {
       'tray-icon-blue@1.25x.png',
       'tray-icon-blue@1.5x.png',
       'tray-icon-blue@2x.png',
+      'tray-icon-white.png',
+      'tray-icon-white@1.25x.png',
+      'tray-icon-white@1.5x.png',
+      'tray-icon-white@2x.png',
     ]) {
       expect(readFileSync(new URL(`build/${filename}`, packageRoot)).byteLength).toBeGreaterThan(0)
     }

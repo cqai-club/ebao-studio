@@ -12,14 +12,19 @@ import type {
   ConnectionRpcResult,
   HostConnectionHandle,
 } from '@deepseek-ai/dsh-client-connection'
-import { CqaiClubAdapter, CQAI_PROVIDER } from './llm-adapter.ts'
+import { CQAI_PROVIDER } from './llm-adapter.ts'
 
 import { AccountServiceClient, AccountServiceError } from './account-service.ts'
 import { launchTopUpPayment } from './payment-launch.ts'
+import {
+  mayAdoptCqaiOnboardingDefault,
+  preferredCqaiOnboardingModel,
+} from './onboarding.ts'
 import { Config, normalizeConfig } from './config.ts'
 import { DsnAccountError, errorCodeOf, safeErrorMessage } from './errors.ts'
 import { openLoopbackCallbackServer, type LoopbackCallbackServer } from './loopback-callback.ts'
 import { OidcClient, Prompt, type AuthorizationRequest, type TokenResponse } from './oidc.ts'
+import { bindCqaiModelRoute } from './route-registration.ts'
 import {
   CREDENTIAL_ID,
   CREDENTIAL_SCOPE,
@@ -356,6 +361,21 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     return next
   }
 
+  private async adoptOnboardingDefaultModel(signal?: AbortSignal): Promise<DsnDefaultModelSelection> {
+    const current = await this.getDefaultModel()
+    if (!mayAdoptCqaiOnboardingDefault(current)) return current
+
+    const catalog = await this.listModels({ refresh: true, signal })
+    const model = preferredCqaiOnboardingModel(catalog.models)
+    if (model === undefined) {
+      throw new DsnAccountError('DSN_MODEL_UNAVAILABLE', '当前 CQAI Club 账号没有可用的对话模型。')
+    }
+
+    const next: DsnDefaultModelSelection = { provider: CQAI_PROVIDER, model }
+    await this.agentDefaultModel.saveSelection(next)
+    return next
+  }
+
   async getCategoryDefaultModels(): Promise<DsnCategoryDefaultModels> {
     const current = this.agentDefaultModel.currentCategorySelections()
     const categories: Partial<Record<DsnDefaultModelCategory, DsnDefaultModelSelection>> = {}
@@ -542,6 +562,11 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
           return ok(await this.getDefaultModel())
         case 'models/default/set':
           return ok(await this.setDefaultModel(readRequiredText(isObject(payload) ? payload.model : undefined, '默认模型')))
+        case 'models/default/adopt-onboarding': {
+          const selection = await this.adoptOnboardingDefaultModel(signal)
+          ;(this.root as unknown as { emit(event: string): void }).emit('dsn-account/models-updated')
+          return ok(selection)
+        }
         case 'models/category-defaults/get':
           return ok(await this.getCategoryDefaultModels())
         case 'models/category-defaults/set': {
@@ -1012,14 +1037,8 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
 }
 
 export function apply(ctx: Context, config?: Partial<DsnAccountConfig>): void {
-  new DsnAccountServiceRuntime(ctx, config)
-  const registration = ctx.llm.registerAdapter([CQAI_PROVIDER], new CqaiClubAdapter(ctx.dsnAccount))
-  // Login/logout and re-authentication change the dynamic model catalog. A
-  // route replacement emits DSH's catalog invalidation event, so the existing
-  // selector refreshes without a page reload or a manually maintained model list.
-  const refreshRegistration = () => registration.replace([CQAI_PROVIDER])
-  ctx.on('dsn-account/changed', refreshRegistration)
-  ctx.on('dsn-account/models-updated', refreshRegistration)
+  const runtime = new DsnAccountServiceRuntime(ctx, config)
+  bindCqaiModelRoute(ctx, runtime)
 }
 
 function readGrantPayload(record: CredentialRecord | undefined): GrantPayload | undefined {

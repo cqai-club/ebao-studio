@@ -35,6 +35,7 @@ import { DSHFIND_ADAPTER_ID, DSHFIND_HOSTNAME } from '../adapters/dshfind.js'
 import { assertStandardSourceTrustRoot } from '../adapters/standard-http.js'
 import { BUILT_IN_PROVIDERS, DefaultCatalogService, type CatalogFetchScope, type CatalogFullIndex } from '../catalog/service.js'
 import { SettingsCatalogSourceStore, type MarketCatalogCache, type MarketSettingsDocument } from '../catalog/source-store.js'
+import { initializeMarketDefaultSource } from '../catalog/default-source.js'
 import { MARKET_MEDIA_ASSET_REF_PATTERN } from '../media/ref.js'
 import { createRestrictedImageFetcher } from '../media/restricted-image.js'
 import { createMarketMediaService } from '../media/service.js'
@@ -56,6 +57,7 @@ const SOURCE_SCHEMA = z.object({
 })
 const SETTINGS_SCHEMA = z.object({
   sources: z.array(SOURCE_SCHEMA).default([]),
+  defaultSourceApplied: z.boolean(),
   catalogCache: z.object({
     version: z.number().step(1),
     sourceRecordId: z.string(),
@@ -623,26 +625,36 @@ async function mutateSources(
   }
   validateLocalSourceRecords(records)
   signal.throwIfAborted()
-  await store.save(records)
+  await store.save(records, { markDefaultSourceApplied: true })
   for (const sourceRecordId of unavailableSourceRecordIds) onUnavailable?.(sourceRecordId)
+}
+
+export type MarketSourceOperationScheduler = <T>(operation: () => Promise<T>) => Promise<T>
+
+/** Serialize source initialization and user mutations into one settings write lane. */
+export function createMarketSourceOperationScheduler(): MarketSourceOperationScheduler {
+  let tail = Promise.resolve()
+  return <T>(operation: () => Promise<T>): Promise<T> => {
+    const pending = tail.then(operation)
+    tail = pending.then(() => {}, () => {})
+    return pending
+  }
 }
 
 export function createMarketSourceMutator(
   scope: SettingsScope<MarketSettingsDocument>,
   onUnavailable?: (sourceRecordId: string) => void,
   readManifest?: (manifestUrl: string, signal: AbortSignal) => Promise<CatalogSourceManifest>,
+  schedule: MarketSourceOperationScheduler = createMarketSourceOperationScheduler(),
 ): (
   mutation: MarketSourceMutation,
   signal: AbortSignal,
 ) => Promise<void> {
-  let tail = Promise.resolve()
   return (mutation, signal) => {
-    const pending = tail.then(async () => {
+    return schedule(async () => {
       signal.throwIfAborted()
       await mutateSources(scope, mutation, signal, onUnavailable, readManifest)
     })
-    tail = pending.catch(() => {})
-    return pending
   }
 }
 
@@ -678,13 +690,39 @@ export function registerMarketRoutes(
   })
   const servedCatalogPreviews = new Set<string>()
   const catalogPreviewKey = (sourceRecordId: string, locale: string) => `${sourceRecordId}\0${locale}`
+  const scheduleSourceOperation = createMarketSourceOperationScheduler()
   const mutateSource = createMarketSourceMutator(scope, sourceRecordId => {
     service.invalidateSource(sourceRecordId)
     for (const key of servedCatalogPreviews) {
       if (key.startsWith(`${sourceRecordId}\0`)) servedCatalogPreviews.delete(key)
     }
     installProvider?.get()?.invalidateSource(sourceRecordId)
-  })
+  }, undefined, scheduleSourceOperation)
+  let defaultSourceSettled = marketPolicies === undefined
+  let defaultSourceInitialization: Promise<void> | undefined
+  const ensureDefaultSource = (): Promise<void> => {
+    if (defaultSourceSettled) return Promise.resolve()
+    if (defaultSourceInitialization !== undefined) return defaultSourceInitialization
+    defaultSourceInitialization = (async () => {
+      try {
+        const result = await scheduleSourceOperation(async () => await initializeMarketDefaultSource(
+          scope,
+          marketPolicies!,
+          generationController.signal,
+          readStandardSourceManifest,
+        ))
+        if (result !== 'not-configured') defaultSourceSettled = true
+      } catch {
+        if (!generationController.signal.aborted) {
+          ctx.logger.error('dsh-community-market: product default source initialization failed')
+          defaultSourceSettled = true
+        }
+      } finally {
+        defaultSourceInitialization = undefined
+      }
+    })()
+    return defaultSourceInitialization
+  }
   const buildCatalogResponse = (
     index: CatalogFullIndex | undefined,
     query: Record<string, unknown>,
@@ -724,6 +762,7 @@ export function registerMarketRoutes(
         return
       }
       try {
+        await ensureDefaultSource()
         const desktopActions = desktopActionsProvider?.get()
         const policies = marketPolicies?.listPolicies() ?? []
         const response: MarketStateResponse = {
@@ -755,6 +794,7 @@ export function registerMarketRoutes(
       const stopWatching = abortOnDisconnect(req, res, controller)
       let refreshPreviewKey: string | undefined
       try {
+        await ensureDefaultSource()
         const requestUrl = new URL(req.url ?? '/', 'http://localhost')
         const query: Record<string, unknown> = {}
         const q = requestUrl.searchParams.get('q')?.trim() || undefined
@@ -983,6 +1023,7 @@ export function registerMarketRoutes(
         const signal = AbortSignal.any([controller.signal, generationController.signal])
         const stopWatching = abortOnDisconnect(req, res, controller)
         try {
+          await ensureDefaultSource()
           const requestUrl = new URL(req.url ?? '/', 'http://localhost')
           const localeValues = requestUrl.searchParams.getAll('locale')
           const refreshValues = requestUrl.searchParams.getAll('refresh')
@@ -1079,6 +1120,7 @@ export function registerMarketRoutes(
         const stopWatching = abortOnDisconnect(req, res, controller)
         try {
           const request = asOperationPreview(await readOperationJson(req, signal))
+          if (request.action === 'install') await ensureDefaultSource()
           const install = installProvider.get()
           if (install === undefined) {
             throw new MarketInstallError('not-available', 'Market package operations are unavailable.')

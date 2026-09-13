@@ -165,7 +165,7 @@ describe('final Electron fuse verification', () => {
     expect(() => resolveFinalPackagedRuntimeContexts(
       result([{ key: 'win', archs: [Arch.x64, Arch.arm64] }]),
       filename => filename === x64Executable,
-    )).toThrow('win/arm64 at /build/win-arm64-unpacked/易宝工坊 Beta.exe')
+    )).toThrow(`win/arm64 at ${join('/build', 'win-arm64-unpacked', '易宝工坊 Beta.exe')}`)
   })
 
   it('resolves a real target-name map through the target archs retained by NSIS', () => {
@@ -186,6 +186,53 @@ describe('final Electron fuse verification', () => {
         expect.objectContaining({ appOutDir: join('/build', 'win-arm64-unpacked'), arch: Arch.arm64 }),
         expect.objectContaining({ appOutDir: join('/build', 'win-unpacked'), arch: Arch.x64 }),
       ])
+  })
+
+  it('recovers a directory build when the platform packager omits its NoOpTarget', () => {
+    const platform = { buildConfigurationKey: 'win' }
+    const built = {
+      outDir: '/build',
+      configuration: {
+        productName: '易宝工坊',
+        win: { defaultArch: 'x64' },
+      },
+      platformToTargets: new Map([[platform, new Map()]]),
+    } satisfies ElectronArtifactBuildResult
+    const executable = join('/build', 'win-unpacked', '易宝工坊.exe')
+
+    expect(resolveFinalPackagedRuntimeContexts(
+      built,
+      filename => filename === executable,
+    )).toEqual([expect.objectContaining({
+      appOutDir: join('/build', 'win-unpacked'),
+      arch: Arch.x64,
+      electronPlatformName: 'win32',
+    })])
+  })
+
+  it('uses the build-process architecture for an omitted directory target without a default', () => {
+    const platform = { buildConfigurationKey: 'win' }
+    const built = {
+      outDir: '/build',
+      configuration: { productName: '易宝工坊 Beta' },
+      platformToTargets: new Map([[platform, new Map()]]),
+    } satisfies ElectronArtifactBuildResult
+    const executable = join('/build', 'win-unpacked', '易宝工坊 Beta.exe')
+    const expectedArch = new Map<string, Arch>([
+      ['ia32', Arch.ia32],
+      ['x64', Arch.x64],
+      ['arm64', Arch.arm64],
+    ]).get(process.arch)
+
+    expect(expectedArch).toBeDefined()
+    expect(resolveFinalPackagedRuntimeContexts(
+      built,
+      filename => filename === executable,
+    )).toEqual([expect.objectContaining({
+      appOutDir: join('/build', 'win-unpacked'),
+      arch: expectedArch,
+      electronPlatformName: 'win32',
+    })])
   })
 
   it('resolves mac universal from the target packager request and ignores component outputs', () => {

@@ -13,6 +13,9 @@ export const inject: readonly string[] = []
 const CQAI_POLICY = {
   id: 'cqai-curated',
   featuredCategories: ['tools', 'interface', 'workflow'],
+  defaultSource: {
+    manifestUrl: 'https://cqaiclub.asia/catalog-source.json',
+  },
   branding: {
     title: 'CQAI 插件市场',
     subtitle: '发现、安装和管理 CQAI 精选插件',

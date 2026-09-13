@@ -6,5 +6,5 @@
     "types": ["node", "vitest/globals"]
   },
   "include": ["tests"],
-  "exclude": ["lib"]
+  "exclude": ["lib", "tests/client-registration.test.ts"]
 }

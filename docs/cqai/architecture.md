@@ -10,7 +10,7 @@ CQAI Desktop 现在以 `dsh-desktop` 为主工作区，使用 Yarn 管理多个�
 | --- | --- | --- |
 | `@cqaiclub/dsn-account` | CQAI Club OAuth/PKCE、共享账号与额度、模型目录、设置页账号标签、`cqaiclub` Provider | 业务插件自己的工作台和 Token 管理 |
 | `cqai-dsh-plugin-quicknav` | 左侧固定入口、CQAI 工作台导航 | 品牌资源、市场安装流程 |
-| `cqai-dsh-plugin-market` | CQAI 市场品牌、精选分类和推荐策略 | 复制整个 `dsh-community-market`、管理目录和安装 |
+| `cqai-dsh-plugin-market` | CQAI 市场品牌、精选分类、推荐策略和产品默认来源声明 | 复制整个 `dsh-community-market`、管理目录和安装 |
 | `cqai-dsh-plugin-workbench` | 后续独立的业务工作台能力 | 通用导航入口 |
 
 ## 依赖规则
@@ -50,14 +50,13 @@ dsh-desktop/profiles/cqai-dsh-plugin-desktop/
 
 开发期间使用 `link:` 指向本地插件；发布时改成固定版本或内部 registry 版本。
 
-`@cqaiclub/dsn-account` 是 Desktop 默认产品 bundle，由保留的 `desktop` Profile 自动加入且不可被普通插件管理操作关闭。
-它只向 Client 暴露安全账号快照和 RPC，Access/Refresh Token 留在 Host 侧。
+`@cqaiclub/dsn-account` 与 `cqai-dsh-plugin-market` 是 Desktop 默认产品 bundle，由保留的 `desktop` Profile 自动加入且不可被普通插件管理操作关闭。账号插件只向 Client 暴露安全账号快照和 RPC，Access/Refresh Token 留在 Host 侧。
 
 ## 市场策略
 
-当前 `cqai-dsh-plugin-market` 注册 CQAI 精选分类和品牌信息；完整的发现、搜索、详情、来源管理、安全校验和安装引擎由 `dsh-community-market` 唯一负责。它不会复制第二套市场 UI，也不会硬编码或自动切换远程来源，因此首次启动需要用户在 Desktop 中选择 `community-market` 并选择一个来源。
+`cqai-dsh-plugin-market` 注册 CQAI 精选分类、品牌信息和 `https://cqaiclub.asia/catalog-source.json` 产品默认来源；完整的发现、搜索、详情、来源管理、安全校验和安装引擎仍由 `dsh-community-market` 唯一负责。Desktop 在没有显式市场选择时启用 `community-market`，Market 仅对从未初始化的空来源配置校验并采用该默认来源。
 
-后续接入真实 CQAI catalog 时，应通过明确的内置 provider 或受信任的 source 配置完成默认来源选择；已经存在用户选择时，不应强制切回 CQAI。
+产品默认来源通过本地策略声明，远端 Manifest 仍必须经过标准来源契约与网络安全校验。已有来源、已有选择或用户后续删除来源时，不会强制切回 CQAI，也不会把默认来源自动加回。
 
 ## 产品品牌层
 

@@ -8,6 +8,11 @@ export interface CommunityMarketBranding {
   readonly subtitle: string
 }
 
+/** Optional product-owned standard source offered on first use. */
+export interface CommunityMarketDefaultSource {
+  readonly manifestUrl: string
+}
+
 /**
  * A small, provider-neutral extension point for products that want to add
  * presentation policy without copying the Market implementation.
@@ -17,6 +22,7 @@ export interface CommunityMarketPolicy {
   readonly featuredCategories?: readonly string[]
   readonly featuredPackages?: readonly string[]
   readonly branding?: CommunityMarketBranding
+  readonly defaultSource?: CommunityMarketDefaultSource
 }
 
 export interface CommunityMarketService {
@@ -44,19 +50,42 @@ function normalizeBranding(value: CommunityMarketBranding | undefined): Communit
   return Object.freeze({ title: value.title, subtitle: value.subtitle })
 }
 
+function normalizeDefaultSource(
+  value: CommunityMarketDefaultSource | undefined,
+): CommunityMarketDefaultSource | undefined {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).length !== 1 || !Object.hasOwn(value, 'manifestUrl')
+    || typeof value.manifestUrl !== 'string' || value.manifestUrl.length > 2_048) {
+    throw new TypeError('market policy default source is invalid')
+  }
+  let url: URL
+  try {
+    url = new URL(value.manifestUrl)
+  } catch {
+    throw new TypeError('market policy default source is invalid')
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || url.hash) {
+    throw new TypeError('market policy default source must use credential-free standard HTTPS port 443')
+  }
+  return Object.freeze({ manifestUrl: url.href })
+}
+
 function normalizePolicy(policy: CommunityMarketPolicy): CommunityMarketPolicy {
   if (!validText(policy.id)) throw new TypeError('market policy id is invalid')
   const featuredCategories = normalizeList(policy.featuredCategories)
   const featuredPackages = normalizeList(policy.featuredPackages)
   const branding = normalizeBranding(policy.branding)
-  if (featuredCategories === undefined && featuredPackages === undefined) {
-    throw new TypeError('market policy must declare a featured category or package')
+  const defaultSource = normalizeDefaultSource(policy.defaultSource)
+  if (featuredCategories === undefined && featuredPackages === undefined && defaultSource === undefined) {
+    throw new TypeError('market policy must declare featured content or a default source')
   }
   return Object.freeze({
     id: policy.id,
     ...(featuredCategories === undefined ? {} : { featuredCategories }),
     ...(featuredPackages === undefined ? {} : { featuredPackages }),
     ...(branding === undefined ? {} : { branding }),
+    ...(defaultSource === undefined ? {} : { defaultSource }),
   })
 }
 

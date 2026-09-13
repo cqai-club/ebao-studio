@@ -13,6 +13,12 @@
 页面转交支付字段，不把字段放入 URL。支付完成或取消后，固定的
 `dsh-desktop://payment/result` 回跳会重新唤醒应用并刷新账户额度。
 
+在空白会话的首次启动流程中，本插件会在欢迎页之后、官方 DeepSeek 配置之前优先展示
+CQAI Club 登录。用户可以选择稍后登录并继续使用其他模型；从该引导完成登录时，插件只会在
+当前选择仍是出厂 DeepSeek 默认值的情况下，按固定优先级选择 CQAI Club 对话模型，不覆盖
+已经设置过的其他提供商、模型或推理强度。CQAI 模型路由仅在账号已登录且目录中存在可用
+对话模型时注册，因而“稍后登录”仍能正常进入官方 DeepSeek 配置。
+
 首次登录需要在系统浏览器完成授权。Native App Client 需要允许
 `http://127.0.0.1/cqaiclub-dsn-account/oauth/callback` 的动态端口回调。插件不把 Access
 Token 暴露给 Renderer，默认配置仍由 cordis.patch.yml 管理。
