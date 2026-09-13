@@ -1,8 +1,8 @@
-# DSH Desktop User Guide
+# 易宝工坊 User Guide
 
 ## Installation and first launch
 
-Download the macOS or Windows installer from the product download page. DSH Desktop includes Electron, Node, and its pinned DSH dependencies, so normal users do not need to install Node.js or pnpm separately.
+Download the macOS or Windows installer from the product download page. 易宝工坊 includes Electron, Node, and its pinned DSH dependencies, so normal users do not need to install Node.js or pnpm separately.
 
 On first launch, the application prepares the default profile and starts the official DSH Web surface locally. Closing the window normally hides it; use **Quit** from the tray when you want to stop the application and Host process.
 
@@ -35,7 +35,7 @@ The port must be an integer from `0` through `65535`. Changing it performs an or
 
 ## Plugin management
 
-Plugins are extensions that add capabilities to DSH, such as models, tools, interfaces, and workflows. DSH Desktop uses the same plugin system as official Harness, so official plugins install and work directly; multiple plugins follow the same conventions and can be installed and used together.
+Plugins are extensions that add capabilities to DSH, such as models, tools, interfaces, and workflows. 易宝工坊 uses the same plugin system as official Harness, so official plugins install and work directly; multiple plugins follow the same conventions and can be installed and used together.
 
 Ordinary DSH plugins use the upstream CLI semantics:
 
@@ -45,7 +45,7 @@ dsh plugin --profile desktop remove <plugin>
 dsh plugin --profile desktop update
 ```
 
-In the terminal opened from the DSH Desktop tray, bare `dsh` and plugin commands without `--profile` default to the active profile:
+In the terminal opened from the 易宝工坊 tray, bare `dsh` and plugin commands without `--profile` default to the active profile:
 
 ```sh
 dsh plugin add <plugin>
@@ -53,7 +53,7 @@ dsh plugin remove <plugin>
 dsh plugin update
 ```
 
-An explicit `--profile <name>` always wins. Restart DSH Desktop after plugin changes so the new bundle enters the Loader composition.
+An explicit `--profile <name>` always wins. Restart 易宝工坊 after plugin changes so the new bundle enters the Loader composition.
 
 ## Opening the terminal
 
@@ -77,7 +77,7 @@ Desktop confirmations, warnings, and operation results open as separate shadcn-b
 - **The application crashes repeatedly before the tray appears**: run the installed executable directly with the recovery option. The default Windows installation command is below; replace the path if you selected another installation directory.
 
   ```powershell
-  & "$env:LOCALAPPDATA\Programs\DSH Desktop\DSH Desktop.exe" --export-diagnostics
+  & "$env:LOCALAPPDATA\Programs\易宝工坊\易宝工坊.exe" --export-diagnostics
   ```
 
   For npm installs, stable uses `dsh-desktop --export-diagnostics` and Beta uses `dsh-desktop-beta --export-diagnostics`. This command does not start Host, profiles, plugins, or a window. It prints the absolute diagnostics ZIP path when complete.

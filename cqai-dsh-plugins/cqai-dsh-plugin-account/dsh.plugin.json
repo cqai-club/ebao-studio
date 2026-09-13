@@ -1,0 +1,12 @@
+{
+  "id": "cqaiclub-dsn-account",
+  "version": "0.1.1",
+  "main": "./lib/index.js",
+  "description": "CQAI Club shared account and quota plugin for 易宝工坊",
+  "engines": {
+    "dsh": ">=0.1.5-rc.1"
+  },
+  "client": {
+    "main": "./client/client.js"
+  }
+}

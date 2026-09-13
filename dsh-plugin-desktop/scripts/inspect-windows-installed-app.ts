@@ -47,7 +47,7 @@ export function inspectInstalledWindowsApp(
   const root = resolve(installRoot)
   const normalizedIgnoredPaths = ignoreRelativePaths.map(normalizeWindowsNsisAbRelativePath)
   const resourcesPath = join(root, 'resources')
-  const executablePath = join(root, 'DSH Desktop.exe')
+  const executablePath = join(root, '易宝工坊.exe')
   const asarPath = join(resourcesPath, 'app.asar')
   const unpackedPath = join(resourcesPath, 'app.asar.unpacked')
   const errors: string[] = []
@@ -73,7 +73,7 @@ export function inspectInstalledWindowsApp(
       closeSync(descriptor)
     }
     const header = headerBuffer.toString('ascii')
-    if (header !== 'MZ') errors.push('DSH Desktop.exe does not have a Windows PE header')
+    if (header !== 'MZ') errors.push('易宝工坊.exe does not have a Windows PE header')
   } catch (cause) {
     errors.push(`application executable is unavailable: ${message(cause)}`)
   }

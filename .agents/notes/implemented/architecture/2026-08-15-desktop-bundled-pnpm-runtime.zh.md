@@ -4,7 +4,7 @@
 
 ## 问题
 
-DSH Desktop 会打包 pnpm，使生成的 DSH 终端无需系统 Node.js 安装即可管理 profile 插件。该终端拥有只属于其子进程的 `PATH`，因此 Cordis Host 插件与当前 desktop generation 启动的 subprocess 无法发现内置 package manager。调用 `pnpm` 的插件会在终端与应用运行时表现不一致。
+易宝工坊 会打包 pnpm，使生成的 DSH 终端无需系统 Node.js 安装即可管理 profile 插件。该终端拥有只属于其子进程的 `PATH`，因此 Cordis Host 插件与当前 desktop generation 启动的 subprocess 无法发现内置 package manager。调用 `pnpm` 的插件会在终端与应用运行时表现不一致。
 
 解决方案不能把 Electron Node 模式放入 Host 环境。`ELECTRON_RUN_AS_NODE` 会改变 Electron executable 的启动方式；若被继承，可能破坏无关的 Electron 子进程。把终端的完整命令目录暴露出去还会让所有插件进程中的用户 `node` 与 `dsh` 命令被覆盖。
 
@@ -38,4 +38,4 @@ Windows batch 命令需要 command interpreter。上游 `dsh plugin` 已经在 W
 
 ## 结果
 
-Host 插件从启动开始即可解析固定版本的内置 pnpm，也可以通过普通 DSH subprocess service 使用它。DSH Desktop 之外的用户命令保持不变；插件运行时不会获得全局 `node` 替代；pnpm 的 native dependency 会面向与 Host 相同的 Electron 版本构建。
+Host 插件从启动开始即可解析固定版本的内置 pnpm，也可以通过普通 DSH subprocess service 使用它。易宝工坊 之外的用户命令保持不变；插件运行时不会获得全局 `node` 替代；pnpm 的 native dependency 会面向与 Host 相同的 Electron 版本构建。

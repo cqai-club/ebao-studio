@@ -217,6 +217,7 @@ describe('desktop profile composition', {
     ])).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
+      '@cqaiclub/dsn-account',
       'third-party-one',
       'third-party-two',
     ])
@@ -243,6 +244,7 @@ describe('desktop profile composition', {
     expect(repaired.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
+      '@cqaiclub/dsn-account',
       'third-party-plugin',
     ])
     expect(repaired.dependencies).toEqual({ 'third-party-plugin': '^1.2.3' })
@@ -274,6 +276,7 @@ describe('desktop profile composition', {
     expect(repaired.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
+      '@cqaiclub/dsn-account',
     ])
   })
 
@@ -443,6 +446,14 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'directory-picker')?.disabled).toBeFalsy()
     expect(rows.map(row => row.id)).not.toContain('desktop-directory-picker-browse-host')
     expect(rows.map(row => row.id)).not.toContain('desktop-directory-picker-browse-surface')
+    expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({
+      name: '@deepseek-ai/dsh-llm-deepseek',
+      disabled: true,
+    }))
+    expect(rows.find(row => row.id === 'cqaiclub-dsn-account')).toEqual(expect.objectContaining({
+      name: '@cqaiclub/dsn-account',
+    }))
+    expect(rows.find(row => row.id === 'cqaiclub-dsn-account')?.disabled).toBeFalsy()
     expect(rows.find(row => row.id === 'subprocess')).toEqual({
       id: 'subprocess',
       name: '@deepseek-ai/dsh-subprocess-local',

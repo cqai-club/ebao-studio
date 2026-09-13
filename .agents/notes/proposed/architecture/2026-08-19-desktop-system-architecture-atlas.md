@@ -22,7 +22,7 @@ The architecture has four layers: the Electron native shell, the Cordis Host, th
 
 ```mermaid
 flowchart LR
-  User[User] -->|window, tray, system dialogs| Desktop[DSH Desktop]
+  User[User] -->|window, tray, system dialogs| Desktop[易宝工坊]
   Desktop -->|HTTP / WebSocket, loopback only| LocalWeb[Local DSH Web carrier]
   Desktop -->|profile and settings reads/writes| Home[DSH home]
   Desktop -->|explicit selection and admission| Workspace[Local workspace]

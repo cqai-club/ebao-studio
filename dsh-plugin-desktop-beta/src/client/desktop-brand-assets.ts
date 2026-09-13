@@ -1,6 +1,6 @@
 /** Embedded CQAI product artwork used by browser and native desktop surfaces. */
 
-export const DESKTOP_BRAND_NAME = '宝工坊'
+export const DESKTOP_BRAND_NAME = '易宝工坊'
 
 export const DESKTOP_BRAND_MARK_DATA_URI =
   'data:image/png;base64,' +

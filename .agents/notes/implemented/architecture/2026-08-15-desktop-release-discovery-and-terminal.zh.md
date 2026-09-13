@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-DSH Desktop 需要两项不属于上游 Web 呈现的原生操作。用户需要在不持续关注仓库的情况下发现较新的 stable desktop release；只使用安装器的用户也需要一个终端，在无需另外安装 DSH CLI 或 pnpm 的情况下运行普通 `dsh --profile desktop` 插件工作流。
+易宝工坊 需要两项不属于上游 Web 呈现的原生操作。用户需要在不持续关注仓库的情况下发现较新的 stable desktop release；只使用安装器的用户也需要一个终端，在无需另外安装 DSH CLI 或 pnpm 的情况下运行普通 `dsh --profile desktop` 插件工作流。
 
 这些操作必须保留兼容模式与高级模式已经建立的产品边界。固定的上游 checkout 保持不变；兼容模式继续使用没有 override 的官方 Web client；沙箱 renderer 不获得 Electron、Node、文件系统、进程或终端能力。desktop package 也不能修改用户的全局 `PATH` 或 shell 启动文件。
 
@@ -28,7 +28,7 @@ Desktop 原生操作是围绕同一个 Electron adapter 组合的独立 Cordis H
 
 只有用户选择 **Download** 后，固定的 macOS 或 Windows 下载入口才会被访问。Checker 会先重复版本请求，只有仍然发布同一个更新版本时才继续。Electron `net.fetch` 会跟随 service redirect，把不超过 1 GiB 的文件流式写入私有、按版本划分的 user-data 目录，同步并原子重命名完整文件，并在失败或取消后清理 partial 文件。这个即时复查可以缩小 release rotation 窗口，但不能把固定 endpoint 与版本建立加密绑定；后续 service 应返回 versioned URL 与平台 hash。交接前要求 macOS 产物包含 UDIF `koly` trailer，Windows 产物包含 DOS 与 PE signature。这些检查可以拒绝 HTML error 或结构错误的产物，但不能证明 publisher 身份。
 
-macOS 会打开经过校验的 DMG，并说明用户必须替换 `Applications` 中的 DSH Desktop 后重新打开；它不会自行 mount 并修改已安装的签名 bundle。Windows 会在 NSIS installer 准备完成后再次询问。选择 **Restart and Install** 会使用准确 argv 且不经过 shell 启动 installer，等待其 spawn event，然后在当前应用退出前请求既有的有界 Cordis teardown。选择 **Later**，或任何下载、文件系统与 installer 打开错误，都不会显示 failure UI，同时会保留托盘中的可重试版本操作。手工检查失败会使用上述固定重试对话框。
+macOS 会打开经过校验的 DMG，并说明用户必须替换 `Applications` 中的 易宝工坊 后重新打开；它不会自行 mount 并修改已安装的签名 bundle。Windows 会在 NSIS installer 准备完成后再次询问。选择 **Restart and Install** 会使用准确 argv 且不经过 shell 启动 installer，等待其 spawn event，然后在当前应用退出前请求既有的有界 Cordis teardown。选择 **Later**，或任何下载、文件系统与 installer 打开错误，都不会显示 failure UI，同时会保留托盘中的可重试版本操作。手工检查失败会使用上述固定重试对话框。
 
 发布顺序是一项运维 invariant：必须先准备好两个 installer artifact 及其 redirect，再修改 Upstash Redis key `deepseek-harness-desktop:release:version`。更新该 key 会立即让版本可被发现，无需重新部署 service。Key 缺失、服务不可用或值无效时，公开 endpoint 不会返回可用版本，Desktop checker 会直接忽略。
 
@@ -38,7 +38,7 @@ Launcher 会在 Host plugin 能够提供 terminal 命令之前，用解析后的
 
 生成的 `bin` 目录包含 `dsh`、`pnpm` 与 `node` shim。它们会复用打包后的 Electron executable 的 Node mode，而不依赖系统 Node 安装。Electron Builder 会把生产依赖树输出到 `app.asar.unpacked`，desktop CLI 与 pnpm shim 会进入这棵物理依赖树；因此 profile fallback 的符号链接会指向真实 package 目录，而不是虚拟 ASAR 路径。`dsh` shim 会使用 `--expose-internals` 启动 Node mode，从而保留普通 profile 与 HMR 所需的 internal ESM hook，随后进入 desktop 自有 bootstrap。在这个专用终端中，只有当调用没有选择 profile 时，该 bootstrap 才会补充打开终端时选择的 profile，包括裸 `dsh`、`dsh --dump-config` 与 plugin 子命令；显式 `--profile` 与上游 `web` alias 仍然拥有最终决定权。随后，它会在导入固定且已 unpack 的 `@deepseek-ai/dsh` CLI 入口前，移除所有大小写形式的 `ELECTRON_RUN_AS_NODE`。通用 Node 与 pnpm shim 只在自身子进程树中启用 Node mode。pnpm shim 还会局部设置 `npm_config_runtime=electron`、打包 Electron 版本与 Electron headers URL，使安装到所选 profile 的原生依赖面向当前 Electron ABI。
 
-Terminal child 启动时会移除 Electron Node mode，把 `DSH_HOME` 固定为 Launcher 当前使用的 home，以 desktop profile 为工作目录，并且只在该 child 的 `PATH` 前置生成的 `bin` 目录。Electron main process 环境、操作系统环境与用户 shell 文件都不会被修改。欢迎信息会显示 DSH Desktop 版本、profile、profile 目录与 DSH home，随后给出配置 dump、插件 add、remove、update 命令，以及必须重启应用的提示。
+Terminal child 启动时会移除 Electron Node mode，把 `DSH_HOME` 固定为 Launcher 当前使用的 home，以 desktop profile 为工作目录，并且只在该 child 的 `PATH` 前置生成的 `bin` 目录。Electron main process 环境、操作系统环境与用户 shell 文件都不会被修改。欢迎信息会显示 易宝工坊 版本、profile、profile 目录与 DSH home，随后给出配置 dump、插件 add、remove、update 命令，以及必须重启应用的提示。
 
 在 macOS 上，LaunchServices 会打开生成的 `welcome.command`。受控的交互式 zsh 或 bash 启动会先读取用户普通的交互式 rc 文件，随后移除 Electron Node mode 并恢复 desktop 自有 home 与 shim path，避免用户 rc 意外丢弃这些值。在 Windows 上，Launcher 会依次解析 PowerShell 7、Windows PowerShell 与命令提示符，并优先使用新的 Windows Terminal 窗口承载所选 shell。如果 `wt.exe` 不可用，生成的 batch broker 会通过内置 `start` 命令分配可见控制台。Windows command 文件与 PowerShell welcome 源码只包含 ASCII；本地化 profile 名称和路径通过 Unicode child environment 传入，而不依赖当前 code page。Electron 进程始终使用 executable 与 argv 并设置 `shell: false` 来调用 launcher；同步启动失败、异步 spawn 错误与 broker 非正常退出都会进入原生错误对话框。生成的 PowerShell 或 batch welcome 文件会完成最终环境设置。
 
@@ -60,7 +60,7 @@ Headless terminal 测试会检查生成的 macOS 与 Windows 文件、空格与 
 
 **将 PowerShell 或命令提示符作为 detached Electron child 启动。** Electron 的内嵌 Node 进程会隐藏控制台子进程，而 Windows detached-process 标志不会分配新控制台。两者组合会让交互式 shell 在没有可见窗口的情况下运行。因此 Windows Terminal 是首选 host，并由生成的 `cmd start` broker 提供兼容 fallback。
 
-**修改用户的全局 `PATH` 或 shell rc。** 全局修改会在应用退出后继续存在，与其他 DSH 或 Node 安装产生冲突，并且需要卸载修复路径。私有生成 shim 会把所有权与清理保留在 DSH Desktop 内。
+**修改用户的全局 `PATH` 或 shell rc。** 全局修改会在应用退出后继续存在，与其他 DSH 或 Node 安装产生冲突，并且需要卸载修复路径。私有生成 shim 会把所有权与清理保留在 易宝工坊 内。
 
 **要求系统安装 Node、DSH 与 pnpm。** 这会保留本功能原本要解决的 installer-only 缺口，并使行为依赖无关的宿主版本。打包 Electron Node mode 与内置 CLI 入口能提供版本匹配的环境。
 
@@ -68,6 +68,6 @@ Headless terminal 测试会检查生成的 macOS 与 Windows 文件、空格与 
 
 ## 结果
 
-打包后的 DSH Desktop 只有在用户明确确认后才能发现并下载较新的 stable release，同时仍可提供普通 desktop-profile 插件工作流，而无需修改上游 checkout 或削弱 renderer 隔离。macOS 替换仍由用户手工完成；Windows 会在第二次确认后使用下载好的 NSIS 程序安装。生成的 CLI 环境仍只存在于从托盘打开的终端内。
+打包后的 易宝工坊 只有在用户明确确认后才能发现并下载较新的 stable release，同时仍可提供普通 desktop-profile 插件工作流，而无需修改上游 checkout 或削弱 renderer 隔离。macOS 替换仍由用户手工完成；Windows 会在第二次确认后使用下载好的 NSIS 程序安装。生成的 CLI 环境仍只存在于从托盘打开的终端内。
 
-公开 DSH Desktop 版本 service 现在是 release version 的权威来源；各平台 download redirect 则保留为计数用 delivery entry，检查阶段绝不会探测它们。Desktop package 也开始拥有内置 pnpm 版本和生成 shim 行为，这会扩大打包 runtime closure，并且必须持续与 Electron ABI 对齐。Linux 保留兼容模式，但在形成独立平台设计前既没有 installer download path，也没有 desktop 终端。
+公开 易宝工坊 版本 service 现在是 release version 的权威来源；各平台 download redirect 则保留为计数用 delivery entry，检查阶段绝不会探测它们。Desktop package 也开始拥有内置 pnpm 版本和生成 shim 行为，这会扩大打包 runtime closure，并且必须持续与 Electron ABI 对齐。Linux 保留兼容模式，但在形成独立平台设计前既没有 installer download path，也没有 desktop 终端。

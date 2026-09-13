@@ -7,7 +7,7 @@ const betaRoot = join(root, 'dsh-plugin-desktop-beta', 'src')
 // Both editions share behavior. Only release identity and launcher wording differ.
 const betaOnlyPaths = new Set([])
 const allowedDifferences = new Set(['product-identity.ts'])
-const normalizeIdentity = source => source.toString().replaceAll('dsh-plugin-desktop-beta', 'dsh-plugin-desktop').replaceAll('DSH Desktop Beta', 'DSH Desktop')
+const normalizeIdentity = source => source.toString().replaceAll('dsh-plugin-desktop-beta', 'dsh-plugin-desktop').replaceAll('易宝工坊 Beta', '易宝工坊')
 
 function files(directory, base = directory) {
   const result = []

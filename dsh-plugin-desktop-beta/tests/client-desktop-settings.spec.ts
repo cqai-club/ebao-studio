@@ -609,7 +609,7 @@ describe('Desktop settings Slot registration', () => {
       platform: 'darwin',
       material: 'off',
       micaSupported: false,
-    })
+    }, true)
 
     expect(bind).toHaveBeenNthCalledWith(1, { namespace: DESKTOP_SHELL_SETTINGS_NAMESPACE })
     expect(bind).toHaveBeenNthCalledWith(2, { namespace: DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE })
@@ -648,5 +648,25 @@ describe('Desktop settings Slot registration', () => {
     expect(actionComponent).toBe(DesktopTerminalSettingsAction)
     await control.setMode('extended')
     expect(scope.set).toHaveBeenCalledWith('mode', 'extended')
+  })
+
+  it('leaves settings-header developer actions disabled by default', () => {
+    const inject = vi.fn()
+    const ctx = {
+      settingsScope: { bind: () => ({}) },
+      locale: { bind: () => (key: string) => key },
+      effect: vi.fn(),
+      slots: { inject },
+    } as unknown as ClientContext
+
+    applyDesktopSettings(ctx, {
+      version: '2.0.3',
+      mode: 'compatibility',
+      platform: 'darwin',
+      material: 'off',
+      micaSupported: false,
+    })
+
+    expect(inject.mock.calls.map(([name]) => name)).toEqual(['settings.section'])
   })
 })

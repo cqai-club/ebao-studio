@@ -2,12 +2,13 @@
 import type { DesktopRuntime, DesktopShellSpec, DesktopTrayItem, DesktopTrayItemRegistration, DesktopUpdateAdapter } from './runtime.ts'
 import { HostRpc } from './host-rpc.ts'
 
-export type RuntimeSnapshot = Pick<DesktopRuntime, 'platform' | 'windowsBuild' | 'locale'> & {
+export type RuntimeSnapshot = Pick<DesktopRuntime, 'platform' | 'windowsBuild' | 'locale' | 'loginCompletionUrl'> & {
   updates: Omit<DesktopUpdateAdapter, 'request' | 'confirmDownload' | 'showManualCheckResult' | 'downloadAndOpen' | 'notify'>
 }
 export function runtimeSnapshot(runtime: DesktopRuntime): RuntimeSnapshot {
   const { isPackaged, canDownload, currentVersion, releaseChannel, statePath, installationId } = runtime.updates
   return { platform: runtime.platform, windowsBuild: runtime.windowsBuild, locale: runtime.locale,
+    ...(runtime.loginCompletionUrl === undefined ? {} : { loginCompletionUrl: runtime.loginCompletionUrl }),
     updates: { isPackaged, canDownload, currentVersion, statePath,
       ...(releaseChannel ? { releaseChannel } : {}), ...(installationId ? { installationId } : {}) } }
 }
@@ -38,6 +39,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
   }
   const runtime: DesktopRuntime = {
     platform: snapshot.platform, windowsBuild: snapshot.windowsBuild,
+    ...(snapshot.loginCompletionUrl === undefined ? {} : { loginCompletionUrl: snapshot.loginCompletionUrl }),
     get locale() { return locale },
     updates: {
       ...snapshot.updates,
@@ -91,6 +93,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
       return { refresh: publish, dispose() { trayPublishers.delete(id); releases.forEach(release => release()); void send('tray:dispose', [id]) } }
     },
     show() { void send('native:show') },
+    openExternal: target => send('native:openExternal', [target]),
     notifyAttention(value) { void send('native:notifyAttention', [value]) },
     openTerminal() { void send('native:openTerminal') },
     reloadRenderer() { void send('native:reloadRenderer') },
@@ -124,7 +127,7 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   const handle = (name: string, fn: (args: any[], signal: AbortSignal) => unknown) => { releases.push(rpc.handle(name, fn)) }
   const callback = (method: string, args: unknown[] = []) => rpc.call(method, args)
   const report = (promise: Promise<unknown>) => { void promise.catch(error => process.stderr.write(`${String(error)}\n`)) }
-  for (const method of ['show', 'notifyAttention', 'openTerminal', 'reloadRenderer', 'toggleDeveloperTools',
+  for (const method of ['show', 'openExternal', 'notifyAttention', 'openTerminal', 'reloadRenderer', 'toggleDeveloperTools',
     'exportDiagnostics', 'pickDirectory', 'validateDirectory', 'reportRendererBoot', 'setLocalePreference',
     'setThemeSource', 'prepareToQuit'] as const) {
     handle(`native:${method}`, args => (runtime[method] as (...args: any[]) => unknown).apply(runtime, args))

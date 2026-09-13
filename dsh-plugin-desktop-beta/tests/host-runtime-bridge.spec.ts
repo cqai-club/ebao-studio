@@ -16,15 +16,18 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
   const disposeTray = vi.fn()
   const native = {
     platform: 'win32', windowsBuild: 22631, locale: 'en',
+    loginCompletionUrl: 'dsh-desktop-beta://oauth/complete',
     updates: { isPackaged: true, canDownload: true, currentVersion: '2.0.7-beta.1', statePath: '/tmp/update',
       request: vi.fn(async () => new Response('{"version":"2.0.8-beta.1"}', { headers: { 'x-test': 'yes' } })),
     },
     schedule: (value: DesktopShellSpec) => { shell = value; return disposeShell },
+    openExternal: vi.fn(async () => {}),
     registerTrayItem: (value: DesktopTrayItem) => { tray = value; return { refresh() {}, dispose: disposeTray } },
   } as unknown as DesktopRuntime
   const release = bindNativeRuntime(parent, native)
   try {
     const runtime = createHostRuntime(child, runtimeSnapshot(native))
+    expect(runtime.loginCompletionUrl).toBe('dsh-desktop-beta://oauth/complete')
     let language: 'zh' | undefined
     const mode = vi.fn(async () => {})
     const invoke = vi.fn(async () => {})
@@ -56,6 +59,8 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
     const response = await runtime.updates.request('https://example.invalid', { headers: { accept: 'application/json' } })
     expect(response.headers.get('x-test')).toBe('yes')
     expect(await response.json()).toEqual({ version: '2.0.8-beta.1' })
+    await runtime.openExternal('https://auth.example.test/authorize')
+    expect(native.openExternal).toHaveBeenCalledWith('https://auth.example.test/authorize')
     await stopShell()
     expect(disposeShell).toHaveBeenCalledOnce()
   } finally { await release(); parent.close(); child.close(); port1.close(); port2.close() }

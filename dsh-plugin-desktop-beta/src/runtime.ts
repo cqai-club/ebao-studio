@@ -10,7 +10,7 @@ import type {
   PersistedWindowsWindowMaterial,
 } from './window-material.ts'
 
-/** Electron platforms supported by the DSH Desktop native adapter. */
+/** Electron platforms supported by the 易宝工坊 native adapter. */
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
 
 /** Native presentation modes selected by the desktop-shell Cordis row. */
@@ -177,6 +177,9 @@ export interface DesktopRuntime {
   /** Locale currently used for native tray contributions. */
   readonly locale: DesktopLocale
 
+  /** Fixed, credential-free URL that activates the app after browser login. */
+  readonly loginCompletionUrl?: string
+
   /** Native network, update-download, and notification adapter. */
   readonly updates: DesktopUpdateAdapter
 
@@ -197,6 +200,9 @@ export interface DesktopRuntime {
 
   /** Reveal and focus the current window, if mounted. */
   show(): void
+
+  /** Open an HTTP(S) URL with the operating system's default browser. */
+  openExternal(target: string): Promise<void>
 
   /** Request native attention for background activity while the window is unfocused. */
   notifyAttention(notification: DesktopNotification): void
@@ -250,7 +256,7 @@ export interface DesktopRuntime {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Electron adapter provided by the DSH Desktop launcher. */
+    /** Electron adapter provided by the 易宝工坊 launcher. */
     desktopRuntime: DesktopRuntime
   }
 }

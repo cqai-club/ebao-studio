@@ -1,4 +1,4 @@
-/** Isolated command-line environment launched from the DSH Desktop tray. */
+/** Isolated command-line environment launched from the 易宝工坊 tray. */
 
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import {
@@ -14,6 +14,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { basename, dirname, join, win32 } from 'node:path'
 import { assertDesktopProfileName } from './profile-manager.ts'
 import { PNPM_IGNORE_MINIMUM_RELEASE_AGE } from './pnpm-policy.ts'
+import { DESKTOP_PRODUCT_NAME } from './product-identity.ts'
 
 const RUN_AS_NODE = 'ELECTRON_RUN_AS_NODE'
 const DEFAULT_PROFILE = 'DSH_DESKTOP_DEFAULT_PROFILE'
@@ -24,6 +25,7 @@ const WINDOWS_DSH_BOOTSTRAP = 'DSH_DESKTOP_DSH_BOOTSTRAP'
 const WINDOWS_ELECTRON_VERSION = 'DSH_DESKTOP_ELECTRON_VERSION'
 const WINDOWS_PNPM_ENTRY = 'DSH_DESKTOP_PNPM_ENTRY'
 const WINDOWS_PROFILE_DIRECTORY = 'DSH_DESKTOP_PROFILE_DIRECTORY'
+const WINDOWS_PRODUCT_NAME = 'DSH_DESKTOP_PRODUCT_NAME'
 const WINDOWS_PRODUCT_VERSION = 'DSH_DESKTOP_PRODUCT_VERSION'
 const WINDOWS_SHIM_DIRECTORY = 'DSH_DESKTOP_SHIM_DIRECTORY'
 const WINDOWS_POWERSHELL_WELCOME = 'DSH_DESKTOP_POWERSHELL_WELCOME'
@@ -36,6 +38,7 @@ const WINDOWS_GENERATED_ENVIRONMENT_KEYS = new Set([
   WINDOWS_ELECTRON_VERSION,
   WINDOWS_PNPM_ENTRY,
   WINDOWS_PROFILE_DIRECTORY,
+  WINDOWS_PRODUCT_NAME,
   WINDOWS_PRODUCT_VERSION,
   WINDOWS_SHIM_DIRECTORY,
   WINDOWS_POWERSHELL_WELCOME,
@@ -48,7 +51,7 @@ const PRIVATE_FILE_MODE = 0o600
 const WINDOWS_SHELL_COMMANDS = ['pwsh.exe', 'powershell.exe', 'cmd.exe'] as const
 const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
 
-/** Platforms with a native terminal launch contract owned by DSH Desktop. */
+/** Platforms with a native terminal launch contract owned by 易宝工坊. */
 export type DesktopTerminalPlatform = 'darwin' | 'win32'
 
 /** Process launcher injected by the Electron adapter. */
@@ -340,7 +343,7 @@ function macWelcome(
     `export PATH=${quoteSh(shimDir)}:"\${PATH:-}"`,
     `cd ${quoteSh(options.profileDir)}`,
     "printf '\\033[2J\\033[3J\\033[H'",
-    `printf '%s\\n' ${quoteSh(`DSH Desktop ${options.productVersion} terminal`)}`,
+    `printf '%s\\n' ${quoteSh(`${DESKTOP_PRODUCT_NAME} ${options.productVersion} terminal`)}`,
     `printf '%s\\n' ${quoteSh(`Profile: ${options.profileName}`)}`,
     `printf '%s\\n' ${quoteSh(`Profile directory: ${options.profileDir}`)}`,
     `printf '%s\\n' ${quoteSh(`Harness home: ${options.homeDir}`)}`,
@@ -350,7 +353,7 @@ function macWelcome(
     `printf '  %s\\n' ${quoteSh(pluginAdd)}`,
     `printf '  %s\\n' ${quoteSh(pluginRemove)}`,
     `printf '  %s\\n' ${quoteSh(pluginUpdate)}`,
-    `printf '%s\\n' ${quoteSh('Restart DSH Desktop after plugin changes.')}`,
+    `printf '%s\\n' ${quoteSh(`Restart ${DESKTOP_PRODUCT_NAME} after plugin changes.`)}`,
     'case "${SHELL:-/bin/zsh}" in',
     '  */bash)',
     '    export DSH_DESKTOP_USER_BASHRC="${HOME:-}/.bashrc"',
@@ -383,7 +386,7 @@ function windowsWelcome(): string {
     `$dshDesktopPath = @($env:${PATH} -split ';' | Where-Object { -not [string]::Equals($_, $dshDesktopShimDir, [StringComparison]::OrdinalIgnoreCase) })`,
     `$env:${PATH} = (@($dshDesktopShimDir) + $dshDesktopPath) -join ';'`,
     `Set-Location -LiteralPath $env:${WINDOWS_PROFILE_DIRECTORY}`,
-    `Write-Host ("DSH Desktop {0} terminal" -f $env:${WINDOWS_PRODUCT_VERSION})`,
+    `Write-Host ("{0} {1} terminal" -f $env:${WINDOWS_PRODUCT_NAME}, $env:${WINDOWS_PRODUCT_VERSION})`,
     `Write-Host ("Profile: {0}" -f $env:${DEFAULT_PROFILE})`,
     `Write-Host ("Profile directory: {0}" -f $env:${WINDOWS_PROFILE_DIRECTORY})`,
     `Write-Host ("Harness home: {0}" -f $env:${DSH_HOME})`,
@@ -393,7 +396,7 @@ function windowsWelcome(): string {
     `Write-Host '  ${pluginAdd}'`,
     `Write-Host '  ${pluginRemove}'`,
     `Write-Host '  ${pluginUpdate}'`,
-    `Write-Host 'Restart DSH Desktop after plugin changes.'`,
+    `Write-Host ("Restart {0} after plugin changes." -f $env:${WINDOWS_PRODUCT_NAME})`,
     '',
   ].join('\r\n')
 }
@@ -409,7 +412,7 @@ function windowsCmdWelcome(): string {
     'setlocal EnableDelayedExpansion',
     `set "${RUN_AS_NODE}="`,
     `cd /d "!${WINDOWS_PROFILE_DIRECTORY}!"`,
-    `echo(DSH Desktop !${WINDOWS_PRODUCT_VERSION}! terminal`,
+    `echo(!${WINDOWS_PRODUCT_NAME}! !${WINDOWS_PRODUCT_VERSION}! terminal`,
     `echo(Profile: !${DEFAULT_PROFILE}!`,
     `echo(Profile directory: !${WINDOWS_PROFILE_DIRECTORY}!`,
     `echo(Harness home: !${DSH_HOME}!`,
@@ -419,7 +422,7 @@ function windowsCmdWelcome(): string {
     `echo(  ${escapeBatchText(pluginAdd)}`,
     `echo(  ${escapeBatchText(pluginRemove)}`,
     `echo(  ${escapeBatchText(pluginUpdate)}`,
-    `echo(${escapeBatchText('Restart DSH Desktop after plugin changes.')}`,
+    `echo(Restart !${WINDOWS_PRODUCT_NAME}! after plugin changes.`,
     'endlocal & set "ELECTRON_RUN_AS_NODE="',
     '',
   ].join('\r\n')
@@ -512,6 +515,7 @@ function terminalEnvironment(options: DesktopTerminalOptions, files: DesktopTerm
     env[WINDOWS_ELECTRON_VERSION] = options.electronVersion
     env[WINDOWS_PNPM_ENTRY] = options.pnpmBinPath
     env[WINDOWS_PROFILE_DIRECTORY] = options.profileDir
+    env[WINDOWS_PRODUCT_NAME] = DESKTOP_PRODUCT_NAME
     env[WINDOWS_PRODUCT_VERSION] = options.productVersion
     env[WINDOWS_SHIM_DIRECTORY] = files.shimDir
     env[WINDOWS_POWERSHELL_WELCOME] = files.welcomePath
@@ -636,7 +640,7 @@ function windowsLaunchBroker(
   return [
     '@echo off',
     'setlocal EnableDelayedExpansion',
-    `start "DSH Desktop" /D "!${WINDOWS_PROFILE_DIRECTORY}!" ${target}`,
+    `start "!${WINDOWS_PRODUCT_NAME}!" /D "!${WINDOWS_PROFILE_DIRECTORY}!" ${target}`,
     'exit /b %errorlevel%',
     '',
   ].join('\r\n')

@@ -57,6 +57,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export function applyDesktopSettings(
   ctx: ClientContext,
   environment: DesktopClientEnvironment,
+  developerActions = false,
 ): DesktopSettingsClientControl {
   const desktopSettings = ctx.settingsScope.bind<DesktopShellSettings>({
     namespace: DESKTOP_SHELL_SETTINGS_NAMESPACE,
@@ -94,13 +95,15 @@ export function applyDesktopSettings(
       notificationSettings,
     }),
   }, DesktopSettingsSection))
-  ctx.slots.inject('settings.action', () => ctx.slots.register({
-    name: 'settings.action',
-    id: 'open-desktop-terminal',
-    order: 1,
-    locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
-    inject: () => ({ api }),
-  }, DesktopTerminalSettingsAction))
+  if (developerActions) {
+    ctx.slots.inject('settings.action', () => ctx.slots.register({
+      name: 'settings.action',
+      id: 'open-desktop-terminal',
+      order: 1,
+      locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
+      inject: () => ({ api }),
+    }, DesktopTerminalSettingsAction))
+  }
 
   return Object.freeze({
     api,

@@ -22,7 +22,7 @@
 
 ```mermaid
 flowchart LR
-  User[用户] -->|窗口、托盘、系统对话框| Desktop[DSH Desktop]
+  User[用户] -->|窗口、托盘、系统对话框| Desktop[易宝工坊]
   Desktop -->|HTTP / WebSocket，仅 loopback| LocalWeb[本地 DSH Web carrier]
   Desktop -->|读写 profile 与 settings| Home[DSH home]
   Desktop -->|显式选择并校验| Workspace[本地 workspace]

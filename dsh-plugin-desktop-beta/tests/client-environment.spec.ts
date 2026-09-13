@@ -8,7 +8,7 @@ import { apply } from '../src/client/index.ts'
 import { AdvancedFrame, type AdvancedFrameProps } from '../src/client/AdvancedFrame.tsx'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
 import { installDesktopLayout } from '../src/client/layout-service.ts'
-import { parseDesktopClientEnvironment } from '../src/client/environment.ts'
+import { desktopDeveloperActionsEnabled, parseDesktopClientEnvironment } from '../src/client/environment.ts'
 import { ExtendedFrame } from '../src/client/ExtendedFrame.tsx'
 import { applyExtendedShell, applyFramedShell } from '../src/client/extended-shell.ts'
 import { installExtendedStyles } from '../src/client/extended-styles.ts'
@@ -43,11 +43,19 @@ describe('desktop client environment', () => {
     } as unknown as ClientContext
     try {
       apply(ctx)
-      expect(inject.mock.calls.map(([name]) => name)).toEqual(['settings.section', 'settings.action'])
+      expect(inject.mock.calls.map(([name]) => name)).toEqual(['settings.section'])
       expect(effect.mock.calls.map(([, label]) => label)).not.toContain('desktop: independent compatibility frame styles')
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  it('shows settings developer actions only for the validated Electron marker', () => {
+    expect(desktopDeveloperActionsEnabled('')).toBe(false)
+    expect(desktopDeveloperActionsEnabled('?dsh-desktop-developer-actions=0')).toBe(false)
+    expect(desktopDeveloperActionsEnabled('?dsh-desktop-developer-actions=1')).toBe(true)
+    expect(() => desktopDeveloperActionsEnabled('?dsh-desktop-developer-actions=yes')).toThrow('dsh-desktop-developer-actions')
+    expect(() => desktopDeveloperActionsEnabled('?dsh-desktop-developer-actions=1&dsh-desktop-developer-actions=0')).toThrow('dsh-desktop-developer-actions')
   })
 
   it('does not activate desktop effects for an ordinary browser URL', () => {

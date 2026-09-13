@@ -6,7 +6,7 @@ English | [中文](2026-08-15-desktop-compatibility-mode.zh.md)
 
 ## Problem
 
-DSH Desktop needs native application lifecycle while compatibility mode remains the unmodified official Web presentation. The package must still publish a Client face because advanced mode uses desktop-owned presentation, but loading that same artifact in compatibility must not make the safe path depend on product-owned root, layout, sidebar, or styles.
+易宝工坊 needs native application lifecycle while compatibility mode remains the unmodified official Web presentation. The package must still publish a Client face because advanced mode uses desktop-owned presentation, but loading that same artifact in compatibility must not make the safe path depend on product-owned root, layout, sidebar, or styles.
 
 ## Decision
 
@@ -32,7 +32,7 @@ Cordis disposal releases Client effects, Host rows, the tray, and the window bef
 
 ## Native lifecycle and security
 
-The compatibility adapter creates a normal `BrowserWindow` and omits custom-frame, title-bar, transparency, vibrancy, and native-material options. macOS suppresses visible page-title updates. Windows retains its native caption icon and fixed `DeepSeek Harness Desktop` caption while removing the window menu bar. The operating system owns native title-bar color and appearance.
+The compatibility adapter creates a normal `BrowserWindow` and omits custom-frame, title-bar, transparency, vibrancy, and native-material options. macOS suppresses visible page-title updates. Windows retains its native caption icon and fixed `易宝工坊` caption while removing the window menu bar. The operating system owns native title-bar color and appearance.
 
 The application keeps the unmodified iOS Default icon on Windows and Linux. macOS uses a build-derived copy with a transparent visual inset, and the same platform-selected path feeds packaging, the live Dock, and the window specification. The tray uses a macOS template derived from the brand SVG and fixed brand-blue images on Windows and Linux. Compatibility retains renderer isolation, the Chromium sandbox, disabled Node integration, exact-origin navigation, tray ownership, close-to-hide behavior, single-instance activation, and bounded Cordis disposal on explicit quit.
 

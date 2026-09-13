@@ -4,7 +4,7 @@ English | [中文](2026-08-15-desktop-profile-management.zh.md)
 
 ## Problem
 
-DSH Desktop originally always prepared and launched the product-owned `desktop` profile. Existing DSH users may already have a `web` profile or several purpose-specific Web profiles with different bundle and patch compositions. Sessions, settings, and storage in the ordinary shipped profiles already use the same DSH home by default, so copying records between profiles would duplicate data and misrepresent what a profile owns. The missing capability is selecting which plugin composition backs the desktop generation.
+易宝工坊 originally always prepared and launched the product-owned `desktop` profile. Existing DSH users may already have a `web` profile or several purpose-specific Web profiles with different bundle and patch compositions. Sessions, settings, and storage in the ordinary shipped profiles already use the same DSH home by default, so copying records between profiles would duplicate data and misrepresent what a profile owns. The missing capability is selecting which plugin composition backs the desktop generation.
 
 Selection happens before the Host Cordis tree and its settings provider exist. It therefore cannot be stored inside the selected profile's settings namespace. A failed selection must also remain recoverable when no renderer or tray can mount.
 
@@ -48,4 +48,4 @@ Target-platform release verification still has to exercise profile switching and
 
 ## Consequences
 
-DSH Desktop now manages several Web-capable profiles without owning their plugin rosters or their records. Switching is an explicit restart boundary, the terminal follows the active profile, and failed pending selections recover to the last mounted profile. The launcher gains a small persistent control document and another Host tray contribution, while the upstream checkout and renderer isolation remain unchanged.
+易宝工坊 now manages several Web-capable profiles without owning their plugin rosters or their records. Switching is an explicit restart boundary, the terminal follows the active profile, and failed pending selections recover to the last mounted profile. The launcher gains a small persistent control document and another Host tray contribution, while the upstream checkout and renderer isolation remain unchanged.

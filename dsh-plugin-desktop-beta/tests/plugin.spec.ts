@@ -131,6 +131,7 @@ function createHarness(
     },
     mountScheduled: async () => {},
     show: () => {},
+    openExternal: async () => {},
     notifyAttention: () => {},
     registerTrayItem: () => ({ refresh: () => {}, dispose: () => {} }),
     openTerminal: () => {},
@@ -326,6 +327,15 @@ describe('desktop Host plugin', () => {
       'linux',
       '2.0.3',
     )).searchParams)).not.toHaveProperty('dsh-desktop-titlebar-inset')
+    expect(Object.fromEntries(new URL(desktopRendererUrl(
+      43120,
+      'advanced',
+      'darwin',
+      '2.0.3',
+      'off',
+      undefined,
+      true,
+    )).searchParams)).toHaveProperty('dsh-desktop-developer-actions', '1')
   })
 
   it('registers settings and the active Web port without re-entering Loader settlement', async () => {
@@ -344,10 +354,10 @@ describe('desktop Host plugin', () => {
     expect(loaderAwait).not.toHaveBeenCalled()
     expect(harness.shell()).toEqual(expect.objectContaining({
       mode: 'compatibility',
-      url: 'http://127.0.0.1:43120/?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.0&dsh-desktop-material=transparent&dsh-desktop-titlebar-inset=36',
+      url: 'http://127.0.0.1:43120/?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.0&dsh-desktop-material=transparent&dsh-desktop-developer-actions=1&dsh-desktop-titlebar-inset=36',
       authenticationUrl: 'http://127.0.0.1:43120/?token=test-token',
-      productName: 'DSH Desktop Beta',
-      windowTitle: 'DeepSeek Harness Desktop',
+      productName: '易宝工坊 Beta',
+      windowTitle: '易宝工坊',
       rendererAccessHeader: {
         name: 'x-dsh-desktop-renderer',
         value: Buffer.alloc(32, 6).toString('base64url'),

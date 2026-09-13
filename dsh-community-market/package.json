@@ -2,7 +2,7 @@
   "name": "dsh-community-market",
   "version": "0.1.0-dev.0",
   "private": true,
-  "description": "Community plugin discovery and managed package operations for DeepSeek Harness Desktop",
+  "description": "Community plugin discovery and managed package operations for 易宝工坊",
   "license": "MIT",
   "publishConfig": {
     "access": "public",

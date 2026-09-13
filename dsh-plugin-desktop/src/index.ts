@@ -1,4 +1,4 @@
-/** DSH Desktop Host plugin: owns the selected native shell generation. */
+/** 易宝工坊 Host plugin: owns the selected native shell generation. */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
@@ -189,12 +189,14 @@ export function desktopRendererUrl(
   appVersion: string,
   material: DesktopWindowMaterial = 'off',
   windowsBuild?: number,
+  developerActions = false,
 ): string {
   const url = new URL(`http://127.0.0.1:${String(port)}/`)
   url.searchParams.set('dsh-desktop-mode', mode)
   url.searchParams.set('dsh-desktop-platform', platform)
   url.searchParams.set('dsh-desktop-version', appVersion)
   url.searchParams.set('dsh-desktop-material', material)
+  if (developerActions) url.searchParams.set('dsh-desktop-developer-actions', '1')
   if (mode === 'extended' || (mode === 'compatibility' && platform !== 'linux')) {
     // Body-level plugin portals do not inherit the framed root's geometry.
     // Publish the exact content boundary so they can yield Desktop chrome.
@@ -215,8 +217,8 @@ export function apply(ctx: Context, config: Config): void {
   const runtime = ctx.get('desktopRuntime')
   if (runtime === undefined) {
     process.stderr.write(
-      'dsh-plugin-desktop: this profile is composed with the DSH Desktop shell, which requires the desktop launcher (desktopRuntime).\n'
-      + 'Start it with `dsh-desktop`, or select this profile inside the packaged DSH Desktop application.\n'
+      'dsh-plugin-desktop: this profile is composed with the 易宝工坊 shell, which requires the desktop launcher (desktopRuntime).\n'
+      + 'Start it with `dsh-desktop`, or select this profile inside the packaged 易宝工坊 application.\n'
       + 'The desktop terminal, profile, and update rows stay inactive in an ordinary DSH boot.\n',
     )
     return
@@ -470,6 +472,7 @@ export function apply(ctx: Context, config: Config): void {
         runtime.updates.currentVersion,
         material,
         runtime.windowsBuild,
+        runtime.updates.isPackaged === false,
       )
       return runtime.schedule({
         ...config,
@@ -479,7 +482,7 @@ export function apply(ctx: Context, config: Config): void {
         authenticationUrl: ctx.connection.authenticatedUrl(new URL(url).origin),
         rendererAccessHeader: browserAccess.rendererHeader,
         productName: DESKTOP_PRODUCT_NAME,
-        windowTitle: 'DeepSeek Harness Desktop',
+        windowTitle: '易宝工坊',
         iconPath,
         trayIcons,
         readLocalePreference: () => {

@@ -1,6 +1,6 @@
 # cqai-dsh-plugin-quicknav
 
-CQAI 的第一个 DSH Desktop 插件，负责把左侧快捷入口和 `dsh-better-sidebar` 工作台连接起来。
+CQAI 的第一个 易宝工坊 插件，负责把左侧快捷入口和 `dsh-better-sidebar` 工作台连接起来。
 
 ## 扩展方式
 
@@ -12,4 +12,4 @@ CQAI 的第一个 DSH Desktop 插件，负责把左侧快捷入口和 `dsh-bette
 
 - DSH `0.1.5-rc.1+`
 - `dsh-better-sidebar` `0.19.x`
-- DSH Desktop 的 Web Client Profile
+- 易宝工坊 的 Web Client Profile

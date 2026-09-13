@@ -89,7 +89,7 @@ describe('Recovery native terminal action', () => {
       {
         leading: createElement(RecoveryActionLink, { children: 'Back', href: 'dsh-profile-selector://cancel' }),
         children: createElement(RecoveryActionLink, {
-          children: 'Restart DSH Desktop',
+          children: 'Restart 易宝工坊',
           href: 'dsh-profile-selector://restart',
           variant: 'default',
         }),

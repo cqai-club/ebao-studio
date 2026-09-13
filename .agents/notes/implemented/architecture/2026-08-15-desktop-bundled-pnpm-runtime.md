@@ -4,7 +4,7 @@ English | [中文](2026-08-15-desktop-bundled-pnpm-runtime.zh.md)
 
 ## Problem
 
-DSH Desktop packages pnpm so the generated DSH terminal can manage profile plugins without a system Node.js installation. That terminal owns a child-specific `PATH`, so Cordis Host plugins and subprocesses started by the running desktop generation cannot discover the bundled package manager. A plugin that invokes `pnpm` would therefore behave differently in the terminal and in the application runtime.
+易宝工坊 packages pnpm so the generated DSH terminal can manage profile plugins without a system Node.js installation. That terminal owns a child-specific `PATH`, so Cordis Host plugins and subprocesses started by the running desktop generation cannot discover the bundled package manager. A plugin that invokes `pnpm` would therefore behave differently in the terminal and in the application runtime.
 
 The solution must not put Electron's Node mode into the Host environment. `ELECTRON_RUN_AS_NODE` changes how Electron executables start and can break unrelated Electron children when inherited. Exposing the terminal's complete command directory would also shadow a user's `node` and `dsh` commands for every plugin process.
 
@@ -38,4 +38,4 @@ Windows batch commands require a command interpreter. Upstream `dsh plugin` alre
 
 ## Consequences
 
-Host plugins can resolve the pinned bundled pnpm from startup onward, including through the ordinary DSH subprocess service. User commands outside DSH Desktop remain unchanged, the plugin runtime does not acquire a global `node` replacement, and pnpm's native dependency builds target the same Electron version as the Host.
+Host plugins can resolve the pinned bundled pnpm from startup onward, including through the ordinary DSH subprocess service. User commands outside 易宝工坊 remain unchanged, the plugin runtime does not acquire a global `node` replacement, and pnpm's native dependency builds target the same Electron version as the Host.

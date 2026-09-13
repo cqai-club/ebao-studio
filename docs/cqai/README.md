@@ -1,10 +1,18 @@
-# CQAI DSH Desktop 扩展
+# CQAI 易宝工坊 扩展
 
 这个目录保存 CQAI 的架构说明；Profile 模板位于 `dsh-desktop/profiles`，可构建的 DSH 插件源码统一位于
 `E:/workspace/project/dsh-desktop/cqai-dsh-plugins`。每一个可独立安装、构建和发布的功能都应该是一个
 `cqai-dsh-plugin-*` 包，而不是把所有业务代码继续放进同一个插件。
 
-当前已经实现的扩展包括 `cqai-dsh-plugin-quicknav` 和 `cqai-dsh-plugin-market`。前者提供：
+当前已经实现的扩展包括 `@cqaiclub/dsn-account`、`cqai-dsh-plugin-quicknav` 和 `cqai-dsh-plugin-market`。
+账号插件提供：
+
+- CQAI Club OAuth/PKCE 浏览器登录和本地凭证管理；
+- 账号、额度和可用模型目录；
+- Desktop 设置页中的 CQAI Club 账号标签；
+- `cqaiclub` LLM Provider，以及供后续业务插件复用的 Host 服务。
+
+它作为 Desktop 的默认产品 bundle 自动进入保留的 `desktop` Profile。前者快速入口提供：
 
 - 左侧栏的固定「CQAI 工具」入口；
 - 基于 `dsh-better-sidebar` 注册的 CQAI 工具页；
@@ -30,6 +38,7 @@ dsh-desktop/
 ├─ cqai-dsh-plugins/
 │  ├─ cqai-dsh-plugin-quicknav/   # 左侧快速入口和 CQAI 工作台
 │  ├─ cqai-dsh-plugin-market/     # CQAI 精选市场策略和来源配置
+│  ├─ cqai-dsh-plugin-account/    # CQAI Club 共享账号、额度和模型目录
 │  ├─ cqai-dsh-plugin-workbench/  # 后续独立工作台能力
 │  └─ cqai-dsh-plugin-*/          # 继续按能力拆分
 ├─ profiles/
@@ -38,7 +47,7 @@ dsh-desktop/
 └─ scripts/                       # 构建、安装和验证脚本
 ```
 
-`market` 是独立边界，负责 CQAI 品牌和精选策略；默认来源仍由用户在 `dsh-community-market` 中选择。品牌不单独做插件，而是直接维护 `dsh-plugin-desktop` 的产品层。
+`account` 负责跨 CQAI 业务插件共享的身份、额度和模型能力；`market` 是独立边界，负责 CQAI 品牌和精选策略；默认来源仍由用户在 `dsh-community-market` 中选择。品牌不单独做插件，而是直接维护 `dsh-plugin-desktop` 的产品层。
 
 其中 `cqai-dsh-plugin-market` 不直接复制 `dsh-community-market`。它复用现有市场的完整 UI、安装、安全校验和来源管理能力，当前只负责 CQAI 精选策略和品牌展示；真实 CQAI 默认来源的接入留待后续通过明确的 provider 或 source 配置完成。
 
@@ -69,7 +78,7 @@ corepack yarn workspace cqai-dsh-plugin-market build
 corepack yarn workspace cqai-dsh-plugin-market typecheck
 ```
 
-将本地包链接到目标 DSH Profile。不要使用保留的 `desktop` Profile；它由 Electron 独占管理。请先在 Desktop 的设置或托盘 Profile 菜单中创建一个自定义 Profile，例如 `cqai-dev`：
+将需要手动调试的本地业务包链接到自定义 DSH Profile。默认的 `@cqaiclub/dsn-account` 已由 Desktop 安装包和保留的 `desktop` Profile 管理，不需要重复添加。请先在 Desktop 的设置或托盘 Profile 菜单中创建一个自定义 Profile，例如 `cqai-dev`：
 
 ```bash
 cd <你的-dsh-profile目录>
@@ -92,6 +101,7 @@ dsh plugin --profile cqai-dev add dsh-better-sidebar@0.19.0
 ## 设计边界
 
 - `dsh-desktop`：Electron 壳、窗口、Profile、打包和原生生命周期。
+- `@cqaiclub/dsn-account`：CQAI Club 登录、共享账号/额度、模型目录和 `cqaiclub` LLM Provider。
 - `dsh-better-sidebar`：右侧工作台、Tab 和文件预览器注册服务。
 - `cqai-dsh-plugin-quicknav`：CQAI 的左侧入口、工作台页面和导航扩展。
 - `cqai-dsh-plugin-market`：CQAI 市场品牌和精选策略；完整市场、来源与安装由 `dsh-community-market` 提供。
@@ -100,4 +110,4 @@ dsh plugin --profile cqai-dev add dsh-better-sidebar@0.19.0
 
 ## 当前 Profile 模板
 
-`dsh-desktop/profiles/cqai-dsh-plugin-desktop` 用于本地组合 `dsh-plugin-desktop`、`dsh-better-sidebar` 和 CQAI 插件。它是开发模板，不会复制或修改 `dsh-desktop` 源码。
+`dsh-desktop/profiles/cqai-dsh-plugin-desktop` 用于本地组合 `dsh-plugin-desktop`、默认账号插件、`dsh-better-sidebar` 和其他 CQAI 插件。它是开发模板，不会复制或修改 `dsh-desktop` 源码。
