@@ -12,7 +12,7 @@ it('mounts real DSH routes and completes an offline task through HTTP', async ()
   const ctx = new Context()
   try {
     await ctx.plugin(WebServer, {host: '127.0.0.1', port: 0})
-    await ctx.plugin(plugin)
+    await ctx.plugin({...plugin, inject: ['webServer']})
     const base = `http://127.0.0.1:${ctx.webServer.port}/api/cqai-video`
     expect((await fetch(base + '/jobs')).status).toBe(200)
     const response = await fetch(base + '/jobs', {method: 'POST', headers: {'content-type': 'application/json', 'x-ejianbao': '1'}, body: JSON.stringify({title: 'HTTP 本地验收', text: '第一句测试。第二句说明。', duration: 6, mode: 'plan', optimize: false, covers: false, studio: false})})

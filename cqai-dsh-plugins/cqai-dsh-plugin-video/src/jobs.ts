@@ -15,7 +15,8 @@ export function validId(id: string): boolean { return /^[0-9a-f]{8}-[0-9a-f-]{27
 const OUTPUTS = ['final_video.mp4', 'script.txt', 'plan.json', 'motion/MotionPackage.tsx', 'publish_package_handoff.json', 'cover_3x4.png', 'cover_4x3.png', 'cover_16x9.png', 'align_tmp/report.json']
 export class JobStore {
   readonly jobs = new Map<string, Job>()
-  private active?: {id: string; child: ChildProcess; done: Promise<void>}
+  private active?: {id: string; child: ChildProcess; done: Promise<void>; controller: AbortController}
+  managedGenerate?: (job: Job, signal: AbortSignal) => Promise<void>
   constructor(readonly root: string, readonly runtime: string, readonly python = process.env.EJIANBAO_PYTHON || 'python') {
     mkdirSync(root, {recursive: true})
     for (const id of readdirSync(root)) {
@@ -50,7 +51,13 @@ export class JobStore {
       return existsSync(path) ? [{file, name: file.split('/').pop()!, size: statSync(path).size}] : []
     })
   }
-  start(id: string): Job {
+  async prepare(id: string): Promise<Job> {
+    const job = this.start(id, true)
+    await this.active!.done
+    if (job.status !== 'draft') throw new Error(job.error || '文案准备失败')
+    return job
+  }
+  start(id: string, preparing = false): Job {
     if (this.active) throw new Error('已有制作任务正在运行，请等待完成或取消')
     const job = this.get(id)
     if (job.status === 'completed') throw new Error('任务已完成，请新建任务')
@@ -58,16 +65,35 @@ export class JobStore {
     if (!options.text && !uploads.script) throw new Error('请填写口播文案或上传文案文件')
     if (options.mode === 'video' && !uploads.video) throw new Error('请上传口播视频')
     if (options.mode === 'digitalhuman' && (!uploads.avatar || !uploads.voice)) throw new Error('请上传授权形象照和参考录音')
+    if (options.mode === 'digitalhuman' && !preparing && this.managedGenerate && !job.cloud) throw new Error('请先获取并确认报价')
     job.status = 'running'; job.error = undefined
     this.log(job, '开始制作 · ' + new Date().toLocaleString()); this.save(job)
-    const child = spawn(this.python, ['-u', join(this.runtime, 'runner.py'), '--out', this.dir(id)], {
-      cwd: this.runtime, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-      env: {...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'},
+    const controller = new AbortController()
+    const child = spawn(this.python, ['-u', join(this.runtime, 'runner.py'), '--out', this.dir(id), ...(preparing ? ['--prepare-only'] : [])], {
+      cwd: this.runtime, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+      env: {...process.env, INFERFLOW_API_KEY: '', EJIANBAO_MANAGED_ACCOUNT: '1', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'},
       detached: process.platform !== 'win32',
     })
     let pending = ''
+    let cloudRequested = false
+    let cloudWork: Promise<void> | undefined
+    child.stdin!.on('error', () => {})
     const onLine = (line: string) => {
-      if (line.startsWith('EJIANBAO_EVENT ')) {
+      if (line === 'EJIANBAO_CLOUD_REQUEST' && !cloudRequested) {
+        cloudRequested = true
+        cloudWork = (async () => {
+          try {
+            if (!this.managedGenerate) throw new Error('产品视频服务未配置')
+            await this.managedGenerate(job, controller.signal)
+            if (!controller.signal.aborted) child.stdin!.write('{"ok":true}\n')
+          } catch (error) {
+            if (!controller.signal.aborted) {
+              job.error = error instanceof Error ? error.message : '云端生成失败'; this.save(job)
+              child.stdin!.write(JSON.stringify({ok: false, error: job.error}) + '\n')
+            }
+          }
+        })()
+      } else if (line.startsWith('EJIANBAO_EVENT ')) {
         try {
           const e = JSON.parse(line.slice(15)) as {stage: Stage; status: 'running' | 'completed' | 'skipped'}
           if (STAGES.includes(e.stage) && ['running', 'completed', 'skipped'].includes(e.status)) {job.stage = e.stage; job.stages[e.stage] = e.status}
@@ -82,20 +108,22 @@ export class JobStore {
     })
     child.stderr!.setEncoding('utf8').on('data', (text: string) => {for (const line of text.split(/\r?\n/)) if (line.trim()) this.log(job, line); this.save(job)})
     child.once('error', error => {job.error = `无法启动 Python：${error.message}`})
-    const done = new Promise<void>(resolveDone => child.once('close', (code) => {
+    const done = new Promise<void>(resolveDone => child.once('close', async (code) => {
       if (pending) onLine(pending)
       if (job.status !== 'cancelled' && job.status !== 'interrupted') {
-        job.status = code === 0 ? 'completed' : 'failed'
+        job.status = code === 0 ? preparing ? 'draft' : 'completed' : 'failed'
         if (code !== 0) {job.error ??= '制作失败，请查看日志后继续任务'; if (job.stage) job.stages[job.stage] = 'failed'}
       }
-      this.collect(job); this.save(job); this.active = undefined; resolveDone()
+      controller.abort(); await cloudWork; this.collect(job); this.save(job); this.active = undefined; resolveDone()
     }))
-    this.active = {id, child, done}; return job
+    this.active = {id, child, done, controller}; return job
   }
   async cancel(id: string, interrupted = false): Promise<void> {
     const active = this.active
     if (!active || active.id !== id) throw new Error('任务未在运行')
     const job = this.get(id); job.status = interrupted ? 'interrupted' : 'cancelled'; this.save(job)
+    active.controller.abort()
+    if (job.cloud?.submissionStarted) this.log(job, '已停止本地等待，云端任务继续运行；继续任务时查询原任务，不重复生成。')
     if (active.child.pid !== undefined) {
       if (process.platform === 'win32') {
         await new Promise<void>((done, reject) => {

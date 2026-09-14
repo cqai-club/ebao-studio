@@ -41,3 +41,8 @@ it('does not expose upstream errors or fall back to a local InferFlow key', asyn
   }
   expect(request).toHaveBeenCalledTimes(4)
 })
+
+it('preserves reconciliation instructions without leaking vendor error text', async () => {
+  const request = vi.fn<AccountRequest>().mockResolvedValue(Response.json({code: 'VIDEO_SUBMISSION_UNKNOWN', message: 'private-vendor-key'}, {status: 409}))
+  await expect(new ManagedVideoProvider(request).status('run_1')).rejects.toMatchObject({code: 'reconciliation', message: expect.stringContaining('请勿新建重复任务')})
+})

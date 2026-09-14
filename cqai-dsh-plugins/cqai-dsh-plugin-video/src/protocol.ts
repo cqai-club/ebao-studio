@@ -10,4 +10,5 @@ export interface Job {
   stage?: Stage; stages: Partial<Record<Stage, 'running' | 'completed' | 'skipped' | 'failed'>>;
   uploads: Partial<Record<UploadKind, {file: string; name: string}>>; logs: string[]; error?: string;
   artifacts: {name: string; file: string; size: number}[];
+  cloud?: {quote: {id: string; amount: number; unit: string; expiresAt: string; displayAmount?: string}; runId?: string; accountId: number; submissionStarted?: boolean};
 }

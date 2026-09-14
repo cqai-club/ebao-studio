@@ -8,7 +8,7 @@
 
 1. 选择已有口播视频、数字人口播，或仅生成动效方案。
 2. 上传素材并填写文案。填写的文案优先于上传的文案文件。
-3. 点击开始制作。在制作记录中查看阶段进度、取消或继续任务。
+3. 数字人模式先登录产品账户并充值，获取积分报价，再确认生成。在制作记录中查看进度或继续任务。
 4. 完成后预览 MP4，下载成片、文案、计划、TSX 动效包和发布 JSON。
 
 已有口播视频默认全部本地处理；AI 文案优化、数字人和封面生成功能需用户在界面选择后才调用对应云服务。发布阶段仅准备素材，不登录或自动发布至任何平台。
@@ -21,8 +21,8 @@
 - Node.js 22+。在 `runtime/render-studio` 执行 `npm ci` 安装固定 Remotion 依赖。
 - Remotion 首次渲染需下载浏览器，可用 `EJIANBAO_BROWSER_EXECUTABLE` 指向本机 Chromium 浏览器。
 - `EJIANBAO_PYTHON` 可指定 Python 可执行文件；`FFMPEG_PATH` 可指定 FFmpeg。
-- 数字人调用已安装的 `inferflow-codex/scripts/run_skill.py` 与其已有配置。
-- AI 文案使用 `DEEPSEEK_API_KEY`；封面使用 `DASHSCOPE_API_KEY`，优先环境变量，其次 DSH_HOME 的 `.credentials.yaml`。密钥不送到客户端。
+- 数字人使用平台账户服务，用户无需 InferFlow Key；运营方需先部署托管服务与 Relay 渠道，详见 `docs/cqai/ejianbao-managed-service.md`。
+- 数字人托管模式关闭可选 AI 文案与封面。其他模式的这两项仍使用原有 `DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY` 配置。
 - 未安装 SenseVoice 模型时使用能量/停顿级字幕校准，界面明确显示校准等级。
 
 任务保存到 `$DSH_HOME/ejianbao/jobs/<id>`。每个任务独立素材、渲染目录和产物。一次运行一个任务；取消时终止该任务子进程树；退出应用时中断任务，重新启动后可继续。已成功阶段会复用，修改素材请新建任务。

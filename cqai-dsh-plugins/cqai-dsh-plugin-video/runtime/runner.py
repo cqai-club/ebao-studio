@@ -94,7 +94,7 @@ def render(out, state):
     state['final_video'] = str(out / 'final_video.mp4')
     write(out / 'pipeline_state.json', state)
 
-def run(out):
+def run(out, prepare_only=False):
     out = out.resolve()
     job = read(out / 'job.json'); options = job['options']; uploads = job['uploads']
     state_path = out / 'pipeline_state.json'; state = read(state_path)
@@ -110,10 +110,12 @@ def run(out):
         cfg['duration'] = duration_of(source)
         state.update(digitalhuman_ok=True, digitalhuman_video=str(source))
     state['config'] = cfg; write(state_path, state)
-    files = {'script': 'stage_script.py', 'digitalhuman': 'stage_digitalhuman.py', 'motionpack': 'stage_motion_pack.py', 'align': 'stage_align.py', 'studio': 'stage_studio.py', 'publish': 'stage_publish.py'}
+    files = {'script': 'stage_script.py', 'digitalhuman': 'stage_digitalhuman.py' if os.environ.get('EJIANBAO_MANAGED_ACCOUNT') == '1' else 'stage_digitalhuman_legacy.py', 'motionpack': 'stage_motion_pack.py', 'align': 'stage_align.py', 'studio': 'stage_studio.py', 'publish': 'stage_publish.py'}
     flags = {'script': 'script_ok', 'digitalhuman': 'digitalhuman_ok', 'motionpack': 'motionpack_ok', 'align': 'align_ok', 'render': 'render_ok', 'studio': 'studio_ok', 'publish': 'publish_ok'}
     artifacts = {'script': 'plan.json', 'motionpack': 'motion/MotionPackage.tsx', 'render': 'final_video.mp4', 'publish': 'publish_package_handoff.json'}
     for stage in ['script', 'digitalhuman', 'motionpack', 'align', 'render', 'studio', 'publish']:
+        if prepare_only and stage != 'script':
+            return
         state = read(state_path)
         disabled = (stage == 'digitalhuman' and options['mode'] != 'digitalhuman') or (options['mode'] == 'plan' and stage in ['align', 'render', 'studio']) or (stage == 'studio' and not options['studio'])
         if disabled:
@@ -146,11 +148,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--out', type=Path)
     parser.add_argument('--health', action='store_true')
+    parser.add_argument('--prepare-only', action='store_true')
     args = parser.parse_args()
     if args.health:
         print(json.dumps(health()))
     else:
-        try: run(args.out)
+        try: run(args.out, args.prepare_only)
         except Exception as exc:
             print('制作中断：' + str(exc), file=sys.stderr, flush=True)
             sys.exit(1)

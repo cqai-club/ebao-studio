@@ -12,9 +12,10 @@ import { spawn } from 'node:child_process'
 import { API, type UploadKind } from './protocol.ts'
 import { JobStore, validateOptions } from './jobs.ts'
 import { UPLOADS, validateUpload } from './uploads.ts'
+import { ManagedJobs, type VideoAccount } from './managed-jobs.ts'
 
 export const name = 'cqai-video'
-export const inject = ['webServer']
+export const inject = ['webServer', 'dsnAccount']
 function json(res: ServerResponse, code: number, data: unknown) {res.writeHead(code, {'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}); res.end(JSON.stringify(data))}
 export function permitted(req: IncomingMessage): boolean {
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '')) return false
@@ -45,6 +46,9 @@ export function serveArtifact(req: IncomingMessage, res: ServerResponse, path: s
 export function apply(ctx: Context): void {
   const runtime = fileURLToPath(new URL('../runtime/', import.meta.url))
   const store = new JobStore(join(resolveDshHome(), 'ejianbao', 'jobs'), runtime)
+  const account = () => (ctx as Context & {dsnAccount: VideoAccount}).dsnAccount
+  const managed = new ManagedJobs(store, {fetchAi: (path, init, signal) => account().fetchAi(path, init, signal), getAccount: () => account().getAccount()})
+  store.managedGenerate = (job, signal) => managed.generate(job, signal)
   let health: Promise<unknown> | undefined
   const getHealth = () => health ??= new Promise(resolveHealth => {
     const child = spawn(store.python, [join(runtime, 'runner.py'), '--health'], {windowsHide: true, env: {...process.env, PYTHONUTF8: '1'}, stdio: ['ignore', 'pipe', 'pipe']})
@@ -61,6 +65,7 @@ export function apply(ctx: Context): void {
         if (req.method === 'GET' && action === 'health') return json(res, 200, await getHealth())
         if (req.method === 'GET' && action === 'jobs') return json(res, 200, [...store.jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(j => ({...j, logs: j.logs.slice(-40)})))
         if (req.method === 'POST' && action === 'jobs') return json(res, 201, store.create(validateOptions(await readJson(req))))
+        if (req.method === 'POST' && action === 'quote') return json(res, 200, await managed.quote(id))
         if (req.method === 'POST' && action === 'start') return json(res, 200, store.start(id))
         if (req.method === 'POST' && action === 'cancel') {await store.cancel(id); return json(res, 200, store.get(id))}
         if (req.method === 'POST' && action === 'upload') {
