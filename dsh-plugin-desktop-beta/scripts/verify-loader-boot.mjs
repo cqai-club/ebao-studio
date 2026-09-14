@@ -78,6 +78,12 @@ try {
     environment: process.env,
   })
   const prepared = prepareDesktopProfile(undefined, home)
+  const productLayers = prepared.profile.layers.map(layer => layer.packageName)
+  const accountLayerIndex = productLayers.indexOf('@cqaiclub/dsn-account')
+  const imagegenLayerIndex = productLayers.indexOf('cqai-dsh-plugin-imagegen')
+  if (accountLayerIndex < 0 || imagegenLayerIndex !== accountLayerIndex + 1) {
+    throw new Error(`desktop profile did not mount ImageGen immediately after CQAI account: ${productLayers.join(', ')}`)
+  }
   const thirdPartyLink = join(prepared.profile.dir, 'node_modules', THIRD_PARTY_NAME)
   const thirdPartyDir = join(home, 'linked-plugins', THIRD_PARTY_NAME)
   const thirdPartyDependencyDir = join(home, 'profiles', 'node_modules', THIRD_PARTY_DEPENDENCY_NAME)
@@ -147,6 +153,9 @@ try {
     prepared.rootConfig,
     [{ insert: [
       { id: 'desktop-shell', name: 'dsh-plugin-desktop-beta' },
+      // This resolver-only row stays disabled because the minimal Loader probe
+      // intentionally omits ImageGen's full Web/agent service graph.
+      { id: 'imagegen-smoke', name: 'cqai-dsh-plugin-imagegen', disabled: true },
       { id: 'community-market', name: 'dsh-community-market' },
       { id: 'third-party-smoke', name: THIRD_PARTY_NAME },
     ] }],
@@ -190,10 +199,14 @@ try {
   await runtime.mountScheduled()
 
   const desktopEntry = ctx.loader.resolve('include:desktop-shell')
+  const imagegenEntry = ctx.loader.resolve('include:imagegen-smoke')
   const marketEntry = ctx.loader.resolve('include:community-market')
   const thirdPartyEntry = ctx.loader.resolve('include:third-party-smoke')
   if (desktopEntry?.options.name !== 'dsh-plugin-desktop-beta') {
     throw new Error('launcher-owned desktop plugin did not activate through its bare package name')
+  }
+  if (imagegenEntry?.options.name !== 'cqai-dsh-plugin-imagegen') {
+    throw new Error('CQAI ImageGen did not resolve through the installed desktop runtime')
   }
   if (thirdPartyEntry?.options.name !== THIRD_PARTY_NAME) {
     throw new Error('profile-local third-party plugin did not activate')

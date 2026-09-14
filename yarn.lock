@@ -1211,12 +1211,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@cqaiclub/dsn-account@npm:0.1.1, @cqaiclub/dsn-account@workspace:cqai-dsh-plugins/cqai-dsh-plugin-account":
+"@cqaiclub/dsn-account@npm:0.1.1, @cqaiclub/dsn-account@workspace:^, @cqaiclub/dsn-account@workspace:cqai-dsh-plugins/cqai-dsh-plugin-account":
   version: 0.0.0-use.local
   resolution: "@cqaiclub/dsn-account@workspace:cqai-dsh-plugins/cqai-dsh-plugin-account"
   dependencies:
     "@deepseek-ai/cordis": "npm:4.0.2"
     "@deepseek-ai/dsh-authorization": "npm:0.1.5-rc.1"
+    "@deepseek-ai/dsh-brand": "npm:0.1.5-rc.1"
     "@deepseek-ai/dsh-client-connection": "npm:0.1.5-rc.1"
     "@deepseek-ai/dsh-client-locale": "npm:0.1.5-rc.1"
     "@deepseek-ai/dsh-client-ui-conversation": "npm:0.1.5-rc.1"
@@ -1230,6 +1231,9 @@ __metadata:
     "@deepseek-ai/dsh-credentials": "npm:0.1.5-rc.1"
     "@deepseek-ai/dsh-invariants": "npm:0.1.5-rc.1"
     "@deepseek-ai/dsh-llm": "npm:0.1.5-rc.1"
+    "@deepseek-ai/dsh-scope": "npm:0.1.5-rc.1"
+    "@deepseek-ai/dsh-session": "npm:0.1.5-rc.1"
+    "@deepseek-ai/dsh-settings": "npm:0.1.5-rc.1"
     "@deepseek-ai/schemastery": "npm:3.18.2"
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:^18.3.0"
@@ -1239,10 +1243,12 @@ __metadata:
     react-dom: "npm:18.3.1"
     tsdown: "npm:^0.22.2"
     typescript: "npm:6.0.3"
+    unrun: "npm:^0.3.1"
     vitest: "npm:^4.1.8"
   peerDependencies:
     "@deepseek-ai/cordis": 4.0.2
     "@deepseek-ai/dsh-authorization": 0.1.5-rc.1
+    "@deepseek-ai/dsh-brand": 0.1.5-rc.1
     "@deepseek-ai/dsh-client-connection": 0.1.5-rc.1
     "@deepseek-ai/dsh-client-locale": 0.1.5-rc.1
     "@deepseek-ai/dsh-client-ui-conversation": 0.1.5-rc.1
@@ -1256,6 +1262,9 @@ __metadata:
     "@deepseek-ai/dsh-credentials": 0.1.5-rc.1
     "@deepseek-ai/dsh-invariants": 0.1.5-rc.1
     "@deepseek-ai/dsh-llm": 0.1.5-rc.1
+    "@deepseek-ai/dsh-scope": 0.1.5-rc.1
+    "@deepseek-ai/dsh-session": 0.1.5-rc.1
+    "@deepseek-ai/dsh-settings": 0.1.5-rc.1
   languageName: unknown
   linkType: soft
 
@@ -8027,7 +8036,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react-dom@npm:^18, @types/react-dom@npm:^18.3.0":
+"@types/react-dom@npm:^18, @types/react-dom@npm:^18.3.0, @types/react-dom@npm:^18.3.5":
   version: 18.3.7
   resolution: "@types/react-dom@npm:18.3.7"
   peerDependencies:
@@ -8036,7 +8045,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react@npm:^18, @types/react@npm:^18.3.0":
+"@types/react@npm:^18, @types/react@npm:^18.3.0, @types/react@npm:~18.3.1":
   version: 18.3.31
   resolution: "@types/react@npm:18.3.31"
   dependencies:
@@ -9642,6 +9651,82 @@ __metadata:
   languageName: node
   linkType: hard
 
+"cqai-dsh-plugin-imagegen@npm:0.1.0, cqai-dsh-plugin-imagegen@workspace:cqai-dsh-plugins/cqai-dsh-plugin-imagegen":
+  version: 0.0.0-use.local
+  resolution: "cqai-dsh-plugin-imagegen@workspace:cqai-dsh-plugins/cqai-dsh-plugin-imagegen"
+  dependencies:
+    "@cqaiclub/dsn-account": "workspace:^"
+    "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-api-remotes": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-api-session-controller": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-attachment": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-connection": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-locale": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-store": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-conversation": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-primitives": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-settings": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-tool": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-commands": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-credentials": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-host-webserver": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-llm": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-scope": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-session": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-settings": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-system-prompt": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-tools": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/schemastery": "npm:^3.18.2"
+    "@testing-library/dom": "npm:^10.4.1"
+    "@testing-library/react": "npm:^16.3.2"
+    "@types/node": "npm:^22.20.0"
+    "@types/react": "npm:~18.3.1"
+    "@types/react-dom": "npm:^18.3.5"
+    jsdom: "npm:29.1.1"
+    lightningcss: "npm:1.32.0"
+    lucide-react: "npm:^1.41.0"
+    react: "npm:^18.3.1"
+    react-dom: "npm:^18.3.1"
+    schemastery: "npm:^3.18.0"
+    tsdown: "npm:0.22.2"
+    typescript: "npm:~5.7.2"
+    unrun: "npm:^0.3.1"
+    vitest: "npm:4.1.8"
+  peerDependencies:
+    "@cqaiclub/dsn-account": ^0.1.1
+    "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-api-remotes": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-api-session-controller": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-attachment": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-connection": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-locale": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-store": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-conversation": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-layout": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-renderer": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-settings": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-tool": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-commands": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-credentials": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-host-webserver": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-llm": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-scope": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-session": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-settings": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-system-prompt": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-tools": ^0.1.5-rc.1
+    react: ^18.2.0
+    react-dom: ^18.2.0
+  languageName: unknown
+  linkType: soft
+
 "cqai-dsh-plugin-market@npm:0.1.0, cqai-dsh-plugin-market@workspace:cqai-dsh-plugins/cqai-dsh-plugin-market":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-market@workspace:cqai-dsh-plugins/cqai-dsh-plugin-market"
@@ -10848,6 +10933,7 @@ __metadata:
     builder-util: "npm:26.15.3"
     class-variance-authority: "npm:^0.7.1"
     clsx: "npm:^2.1.1"
+    cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dshmarket: "npm:1.38.1"
@@ -11047,6 +11133,7 @@ __metadata:
     builder-util: "npm:26.15.3"
     class-variance-authority: "npm:^0.7.1"
     clsx: "npm:^2.1.1"
+    cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dshmarket: "npm:1.38.1"
@@ -13257,6 +13344,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"lucide-react@npm:^1.41.0":
+  version: 1.45.0
+  resolution: "lucide-react@npm:1.45.0"
+  peerDependencies:
+    react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+  checksum: 10c0/5e4e0d4170bd9318b636ab71df8a5ab6fe4b36687882223c1289e92e898f913eb5f3f4959db1e0fa865e4d9da0f5107d9c0dcaad99f84412192e606c1d7ff0a3
+  languageName: node
+  linkType: hard
+
 "lz-string@npm:^1.5.0":
   version: 1.5.0
   resolution: "lz-string@npm:1.5.0"
@@ -14541,7 +14637,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-dom@npm:18.3.1":
+"react-dom@npm:18.3.1, react-dom@npm:^18.3.1":
   version: 18.3.1
   resolution: "react-dom@npm:18.3.1"
   dependencies:
@@ -14824,6 +14920,64 @@ __metadata:
   languageName: node
   linkType: hard
 
+"rolldown@npm:^1.0.0, rolldown@npm:~1.2.0":
+  version: 1.2.8
+  resolution: "rolldown@npm:1.2.8"
+  dependencies:
+    "@oxc-project/types": "npm:=0.149.0"
+    "@rolldown/binding-android-arm-eabi": "npm:1.2.8"
+    "@rolldown/binding-android-arm64": "npm:1.2.8"
+    "@rolldown/binding-darwin-arm64": "npm:1.2.8"
+    "@rolldown/binding-darwin-x64": "npm:1.2.8"
+    "@rolldown/binding-freebsd-x64": "npm:1.2.8"
+    "@rolldown/binding-linux-arm-gnueabihf": "npm:1.2.8"
+    "@rolldown/binding-linux-arm64-gnu": "npm:1.2.8"
+    "@rolldown/binding-linux-arm64-musl": "npm:1.2.8"
+    "@rolldown/binding-linux-ppc64-gnu": "npm:1.2.8"
+    "@rolldown/binding-linux-s390x-gnu": "npm:1.2.8"
+    "@rolldown/binding-linux-x64-gnu": "npm:1.2.8"
+    "@rolldown/binding-linux-x64-musl": "npm:1.2.8"
+    "@rolldown/binding-openharmony-arm64": "npm:1.2.8"
+    "@rolldown/binding-win32-arm64-msvc": "npm:1.2.8"
+    "@rolldown/binding-win32-x64-msvc": "npm:1.2.8"
+    "@rolldown/pluginutils": "npm:^1.0.0"
+  dependenciesMeta:
+    "@rolldown/binding-android-arm-eabi":
+      optional: true
+    "@rolldown/binding-android-arm64":
+      optional: true
+    "@rolldown/binding-darwin-arm64":
+      optional: true
+    "@rolldown/binding-darwin-x64":
+      optional: true
+    "@rolldown/binding-freebsd-x64":
+      optional: true
+    "@rolldown/binding-linux-arm-gnueabihf":
+      optional: true
+    "@rolldown/binding-linux-arm64-gnu":
+      optional: true
+    "@rolldown/binding-linux-arm64-musl":
+      optional: true
+    "@rolldown/binding-linux-ppc64-gnu":
+      optional: true
+    "@rolldown/binding-linux-s390x-gnu":
+      optional: true
+    "@rolldown/binding-linux-x64-gnu":
+      optional: true
+    "@rolldown/binding-linux-x64-musl":
+      optional: true
+    "@rolldown/binding-openharmony-arm64":
+      optional: true
+    "@rolldown/binding-win32-arm64-msvc":
+      optional: true
+    "@rolldown/binding-win32-x64-msvc":
+      optional: true
+  bin:
+    rolldown: ./bin/cli.mjs
+  checksum: 10c0/5a9c6b30a7ef0af257a963e6b0b95d5a60b23512b7dbcca617273bd63fb0892b88be6b33dc9a6cb66350f47d260eff6456af0b7afef34898767f3527ce0d967d
+  languageName: node
+  linkType: hard
+
 "rolldown@npm:~1.1.0":
   version: 1.1.5
   resolution: "rolldown@npm:1.1.5"
@@ -14879,64 +15033,6 @@ __metadata:
   bin:
     rolldown: ./bin/cli.mjs
   checksum: 10c0/93072aa9d95882f9fa5cd57fe7db6a48efd6f85a25a32137425052ecca02df653651eed0c33a865c33511681bd6a40691d5c88900b8e95ce1334f4f75ba826ff
-  languageName: node
-  linkType: hard
-
-"rolldown@npm:~1.2.0":
-  version: 1.2.8
-  resolution: "rolldown@npm:1.2.8"
-  dependencies:
-    "@oxc-project/types": "npm:=0.149.0"
-    "@rolldown/binding-android-arm-eabi": "npm:1.2.8"
-    "@rolldown/binding-android-arm64": "npm:1.2.8"
-    "@rolldown/binding-darwin-arm64": "npm:1.2.8"
-    "@rolldown/binding-darwin-x64": "npm:1.2.8"
-    "@rolldown/binding-freebsd-x64": "npm:1.2.8"
-    "@rolldown/binding-linux-arm-gnueabihf": "npm:1.2.8"
-    "@rolldown/binding-linux-arm64-gnu": "npm:1.2.8"
-    "@rolldown/binding-linux-arm64-musl": "npm:1.2.8"
-    "@rolldown/binding-linux-ppc64-gnu": "npm:1.2.8"
-    "@rolldown/binding-linux-s390x-gnu": "npm:1.2.8"
-    "@rolldown/binding-linux-x64-gnu": "npm:1.2.8"
-    "@rolldown/binding-linux-x64-musl": "npm:1.2.8"
-    "@rolldown/binding-openharmony-arm64": "npm:1.2.8"
-    "@rolldown/binding-win32-arm64-msvc": "npm:1.2.8"
-    "@rolldown/binding-win32-x64-msvc": "npm:1.2.8"
-    "@rolldown/pluginutils": "npm:^1.0.0"
-  dependenciesMeta:
-    "@rolldown/binding-android-arm-eabi":
-      optional: true
-    "@rolldown/binding-android-arm64":
-      optional: true
-    "@rolldown/binding-darwin-arm64":
-      optional: true
-    "@rolldown/binding-darwin-x64":
-      optional: true
-    "@rolldown/binding-freebsd-x64":
-      optional: true
-    "@rolldown/binding-linux-arm-gnueabihf":
-      optional: true
-    "@rolldown/binding-linux-arm64-gnu":
-      optional: true
-    "@rolldown/binding-linux-arm64-musl":
-      optional: true
-    "@rolldown/binding-linux-ppc64-gnu":
-      optional: true
-    "@rolldown/binding-linux-s390x-gnu":
-      optional: true
-    "@rolldown/binding-linux-x64-gnu":
-      optional: true
-    "@rolldown/binding-linux-x64-musl":
-      optional: true
-    "@rolldown/binding-openharmony-arm64":
-      optional: true
-    "@rolldown/binding-win32-arm64-msvc":
-      optional: true
-    "@rolldown/binding-win32-x64-msvc":
-      optional: true
-  bin:
-    rolldown: ./bin/cli.mjs
-  checksum: 10c0/5a9c6b30a7ef0af257a963e6b0b95d5a60b23512b7dbcca617273bd63fb0892b88be6b33dc9a6cb66350f47d260eff6456af0b7afef34898767f3527ce0d967d
   languageName: node
   linkType: hard
 
@@ -16096,6 +16192,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"typescript@npm:~5.7.2":
+  version: 5.7.3
+  resolution: "typescript@npm:5.7.3"
+  bin:
+    tsc: bin/tsc
+    tsserver: bin/tsserver
+  checksum: 10c0/b7580d716cf1824736cc6e628ab4cd8b51877408ba2be0869d2866da35ef8366dd6ae9eb9d0851470a39be17cbd61df1126f9e211d8799d764ea7431d5435afa
+  languageName: node
+  linkType: hard
+
 "typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^6.0.0#optional!builtin<compat/typescript>":
   version: 6.0.3
   resolution: "typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>::version=6.0.3&hash=5786d5"
@@ -16103,6 +16209,16 @@ __metadata:
     tsc: bin/tsc
     tsserver: bin/tsserver
   checksum: 10c0/2f25c74e65663c248fa1ade2b8459d9ce5372ff9dad07067310f132966ebec1d93f6c42f0baf77a6b6a7a91460463f708e6887013aaade22111037457c6b25df
+  languageName: node
+  linkType: hard
+
+"typescript@patch:typescript@npm%3A~5.7.2#optional!builtin<compat/typescript>":
+  version: 5.7.3
+  resolution: "typescript@patch:typescript@npm%3A5.7.3#optional!builtin<compat/typescript>::version=5.7.3&hash=5786d5"
+  bin:
+    tsc: bin/tsc
+    tsserver: bin/tsserver
+  checksum: 10c0/6fd7e0ed3bf23a81246878c613423730c40e8bdbfec4c6e4d7bf1b847cbb39076e56ad5f50aa9d7ebd89877999abaee216002d3f2818885e41c907caaa192cc4
   languageName: node
   linkType: hard
 
@@ -16183,6 +16299,22 @@ __metadata:
   version: 1.0.0
   resolution: "unpipe@npm:1.0.0"
   checksum: 10c0/193400255bd48968e5c5383730344fbb4fa114cdedfab26e329e50dd2d81b134244bb8a72c6ac1b10ab0281a58b363d06405632c9d49ca9dfd5e90cbd7d0f32c
+  languageName: node
+  linkType: hard
+
+"unrun@npm:^0.3.1":
+  version: 0.3.1
+  resolution: "unrun@npm:0.3.1"
+  dependencies:
+    rolldown: "npm:^1.0.0"
+  peerDependencies:
+    synckit: ^0.11.11
+  peerDependenciesMeta:
+    synckit:
+      optional: true
+  bin:
+    unrun: ./dist/cli.mjs
+  checksum: 10c0/059d7645b359f2ccc467c30a7730f2c2a84ec71741b0680d0f842123081fb84eb055ec6819bd1b68fed59c2e8de87dd0ce67c61dd6159d1a01953409ae9857c8
   languageName: node
   linkType: hard
 

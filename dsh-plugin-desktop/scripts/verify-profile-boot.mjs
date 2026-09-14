@@ -70,6 +70,12 @@ try {
     }))
   }
   const prepared = prepareDesktopProfile('1', home, 'win32', undefined, undefined, undefined, { aaEnabled: aaRequested })
+  const productLayers = prepared.profile.layers.map(layer => layer.packageName)
+  const accountLayerIndex = productLayers.indexOf('@cqaiclub/dsn-account')
+  const imagegenLayerIndex = productLayers.indexOf('cqai-dsh-plugin-imagegen')
+  if (accountLayerIndex < 0 || imagegenLayerIndex !== accountLayerIndex + 1) {
+    throw new Error(`desktop profile did not mount ImageGen immediately after CQAI account: ${productLayers.join(', ')}`)
+  }
   if (brokenAa && (!prepared.aaFailure || prepared.aaEnabled)) throw new Error('Broken AA bundle did not fail closed')
   const hostServicePluginDir = join(
     prepared.profile.dir,
@@ -198,6 +204,13 @@ try {
     prepared.bareModuleBaseUrl,
   )
   await runtime.mountScheduled()
+
+  const imagegenEntry = [...ctx.loader.entries()]
+    .find(entry => entry.options.name === 'cqai-dsh-plugin-imagegen')
+  if (imagegenEntry === undefined) {
+    const entries = [...ctx.loader.entries()].map(entry => `${entry.id}=${String(entry.options.name)}`)
+    throw new Error(`assembled desktop profile is missing the default CQAI ImageGen plugin: ${entries.join(', ')}`)
+  }
 
   if (ctx.get('desktopPnpm') === undefined) {
     throw new Error('assembled desktop profile is missing the desktop pnpm Host capability')

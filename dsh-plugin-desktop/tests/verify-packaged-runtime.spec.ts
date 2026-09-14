@@ -22,6 +22,7 @@ import {
   MAX_UNPACKED_RUNTIME_BYTES,
   MAX_UNPACKED_RUNTIME_FILES,
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
+  REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
   REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
@@ -222,6 +223,18 @@ describe('packaged desktop runtime verification', () => {
     for (const entry of REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES) {
       expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
       expect(FORBIDDEN_UNPACKED_RUNTIME_ENTRIES).toContain(entry)
+    }
+  })
+
+  it('keeps the default e图宝 bundle present in app.asar', () => {
+    expect(REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES).toEqual([
+      'node_modules/cqai-dsh-plugin-imagegen/package.json',
+      'node_modules/cqai-dsh-plugin-imagegen/cordis.patch.yml',
+      'node_modules/cqai-dsh-plugin-imagegen/lib/index.js',
+      'node_modules/cqai-dsh-plugin-imagegen/lib/client.js',
+    ])
+    for (const entry of REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES) {
+      expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
     }
   })
 
@@ -638,6 +651,7 @@ describe('packaged desktop runtime verification', () => {
     'lib/pnpm.js',
     'lib/update-download.js',
     ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
+    ...REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
     'node_modules/open/index.js',
   ])('fails loud when required ASAR entry %s is absent', (missing) => {
     const runtimeContext = context('/build', 'win32')

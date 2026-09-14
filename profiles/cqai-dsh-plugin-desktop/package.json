@@ -8,6 +8,7 @@
     "dsh-community-market": "file:../../dsh-community-market",
     "dsh-better-sidebar": "^0.19.0",
     "@cqaiclub/dsn-account": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-account",
+    "cqai-dsh-plugin-imagegen": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-imagegen",
     "cqai-dsh-plugin-quicknav": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-quicknav",
     "cqai-dsh-plugin-market": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-market"
   },
@@ -19,6 +20,7 @@
         "dsh-plugin-desktop",
         "dsh-better-sidebar",
         "@cqaiclub/dsn-account",
+        "cqai-dsh-plugin-imagegen",
         "dsh-community-market",
         "cqai-dsh-plugin-quicknav",
         "cqai-dsh-plugin-market"

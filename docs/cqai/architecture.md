@@ -10,6 +10,7 @@ CQAI Desktop 现在以 `dsh-desktop` 为主工作区，使用 Yarn 管理多个�
 | --- | --- | --- |
 | `@cqaiclub/dsn-account` | CQAI Club OAuth/PKCE、共享账号与额度、模型目录、设置页账号标签、`cqaiclub` Provider | 业务插件自己的工作台和 Token 管理 |
 | `cqai-dsh-plugin-quicknav` | 左侧固定入口、CQAI 工作台导航 | 品牌资源、市场安装流程 |
+| `cqai-dsh-plugin-imagegen` | CQAI 默认图像 Provider、文生图/图生图、队列、历史、画布和 Agent 工具 | CQAI 登录与 Token 存储、聊天模型默认选择 |
 | `cqai-dsh-plugin-market` | CQAI 市场品牌、精选分类、推荐策略和产品默认来源声明 | 复制整个 `dsh-community-market`、管理目录和安装 |
 | `cqai-dsh-plugin-workbench` | 后续独立的业务工作台能力 | 通用导航入口 |
 
@@ -20,6 +21,7 @@ CQAI Desktop 现在以 `dsh-desktop` 为主工作区，使用 Yarn 管理多个�
 ```text
 cqai-dsh-plugin-quicknav  ──> dsh-better-sidebar
 @cqaiclub/dsn-account    ──> dsh-better-sidebar（可选；用于独立账号工作台）
+cqai-dsh-plugin-imagegen ──> @cqaiclub/dsn-account 的 Host 服务
 cqai-dsh-plugin-market    ──> dsh-community-market 的公开扩展能力
 业务插件                 ──> @cqaiclub/dsn-account 的 Host 服务
 ```
@@ -34,6 +36,7 @@ Profile 只负责选择插件，不承载插件源码：
 dsh-desktop/
 ├─ cqai-dsh-plugins/
 │  ├─ cqai-dsh-plugin-quicknav/
+│  ├─ cqai-dsh-plugin-imagegen/
 │  ├─ cqai-dsh-plugin-market/
 │  ├─ cqai-dsh-plugin-account/
 │  └─ cqai-dsh-plugin-workbench/
@@ -44,13 +47,23 @@ dsh-desktop/profiles/cqai-dsh-plugin-desktop/
    ├─ dsh-plugin-desktop
    ├─ dsh-better-sidebar
    ├─ @cqaiclub/dsn-account
+   ├─ cqai-dsh-plugin-imagegen
    ├─ cqai-dsh-plugin-quicknav
    └─ cqai-dsh-plugin-market
 ```
 
 开发期间使用 `link:` 指向本地插件；发布时改成固定版本或内部 registry 版本。
 
-`@cqaiclub/dsn-account` 与 `cqai-dsh-plugin-market` 是 Desktop 默认产品 bundle，由保留的 `desktop` Profile 自动加入且不可被普通插件管理操作关闭。账号插件只向 Client 暴露安全账号快照和 RPC，Access/Refresh Token 留在 Host 侧。
+`@cqaiclub/dsn-account`、`cqai-dsh-plugin-imagegen` 与 `cqai-dsh-plugin-market` 是 Desktop 默认产品 bundle，由保留的
+`desktop` Profile 按“账号 → e图宝 → 市场”的顺序自动加入，且不可被普通插件管理操作关闭。账号插件只向 Client 暴露安全
+账号快照和 RPC，Access/Refresh Token 留在 Host 侧；e图宝插件通过 Host 服务调用 CQAI，不把 Token 交给浏览器、画布技能
+或第三方脚本。
+
+## 生图 Provider 边界
+
+`cqai-dsh-plugin-imagegen` 的默认 Provider 标识为 `cqai`。任务未指定 Provider 时使用 CQAI 账号模型目录中的默认图像模型；
+自定义渠道统一使用 `custom:<channelId>`，且只能由用户或 Agent 参数显式选择。CQAI 请求失败时不会自动切换到第三方渠道。
+插件可以临时切换当前任务的图像模型，但不会覆盖用户现有的聊天模型选择。
 
 ## 市场策略
 

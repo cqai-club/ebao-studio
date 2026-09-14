@@ -4,7 +4,8 @@
 `E:/workspace/project/dsh-desktop/cqai-dsh-plugins`。每一个可独立安装、构建和发布的功能都应该是一个
 `cqai-dsh-plugin-*` 包，而不是把所有业务代码继续放进同一个插件。
 
-当前已经实现的扩展包括 `@cqaiclub/dsn-account`、`cqai-dsh-plugin-quicknav` 和 `cqai-dsh-plugin-market`。
+当前已经实现的扩展包括 `@cqaiclub/dsn-account`、`cqai-dsh-plugin-quicknav`、`cqai-dsh-plugin-imagegen` 和
+`cqai-dsh-plugin-market`。
 账号插件提供：
 
 - CQAI Club OAuth/PKCE 浏览器登录和本地凭证管理；
@@ -12,7 +13,16 @@
 - Desktop 设置页中的 CQAI Club 账号标签；
 - `cqaiclub` LLM Provider，以及供后续业务插件复用的 Host 服务。
 
-账号插件和 `cqai-dsh-plugin-market` 都作为 Desktop 的默认产品 bundle 自动进入保留的 `desktop` Profile。前者快速入口提供：
+账号插件、`cqai-dsh-plugin-imagegen` 和 `cqai-dsh-plugin-market` 都作为 Desktop 的默认产品 bundle 自动进入保留的
+`desktop` Profile，固定装配顺序为“账号 → e图宝 → 市场”。e图宝插件直接复用账号插件的登录态、额度和模型目录，默认使用
+CQAI 图像 Provider，并提供：
+
+- 文生图、图生图、多模型对比和电商模式；
+- 共用的 Host 任务队列、持久历史、图库和模板；
+- 无限画布、画布技能、技能库和默认关闭的 S3 同步；
+- DSH 0.1.5 主区/侧边栏入口、会话附件和 Agent 工具集成。
+
+快速入口插件提供：
 
 - 左侧栏的固定「CQAI 工具」入口；
 - 基于 `dsh-better-sidebar` 注册的 CQAI 工具页；
@@ -37,6 +47,7 @@ docs/cqai/
 dsh-desktop/
 ├─ cqai-dsh-plugins/
 │  ├─ cqai-dsh-plugin-quicknav/   # 左侧快速入口和 CQAI 工作台
+│  ├─ cqai-dsh-plugin-imagegen/   # e图宝工作台、队列、历史、画布和 Agent 工具
 │  ├─ cqai-dsh-plugin-market/     # CQAI 精选市场策略和来源配置
 │  ├─ cqai-dsh-plugin-account/    # CQAI Club 共享账号、额度和模型目录
 │  ├─ cqai-dsh-plugin-workbench/  # 后续独立工作台能力
@@ -47,7 +58,9 @@ dsh-desktop/
 └─ scripts/                       # 构建、安装和验证脚本
 ```
 
-`account` 负责跨 CQAI 业务插件共享的身份、额度和模型能力；`market` 是独立边界，负责 CQAI 品牌、精选策略和受信任的产品默认来源声明。来源的校验、保存和用户选择仍由 `dsh-community-market` 负责。品牌不单独做插件，而是直接维护 `dsh-plugin-desktop` 的产品层。
+`account` 负责跨 CQAI 业务插件共享的身份、额度和模型能力；`imagegen` 消费该 Host 服务，但独立负责图像 Provider、任务、
+历史和工作台；`market` 是独立边界，负责 CQAI 品牌、精选策略和受信任的产品默认来源声明。来源的校验、保存和用户选择仍由
+`dsh-community-market` 负责。品牌不单独做插件，而是直接维护 `dsh-plugin-desktop` 的产品层。
 
 其中 `cqai-dsh-plugin-market` 不直接复制 `dsh-community-market`。它复用现有市场的完整 UI、安装、安全校验和来源管理能力，并通过公开策略能力声明 `https://cqaiclub.asia/catalog-source.json`。只有从未应用产品默认值的空配置会自动采用该来源。
 
@@ -68,6 +81,15 @@ corepack yarn workspace cqai-dsh-plugin-market build
 corepack yarn workspace cqai-dsh-plugin-market typecheck
 ```
 
+只构建并验证生图插件：
+
+```bash
+cd /e/workspace/project/dsh-desktop
+corepack yarn workspace cqai-dsh-plugin-imagegen build
+corepack yarn workspace cqai-dsh-plugin-imagegen typecheck
+corepack yarn workspace cqai-dsh-plugin-imagegen test
+```
+
 只构建某一个插件：
 
 ```bash
@@ -78,7 +100,9 @@ corepack yarn workspace cqai-dsh-plugin-market build
 corepack yarn workspace cqai-dsh-plugin-market typecheck
 ```
 
-将需要手动调试的本地业务包链接到自定义 DSH Profile。默认的 `@cqaiclub/dsn-account` 和 `cqai-dsh-plugin-market` 已由 Desktop 安装包和保留的 `desktop` Profile 管理，不需要重复添加。请先在 Desktop 的设置或托盘 Profile 菜单中创建一个自定义 Profile，例如 `cqai-dev`：
+将需要手动调试的本地业务包链接到自定义 DSH Profile。默认的 `@cqaiclub/dsn-account`、
+`cqai-dsh-plugin-imagegen` 和 `cqai-dsh-plugin-market` 已由 Desktop 安装包和保留的 `desktop` Profile 管理，不需要重复添加。
+请先在 Desktop 的设置或托盘 Profile 菜单中创建一个自定义 Profile，例如 `cqai-dev`：
 
 ```bash
 cd <你的-dsh-profile目录>
@@ -102,6 +126,7 @@ dsh plugin --profile cqai-dev add dsh-better-sidebar@0.19.0
 
 - `dsh-desktop`：Electron 壳、窗口、Profile、打包和原生生命周期。
 - `@cqaiclub/dsn-account`：CQAI Club 登录、共享账号/额度、模型目录和 `cqaiclub` LLM Provider。
+- `cqai-dsh-plugin-imagegen`：默认使用 CQAI 的 e图宝工作台、队列、历史、画布和 Agent 图像工具；不保存 CQAI Token。
 - `dsh-better-sidebar`：右侧工作台、Tab 和文件预览器注册服务。
 - `cqai-dsh-plugin-quicknav`：CQAI 的左侧入口、工作台页面和导航扩展。
 - `cqai-dsh-plugin-market`：CQAI 市场品牌、精选策略和默认来源声明；完整市场、来源校验与安装由 `dsh-community-market` 提供。
@@ -110,4 +135,5 @@ dsh plugin --profile cqai-dev add dsh-better-sidebar@0.19.0
 
 ## 当前 Profile 模板
 
-`dsh-desktop/profiles/cqai-dsh-plugin-desktop` 用于本地组合 `dsh-plugin-desktop`、默认账号插件、`dsh-better-sidebar` 和其他 CQAI 插件。它是开发模板，不会复制或修改 `dsh-desktop` 源码。
+`dsh-desktop/profiles/cqai-dsh-plugin-desktop` 用于本地组合 `dsh-plugin-desktop`、默认账号插件、e图宝插件、
+`dsh-better-sidebar` 和其他 CQAI 插件。它是开发模板，不会复制或修改 `dsh-desktop` 源码。

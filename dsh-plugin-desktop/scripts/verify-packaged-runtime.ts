@@ -109,6 +109,14 @@ export const REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-agent-presets/presets/ptc/preset.yml',
 ] as const
 
+/** e图宝 bundle surface required for the default Desktop profile to boot. */
+export const REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES = [
+  'node_modules/cqai-dsh-plugin-imagegen/package.json',
+  'node_modules/cqai-dsh-plugin-imagegen/cordis.patch.yml',
+  'node_modules/cqai-dsh-plugin-imagegen/lib/index.js',
+  'node_modules/cqai-dsh-plugin-imagegen/lib/client.js',
+] as const
+
 /** AfterPack fields consumed without importing Electron Builder's incomplete declaration graph. */
 export interface PackagedRuntimeContext {
   /** Completed platform application directory. */
@@ -138,6 +146,7 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
   'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
   ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
+  ...REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   'node_modules/open/index.js',
   'node_modules/pnpm/bin/pnpm.mjs',
 ] as const

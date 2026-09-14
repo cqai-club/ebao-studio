@@ -218,6 +218,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
+      'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-market',
       'third-party-one',
       'third-party-two',
@@ -246,6 +247,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
+      'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-market',
       'third-party-plugin',
     ])
@@ -279,6 +281,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
+      'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-market',
     ])
   })
@@ -457,6 +460,10 @@ virtualStoreDirMaxLength: 60
       name: '@cqaiclub/dsn-account',
     }))
     expect(rows.find(row => row.id === 'cqaiclub-dsn-account')?.disabled).toBeFalsy()
+    expect(rows.find(row => row.id === 'cqai-imagegen')).toEqual(expect.objectContaining({
+      name: 'cqai-dsh-plugin-imagegen',
+    }))
+    expect(rows.find(row => row.id === 'cqai-imagegen')?.disabled).toBeFalsy()
     expect(rows.find(row => row.id === 'subprocess')).toEqual({
       id: 'subprocess',
       name: '@deepseek-ai/dsh-subprocess-local',

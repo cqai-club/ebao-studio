@@ -213,9 +213,11 @@ describe('published package surface', () => {
   it('pins the CQAI defaults and both selectable Market providers in the published runtime', () => {
     expect(manifest.dependencies).toMatchObject({
       '@cqaiclub/dsn-account': '0.1.1',
+      'cqai-dsh-plugin-imagegen': '0.1.0',
       'cqai-dsh-plugin-market': '0.1.0',
       'dsh-community-market': '0.1.0-dev.0',
       dshmarket: '1.38.1',
+      'react-dom': '18.3.1',
     })
     expect(manifest.optionalDependencies ?? {}).not.toHaveProperty('dshmarket')
   })
@@ -931,6 +933,7 @@ describe('published package surface', () => {
     const packageDir = readFileSync(new URL('scripts/package-dir.mjs', packageRoot), 'utf8')
 
     expect(manifest.scripts?.build).toContain('yarn workspace @cqaiclub/dsn-account build')
+    expect(manifest.scripts?.build).toContain('yarn workspace cqai-dsh-plugin-imagegen build')
     expect(manifest.scripts?.build).toContain('yarn workspace cqai-dsh-plugin-market build')
     expect(manifest.scripts?.build).toContain('node scripts/generate-mac-app-icon.mjs')
     expect(manifest.scripts?.['prepare:electron-native']).toBe('node scripts/prepare-fs-ext.ts')
