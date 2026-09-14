@@ -9735,6 +9735,7 @@ __metadata:
     dsh-community-market: "workspace:*"
     tsdown: "npm:^0.22.2"
     typescript: "npm:^6.0.0"
+    unrun: "npm:^0.3.1"
   peerDependencies:
     "@deepseek-ai/cordis": ^4.0.2
     dsh-community-market: ^0.1.0-dev.0
@@ -9755,6 +9756,7 @@ __metadata:
     react: "npm:^18.3.1"
     tsdown: "npm:^0.22.2"
     typescript: "npm:^6.0.0"
+    unrun: "npm:^0.3.1"
   peerDependencies:
     "@deepseek-ai/cordis": ^4.0.2
     "@deepseek-ai/dsh-client-locale": ^0.1.5-rc.1
@@ -10672,6 +10674,7 @@ __metadata:
     sharp: "npm:0.35.3"
     tsdown: "npm:0.22.2"
     typescript: "npm:6.0.3"
+    unrun: "npm:^0.3.1"
     vitest: "npm:4.1.8"
     yaml: "npm:^2.9.0"
   peerDependencies:
@@ -10959,6 +10962,7 @@ __metadata:
     tsdown: "npm:0.22.2"
     tw-animate-css: "npm:^1.4.0"
     typescript: "npm:6.0.3"
+    unrun: "npm:^0.3.1"
     vite: "npm:8.2.1"
     vitest: "npm:4.1.8"
     yaml: "npm:^2.9.0"
@@ -11159,6 +11163,7 @@ __metadata:
     tsdown: "npm:0.22.2"
     tw-animate-css: "npm:^1.4.0"
     typescript: "npm:6.0.3"
+    unrun: "npm:^0.3.1"
     vite: "npm:8.2.1"
     vitest: "npm:4.1.8"
     yaml: "npm:^2.9.0"
