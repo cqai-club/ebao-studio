@@ -9768,6 +9768,35 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"cqai-dsh-plugin-video@workspace:^, cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video":
+  version: 0.0.0-use.local
+  resolution: "cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video"
+  dependencies:
+    "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-home-paths": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-host-webserver": "npm:^0.1.5-rc.1"
+    "@types/node": "npm:^22.20.0"
+    "@types/react": "npm:~18.3.1"
+    react: "npm:^18.3.1"
+    tsdown: "npm:0.22.2"
+    typescript: "npm:~5.7.2"
+    vitest: "npm:4.1.8"
+  peerDependencies:
+    "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-client-ui-layout": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-renderer": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-home-paths": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-host-webserver": ^0.1.5-rc.1
+    react: ^18.3.1
+  languageName: unknown
+  linkType: soft
+
 "crelt@npm:^1.0.5, crelt@npm:^1.0.6":
   version: 1.0.7
   resolution: "crelt@npm:1.0.7"
@@ -10938,6 +10967,7 @@ __metadata:
     clsx: "npm:^2.1.1"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
+    cqai-dsh-plugin-video: "workspace:^"
     dsh-community-market: "npm:0.1.0-dev.0"
     dshmarket: "npm:1.38.1"
     electron: "npm:43.3.0"
@@ -11139,6 +11169,7 @@ __metadata:
     clsx: "npm:^2.1.1"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
+    cqai-dsh-plugin-video: "workspace:^"
     dsh-community-market: "npm:0.1.0-dev.0"
     dshmarket: "npm:1.38.1"
     electron: "npm:43.3.0"

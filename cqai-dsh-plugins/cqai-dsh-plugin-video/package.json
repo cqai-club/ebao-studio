@@ -1,0 +1,75 @@
+{
+  "name": "cqai-dsh-plugin-video",
+  "version": "0.1.0",
+  "description": "e剪宝：口播短视频制作、动效包装、成片预览与发布包",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "runtime/*.py",
+    "runtime/requirements.txt",
+    "runtime/stages/*.py",
+    "runtime/templates/*.tsx",
+    "runtime/align-engine/*.py",
+    "runtime/render-studio/package.json",
+    "runtime/render-studio/package-lock.json",
+    "runtime/render-studio/tsconfig.json",
+    "runtime/render-studio/src/index.ts",
+    "runtime/render-studio/src/Root.tsx",
+    "cordis.patch.yml",
+    "README.md",
+    "UPSTREAM.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-renderer"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.5-rc.1",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.5-rc.1",
+    "@types/node": "^22.20.0",
+    "@types/react": "~18.3.1",
+    "react": "^18.3.1",
+    "tsdown": "0.22.2",
+    "typescript": "~5.7.2",
+    "vitest": "4.1.8"
+  }
+}
