@@ -125,10 +125,10 @@ describe('desktop update installer download', () => {
       'https://github.com/cqai-club/ebao-studio/releases/download',
     )
     expect(decodeURI(desktopUpdateDownloadUrl('darwin', '0.0.1'))).toBe(
-      'https://github.com/cqai-club/ebao-studio/releases/download/v0.0.1/易宝工坊-0.0.1-universal.dmg',
+      'https://github.com/cqai-club/ebao-studio/releases/download/v0.0.1/eBao-Studio-0.0.1-universal.dmg',
     )
     expect(decodeURI(desktopUpdateDownloadUrl('win32', '0.0.1-beta.1', 'beta'))).toBe(
-      'https://github.com/cqai-club/ebao-studio/releases/download/v0.0.1-beta.1/易宝工坊-Beta-0.0.1-beta.1-x64-Setup.exe',
+      'https://github.com/cqai-club/ebao-studio/releases/download/v0.0.1-beta.1/eBao-Studio-Beta-0.0.1-beta.1-x64-Setup.exe',
     )
   })
 

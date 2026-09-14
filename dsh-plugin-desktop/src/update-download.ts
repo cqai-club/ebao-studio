@@ -177,7 +177,10 @@ export function desktopUpdateDownloadUrl(
 ): string {
   const targetPlatform = validatedPlatform(platform)
   const targetVersion = validatedVersion(version, channel)
-  const product = channel === 'beta' ? '易宝工坊-Beta' : '易宝工坊'
+  // GitHub strips non-ASCII characters from uploaded release asset names.
+  // Keep the remote artifact name ASCII-only while retaining the localized
+  // filename presented by desktopUpdateFilename().
+  const product = channel === 'beta' ? 'eBao-Studio-Beta' : 'eBao-Studio'
   const artifact = targetPlatform === 'darwin'
     ? `${product}-${targetVersion}-universal.dmg`
     : `${product}-${targetVersion}-x64-Setup.exe`

@@ -119,11 +119,16 @@ jobs:
             "dsh-plugin-desktop/dist/易宝工坊-$version-x64-Portable.zip"
           )
           New-Item -ItemType Directory -Path release-assets | Out-Null
-          foreach ($asset in $assets) {
+          $destinations = @(
+            "eBao-Studio-$version-x64-Setup.exe",
+            "eBao-Studio-$version-x64-Portable.zip"
+          )
+          for ($index = 0; $index -lt $assets.Count; $index++) {
+            $asset = $assets[$index]
             if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
               throw "Expected Windows release asset is missing: $asset"
             }
-            Copy-Item -LiteralPath $asset -Destination release-assets
+            Copy-Item -LiteralPath $asset -Destination (Join-Path release-assets $destinations[$index])
           }
       - uses: actions/upload-artifact@v7
         with:
@@ -167,7 +172,7 @@ jobs:
           asset="dsh-plugin-desktop/dist/mac-smoke/易宝工坊-${version}-universal.dmg"
           test -f "$asset"
           mkdir -p release-assets
-          cp "$asset" release-assets/
+          cp "$asset" "release-assets/eBao-Studio-${version}-universal.dmg"
       - uses: actions/upload-artifact@v7
         with:
           name: release-macos
@@ -193,9 +198,9 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           expected=(
-            "易宝工坊-${version}-universal.dmg"
-            "易宝工坊-${version}-x64-Setup.exe"
-            "易宝工坊-${version}-x64-Portable.zip"
+            "eBao-Studio-${version}-universal.dmg"
+            "eBao-Studio-${version}-x64-Setup.exe"
+            "eBao-Studio-${version}-x64-Portable.zip"
           )
           for asset in "${expected[@]}"; do
             test -f "release-assets/$asset"
