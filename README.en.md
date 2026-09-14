@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://dshdesktop.cn"><img src="assets/desktop-hero-en.png" alt="易宝工坊, an open-source desktop client built on DeepSeek Harness" width="100%"></a>
+  <a href="https://github.com/cqai-club/ebao-studio/releases"><img src="assets/desktop-hero-en.png" alt="易宝工坊, an open-source desktop client built on DeepSeek Harness" width="100%"></a>
 </p>
 
 <h1 align="center">易宝工坊</h1>
@@ -8,7 +8,7 @@
   <strong>An open-source desktop client for Windows and macOS, built on DeepSeek Harness.</strong>
 </p>
 
-<h3 align="center"><a href="https://dshdesktop.cn">One-click download, ready to use out of the box.</a></h3>
+<h3 align="center"><a href="https://github.com/cqai-club/ebao-studio/releases">Download an 易宝工坊 prerelease.</a></h3>
 
 <p align="center">
   Everything is a plugin — the desktop itself is a plugin.
@@ -21,8 +21,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/anywhere-labs/deepseek-harness-desktop/releases/latest"><img src="https://img.shields.io/github/v/release/anywhere-labs/deepseek-harness-desktop?style=flat&amp;label=release&amp;color=4D6BFE" alt="Latest release"></a>
-  <a href="https://github.com/anywhere-labs/deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/anywhere-labs/deepseek-harness-desktop/total?style=flat&amp;label=downloads&amp;color=4D6BFE" alt="Total downloads"></a>
+  <a href="https://github.com/cqai-club/ebao-studio/releases/latest"><img src="https://img.shields.io/github/v/release/cqai-club/ebao-studio?include_prereleases&amp;style=flat&amp;label=release&amp;color=4D6BFE" alt="Latest release"></a>
+  <a href="https://github.com/cqai-club/ebao-studio/releases"><img src="https://img.shields.io/github/downloads/cqai-club/ebao-studio/total?style=flat&amp;label=downloads&amp;color=4D6BFE" alt="Total downloads"></a>
   <a href="https://github.com/anywhere-labs/deepseek-harness-desktop"><img src="https://img.shields.io/github/stars/anywhere-labs/deepseek-harness-desktop?style=flat&amp;label=%E2%98%85&amp;color=08C" alt="GitHub stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <a href="https://discord.gg/TJeGqKRNM"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Join Discord"></a>
@@ -35,12 +35,12 @@
 
 ## Download and install
 
-Current release installers support Windows x64 and macOS Universal. No extra environment is needed — download, install, and start using it with one click.
+Current prerelease artifacts support Windows x64 and macOS Universal without a separate Node.js or DSH installation. The first prerelease is not platform-signed; read the installation notice on the Release page first.
 
 | Platform | Download | Installation |
 | --- | --- | --- |
-| Windows x64 | [Download installer](https://www.dshdesktop.cn/api/downloads/windows) | Run the NSIS installer and follow its prompts |
-| macOS Universal | [Download DMG](https://www.dshdesktop.cn/api/downloads/mac) | Open the DMG and drag 易宝工坊 into Applications |
+| Windows x64 | [Open Releases](https://github.com/cqai-club/ebao-studio/releases) | Choose the `Setup.exe` installer or `Portable.zip` archive |
+| macOS Universal | [Open Releases](https://github.com/cqai-club/ebao-studio/releases) | Download `universal.dmg` and follow the prerelease Gatekeeper notice |
 
 See the [user guide](docs/user-guide.en.md) and [FAQ](docs/faq.en.md) for plugin commands, platform details, and troubleshooting.
 

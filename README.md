@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://dshdesktop.cn"><img src="assets/desktop-hero-zh.png" alt="易宝工坊：基于 DeepSeek Harness 构建的开源桌面客户端" width="100%"></a>
+  <a href="https://github.com/cqai-club/ebao-studio/releases"><img src="assets/desktop-hero-zh.png" alt="易宝工坊：基于 DeepSeek Harness 构建的开源桌面客户端" width="100%"></a>
 </p>
 
 <h1 align="center">易宝工坊</h1>
@@ -8,7 +8,7 @@
   <strong>基于 DeepSeek Harness 构建的 Windows 和 macOS 开源桌面客户端。</strong>
 </p>
 
-<h3 align="center"><a href="https://dshdesktop.cn">一键下载，开箱即用。</a></h3>
+<h3 align="center"><a href="https://github.com/cqai-club/ebao-studio/releases">下载易宝工坊预发布版本。</a></h3>
 
 <p align="center">
   万物皆「插件」，桌面本身也是「插件」。
@@ -21,8 +21,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/anywhere-labs/deepseek-harness-desktop/releases/latest"><img src="https://img.shields.io/github/v/release/anywhere-labs/deepseek-harness-desktop?style=flat&amp;label=release&amp;color=4D6BFE" alt="Latest release"></a>
-  <a href="https://github.com/anywhere-labs/deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/anywhere-labs/deepseek-harness-desktop/total?style=flat&amp;label=downloads&amp;color=4D6BFE" alt="Total downloads"></a>
+  <a href="https://github.com/cqai-club/ebao-studio/releases/latest"><img src="https://img.shields.io/github/v/release/cqai-club/ebao-studio?include_prereleases&amp;style=flat&amp;label=release&amp;color=4D6BFE" alt="Latest release"></a>
+  <a href="https://github.com/cqai-club/ebao-studio/releases"><img src="https://img.shields.io/github/downloads/cqai-club/ebao-studio/total?style=flat&amp;label=downloads&amp;color=4D6BFE" alt="Total downloads"></a>
   <a href="https://github.com/anywhere-labs/deepseek-harness-desktop"><img src="https://img.shields.io/github/stars/anywhere-labs/deepseek-harness-desktop?style=flat&amp;label=%E2%98%85&amp;color=08C" alt="GitHub stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <a href="https://discord.gg/TJeGqKRNM"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Join Discord"></a>
@@ -35,12 +35,12 @@
 
 ## 下载与安装
 
-当前正式安装包支持 Windows x64 和 macOS Universal。无需额外环境，下载安装，一键使用。
+当前预发布构件支持 Windows x64 和 macOS Universal，无需额外安装 Node.js 或 DSH。首个预发布版本尚未完成平台签名，请先阅读 Release 页面中的安装提示。
 
 | 平台 | 下载 | 安装方式 |
 | --- | --- | --- |
-| Windows x64 | [下载安装程序](https://www.dshdesktop.cn/api/downloads/windows) | 运行 NSIS 安装程序并按提示完成安装 |
-| macOS Universal | [下载 DMG](https://www.dshdesktop.cn/api/downloads/mac) | 打开 DMG，将 易宝工坊 拖入 Applications |
+| Windows x64 | [前往 Releases](https://github.com/cqai-club/ebao-studio/releases) | 选择 `Setup.exe` 安装版或 `Portable.zip` 便携版 |
+| macOS Universal | [前往 Releases](https://github.com/cqai-club/ebao-studio/releases) | 下载 `universal.dmg`，并按预发布说明处理 Gatekeeper 提示 |
 
 详细步骤、插件命令和故障排查见[用户指南](docs/user-guide.md)与[常见问题](docs/faq.md)。
 

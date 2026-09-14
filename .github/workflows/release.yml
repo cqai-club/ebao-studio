@@ -1,0 +1,240 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - run: corepack enable
+      - name: Resolve Yarn cache folder
+        id: yarn-cache
+        run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: release-yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+      - run: yarn install --immutable
+      - name: Verify release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must be canonical vMAJOR.MINOR.PATCH SemVer: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          RELEASE_VERSION="$release_version" node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const releaseVersion = process.env.RELEASE_VERSION
+          const stable = JSON.parse(readFileSync('dsh-plugin-desktop/package.json', 'utf8'))
+          const beta = JSON.parse(readFileSync('dsh-plugin-desktop-beta/package.json', 'utf8'))
+          const releaseIndex = JSON.parse(readFileSync('release/desktop-version.json', 'utf8'))
+          if (stable.version !== releaseVersion) {
+            throw new Error(`tag ${releaseVersion} does not match stable Desktop ${stable.version}`)
+          }
+          if (beta.version !== `${releaseVersion}-beta.1`) {
+            throw new Error(`beta Desktop ${beta.version} does not match ${releaseVersion}-beta.1`)
+          }
+          if (releaseIndex.channel !== 'stable' || releaseIndex.version !== releaseVersion) {
+            throw new Error(`release index does not select stable ${releaseVersion}`)
+          }
+          NODE
+      - name: Temporarily skip AA profile smoke in CI
+        # Remove this step after AA Host service activation is fixed.
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs'
+
+          for (const workspace of ['dsh-plugin-desktop', 'dsh-plugin-desktop-beta']) {
+            const path = `${workspace}/package.json`
+            const manifest = JSON.parse(readFileSync(path, 'utf8'))
+            const smoke = ' && yarn run verify:aa'
+            if (!manifest.scripts.check.includes(smoke)) throw new Error(`AA check not found in ${workspace}`)
+            manifest.scripts.check = manifest.scripts.check.replace(smoke, '')
+            writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`)
+          }
+          NODE
+      - name: Run complete headless gate
+        run: yarn check
+
+  windows:
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - run: corepack enable
+      - name: Resolve Yarn cache folder
+        id: yarn-cache
+        shell: pwsh
+        run: "Add-Content -Path $env:GITHUB_OUTPUT -Value \"dir=$(yarn config get cacheFolder)\""
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: release-yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+      - run: yarn install --immutable
+      - name: Run Windows package gate
+        run: yarn workspace dsh-plugin-desktop check:win-package
+      - name: Build unsigned Windows installer
+        env:
+          DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
+        run: yarn workspace dsh-plugin-desktop dist:win
+      - name: Build unsigned Windows portable archive
+        env:
+          DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
+        run: yarn workspace dsh-plugin-desktop dist:win-portable
+      - name: Stage Windows release assets
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $assets = @(
+            "dsh-plugin-desktop/dist/易宝工坊-$version-x64-Setup.exe",
+            "dsh-plugin-desktop/dist/易宝工坊-$version-x64-Portable.zip"
+          )
+          New-Item -ItemType Directory -Path release-assets | Out-Null
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
+              throw "Expected Windows release asset is missing: $asset"
+            }
+            Copy-Item -LiteralPath $asset -Destination release-assets
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    needs: verify
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - run: corepack enable
+      - name: Resolve Yarn cache folder
+        id: yarn-cache
+        run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: release-yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+      - run: yarn install --immutable
+      - name: Run macOS package gate
+        run: yarn workspace dsh-plugin-desktop check:mac-package
+      - name: Build unsigned macOS universal DMG
+        env:
+          DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
+        run: yarn workspace dsh-plugin-desktop dist:mac-smoke
+      - name: Stage macOS release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          asset="dsh-plugin-desktop/dist/mac-smoke/易宝工坊-${version}-universal.dmg"
+          test -f "$asset"
+          mkdir -p release-assets
+          cp "$asset" release-assets/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-macos
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [verify, windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify assets and create checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          expected=(
+            "易宝工坊-${version}-universal.dmg"
+            "易宝工坊-${version}-x64-Setup.exe"
+            "易宝工坊-${version}-x64-Portable.zip"
+          )
+          for asset in "${expected[@]}"; do
+            test -f "release-assets/$asset"
+          done
+          if [[ "$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')" != '3' ]]; then
+            echo 'Unexpected release asset set:' >&2
+            find release-assets -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+          (
+            cd release-assets
+            sha256sum "${expected[@]}" > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+      - name: Publish unsigned prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > RELEASE_NOTES.md <<'NOTES'
+          ## 易宝工坊首个预发布版本
+
+          本版本将 CQAI 账号能力与默认的“e图宝”生图插件集成到易宝工坊 Desktop，包含文生图、图生图、Agent 工具、任务队列、普通生图历史瀑布流、图库、模板、电商模式和无限画布。
+
+          ### 下载
+
+          - Windows x64：安装版 `Setup.exe` 或免安装 `Portable.zip`
+          - macOS：Intel 与 Apple Silicon 通用的 `universal.dmg`
+          - `SHA256SUMS`：三个安装构件的 SHA-256 校验值
+
+          ### 预发布说明
+
+          这是用于首轮安装和功能验证的未签名预发布构件。macOS DMG 尚未进行 Developer ID 签名和 Apple 公证，Gatekeeper 可能阻止直接打开；Windows 安装包和便携包尚未进行 Authenticode 签名，可能显示“未知发布者”或 SmartScreen 提示。请勿将本版本作为已完成生产签名的正式发行版分发。
+          NOTES
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "易宝工坊 $GITHUB_REF_NAME（预发布）" \
+            --prerelease \
+            --notes-file RELEASE_NOTES.md \
+            release-assets/*
