@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { Service, type Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { credentialKey, type CredentialRecord } from '@deepseek-ai/dsh-credentials'
+import type {} from '@deepseek-ai/dsh-settings'
 import type {
   AuthorizationInteraction,
   AuthorizationSession,
@@ -32,6 +34,7 @@ import {
   RPC_CHANNEL,
   isChatModel,
   isDsnDefaultModelCategory,
+  isImageGenerationModel,
   isPublicAccount,
   remainingQuota,
   type DsnAccountConfig,
@@ -79,23 +82,29 @@ export type {
 } from './protocol.ts'
 export {
   DSN_DEFAULT_MODEL_CATEGORY_ORDER, DSN_MODEL_CATEGORY_ORDER, MODEL_CATALOG_CACHE_TTL_MS,
+  isChatModel, isImageGenerationModel,
 } from './protocol.ts'
 export { DsnAccountError } from './errors.ts'
 export { AccountServiceClient, AccountServiceError } from './account-service.ts'
 
 export const name = 'cqaiclub-dsn-account'
 export const inject = ['authorization', 'credentials', 'connection', 'webServer', 'llm', 'agentDefaultModel', 'desktopRuntime']
+export const CQAI_CATEGORY_DEFAULT_MODELS_SETTINGS_NAMESPACE = 'cqaiclub-category-default-models'
 
 type AgentDefaultModelService = {
-  currentSelection(category?: string): DsnDefaultModelSelection
-  currentCategorySelections(): Readonly<Record<string, DsnDefaultModelSelection>>
+  currentSelection(): DsnDefaultModelSelection
   saveSelection(selection: DsnDefaultModelSelection): Promise<void>
-  saveCategorySelections(
-    categories: readonly string[],
-    selection: DsnDefaultModelSelection,
-    options?: { updateGlobal?: boolean },
-  ): Promise<void>
 }
+
+type CategoryDefaultModelSettings = Partial<Record<DsnDefaultModelCategory, string>>
+
+const CategoryDefaultModelSettingsSchema: z<CategoryDefaultModelSettings> = z.object({
+  image: z.string(),
+  'text-multimodal': z.string(),
+  video: z.string(),
+  audio: z.string(),
+  other: z.string(),
+})
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -147,6 +156,13 @@ const OAUTH_CALLBACK_PATH = `${RPC_CHANNEL}/oauth/callback`
 
 type RpcPayload = Record<string, unknown>
 
+function sameSnapshot(left: DsnAccountSnapshot, right: DsnAccountSnapshot): boolean {
+  // Snapshots are deliberately small, JSON-safe wire values. Suppressing an
+  // identical publication keeps the `changed` event edge-triggered and also
+  // protects consumers from accidentally turning a read into an event loop.
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 export class DsnAccountServiceRuntime extends Service implements DsnAccountService {
   static inject = inject
 
@@ -168,6 +184,8 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
   private modelCatalogPromise?: Promise<DsnModelCatalog>
   private modelCatalogGeneration = 0
   private snapshot: DsnAccountSnapshot = { state: 'signed-out' }
+  private readonly categoryDefaultModelEntry: CategoryDefaultModelSettings = {}
+  private categoryDefaultModelSource: () => CategoryDefaultModelSettings = () => this.categoryDefaultModelEntry
 
   constructor(ctx: Context, config?: Partial<DsnAccountConfig>) {
     super(ctx, 'dsnAccount')
@@ -186,6 +204,24 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       timeoutMs: this.config.requestTimeoutMs,
     })
     this.accountService = new AccountServiceClient(this.config.accountServiceUrl, fetch, this.config.requestTimeoutMs)
+
+    // DSH 0.1.5 exposes only one global Agent default. CQAI owns the
+    // capability-specific defaults in its own optional settings section so an
+    // image choice never overwrites the user's chat model.
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['settings'], (settingsCtx) => {
+        settingsCtx.settings.installSection(
+          ctx,
+          CQAI_CATEGORY_DEFAULT_MODELS_SETTINGS_NAMESPACE,
+          CategoryDefaultModelSettingsSchema,
+          this.categoryDefaultModelEntry,
+          {
+            setSource: (current) => { this.categoryDefaultModelSource = current },
+            onChange: () => {},
+          },
+        )
+      })
+    }
 
     this.registerAuthorizationFlow()
     this.registerRpc()
@@ -377,19 +413,11 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
   }
 
   async getCategoryDefaultModels(): Promise<DsnCategoryDefaultModels> {
-    const current = this.agentDefaultModel.currentCategorySelections()
+    const current = this.categoryDefaultModelSource()
     const categories: Partial<Record<DsnDefaultModelCategory, DsnDefaultModelSelection>> = {}
     for (const category of DSN_DEFAULT_MODEL_CATEGORY_ORDER) {
-      if (category === 'text-multimodal') {
-        const text = current.text
-        const multimodal = current['text-multimodal']
-        if (text !== undefined && multimodal !== undefined && sameSelection(text, multimodal)) {
-          categories[category] = copySelection(multimodal)
-        }
-        continue
-      }
-      const selection = current[category]
-      if (selection !== undefined) categories[category] = copySelection(selection)
+      const model = current[category]
+      if (model !== undefined) categories[category] = { provider: CQAI_PROVIDER, model }
     }
     return {
       global: copySelection(this.agentDefaultModel.currentSelection()),
@@ -407,11 +435,18 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       throw new DsnAccountError('DSN_MODEL_UNAVAILABLE', `模型「${model}」当前不可用于 CQAI Club 的${categoryLabel(category)}。`)
     }
     const next: DsnDefaultModelSelection = { provider: CQAI_PROVIDER, model: selected.id }
-    await this.agentDefaultModel.saveCategorySelections(
-      category === 'text-multimodal' ? ['text', 'text-multimodal'] : [category],
-      next,
-      { updateGlobal: category === 'text-multimodal' },
-    )
+    if (category === 'text-multimodal') await this.agentDefaultModel.saveSelection(next)
+    const settings = typeof this.root.get === 'function' ? this.root.get('settings') : undefined
+    if (settings === undefined) {
+      this.categoryDefaultModelEntry[category] = selected.id
+    } else {
+      // update() is intentionally used instead of replace(): the settings
+      // provider serializes writes per namespace and merges each category over
+      // the last committed value, avoiding lost concurrent selections.
+      await settings.update(CQAI_CATEGORY_DEFAULT_MODELS_SETTINGS_NAMESPACE, {
+        [category]: selected.id,
+      })
+    }
     return this.getCategoryDefaultModels()
   }
 
@@ -1031,6 +1066,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
   }
 
   private setSnapshot(snapshot: DsnAccountSnapshot): void {
+    if (sameSnapshot(this.snapshot, snapshot)) return
     this.snapshot = snapshot
     ;(this.root as unknown as { emit(event: string, value: DsnAccountSnapshot): void }).emit('dsn-account/changed', snapshot)
   }
@@ -1069,18 +1105,13 @@ function copySelection(selection: DsnDefaultModelSelection): DsnDefaultModelSele
   }
 }
 
-function sameSelection(left: DsnDefaultModelSelection, right: DsnDefaultModelSelection): boolean {
-  return left.provider === right.provider
-    && left.model === right.model
-    && left.reasoningEffort === right.reasoningEffort
-}
-
 function modelForCategory(
   candidate: DsnModel,
   category: DsnDefaultModelCategory,
   model: string,
 ): boolean {
   if (candidate.id !== model) return false
+  if (category === 'image') return isImageGenerationModel(candidate)
   if (category === 'text-multimodal') {
     return isChatModel(candidate)
       && candidate.categories.includes('text')

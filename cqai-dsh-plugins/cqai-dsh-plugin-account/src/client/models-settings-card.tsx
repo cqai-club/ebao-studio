@@ -3,7 +3,9 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { Button, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   isChatModel,
+  isImageGenerationModel,
   type DsnAccountSnapshot,
+  type DsnCategoryDefaultModels,
   type DsnDefaultModelSelection,
   type DsnModel,
   type DsnModelCatalog,
@@ -16,7 +18,7 @@ const CQAI_PROVIDER = 'cqaiclub'
 export const modelsSettingsZh = {
   modelsEyebrow: '云端模型',
   modelsTitle: 'CQAI Club 模型',
-  modelsDescription: '模型目录由 CQAI Club 根据当前账号动态提供，并同步到聊天模型选择器。',
+  modelsDescription: '模型目录由 CQAI Club 根据当前账号动态提供，供对话和生图功能共用。',
   modelsConnected: '已连接',
   modelsSignedOut: '未登录',
   modelsLoading: '正在读取模型…',
@@ -28,6 +30,11 @@ export const modelsSettingsZh = {
   modelsSelectDefault: '选择 CQAI Club 默认模型',
   modelsSaving: '保存中…',
   modelsDefaultSaved: '默认模型已更新。',
+  modelsImageDefault: '默认图像模型',
+  modelsSelectImageDefault: '选择 CQAI Club 默认图像模型',
+  modelsImageDefaultSaved: '默认图像模型已更新。',
+  modelsImageDefaultUnavailable: '原默认图像模型已不可用，请重新选择。',
+  modelsImageEmpty: '当前账号没有可用的图像生成模型',
   modelsAvailable: '可用对话模型',
   modelsEmpty: '当前账号暂时没有可用的对话模型。',
   modelsStale: '当前展示的是上一次成功获取的模型目录。',
@@ -44,7 +51,7 @@ export type ModelsSettingsKey = keyof typeof modelsSettingsZh
 export const modelsSettingsEn: Record<ModelsSettingsKey, string> = {
   modelsEyebrow: 'CLOUD MODELS',
   modelsTitle: 'CQAI Club models',
-  modelsDescription: 'CQAI Club provides this catalog for the current account and keeps it in sync with the chat model picker.',
+  modelsDescription: 'CQAI Club provides this catalog for the current account and shares it across chat and image generation.',
   modelsConnected: 'Connected',
   modelsSignedOut: 'Signed out',
   modelsLoading: 'Loading models…',
@@ -56,6 +63,11 @@ export const modelsSettingsEn: Record<ModelsSettingsKey, string> = {
   modelsSelectDefault: 'Choose a CQAI Club default model',
   modelsSaving: 'Saving…',
   modelsDefaultSaved: 'Default model updated.',
+  modelsImageDefault: 'Default image model',
+  modelsSelectImageDefault: 'Choose a CQAI Club default image model',
+  modelsImageDefaultSaved: 'Default image model updated.',
+  modelsImageDefaultUnavailable: 'The previous default image model is unavailable. Choose another model.',
+  modelsImageEmpty: 'This account has no available image-generation model',
   modelsAvailable: 'Available chat models',
   modelsEmpty: 'This account currently has no available chat models.',
   modelsStale: 'Showing the last model catalog loaded successfully.',
@@ -132,8 +144,9 @@ export function CqaiModelsSettingsCard({ ctx, t }: CqaiModelsSettingsCardProps) 
   const [snapshot, setSnapshot] = useState<DsnAccountSnapshot>()
   const [catalog, setCatalog] = useState<DsnModelCatalog>()
   const [selection, setSelection] = useState<DsnDefaultModelSelection>()
+  const [categoryDefaults, setCategoryDefaults] = useState<DsnCategoryDefaultModels>()
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [savingTarget, setSavingTarget] = useState<'chat' | 'image'>()
   const [error, setError] = useState<string>()
   const [notice, setNotice] = useState<string>()
 
@@ -148,15 +161,18 @@ export function CqaiModelsSettingsCard({ ctx, t }: CqaiModelsSettingsCardProps) 
       if (nextSnapshot.state !== 'signed-in') {
         setCatalog(undefined)
         setSelection(undefined)
+        setCategoryDefaults(undefined)
         return
       }
-      const [nextCatalog, nextSelection] = await Promise.all([
+      const [nextCatalog, nextSelection, nextCategoryDefaults] = await Promise.all([
         rpcCall<DsnModelCatalog>(ctx, 'models/list', { refresh }, signal),
         rpcCall<DsnDefaultModelSelection>(ctx, 'models/default/get', {}, signal),
+        rpcCall<DsnCategoryDefaultModels>(ctx, 'models/category-defaults/get', {}, signal),
       ])
       if (cancelled(signal)) return
       setCatalog(nextCatalog)
       setSelection(nextSelection)
+      setCategoryDefaults(nextCategoryDefaults)
     } catch (cause) {
       if (!cancelled(signal)) setError(messageOf(cause))
     } finally {
@@ -171,15 +187,25 @@ export function CqaiModelsSettingsCard({ ctx, t }: CqaiModelsSettingsCardProps) 
   }, [load])
 
   const models = useMemo(() => catalog?.models.filter(isChatModel) ?? [], [catalog])
+  const imageModels = useMemo(() => catalog?.models.filter(isImageGenerationModel) ?? [], [catalog])
   const selectedModel = selection?.provider === CQAI_PROVIDER
     && models.some(model => model.id === selection.model)
     ? selection.model
     : ''
+  const imageSelection = categoryDefaults?.categories.image
+  const selectedImageModel = imageSelection?.provider === CQAI_PROVIDER
+    && imageModels.some(model => model.id === imageSelection.model)
+    ? imageSelection.model
+    : ''
+  const imageDefaultUnavailable = imageSelection?.provider === CQAI_PROVIDER
+    && imageSelection.model.length > 0
+    && selectedImageModel === ''
   const signedIn = snapshot?.state === 'signed-in'
+  const saving = savingTarget !== undefined
 
   const saveDefault = async (model: string) => {
     if (model.length === 0 || saving) return
-    setSaving(true)
+    setSavingTarget('chat')
     setError(undefined)
     setNotice(undefined)
     try {
@@ -188,7 +214,25 @@ export function CqaiModelsSettingsCard({ ctx, t }: CqaiModelsSettingsCardProps) 
     } catch (cause) {
       setError(messageOf(cause))
     } finally {
-      setSaving(false)
+      setSavingTarget(undefined)
+    }
+  }
+
+  const saveImageDefault = async (model: string) => {
+    if (model.length === 0 || saving) return
+    setSavingTarget('image')
+    setError(undefined)
+    setNotice(undefined)
+    try {
+      setCategoryDefaults(await rpcCall<DsnCategoryDefaultModels>(ctx, 'models/category-defaults/set', {
+        category: 'image',
+        model,
+      }))
+      setNotice(t('modelsImageDefaultSaved'))
+    } catch (cause) {
+      setError(messageOf(cause))
+    } finally {
+      setSavingTarget(undefined)
     }
   }
 
@@ -227,23 +271,42 @@ export function CqaiModelsSettingsCard({ ctx, t }: CqaiModelsSettingsCardProps) 
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-            <label style={{ display: 'grid', flex: '1 1 300px', gap: 7, color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 12, fontWeight: 600 }}>
-              {t('modelsDefault')}
-              <select
-                aria-label={t('modelsDefault')}
-                style={selectStyle}
-                value={selectedModel}
-                disabled={loading || saving || models.length === 0}
-                onChange={(event) => { void saveDefault(event.target.value) }}
-              >
-                <option value="">{saving ? t('modelsSaving') : t('modelsSelectDefault')}</option>
-                {models.map(model => <option key={model.id} value={model.id}>{model.id}</option>)}
-              </select>
-            </label>
+            <div style={{ display: 'grid', flex: '1 1 540px', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 14 }}>
+              <label style={{ display: 'grid', gap: 7, color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 12, fontWeight: 600 }}>
+                {t('modelsDefault')}
+                <select
+                  aria-label={t('modelsDefault')}
+                  style={selectStyle}
+                  value={selectedModel}
+                  disabled={loading || saving || models.length === 0}
+                  onChange={(event) => { void saveDefault(event.target.value) }}
+                >
+                  <option value="">{savingTarget === 'chat' ? t('modelsSaving') : t('modelsSelectDefault')}</option>
+                  {models.map(model => <option key={model.id} value={model.id}>{model.id}</option>)}
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 7, color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 12, fontWeight: 600 }}>
+                {t('modelsImageDefault')}
+                <select
+                  aria-label={t('modelsImageDefault')}
+                  style={selectStyle}
+                  value={selectedImageModel}
+                  disabled={loading || saving || imageModels.length === 0}
+                  onChange={(event) => { void saveImageDefault(event.target.value) }}
+                >
+                  <option value="">{savingTarget === 'image'
+                    ? t('modelsSaving')
+                    : imageModels.length === 0 ? t('modelsImageEmpty') : t('modelsSelectImageDefault')}</option>
+                  {imageModels.map(model => <option key={model.id} value={model.id}>{model.id}</option>)}
+                </select>
+              </label>
+            </div>
             <Button variant="outline" disabled={loading || saving} onClick={() => { void load(true) }}>
               {loading ? t('modelsRefreshing') : t('modelsRefresh')}
             </Button>
           </div>
+
+          {imageDefaultUnavailable ? <p role="status" style={{ ...mutedStyle, color: 'var(--dsw-alias-state-warning-primary, #9a6700)' }}>{t('modelsImageDefaultUnavailable')}</p> : null}
 
           {catalog?.stale === true ? <p role="status" style={mutedStyle}>{catalog.warning ?? t('modelsStale')}</p> : null}
 

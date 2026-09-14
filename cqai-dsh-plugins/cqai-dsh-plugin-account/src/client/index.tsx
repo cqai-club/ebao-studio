@@ -864,8 +864,8 @@ function AccountSettingsTab({ t, accountContext: ctx }: AccountSettingsSectionPr
         <BillingPanel ctx={ctx} t={t} account={signedIn.account} refreshAccount={refreshAccount} />
       ) : snapshot === undefined ? (
         <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 150, padding: 28 }} role="status">
-          <StateDot state="ongoing" size={14} />
-          <span style={mutedTextStyle}>{t('loading')}</span>
+          <StateDot state={error === undefined ? 'ongoing' : 'error'} size={14} />
+          <span style={mutedTextStyle}>{t(error === undefined ? 'loading' : 'unavailable')}</span>
         </div>
       ) : (
         <div style={cardStyle}>

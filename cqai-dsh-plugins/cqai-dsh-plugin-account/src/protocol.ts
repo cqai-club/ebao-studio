@@ -57,6 +57,12 @@ export function isChatModel(model: DsnModel): boolean {
   return model.categories.some(category => category === 'text' || category === 'text-multimodal' || category === 'other')
 }
 
+/** Whether a catalog entry can serve the OpenAI-compatible image endpoints. */
+export function isImageGenerationModel(model: DsnModel): boolean {
+  return model.categories.includes('image')
+    && model.supportedEndpointTypes.includes('image-generation')
+}
+
 export type DsnModelCatalog = {
   models: readonly DsnModel[]
   fetchedAt: number
