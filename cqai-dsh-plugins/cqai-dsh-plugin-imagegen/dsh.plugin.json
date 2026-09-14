@@ -1,0 +1,12 @@
+{
+  "id": "cqai-dsh-plugin-imagegen",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "e图宝 image generation studio",
+  "engines": {
+    "dsh": ">=0.1.5-rc.1"
+  },
+  "client": {
+    "main": "./lib/client.js"
+  }
+}

@@ -1,0 +1,6 @@
+# Install only the image studio. The owning Desktop profile mounts
+# @cqaiclub/dsn-account; this plugin's required dsnAccount injection keeps the
+# studio dormant until that shared Host service is ready.
+- insert:
+    - id: cqai-imagegen
+      name: cqai-dsh-plugin-imagegen
