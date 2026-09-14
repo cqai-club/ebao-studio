@@ -21,6 +21,7 @@ const workspaceRoot = new URL('../', packageRoot)
 const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), 'utf8')) as {
   name?: unknown
   version?: unknown
+  repository?: unknown
   bin?: Record<string, unknown>
   exports?: Record<string, unknown>
   files?: unknown
