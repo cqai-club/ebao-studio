@@ -1,6 +1,6 @@
 import { FuseV1Options, FuseVersion, type FuseConfig } from '@electron/fuses'
 import { FuseState } from '@electron/fuses/dist/constants.js'
-import { Arch } from 'builder-util'
+import { Arch, getArchSuffix } from 'builder-util'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -217,7 +217,6 @@ describe('final Electron fuse verification', () => {
       configuration: { productName: '易宝工坊 Beta' },
       platformToTargets: new Map([[platform, new Map()]]),
     } satisfies ElectronArtifactBuildResult
-    const executable = join('/build', 'win-unpacked', '易宝工坊 Beta.exe')
     const expectedArch = new Map<string, Arch>([
       ['ia32', Arch.ia32],
       ['x64', Arch.x64],
@@ -225,11 +224,14 @@ describe('final Electron fuse verification', () => {
     ]).get(process.arch)
 
     expect(expectedArch).toBeDefined()
+    if (expectedArch === undefined) throw new Error(`unsupported test architecture ${process.arch}`)
+    const expectedOutDir = join('/build', `win${getArchSuffix(expectedArch)}-unpacked`)
+    const executable = join(expectedOutDir, '易宝工坊 Beta.exe')
     expect(resolveFinalPackagedRuntimeContexts(
       built,
       filename => filename === executable,
     )).toEqual([expect.objectContaining({
-      appOutDir: join('/build', 'win-unpacked'),
+      appOutDir: expectedOutDir,
       arch: expectedArch,
       electronPlatformName: 'win32',
     })])
