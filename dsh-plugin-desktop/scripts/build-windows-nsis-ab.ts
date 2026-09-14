@@ -257,10 +257,9 @@ export function buildWindowsNsisAb(options: WindowsNsisAbBuildOptions): WindowsN
       '--reverse',
       // The patch target is an untracked package copy, not repository state.
       '--unsafe-paths',
-      // Anchor package-relative patch paths at the isolated -C directory.
-      '--directory=.',
-      // --directory=. prefixes candidate paths with "./" before include filtering.
-      '--include=./templates/nsis/include/extractAppPackage.nsh',
+      // The patch already uses package-relative paths, so -C anchors it at the
+      // isolated app-builder-lib copy without platform-sensitive path rewriting.
+      '--include=templates/nsis/include/extractAppPackage.nsh',
       options.appBuilderPatch,
     ],
     options.workspaceRoot,
