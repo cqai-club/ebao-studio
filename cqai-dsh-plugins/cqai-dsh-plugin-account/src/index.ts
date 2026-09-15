@@ -35,6 +35,7 @@ import {
   isChatModel,
   isDsnDefaultModelCategory,
   isImageGenerationModel,
+  isModelInCategory,
   isPublicAccount,
   remainingQuota,
   type DsnAccountConfig,
@@ -65,6 +66,7 @@ export type {
   DsnCategoryDefaultModels,
   DsnDefaultModelCategory,
   DsnDefaultModelSelection,
+  DsnModelArchitecture,
   DsnModel,
   DsnModelCatalog,
   DsnModelListOptions,
@@ -82,7 +84,7 @@ export type {
 } from './protocol.ts'
 export {
   DSN_DEFAULT_MODEL_CATEGORY_ORDER, DSN_MODEL_CATEGORY_ORDER, MODEL_CATALOG_CACHE_TTL_MS,
-  isChatModel, isImageGenerationModel,
+  isAudioModel, isChatModel, isImageGenerationModel, isModelInCategory, isVideoModel, isVisionChatModel,
 } from './protocol.ts'
 export { DsnAccountError } from './errors.ts'
 export { AccountServiceClient, AccountServiceError } from './account-service.ts'
@@ -651,7 +653,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     try {
       request = await this.oidc.createAuthorizationRequest(
         callbackServer.redirectUri,
-        { prompt: Prompt.Login },
+        { prompt: Prompt.LoginConsent },
         signal,
       )
     } catch (cause) {
@@ -775,6 +777,12 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       session.signal,
     )
     token = await this.ensureResourceToken(token, session.signal)
+    if (token.refreshToken === undefined) {
+      throw new DsnAccountError(
+        'DSN_PROTOCOL_ERROR',
+        'CQAI Club 未返回刷新令牌，请重新授权。',
+      )
+    }
 
     const expiresAt = attempt.request.expiresAt
     let transientFailures = 0
@@ -1111,13 +1119,7 @@ function modelForCategory(
   model: string,
 ): boolean {
   if (candidate.id !== model) return false
-  if (category === 'image') return isImageGenerationModel(candidate)
-  if (category === 'text-multimodal') {
-    return isChatModel(candidate)
-      && candidate.categories.includes('text')
-      && candidate.categories.includes('text-multimodal')
-  }
-  return candidate.categories.includes(category)
+  return isModelInCategory(candidate, category)
 }
 
 function categoryLabel(category: DsnDefaultModelCategory): string {
