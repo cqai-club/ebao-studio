@@ -22,6 +22,20 @@ const falsePositive: DsnModel = {
   categories: ['image'],
   supportedEndpointTypes: ['openai'],
 }
+const structuredImage: DsnModel = {
+  id: 'structured-image',
+  ownedBy: 'cqai',
+  categories: ['other'],
+  supportedEndpointTypes: ['image-generation'],
+  architecture: { inputModalities: ['text'], outputModalities: ['image'] },
+}
+const staleImageCategory: DsnModel = {
+  id: 'stale-image-category',
+  ownedBy: 'cqai',
+  categories: ['image'],
+  supportedEndpointTypes: ['image-generation'],
+  architecture: { inputModalities: ['text'], outputModalities: ['text'] },
+}
 
 function service(
   models: DsnModel[],
@@ -59,13 +73,24 @@ function request(model = ''): GenerateRequest {
 
 describe('CqaiImageProvider', () => {
   it('filters the account catalog by image and image-generation capability and honors the category default', async () => {
-    const account = service([image('one'), falsePositive, image('two'), chat], 'two')
+    const account = service([
+      image('one'),
+      falsePositive,
+      structuredImage,
+      staleImageCategory,
+      image('two'),
+      chat,
+    ], 'two')
     const provider = new CqaiImageProvider(account)
 
     await expect(provider.describe()).resolves.toMatchObject({
       provider: 'cqai',
       state: 'signed-in',
-      models: [{ alias: 'one', id: 'one' }, { alias: 'two', id: 'two' }],
+      models: [
+        { alias: 'one', id: 'one' },
+        { alias: 'structured-image', id: 'structured-image' },
+        { alias: 'two', id: 'two' },
+      ],
       defaultModel: 'two',
     })
     await expect(provider.resolveRequest(request())).resolves.toMatchObject({

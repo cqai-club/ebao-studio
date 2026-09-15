@@ -376,7 +376,7 @@ describe('DsnAccountServiceRuntime', () => {
       if (url.endsWith('/v1/models')) return json({
         success: true,
         data: [
-          { id: 'vision-model', owned_by: 'relay', categories: ['text', 'text-multimodal'], supported_endpoint_types: ['openai'] },
+          { id: 'vision-model', owned_by: 'relay', categories: ['text-multimodal'], supported_endpoint_types: ['openai'] },
           { id: 'image-model', owned_by: 'relay', categories: ['image'], supported_endpoint_types: ['image-generation'] },
           { id: 'image-category-only', owned_by: 'relay', categories: ['image'], supported_endpoint_types: ['openai'] },
           { id: 'shared-image-model', owned_by: 'relay', categories: ['image', 'text', 'text-multimodal'], supported_endpoint_types: ['openai', 'image-generation'] },

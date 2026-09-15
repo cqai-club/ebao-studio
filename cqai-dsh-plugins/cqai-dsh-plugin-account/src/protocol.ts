@@ -41,12 +41,26 @@ export const DSN_MODEL_CATEGORY_ORDER = [
   'other',
 ] as const satisfies readonly DsnModelCategory[]
 
+const AUDIO_MODALITIES = new Set(['audio', 'speech', 'transcription'])
+
+export type DsnModelArchitecture = {
+  modality?: string
+  inputModalities: readonly string[]
+  outputModalities: readonly string[]
+}
+
 export type DsnModel = {
   id: string
   ownedBy: string
+  canonicalSlug?: string
+  name?: string
   vendor?: string
   description?: string
   icon?: string
+  architecture?: DsnModelArchitecture
+  supportedParameters?: readonly string[]
+  contextLength?: number
+  maxOutputTokens?: number
   categories: readonly DsnModelCategory[]
   supportedEndpointTypes: readonly string[]
 }
@@ -54,13 +68,55 @@ export type DsnModel = {
 /** Whether a model can be used by the ordinary CQAI Club conversation route. */
 export function isChatModel(model: DsnModel): boolean {
   if (!model.supportedEndpointTypes.includes('openai')) return false
+  if (model.architecture !== undefined) {
+    return model.architecture.inputModalities.includes('text')
+      && model.architecture.outputModalities.includes('text')
+  }
   return model.categories.some(category => category === 'text' || category === 'text-multimodal' || category === 'other')
+}
+
+/** Whether a chat model accepts image input. */
+export function isVisionChatModel(model: DsnModel): boolean {
+  if (!isChatModel(model)) return false
+  if (model.architecture !== undefined) return model.architecture.inputModalities.includes('image')
+  return model.categories.includes('text-multimodal')
 }
 
 /** Whether a catalog entry can serve the OpenAI-compatible image endpoints. */
 export function isImageGenerationModel(model: DsnModel): boolean {
+  if (!model.supportedEndpointTypes.includes('image-generation')) return false
+  if (model.architecture !== undefined) return model.architecture.outputModalities.includes('image')
   return model.categories.includes('image')
-    && model.supportedEndpointTypes.includes('image-generation')
+}
+
+/** Whether a catalog entry can serve the OpenAI-compatible video endpoints. */
+export function isVideoModel(model: DsnModel): boolean {
+  if (!model.supportedEndpointTypes.includes('openai-video')) return false
+  if (model.architecture !== undefined) return model.architecture.outputModalities.includes('video')
+  return model.categories.includes('video')
+}
+
+/** Whether a catalog entry consumes or produces an audio-family modality. */
+export function isAudioModel(model: DsnModel): boolean {
+  if (model.architecture === undefined) return model.categories.includes('audio')
+  return model.architecture.inputModalities.some(modality => AUDIO_MODALITIES.has(modality))
+    || model.architecture.outputModalities.some(modality => AUDIO_MODALITIES.has(modality))
+}
+
+/** Apply the shared model-capability rules used by defaults and business plugins. */
+export function isModelInCategory(model: DsnModel, category: DsnDefaultModelCategory): boolean {
+  switch (category) {
+    case 'image': return isImageGenerationModel(model)
+    case 'text-multimodal': return isVisionChatModel(model)
+    case 'video': return isVideoModel(model)
+    case 'audio': return isAudioModel(model)
+    case 'other':
+      if (model.architecture === undefined) return model.categories.includes('other')
+      return !isChatModel(model)
+        && !isImageGenerationModel(model)
+        && !isVideoModel(model)
+        && !isAudioModel(model)
+  }
 }
 
 export type DsnModelCatalog = {
@@ -318,14 +374,27 @@ export function parseDsnModelList(value: unknown): DsnModel[] {
       record.supported_endpoint_types,
       `model ${id} has invalid supported_endpoint_types`,
     )
+    const architecture = parseArchitecture(record.architecture, id)
+    const supportedParameters = parseOptionalStringArray(
+      record.supported_parameters,
+      `model ${id} has invalid supported_parameters`,
+    )
+    const contextLength = parseModelLimit(record.context_length, 'context_length', id)
+    const maxOutputTokens = parseModelLimit(record.max_output_tokens, 'max_output_tokens', id)
     if (seen.has(id)) continue
     seen.add(id)
     models.push({
       id,
       ownedBy,
+      ...optionalModelString(record.canonical_slug, 'canonical_slug', id, 'canonicalSlug'),
+      ...optionalModelString(record.name, 'name', id),
       ...optionalModelString(record.vendor, 'vendor', id),
       ...optionalModelString(record.description, 'description', id),
       ...optionalModelString(record.icon, 'icon', id),
+      ...(architecture === undefined ? {} : { architecture }),
+      ...(supportedParameters === undefined ? {} : { supportedParameters }),
+      ...(contextLength === undefined ? {} : { contextLength }),
+      ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
       categories,
       supportedEndpointTypes,
     })
@@ -349,6 +418,34 @@ function parseStringArray(value: unknown, message: string): string[] {
   return [...new Set(value)]
 }
 
+function parseOptionalStringArray(value: unknown, message: string): string[] | undefined {
+  if (value === undefined || value === null) return undefined
+  return parseStringArray(value, message)
+}
+
+function parseArchitecture(value: unknown, modelId: string): DsnModelArchitecture | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`model ${modelId} has invalid architecture`)
+  }
+  const architecture = value as Record<string, unknown>
+  const modality = architecture.modality
+  if (modality !== undefined && modality !== null && (typeof modality !== 'string' || modality.length === 0)) {
+    throw new Error(`model ${modelId} has invalid architecture.modality`)
+  }
+  return {
+    ...(typeof modality === 'string' ? { modality } : {}),
+    inputModalities: parseStringArray(
+      architecture.input_modalities,
+      `model ${modelId} has invalid architecture.input_modalities`,
+    ),
+    outputModalities: parseStringArray(
+      architecture.output_modalities,
+      `model ${modelId} has invalid architecture.output_modalities`,
+    ),
+  }
+}
+
 function requiredString(value: unknown, message: string): string {
   if (typeof value !== 'string' || value.length === 0) throw new Error(message)
   return value
@@ -358,12 +455,21 @@ function optionalModelString(
   value: unknown,
   field: string,
   modelId: string,
+  outputField = field,
 ): Record<string, string> {
-  if (value === undefined) return {}
+  if (value === undefined || value === null) return {}
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`model ${modelId} has invalid ${field}`)
   }
-  return { [field]: value }
+  return { [outputField]: value }
+}
+
+function parseModelLimit(value: unknown, field: string, modelId: string): number | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`model ${modelId} has invalid ${field}`)
+  }
+  return value
 }
 
 export function isDsnModelCategory(value: unknown): value is DsnModelCategory {

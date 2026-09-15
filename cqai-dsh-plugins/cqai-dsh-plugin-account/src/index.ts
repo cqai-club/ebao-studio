@@ -34,7 +34,7 @@ import {
   RPC_CHANNEL,
   isChatModel,
   isDsnDefaultModelCategory,
-  isImageGenerationModel,
+  isModelInCategory,
   isPublicAccount,
   remainingQuota,
   type DsnAccountConfig,
@@ -65,6 +65,7 @@ export type {
   DsnCategoryDefaultModels,
   DsnDefaultModelCategory,
   DsnDefaultModelSelection,
+  DsnModelArchitecture,
   DsnModel,
   DsnModelCatalog,
   DsnModelListOptions,
@@ -82,7 +83,7 @@ export type {
 } from './protocol.ts'
 export {
   DSN_DEFAULT_MODEL_CATEGORY_ORDER, DSN_MODEL_CATEGORY_ORDER, MODEL_CATALOG_CACHE_TTL_MS,
-  isChatModel, isImageGenerationModel,
+  isAudioModel, isChatModel, isImageGenerationModel, isModelInCategory, isVideoModel, isVisionChatModel,
 } from './protocol.ts'
 export { DsnAccountError } from './errors.ts'
 export { AccountServiceClient, AccountServiceError } from './account-service.ts'
@@ -1111,13 +1112,7 @@ function modelForCategory(
   model: string,
 ): boolean {
   if (candidate.id !== model) return false
-  if (category === 'image') return isImageGenerationModel(candidate)
-  if (category === 'text-multimodal') {
-    return isChatModel(candidate)
-      && candidate.categories.includes('text')
-      && candidate.categories.includes('text-multimodal')
-  }
-  return candidate.categories.includes(category)
+  return isModelInCategory(candidate, category)
 }
 
 function categoryLabel(category: DsnDefaultModelCategory): string {

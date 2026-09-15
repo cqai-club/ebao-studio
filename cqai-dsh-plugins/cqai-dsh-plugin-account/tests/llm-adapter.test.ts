@@ -16,6 +16,10 @@ const multimodalModel: DsnModel = {
   ownedBy: 'cqai',
   categories: ['text-multimodal'],
   supportedEndpointTypes: ['openai'],
+  architecture: {
+    inputModalities: ['text', 'image'],
+    outputModalities: ['text'],
+  },
 }
 
 function accountService(response: Response, models: DsnModel[] = [textModel, multimodalModel]): DsnAccountService & {
