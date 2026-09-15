@@ -22,3 +22,7 @@ CQAI Club 登录。用户可以选择稍后登录并继续使用其他模型；�
 首次登录需要在系统浏览器完成授权。Native App Client 需要允许
 `http://127.0.0.1/cqaiclub-dsn-account/oauth/callback` 的动态端口回调。插件不把 Access
 Token 暴露给 Renderer，默认配置仍由 cordis.patch.yml 管理。
+
+模型目录兼容 Relay 新增的 OpenRouter 风格字段。业务判断优先使用 `architecture` 的输入、输出
+模态和端点类型，只有结构化字段缺失时才回退旧 `categories`；未知的模态和参数字符串会原样
+保留，便于后续版本识别，而不会让旧分类覆盖新的目录事实。
