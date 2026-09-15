@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  DESKTOP_DOWNLOAD_URLS,
+  DESKTOP_RELEASE_DOWNLOAD_BASE_URL,
   MAX_UPDATE_DOWNLOAD_BYTES,
   UpdateDownloadError,
+  desktopUpdateDownloadUrl,
   desktopUpdateFilename,
   downloadDesktopUpdate,
   pendingDesktopUpdateArtifact,
@@ -96,7 +97,7 @@ describe('desktop update installer download', () => {
     expect(result).toBe(join(directory, '易宝工坊-2.1.0-mac.dmg'))
     expect(await readFile(result)).toEqual(Buffer.from(artifact))
     expect(calls).toHaveLength(1)
-    expect(calls[0]?.url).toBe(DESKTOP_DOWNLOAD_URLS.darwin)
+    expect(calls[0]?.url).toBe(desktopUpdateDownloadUrl('darwin', '2.1.0'))
     expect(calls[0]?.init).toMatchObject({ method: 'GET', cache: 'no-store', redirect: 'follow' })
     await expectNoPartialFiles(directory)
   })
@@ -109,7 +110,7 @@ describe('desktop update installer download', () => {
       version: '2.2.0',
       destinationPath: destinationPath(directory, 'win32', '2.2.0'),
       request: async (url) => {
-        expect(url).toBe(DESKTOP_DOWNLOAD_URLS.win32)
+        expect(url).toBe(desktopUpdateDownloadUrl('win32', '2.2.0'))
         return chunkedResponse([artifact])
       },
     })
@@ -117,6 +118,18 @@ describe('desktop update installer download', () => {
     expect(result).toBe(join(directory, '易宝工坊-2.2.0-windows.exe'))
     expect(await readFile(result)).toEqual(Buffer.from(artifact))
     await expectNoPartialFiles(directory)
+  })
+
+  it('pins stable and Beta downloads to this repository release and exact artifact', () => {
+    expect(DESKTOP_RELEASE_DOWNLOAD_BASE_URL).toBe(
+      'https://github.com/cqai-club/ebao-studio/releases/download',
+    )
+    expect(decodeURI(desktopUpdateDownloadUrl('darwin', '0.0.1'))).toBe(
+      'https://github.com/cqai-club/ebao-studio/releases/download/v0.0.1/eBao-Studio-0.0.1-universal.dmg',
+    )
+    expect(decodeURI(desktopUpdateDownloadUrl('win32', '0.0.1-beta.1', 'beta'))).toBe(
+      'https://github.com/cqai-club/ebao-studio/releases/download/v0.0.1-beta.1/eBao-Studio-Beta-0.0.1-beta.1-x64-Setup.exe',
+    )
   })
 
   it('accepts canonical stable SemVer build metadata in the private artifact path', async () => {

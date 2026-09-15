@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-desktop",
-  "version": "2.0.9",
+  "version": "0.0.1",
   "description": "易宝工坊: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anywhere-labs/deepseek-harness-desktop.git",
+    "url": "git+https://github.com/cqai-club/ebao-studio.git",
     "directory": "dsh-plugin-desktop"
   },
   "type": "module",

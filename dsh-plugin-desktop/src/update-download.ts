@@ -14,11 +14,9 @@ import {
 /** Desktop platforms with a fixed installer download endpoint. */
 export type DesktopDownloadPlatform = 'darwin' | 'win32'
 
-/** Fixed download endpoints that record one user-confirmed installer download. */
-export const DESKTOP_DOWNLOAD_URLS: Readonly<Record<DesktopDownloadPlatform, string>> = {
-  darwin: 'https://www.dshdesktop.cn/api/downloads/mac',
-  win32: 'https://www.dshdesktop.cn/api/downloads/windows',
-}
+/** GitHub Release base URL containing version-pinned 易宝工坊 installers. */
+export const DESKTOP_RELEASE_DOWNLOAD_BASE_URL =
+  'https://github.com/cqai-club/ebao-studio/releases/download'
 
 /** Header pinning a download request and response to the checked release. */
 export const DESKTOP_TARGET_VERSION_HEADER = 'X-DSH-Desktop-Target-Version'
@@ -115,13 +113,14 @@ export async function downloadDesktopUpdate(options: DownloadDesktopUpdateOption
   const platform = validatedPlatform(options.platform)
   const channel = options.channel ?? 'stable'
   validatedVersion(options.version, channel)
+  const downloadUrl = desktopUpdateDownloadUrl(platform, options.version, channel)
   const destinationPath = validatedArtifactPath(options.destinationPath, platform)
   const paths = await prepareDownloadPaths(destinationPath)
   throwIfAborted(options.signal)
 
   let response: Response
   try {
-    response = await options.request(DESKTOP_DOWNLOAD_URLS[platform], {
+    response = await options.request(downloadUrl, {
       method: 'GET',
       headers: {
         [DESKTOP_RELEASE_CHANNEL_HEADER]: channel,
@@ -168,6 +167,24 @@ export async function downloadDesktopUpdate(options: DownloadDesktopUpdateOption
       throw new AggregateError([failure, cleanupCause], 'Failed to download and clean up the update installer.')
     }
   }
+}
+
+/** Resolve one channel- and version-pinned installer asset from this repository. */
+export function desktopUpdateDownloadUrl(
+  platform: DesktopDownloadPlatform,
+  version: string,
+  channel: DesktopReleaseChannel = 'stable',
+): string {
+  const targetPlatform = validatedPlatform(platform)
+  const targetVersion = validatedVersion(version, channel)
+  // GitHub strips non-ASCII characters from uploaded release asset names.
+  // Keep the remote artifact name ASCII-only while retaining the localized
+  // filename presented by desktopUpdateFilename().
+  const product = channel === 'beta' ? 'eBao-Studio-Beta' : 'eBao-Studio'
+  const artifact = targetPlatform === 'darwin'
+    ? `${product}-${targetVersion}-universal.dmg`
+    : `${product}-${targetVersion}-x64-Setup.exe`
+  return `${DESKTOP_RELEASE_DOWNLOAD_BASE_URL}/v${encodeURIComponent(targetVersion)}/${encodeURIComponent(artifact)}`
 }
 
 /** Fixed default filename shown by the native destination picker. */

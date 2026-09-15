@@ -22,6 +22,7 @@ const workspaceRoot = new URL('../', packageRoot)
 const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), 'utf8')) as {
   name?: unknown
   version?: unknown
+  repository?: unknown
   bin?: Record<string, unknown>
   exports?: Record<string, unknown>
   files?: unknown
@@ -765,7 +766,12 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('2.0.9')
+    expect(manifest.version).toBe('0.0.1')
+    expect(manifest.repository).toEqual({
+      type: 'git',
+      url: 'git+https://github.com/cqai-club/ebao-studio.git',
+      directory: 'dsh-plugin-desktop',
+    })
     expect(manifest.build?.productName).toBe('易宝工坊')
     expect(manifest.build?.appId).toBe('ai.deepseek.dsh.desktop')
     expect(manifest.build?.asar).toEqual({ smartUnpack: true })

@@ -2,7 +2,7 @@
 
 [中文](faq.md)
 
-This page answers common questions about installation, supported platforms, the bundled runtime, and plugins in the current stable release. The [latest GitHub Release](https://github.com/anywhere-labs/deepseek-harness-desktop/releases/latest) and [user guide](user-guide.en.md) define the shipped product scope.
+This page answers common questions about installation, supported platforms, the bundled runtime, and plugins in the current release. The [eBao Studio GitHub Releases](https://github.com/cqai-club/ebao-studio/releases) and [user guide](user-guide.en.md) define the shipped product scope.
 
 ## What is 易宝工坊?
 
@@ -14,7 +14,7 @@ No. 易宝工坊 is an independent, community-maintained open-source project. It
 
 ## Which operating systems are supported?
 
-Current release installers support Windows x64 and universal macOS (Intel and Apple Silicon). There is currently no Linux installer. Cross-platform compatibility code in the source tree does not imply that an installer has been released for that platform.
+Current prerelease artifacts support Windows x64 and universal macOS (Intel and Apple Silicon). `v0.0.1` is not yet signed with macOS Developer ID/Apple notarization or Windows Authenticode, so Gatekeeper or SmartScreen warnings may appear. There is currently no Linux installer.
 
 ## Do I need to install Node.js, pnpm, or DSH?
 
@@ -46,4 +46,4 @@ Packaged applications check for stable releases in the background but never inst
 
 ## Where can I download the app or report a problem?
 
-Download from the [project download page](https://www.dshdesktop.cn/) or the [latest GitHub Release](https://github.com/anywhere-labs/deepseek-harness-desktop/releases/latest). Check the [troubleshooting section](user-guide.en.md#troubleshooting) first. If the problem remains, open a [GitHub Issue](https://github.com/anywhere-labs/deepseek-harness-desktop/issues/new/choose) with the operating system, app version, reproduction steps, and error details.
+Download from the [eBao Studio GitHub Releases](https://github.com/cqai-club/ebao-studio/releases). Check the [troubleshooting section](user-guide.en.md#troubleshooting) first. If the problem remains, open a [GitHub Issue](https://github.com/cqai-club/ebao-studio/issues/new/choose) with the operating system, app version, reproduction steps, and error details.

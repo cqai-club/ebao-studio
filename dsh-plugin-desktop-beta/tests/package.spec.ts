@@ -21,6 +21,7 @@ const workspaceRoot = new URL('../', packageRoot)
 const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), 'utf8')) as {
   name?: unknown
   version?: unknown
+  repository?: unknown
   bin?: Record<string, unknown>
   exports?: Record<string, unknown>
   files?: unknown
@@ -76,7 +77,7 @@ const dshResolution = (name: string): unknown =>
 describe('published package surface', () => {
   it('keeps the private workspace version-neutral and versions the Beta package', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('2.0.9-beta.1')
+    expect(manifest.version).toBe('0.0.1-beta.1')
   })
 
   it('runs desktop and community market typechecks from the root command', () => {
@@ -843,7 +844,12 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('2.0.9-beta.1')
+    expect(manifest.version).toBe('0.0.1-beta.1')
+    expect(manifest.repository).toEqual({
+      type: 'git',
+      url: 'git+https://github.com/cqai-club/ebao-studio.git',
+      directory: 'dsh-plugin-desktop-beta',
+    })
     expect(manifest.name).toBe('dsh-plugin-desktop-beta')
     expect(manifest.bin).toEqual({
       'dsh-desktop-beta': 'lib/bin.js',
