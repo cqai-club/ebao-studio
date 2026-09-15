@@ -19,13 +19,13 @@ def main():
     print('EJIANBAO_CLOUD_REQUEST', flush=True)
     response = json.loads(sys.stdin.readline() or '{}')
     if not response.get('ok'):
-        raise RuntimeError(response.get('error', '请从 e剪宝产品账户入口启动制作'))
+        raise RuntimeError(response.get('error', '请从 e剪宝入口启动制作'))
     video = out / 'digital_human' / 'video.mp4'
     if not video.is_file() or video.stat().st_size == 0:
         raise RuntimeError('未收到云端视频文件')
     state.update(digitalhuman_ok=True, digitalhuman_video=str(video))
     state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
-    print('数字人原片已通过产品账户服务下载。', flush=True)
+    print('数字人原片已通过个人 InferFlow 账户下载。', flush=True)
 
 
 if __name__ == '__main__':

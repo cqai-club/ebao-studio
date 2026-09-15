@@ -50,7 +50,7 @@ def health():
     return {'python': True, 'version': sys.version.split()[0], 'ffmpeg': bool(ff),
             'numpy': importlib.util.find_spec('numpy') is not None,
             'render': (BASE / 'render-studio/node_modules/@remotion/cli').is_dir(),
-            'inferflow': any((Path.home() / root / 'inferflow-codex/scripts/run_skill.py').is_file() for root in ['.agents/skills', '.codex/skills', '.dsh/skills']),
+            'inferflow': (BASE / 'inferflow/bridge.py').is_file(),
             'semantic': (BASE / 'align-engine/models/sensevoice/model.int8.onnx').is_file()}
 
 def render(out, state):
@@ -66,14 +66,13 @@ def render(out, state):
     shutil.copyfile(state['motion_package'], work / 'src/motion/MotionPackage.tsx')
     for filename in ['package.json', 'tsconfig.json']:
         shutil.copyfile(template / filename, work / filename)
-    modules = work / 'node_modules'
-    if not modules.exists():
-        if os.name == 'nt':
-            # Node creates a Windows junction without administrator symlink privileges.
-            subprocess.run([shutil.which('node') or 'node', '-e', 'require("fs").symlinkSync(process.argv[1],process.argv[2],"junction")', str(template / 'node_modules'), str(modules)], check=True)
-        else:
-            modules.symlink_to(template / 'node_modules', target_is_directory=True)
-    node = shutil.which('node')
+    # Resolve the shared renderer directly: exFAT U drives do not support junctions.
+    # Recreate this config each run so absolute paths follow the current drive letter.
+    shared_modules = str(template / 'node_modules')
+    config = "const {Config} = require(" + json.dumps(str(template / 'node_modules/@remotion/cli/dist/config/index.js')) + ");\n"
+    config += "Config.overrideWebpackConfig(c => ({...c, resolve: {...c.resolve, modules: [" + json.dumps(shared_modules) + ", ...(c.resolve?.modules || ['node_modules'])]}}));\n"
+    (work / 'remotion.config.js').write_text(config, encoding='utf-8')
+    node = (os.environ.get('EJIANBAO_NODE') or shutil.which('node'))
     if not node:
         raise RuntimeError('找不到 Node.js，请安装 Node.js 22 或更高版本')
     command = [node, str(template / 'node_modules/@remotion/cli/remotion-cli.js'), 'render', 'src/index.ts', 'Main', str(out / 'final_video.mp4'), '--concurrency', '2', '--log', 'info']
@@ -98,6 +97,15 @@ def run(out, prepare_only=False):
     out = out.resolve()
     job = read(out / 'job.json'); options = job['options']; uploads = job['uploads']
     state_path = out / 'pipeline_state.json'; state = read(state_path)
+    previous = state.get('workspace_root')
+    if previous and previous != str(out):
+        def relocate(value):
+            if isinstance(value, str) and value.startswith(previous): return str(out) + value[len(previous):]
+            if isinstance(value, dict): return {k: relocate(v) for k, v in value.items()}
+            if isinstance(value, list): return [relocate(v) for v in value]
+            return value
+        state = relocate(state)
+    state['workspace_root'] = str(out)
     cfg = {'title': options['title'], 'duration': options['duration'], 'studio_url': 'http://127.0.0.1:41735', 'references': []}
     for key, field in [('script', 'script_src'), ('avatar', 'avatar'), ('voice', 'voice')]:
         if key in uploads:

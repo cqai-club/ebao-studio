@@ -12,10 +12,10 @@ import { spawn } from 'node:child_process'
 import { API, type UploadKind } from './protocol.ts'
 import { JobStore, validateOptions } from './jobs.ts'
 import { UPLOADS, validateUpload } from './uploads.ts'
-import { ManagedJobs, type VideoAccount } from './managed-jobs.ts'
+import { InferFlowJobs, pythonBridge } from './inferflow-jobs.ts'
 
 export const name = 'cqai-video'
-export const inject = ['webServer', 'dsnAccount']
+export const inject = ['webServer']
 function json(res: ServerResponse, code: number, data: unknown) {res.writeHead(code, {'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}); res.end(JSON.stringify(data))}
 export function permitted(req: IncomingMessage): boolean {
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '')) return false
@@ -44,10 +44,9 @@ export function serveArtifact(req: IncomingMessage, res: ServerResponse, path: s
   const stream = createReadStream(path, {start, end}); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res)
 }
 export function apply(ctx: Context): void {
-  const runtime = fileURLToPath(new URL('../runtime/', import.meta.url))
+  const runtime = process.env.EJIANBAO_RUNTIME || fileURLToPath(new URL('../runtime/', import.meta.url))
   const store = new JobStore(join(resolveDshHome(), 'ejianbao', 'jobs'), runtime)
-  const account = () => (ctx as Context & {dsnAccount: VideoAccount}).dsnAccount
-  const managed = new ManagedJobs(store, {fetchAi: (path, init, signal) => account().fetchAi(path, init, signal), getAccount: () => account().getAccount()})
+  const managed = new InferFlowJobs(store, pythonBridge(store.python, runtime))
   store.managedGenerate = (job, signal) => managed.generate(job, signal)
   let health: Promise<unknown> | undefined
   const getHealth = () => health ??= new Promise(resolveHealth => {
@@ -62,6 +61,9 @@ export function apply(ctx: Context): void {
       try {
         const url = new URL(req.url!, 'http://localhost'); const action = url.pathname.slice(API.length + 1)
         const id = url.searchParams.get('id') ?? ''
+        if (req.method === 'GET' && action === 'settings') return json(res, 200, managed.settings())
+        if (req.method === 'POST' && action === 'settings') return json(res, 200, await managed.connect(await readJson(req)))
+        if (req.method === 'POST' && action === 'disconnect') return json(res, 200, managed.disconnect())
         if (req.method === 'GET' && action === 'health') return json(res, 200, await getHealth())
         if (req.method === 'GET' && action === 'jobs') return json(res, 200, [...store.jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(j => ({...j, logs: j.logs.slice(-40)})))
         if (req.method === 'POST' && action === 'jobs') return json(res, 201, store.create(validateOptions(await readJson(req))))

@@ -14,6 +14,8 @@
     "lib/index.js",
     "lib/client.js",
     "runtime/*.py",
+    "runtime/inferflow/*.py",
+    "runtime/inferflow/NOTICE.md",
     "runtime/requirements.txt",
     "runtime/stages/*.py",
     "runtime/templates/*.tsx",

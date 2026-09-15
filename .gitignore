@@ -15,3 +15,7 @@ dsh-community-market/lib/
 cqai-dsh-plugins/*/lib/
 
 .env.yarn
+
+.portable/
+__pycache__/
+*.pyc
