@@ -34,7 +34,6 @@ import {
   RPC_CHANNEL,
   isChatModel,
   isDsnDefaultModelCategory,
-  isImageGenerationModel,
   isModelInCategory,
   isPublicAccount,
   remainingQuota,

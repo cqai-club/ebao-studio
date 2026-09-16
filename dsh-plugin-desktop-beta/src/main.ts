@@ -1,5 +1,6 @@
 /** 易宝工坊 executable: minimal Electron bootstrap around the Host Cordis root. */
 
+import { configurePortableRuntime } from './portable-runtime.ts'
 import { startIsolatedDesktopHost } from './host-process.ts'
 import { app, crashReporter, safeStorage, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
@@ -428,6 +429,7 @@ async function start(): Promise<void> {
     | undefined
   let recoveryTerminalAvailable = false
   let startupStage: DesktopStartupFailureStage = 'electron-ready'
+  const portable = configurePortableRuntime(process.execPath, path => app.setPath('userData', path))
   const desktopUserDataDir = app.getPath('userData')
   const appVersion = desktopProductVersion()
   const currentDshVersion = dshProductVersion()
@@ -711,6 +713,8 @@ async function start(): Promise<void> {
     let homeDir: string
     if (safeModePaths !== undefined) {
       homeDir = safeModePaths.homeDir
+    } else if (portable) {
+      homeDir = join(portable.data, 'dsh')
     } else {
       dataDirectoryLocation = resolveDesktopDataDirectory(
         desktopUserDataDir,

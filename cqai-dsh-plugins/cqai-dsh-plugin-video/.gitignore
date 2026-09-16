@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+runtime/render-studio/out/
+runtime/render-studio/public/
+runtime/render-studio/src/motion/

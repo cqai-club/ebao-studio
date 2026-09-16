@@ -14,7 +14,7 @@
 
 ## 支持哪些操作系统？
 
-当前预发布构件支持 Windows x64 和 universal macOS（Intel 与 Apple Silicon）。`v0.0.1` 尚未进行 macOS Developer ID/Apple 公证或 Windows Authenticode 签名，安装时可能出现 Gatekeeper 或 SmartScreen 提示。当前没有 Linux 安装包。
+当前预发布构件支持 Windows x64 和 universal macOS（Intel 与 Apple Silicon）。`v0.0.2` 尚未进行 macOS Developer ID/Apple 公证或 Windows Authenticode 签名，安装时可能出现 Gatekeeper 或 SmartScreen 提示。当前没有 Linux 安装包。
 
 ## 需要安装 Node.js、pnpm 或 DSH 吗？
 

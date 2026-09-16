@@ -219,6 +219,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
+      'cqai-dsh-plugin-video',
       'cqai-dsh-plugin-market',
       'third-party-one',
       'third-party-two',
@@ -248,6 +249,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
+      'cqai-dsh-plugin-video',
       'cqai-dsh-plugin-market',
       'third-party-plugin',
     ])
@@ -282,6 +284,7 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
+      'cqai-dsh-plugin-video',
       'cqai-dsh-plugin-market',
     ])
   })
