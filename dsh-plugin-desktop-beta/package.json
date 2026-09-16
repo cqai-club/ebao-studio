@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-desktop-beta",
-  "version": "0.0.1-beta.1",
+  "version": "0.0.2-beta.1",
   "description": "易宝工坊 Beta: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
@@ -109,7 +109,7 @@
     }
   },
   "scripts": {
-    "build": "yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "yarn workspace cqai-dsh-plugin-video build && yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "verify:closure": "node --test scripts/runtime-closure.spec.mjs && node scripts/verify-runtime-closure.mjs",
@@ -281,6 +281,7 @@
     "adm-zip": "^0.6.0",
     "cqai-dsh-plugin-imagegen": "0.1.0",
     "cqai-dsh-plugin-market": "0.1.0",
+    "cqai-dsh-plugin-video": "^0.1.0",
     "dsh-community-market": "0.1.0-dev.0",
     "dshmarket": "1.38.1",
     "fs-ext": "2.1.1",

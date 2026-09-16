@@ -14,7 +14,7 @@ No. 易宝工坊 is an independent, community-maintained open-source project. It
 
 ## Which operating systems are supported?
 
-Current prerelease artifacts support Windows x64 and universal macOS (Intel and Apple Silicon). `v0.0.1` is not yet signed with macOS Developer ID/Apple notarization or Windows Authenticode, so Gatekeeper or SmartScreen warnings may appear. There is currently no Linux installer.
+Current prerelease artifacts support Windows x64 and universal macOS (Intel and Apple Silicon). `v0.0.2` is not yet signed with macOS Developer ID/Apple notarization or Windows Authenticode, so Gatekeeper or SmartScreen warnings may appear. There is currently no Linux installer.
 
 ## Do I need to install Node.js, pnpm, or DSH?
 
