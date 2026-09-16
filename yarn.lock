@@ -9768,7 +9768,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"cqai-dsh-plugin-video@workspace:^, cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video":
+"cqai-dsh-plugin-video@npm:^0.1.0, cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video"
   dependencies:
@@ -10967,7 +10967,7 @@ __metadata:
     clsx: "npm:^2.1.1"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
-    cqai-dsh-plugin-video: "workspace:^"
+    cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dshmarket: "npm:1.38.1"
     electron: "npm:43.3.0"
@@ -11169,7 +11169,7 @@ __metadata:
     clsx: "npm:^2.1.1"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
-    cqai-dsh-plugin-video: "workspace:^"
+    cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dshmarket: "npm:1.38.1"
     electron: "npm:43.3.0"

@@ -281,7 +281,7 @@
     "adm-zip": "^0.6.0",
     "cqai-dsh-plugin-imagegen": "0.1.0",
     "cqai-dsh-plugin-market": "0.1.0",
-    "cqai-dsh-plugin-video": "workspace:^",
+    "cqai-dsh-plugin-video": "^0.1.0",
     "dsh-community-market": "0.1.0-dev.0",
     "dshmarket": "1.38.1",
     "fs-ext": "2.1.1",
