@@ -436,11 +436,11 @@ function parseArchitecture(value: unknown, modelId: string): DsnModelArchitectur
   return {
     ...(typeof modality === 'string' ? { modality } : {}),
     inputModalities: parseStringArray(
-      architecture.input_modalities,
+      architecture.input_modalities ?? [],
       `model ${modelId} has invalid architecture.input_modalities`,
     ),
     outputModalities: parseStringArray(
-      architecture.output_modalities,
+      architecture.output_modalities ?? [],
       `model ${modelId} has invalid architecture.output_modalities`,
     ),
   }

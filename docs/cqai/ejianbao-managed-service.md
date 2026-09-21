@@ -1,6 +1,6 @@
 # e剪宝产品账户托管生成
 
-客户端与 cqai-account-service 接入代码已实现，本地完整链路已导出测试 MP4。线上渠道、商户收款与真实扣费仍需部署验收；当前运行的旧版桌面没有自动切换。
+客户端与 cqai-account-service 接入代码已实现，本地完整链路已导出测试 MP4。本次桌面 Host 已切回产品账户托管模式；线上渠道、Account Service 分支、商户收款与真实扣费仍需部署验收。
 
 ## 用户流程
 
@@ -14,6 +14,10 @@ Renderer → 本地 Host ManagedJobs → dsnAccount.fetchAi → Account Service 
 
 Account Service 用服务端平台 Key 上传照片与声音，通过签名授权 Relay 创建任务；Relay 使用用户现有账户额度，预占、轮询和按实际时长结算。平台 Key 只配置在 Account Service Secret 和 Relay 渠道。OAuth Token 不传给 Renderer 或 Python。
 
+`ejianbao` 渠道必须使用一个固定的 InferFlow 平台 Key，且与 Account Service 的 `INFERFLOW_API_KEY` 完全一致；不要为该渠道启用多 Key 轮换，否则授权签名与 Relay 实际选中的 Key 可能不一致。
+
+Relay 渠道配置：类型使用 `61 (Task Plugin)`，`task_plugin_key` 为 `ejianbao`，模型为 `ejianbao-digitalhuman`，Base URL 为 `https://saas.inferflow.dev/openapi/v1`。应使用 cqai-relay 内置 `ejianbao@1.1.0`；如果数据库中已有同名旧版 Task Plugin 覆盖（尤其是 `1.0.0`/type-59/Bearer 实现），必须先禁用或删除，避免覆盖内置插件。
+
 | 接口 | 行为 |
 | --- | --- |
 | POST /v1/ejianbao/quotes | 文案绑定的十分钟报价；amount 是原始额度整数，displayAmount 显示平台积分或货币。 |
@@ -23,6 +27,8 @@ Account Service 用服务端平台 Key 上传照片与声音，通过签名授�
 | POST /v1/ejianbao/runs/:id/cancel | 当前返回 409，云端不支持通用取消。 |
 
 后端详细部署、兑换公式、容量限制、异常对账和上线验收见 cqai-account-service/docs/ejianbao-operations.md。
+
+当前 Account Service 托管分支上线前还需把上传 InferFlow 素材的请求改为 `X-API-Key: INFERFLOW_API_KEY`；Relay 入口仍使用账户服务的 `Authorization: Bearer`。这两个鉴权边界不能互换。
 
 ## 桌面行为
 

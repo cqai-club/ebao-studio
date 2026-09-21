@@ -25,7 +25,7 @@ def main():
         raise RuntimeError('未收到云端视频文件')
     state.update(digitalhuman_ok=True, digitalhuman_video=str(video))
     state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
-    print('数字人原片已通过个人 InferFlow 账户下载。', flush=True)
+    print('数字人原片已通过产品账户服务下载。', flush=True)
 
 
 if __name__ == '__main__':

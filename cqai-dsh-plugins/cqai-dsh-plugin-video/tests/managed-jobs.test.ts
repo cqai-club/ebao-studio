@@ -6,6 +6,18 @@ import { JobStore } from '../src/jobs.ts'
 import { ManagedJobs } from '../src/managed-jobs.ts'
 import type { AccountRequest } from '../src/managed-video.ts'
 
+it('refuses to resume a legacy personal-account job through the product account', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'ejb-managed-'))
+  const store = new JobStore(root, root)
+  const job = store.create({mode: 'digitalhuman', title: 'legacy', text: '测试', duration: 6, optimize: false, covers: false, studio: false})
+  job.cloud = {provider: 'inferflow', credentialId: 'legacy', accountId: 0, submissionStarted: true,
+    quote: {id: 'legacy-quote', amount: 10, unit: '积分', expiresAt: new Date(Date.now() + 60000).toISOString()}}
+  const managed = new ManagedJobs(store, {getAccount: async () => ({userId: 7}), fetchAi: vi.fn()})
+  try {
+    await expect(managed.generate(job, new AbortController().signal)).rejects.toThrow('旧版个人 InferFlow 任务')
+  } finally {await store.dispose(); rmSync(root, {recursive: true, force: true})}
+})
+
 it('resumes a lost submission acknowledgement with the same request key, then downloads once', async () => {
   const root = mkdtempSync(join(tmpdir(), 'ejb-managed-'))
   const store = new JobStore(root, root)

@@ -75,6 +75,17 @@ describe('AccountServiceClient', () => {
           supported_endpoint_types: ['openai', 'openai-response'],
         },
         {
+          id: 'video-model',
+          owned_by: 'relay',
+          architecture: {
+            modality: '->video',
+            input_modalities: null,
+            output_modalities: ['video'],
+          },
+          categories: ['video'],
+          supported_endpoint_types: ['openai-response', 'openai-video'],
+        },
+        {
           id: 'legacy-model',
           owned_by: 'legacy',
           architecture: null,
@@ -105,6 +116,17 @@ describe('AccountServiceClient', () => {
         maxOutputTokens: 32768,
         categories: ['text-multimodal'],
         supportedEndpointTypes: ['openai', 'openai-response'],
+      },
+      {
+        id: 'video-model',
+        ownedBy: 'relay',
+        architecture: {
+          modality: '->video',
+          inputModalities: [],
+          outputModalities: ['video'],
+        },
+        categories: ['video'],
+        supportedEndpointTypes: ['openai-response', 'openai-video'],
       },
       {
         id: 'legacy-model',

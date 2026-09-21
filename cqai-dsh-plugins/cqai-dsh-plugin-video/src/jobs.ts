@@ -7,6 +7,7 @@ import { STAGES, type Job, type Options, type Stage } from './protocol.ts'
 export function validateOptions(value: unknown): Options {
   const v = value as Partial<Options> | null
   if (!v || typeof v.title !== 'string' || v.title.length > 120 || typeof v.text !== 'string' || v.text.length > 50000
+    || v.mode === 'digitalhuman' && v.text.length > 5000
     || !['video', 'digitalhuman', 'plan'].includes(v.mode ?? '') || !Number.isFinite(v.duration) || v.duration! < 2 || v.duration! > 1800
     || ['optimize', 'covers', 'studio'].some(k => typeof v[k as keyof Options] !== 'boolean')) throw new Error('请检查标题、文案和时长（2–1800 秒）')
   return {title: v.title.trim(), text: v.text.trim(), mode: v.mode!, duration: v.duration!, optimize: v.optimize!, covers: v.covers!, studio: v.studio!}

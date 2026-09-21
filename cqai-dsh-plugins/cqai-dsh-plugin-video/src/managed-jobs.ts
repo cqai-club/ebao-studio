@@ -17,16 +17,19 @@ export class ManagedJobs {
   async quote(id: string): Promise<Job> {
     const job = this.store.get(id)
     if (job.options.mode !== 'digitalhuman') throw new Error('此报价仅用于数字人口播')
+    if (job.cloud?.provider === 'inferflow') throw new Error('旧版个人 InferFlow 任务不能切换到产品账户，请使用原版本继续或新建任务')
     if (job.cloud?.submissionStarted) throw new Error('任务已提交，请继续查询原任务')
     if (job.options.optimize || job.options.covers) throw new Error('产品账户数字人流程暂不支持附加文案优化或封面生成，请关闭这两项')
     const account = await this.account.getAccount()
     await this.store.prepare(id)
     const script = readFileSync(join(this.store.dir(id), 'script.txt'), 'utf8')
+    if (!script.trim() || script.length > 5000) throw new Error('数字人口播文案需为 1–5000 个字符')
     const quote = await this.provider.quote(script)
     job.cloud = {quote, accountId: account.userId}; this.store.save(job)
     return job
   }
   async generate(job: Job, signal: AbortSignal): Promise<void> {
+    if (job.cloud?.provider === 'inferflow') throw new Error('旧版个人 InferFlow 任务不能切换到产品账户，请使用原版本继续或新建任务')
     if (!job.cloud) throw new Error('请先获取并确认报价')
     const assertAccount = async () => {
       if ((await this.account.getAccount()).userId !== job.cloud!.accountId) throw new Error('当前登录账户与制作任务不一致，请切回原账户')

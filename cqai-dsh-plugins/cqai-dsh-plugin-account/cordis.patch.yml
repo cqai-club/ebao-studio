@@ -10,7 +10,7 @@
         issuer: 'https://auth.cqaiclub.asia/oidc'
         clientId: '8hm6gea0xg6gb2syles6v'
         resource: 'https://account.cqaiclub.asia'
-        accountServiceUrl: 'https://account.cqaiclub.asia'
+        accountServiceUrl: 'http://127.0.0.1:8790'
         scopes:
           - openid
           - offline_access
