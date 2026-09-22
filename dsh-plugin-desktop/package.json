@@ -110,7 +110,7 @@
     }
   },
   "scripts": {
-    "build": "yarn workspace cqai-dsh-plugin-video build && yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && node scripts/generate-windows-app-icon.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "yarn workspace cqai-dsh-plugin-video build && yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && yarn workspace cqai-dsh-plugin-publisher build && node scripts/generate-windows-app-icon.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "verify:closure": "node --test scripts/runtime-closure.spec.mjs && node scripts/verify-runtime-closure.mjs",
@@ -120,7 +120,8 @@
     "verify:licenses": "node scripts/verify-licenses.mjs",
     "verify:operations": "node --test scripts/operation-reliability.spec.mjs && node scripts/verify-operation-reliability.mjs",
     "verify:notices": "node scripts/verify-licenses.mjs --notices THIRD_PARTY_NOTICES.md",
-    "check": "yarn run build && yarn run typecheck && yarn run test && yarn run verify:closure && yarn run verify:cli && yarn run verify:loader && yarn run verify:profile && yarn run verify:aa && yarn run verify:licenses && yarn run verify:operations",
+    "verify:vendor": "node ../vendor/matrixmedia/fetch-matrixmedia.mjs --check",
+    "check": "yarn run verify:vendor && yarn run build && yarn run typecheck && yarn run test && yarn run verify:closure && yarn run verify:cli && yarn run verify:loader && yarn run verify:profile && yarn run verify:aa && yarn run verify:licenses && yarn run verify:operations",
     "check:win-package": "yarn workspace dsh-community-market build && yarn run build && yarn run typecheck && vitest run tests/package.spec.ts tests/package-win.spec.ts tests/desktop-installer-quit.spec.ts tests/installer-nsh.spec.ts tests/update-checker.spec.ts tests/update-download.spec.ts tests/verify-win-installer.spec.ts tests/verify-win-portable.spec.ts tests/verify-packaged-runtime.spec.ts tests/windows-pwsh-sandbox.spec.ts tests/windows-volume-diagnostics.spec.ts tests/window-options.spec.ts tests/safe-mode.spec.ts && yarn run verify:closure",
     "check:mac-package": "yarn workspace dsh-community-market build && yarn run build && yarn run typecheck && vitest run tests/package.spec.ts tests/package-mac.spec.ts tests/verify-mac-smoke.spec.ts tests/verify-packaged-runtime.spec.ts tests/mac-universal.spec.ts && yarn run verify:closure",
     "start": "node lib/bin.js",
@@ -135,7 +136,7 @@
     "prepare:electron-native": "node scripts/prepare-fs-ext.ts"
   },
   "dependencies": {
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.ce53016f05be0.rcda81994.tgz",
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c42e186158563.rcda81994.tgz",
     "@cqaiclub/dsn-account": "0.1.1",
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/cordis-plugin-group": "1.0.2",
@@ -281,6 +282,7 @@
     "adm-zip": "^0.6.0",
     "cqai-dsh-plugin-imagegen": "0.1.0",
     "cqai-dsh-plugin-market": "0.1.0",
+    "cqai-dsh-plugin-publisher": "0.1.0",
     "cqai-dsh-plugin-video": "^0.1.0",
     "dsh-community-market": "0.1.0-dev.0",
     "dshmarket": "1.38.1",
@@ -415,6 +417,16 @@
           "arch": [
             "x64"
           ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "../vendor/matrixmedia/0.11.3/matrixmedia-win-x64",
+          "to": "matrixmedia"
+        },
+        {
+          "from": "../vendor/matrixmedia/0.11.3/LICENSE",
+          "to": "matrixmedia/LICENSE"
         }
       ],
       "artifactName": "易宝工坊-${version}-${arch}-Portable.${ext}",

@@ -220,6 +220,7 @@ describe('desktop profile composition', {
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-market',
       'third-party-one',
       'third-party-two',
@@ -250,6 +251,7 @@ describe('desktop profile composition', {
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-market',
       'third-party-plugin',
     ])
@@ -285,6 +287,7 @@ describe('desktop profile composition', {
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-market',
     ])
   })

@@ -14,6 +14,12 @@ dsh-plugin-desktop/lib/
 dsh-community-market/lib/
 cqai-dsh-plugins/*/lib/
 
+# Third-party runtimes land at 250 MB+ and are never source. `vendor/*/README.md`
+# carries the fetch command; an absent tree is an explicit build failure rather
+# than a silent one.
+vendor/matrixmedia/*/*.exe
+vendor/matrixmedia/*/matrixmedia-win-x64/
+
 .env.yarn
 
 .portable/
