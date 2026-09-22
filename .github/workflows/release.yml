@@ -302,7 +302,7 @@ jobs:
           PY
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$RELEASE_TAG" \
+            --verify-tag \
             --title "$release_title" \
             --prerelease \
             --notes-file RELEASE_NOTES.md \
