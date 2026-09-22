@@ -48,7 +48,7 @@ vi.mock('../src/diagnostic-export.ts', () => ({
 }))
 
 
-vi.mock('electron-updater', () => ({ autoUpdater: electronUpdater }))
+vi.mock('electron-updater', () => ({ default: { autoUpdater: electronUpdater } }))
 
 const electron = vi.hoisted(() => {
   const browserWindowOptions: unknown[] = []

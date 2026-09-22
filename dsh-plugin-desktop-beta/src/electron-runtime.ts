@@ -48,7 +48,10 @@ import {
   desktopTrayLabel,
   rendererRecoveryCopy,
 } from './tray-locale.ts'
-import { autoUpdater } from 'electron-updater'
+// electron-updater is CommonJS. Its `autoUpdater` export is installed with a
+// runtime getter, which Node's ESM named-export detection cannot see. Import
+// the CommonJS default namespace so the packaged ESM main process can start.
+import electronUpdater from 'electron-updater'
 import {
   configureElectronAutoUpdater,
   downloadElectronDesktopUpdate,
@@ -69,6 +72,8 @@ import {
   type MainWindowStateStore,
 } from './main-window-state.ts'
 import { DESKTOP_LOGIN_COMPLETION_URL } from './desktop-protocol.ts'
+
+const { autoUpdater } = electronUpdater
 
 /**
  * Read the desktop package version instead of Electron's development-app version.
