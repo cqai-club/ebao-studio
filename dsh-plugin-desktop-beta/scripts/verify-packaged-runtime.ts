@@ -769,18 +769,14 @@ export function verifySelectiveUnpackedRuntime(
   return summary
 }
 
-/**
- * Windows-only payload landed beside app.asar by `build.win.extraResources`.
- *
- * The vendored MatrixMedia runtime is a whole Electron tree, so it must live on
- * a physical path the packaged process can spawn — not inside app.asar. That
- * also puts it outside `app.asar.unpacked`, where this module's file/byte
- * budgets live, so its presence needs checking on its own.
- */
-export const REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES = [
-  'matrixmedia/matrixmedia.exe',
-  'matrixmedia/resources/app.asar',
-  'matrixmedia/LICENSE',
+/** macOS-only MatrixMedia Helper copied beside app.asar as a nested application. */
+export const REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES = [
+  'publisher/MatrixMedia Publisher Worker.app/Contents/Info.plist',
+  'publisher/MatrixMedia Publisher Worker.app/Contents/MacOS/MatrixMedia Publisher Worker',
+  'publisher/MatrixMedia Publisher Worker.app/Contents/Resources/app.asar',
+  'publisher/MatrixMedia Publisher Worker.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework',
+  'publisher/LICENSE',
+  'publisher/SOURCE.json',
 ] as const
 
 /**
@@ -850,9 +846,9 @@ export function verifyPackagedRuntime(
       `dsh-plugin-desktop: packaged runtime at ${unpackedRoot} is missing required physical entries: ${missing.join(', ')}`,
     )
   }
-  if (context.electronPlatformName === 'win32') {
+  if (context.electronPlatformName === 'darwin') {
     const externalRoot = dirname(asarPath)
-    const missingExternal = REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES
+    const missingExternal = REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES
       .filter(entry => !exists(join(externalRoot, entry)))
     if (missingExternal.length > 0) {
       throw new Error(

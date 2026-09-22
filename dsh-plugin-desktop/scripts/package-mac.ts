@@ -9,6 +9,7 @@ import { withoutMacReleaseSecrets } from './release-preflight.ts'
 import { prepareInstalledMacUniversalRuntime } from './mac-universal.ts'
 import { prepareFsExtForElectron } from './prepare-fs-ext.ts'
 import { electronBuilderEnvironment } from './electron-builder-environment.ts'
+import { verifyPublisherHelper } from './publisher-helper.ts'
 
 /** Injectable native macOS packaging boundary used by focused tests. */
 export interface MacSmokePackageOptions {
@@ -75,6 +76,7 @@ function defaultOptions(): MacSmokePackageOptions {
     outputDir,
     resetOutput: () => rmSync(outputDir, { recursive: true, force: true }),
     prepareRuntime: () => {
+      verifyPublisherHelper(workspaceRoot)
       prepareFsExtForElectron({ platform: 'darwin', arch: 'arm64', desktopRoot })
       prepareFsExtForElectron({ platform: 'darwin', arch: 'x64', desktopRoot })
       prepareInstalledMacUniversalRuntime(desktopRoot)

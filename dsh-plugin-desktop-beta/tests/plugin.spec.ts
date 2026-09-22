@@ -126,6 +126,10 @@ function createHarness(
       registerNotificationAction: () => () => {},
       notify: () => {},
     },
+    publisher: {
+      status: () => ({ supported: false, running: false, reason: 'publisher-not-supported' }),
+      request: async () => { throw new Error('publisher unavailable in plugin fixture') },
+    },
     schedule: (spec) => {
       shell = spec
       return async () => {}

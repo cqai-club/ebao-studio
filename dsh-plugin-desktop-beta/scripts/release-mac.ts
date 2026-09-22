@@ -12,6 +12,7 @@ import {
 import { prepareInstalledMacUniversalRuntime } from './mac-universal.ts'
 import { prepareFsExtForElectron } from './prepare-fs-ext.ts'
 import { electronBuilderEnvironment } from './electron-builder-environment.ts'
+import { verifyPublisherHelper } from './publisher-helper.ts'
 
 /** Injectable release boundary used by focused tests. */
 export interface MacReleaseOptions {
@@ -62,6 +63,7 @@ function run(command: string, args: readonly string[], cwd: string, env: NodeJS.
 
 function defaultReleaseOptions(): MacReleaseOptions {
   const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const workspaceRoot = resolve(desktopRoot, '..')
   const outputDir = resolve(desktopRoot, 'dist', 'mac-release')
   return {
     env: process.env,
@@ -73,6 +75,7 @@ function defaultReleaseOptions(): MacReleaseOptions {
     run,
     log: message => console.log(message),
     prepareRuntime: () => {
+      verifyPublisherHelper(workspaceRoot)
       prepareFsExtForElectron({ platform: 'darwin', arch: 'arm64', desktopRoot })
       prepareFsExtForElectron({ platform: 'darwin', arch: 'x64', desktopRoot })
       prepareInstalledMacUniversalRuntime(desktopRoot)

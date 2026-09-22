@@ -1,3 +1,7 @@
 [submodule "deepseek-harness"]
 	path = deepseek-harness
 	url = https://github.com/deepseek-ai/deepseek-harness.git
+[submodule "matrixmedia-publisher"]
+	path = matrixmedia-publisher
+	url = https://github.com/hanliang97/MatrixMedia.git
+	branch = feat/ebao-publisher-worker

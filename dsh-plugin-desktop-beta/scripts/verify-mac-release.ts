@@ -6,6 +6,10 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MACOS_UNIVERSAL_NATIVE_ENTRIES } from './mac-universal.ts'
+import {
+  PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH,
+  PUBLISHER_HELPER_UNIVERSAL_ENTRIES,
+} from './publisher-helper.ts'
 
 /** Injectable filesystem and command boundaries for release verification. */
 export interface MacReleaseVerificationOptions {
@@ -83,6 +87,18 @@ export function verifyMacRelease(
     for (const entry of MACOS_UNIVERSAL_NATIVE_ENTRIES) {
       options.run('lipo', [join(unpackedRoot, entry.path), '-verify_arch', entry.arch])
     }
+    const publisherHelperPath = join(appPath, PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH)
+    for (const entry of PUBLISHER_HELPER_UNIVERSAL_ENTRIES) {
+      const nativePath = join(publisherHelperPath, entry)
+      options.run('lipo', [nativePath, '-verify_arch', 'x86_64'])
+      options.run('lipo', [nativePath, '-verify_arch', 'arm64'])
+    }
+    // electron-osx-sign walks nested bundles depth-first before sealing the outer
+    // application. Verify the Helper independently so an outer --deep check cannot
+    // hide a missing or invalid nested signature.
+    options.run('codesign', [
+      '--verify', '--deep', '--strict', '--verbose=2', publisherHelperPath,
+    ])
     options.run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath])
     options.run('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath])
     options.run('xcrun', ['stapler', 'validate', appPath])

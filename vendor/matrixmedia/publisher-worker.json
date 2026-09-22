@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/hanliang97/MatrixMedia.git",
+  "branch": "feat/ebao-publisher-worker",
+  "commit": "a09bd385e39079e695015bf53bce44f163b478c0",
+  "version": "0.11.4",
+  "license": "GPL-2.0-only",
+  "licenseSha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+  "licenseFile": "matrixmedia-publisher/LICENSE",
+  "build": "corepack yarn@1.22.22 build:publisher-worker:universal",
+  "buildScript": "yarn rm:build && yarn build:dir && electron-builder --config electron-builder.publisher.yml --mac dir --universal",
+  "artifact": "matrixmedia-publisher/build/publisher-worker/mac-universal/MatrixMedia Publisher Worker.app"
+}

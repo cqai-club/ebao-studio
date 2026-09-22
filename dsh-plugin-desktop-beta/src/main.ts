@@ -567,10 +567,23 @@ async function start(): Promise<void> {
   }, electronLogger, undefined, undefined, installationId)
   const finalExit = (code: number): void => { nativeExit.finish(code) }
   shutdown = createDesktopShutdown(
-    async () => { await generation.release() },
+    async () => { await Promise.all([generation.release(), runtime.shutdownPublisher()]) },
     finalExit,
   )
-  const requestQuit = (code: number): void => { void shutdown.request(code) }
+  let quitConfirmation: Promise<void> | undefined
+  let publisherQuitApproved = false
+  const requestQuit = (code: number): void => {
+    if (code !== 0 || publisherQuitApproved) { void shutdown.request(code); return }
+    if (quitConfirmation !== undefined) return
+    const task = (async () => {
+      if (!await runtime.confirmPublisherQuit()) return
+      publisherQuitApproved = true
+      await shutdown.request(code)
+    })().finally(() => {
+      if (quitConfirmation === task) quitConfirmation = undefined
+    })
+    quitConfirmation = task
+  }
   removeUncaughtExceptionLogging = installDesktopUncaughtExceptionLogging(
     process,
     electronLogger,

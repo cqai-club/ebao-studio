@@ -5,6 +5,10 @@ import {
   type MacReleaseVerificationOptions,
 } from '../scripts/verify-mac-release.ts'
 import { MACOS_UNIVERSAL_NATIVE_ENTRIES } from '../scripts/mac-universal.ts'
+import {
+  PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH,
+  PUBLISHER_HELPER_UNIVERSAL_ENTRIES,
+} from '../scripts/publisher-helper.ts'
 
 function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
   const calls: Array<{ command: string; args: readonly string[] }> = []
@@ -25,6 +29,7 @@ describe('macOS release artifact verification', () => {
   it('mounts one DMG and verifies signature, Gatekeeper, and the stapled ticket', () => {
     const harness = options()
     const appPath = join('/private/tmp/dsh-desktop-dmg-test', '易宝工坊.app')
+    const publisherHelperPath = join(appPath, PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH)
 
     expect(verifyMacRelease(harness.value)).toEqual({
       appPath,
@@ -54,6 +59,20 @@ describe('macOS release artifact verification', () => {
           '-verify_arch', entry.arch,
         ],
       })),
+      ...PUBLISHER_HELPER_UNIVERSAL_ENTRIES.flatMap(entry => [
+        {
+          command: 'lipo',
+          args: [join(publisherHelperPath, entry), '-verify_arch', 'x86_64'],
+        },
+        {
+          command: 'lipo',
+          args: [join(publisherHelperPath, entry), '-verify_arch', 'arm64'],
+        },
+      ]),
+      {
+        command: 'codesign',
+        args: ['--verify', '--deep', '--strict', '--verbose=2', publisherHelperPath],
+      },
       {
         command: 'codesign',
         args: ['--verify', '--deep', '--strict', '--verbose=2', appPath],

@@ -7,6 +7,10 @@ import {
   type MacSmokeVerificationOptions,
 } from '../scripts/verify-mac-smoke.ts'
 import { MACOS_UNIVERSAL_NATIVE_ENTRIES } from '../scripts/mac-universal.ts'
+import {
+  PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH,
+  PUBLISHER_HELPER_UNIVERSAL_ENTRIES,
+} from '../scripts/publisher-helper.ts'
 
 const temporaryRoots: string[] = []
 
@@ -43,6 +47,12 @@ function fixture(): AppFixture {
       chmodSync(path, 0o755)
       modeOverrides.set(path, 0o755)
     }
+  }
+  const publisherHelper = join(root, '易宝工坊.app', PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH)
+  for (const entry of PUBLISHER_HELPER_UNIVERSAL_ENTRIES) {
+    const path = join(publisherHelper, entry)
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, 'universal publisher native')
   }
   return { root, infoPlist, executable, appAsar, modeOverrides }
 }
@@ -99,6 +109,7 @@ describe('macOS DMG smoke artifact verification', () => {
     const value = fixture()
     const harness = options({ makeMountPoint: () => value.root }, value.modeOverrides)
     const appPath = join(value.root, '易宝工坊.app')
+    const publisherHelperPath = join(appPath, PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH)
 
     expect(verifyMacSmoke(harness.value)).toEqual({
       appPath,
@@ -123,6 +134,16 @@ describe('macOS DMG smoke artifact verification', () => {
         command: 'lipo',
         args: [join(`${value.appAsar}.unpacked`, entry.path), '-verify_arch', entry.arch],
       })),
+      ...PUBLISHER_HELPER_UNIVERSAL_ENTRIES.flatMap(entry => [
+        {
+          command: 'lipo',
+          args: [join(publisherHelperPath, entry), '-verify_arch', 'x86_64'],
+        },
+        {
+          command: 'lipo',
+          args: [join(publisherHelperPath, entry), '-verify_arch', 'arm64'],
+        },
+      ]),
       { command: 'hdiutil', args: ['detach', value.root] },
     ])
     expect(harness.removeMountPoint).toHaveBeenCalledWith(value.root)
@@ -177,6 +198,21 @@ describe('macOS DMG smoke artifact verification', () => {
     const harness = options({ makeMountPoint: () => value.root }, value.modeOverrides)
 
     expectSmokeFailure(harness, 'app.asar')
+    expect(harness.removeMountPoint).toHaveBeenCalledWith(value.root)
+  })
+
+  it('rejects a package with an incomplete Publisher Worker', () => {
+    const value = fixture()
+    const appPath = join(value.root, '易宝工坊.app')
+    const missing = join(
+      appPath,
+      PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH,
+      PUBLISHER_HELPER_UNIVERSAL_ENTRIES[0],
+    )
+    rmSync(missing)
+    const harness = options({ makeMountPoint: () => value.root }, value.modeOverrides)
+
+    expectSmokeFailure(harness, 'Universal Publisher Worker is missing')
     expect(harness.removeMountPoint).toHaveBeenCalledWith(value.root)
   })
 })

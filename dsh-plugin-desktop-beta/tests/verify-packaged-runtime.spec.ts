@@ -30,10 +30,10 @@ import {
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNIVERSAL_ENTRIES,
+  REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES,
   REQUIRED_POSIX_FS_EXT_ENTRIES,
   REQUIRED_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
-  REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
   resolvePackagedAsarPath,
   resolvePackagedExecutablePath,
@@ -210,8 +210,8 @@ function bundleFixture(
 }
 
 function requiredExternalEntries(runtimeContext: PackagedRuntimeContext): string[] {
-  return runtimeContext.electronPlatformName === 'win32'
-    ? [...REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES]
+  return runtimeContext.electronPlatformName === 'darwin'
+    ? [...REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES]
     : []
 }
 
@@ -294,23 +294,24 @@ describe('packaged desktop runtime verification', () => {
     }
   })
 
-  it('requires the Windows-only MatrixMedia payload beside app.asar', () => {
-    expect(REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES).toEqual([
-      'matrixmedia/matrixmedia.exe',
-      'matrixmedia/resources/app.asar',
-      'matrixmedia/LICENSE',
+  it('requires the macOS-only MatrixMedia Publisher Helper beside app.asar', () => {
+    expect(REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES).toEqual([
+      'publisher/MatrixMedia Publisher Worker.app/Contents/Info.plist',
+      'publisher/MatrixMedia Publisher Worker.app/Contents/MacOS/MatrixMedia Publisher Worker',
+      'publisher/MatrixMedia Publisher Worker.app/Contents/Resources/app.asar',
+      'publisher/MatrixMedia Publisher Worker.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework',
+      'publisher/LICENSE',
+      'publisher/SOURCE.json',
     ])
-    // Nothing here belongs in app.asar: the runtime is a separate Electron tree
-    // that has to be spawned from a physical path.
-    for (const entry of REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES) {
+    for (const entry of REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES) {
       expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).not.toContain(entry)
     }
   })
 
-  it.each(REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES)(
+  it.each(REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES)(
     'fails loud when extraResources entry %s is absent',
     (missing) => {
-      const runtimeContext = context('/build', 'win32')
+      const runtimeContext = context('/build', 'darwin', 4)
       const bundle = bundleFixture(runtimeContext, { missing })
 
       expect(() => verifyPackagedRuntime(
@@ -322,8 +323,8 @@ describe('packaged desktop runtime verification', () => {
     },
   )
 
-  it('does not demand the MatrixMedia payload from a non-Windows package', () => {
-    const runtimeContext = context('/build', 'darwin', 3)
+  it('does not demand the Publisher Helper from a non-macOS package', () => {
+    const runtimeContext = context('/build', 'win32')
     const bundle = bundleFixture(runtimeContext)
     expect(() => verifyPackagedRuntime(
       runtimeContext,

@@ -4,6 +4,7 @@ import type { RendererBootReport } from './renderer-boot-contract.ts'
 import type { DesktopReleaseChannel, UpdateCheckResult, UpdateRequest } from './update-checker.ts'
 import type { DesktopInstallationId } from './desktop-installation-id.ts'
 import type { ProfileCreateWindowOptions } from './profile-create-window.ts'
+import type { DesktopPublisherRuntime } from './publisher-runtime.ts'
 import type {
   DesktopWindowMaterial,
   MacosWindowMaterial,
@@ -194,6 +195,9 @@ export interface DesktopRuntime {
 
   /** Native network, update staging, and notification adapter. */
   readonly updates: DesktopUpdateAdapter
+
+  /** Isolated MatrixMedia Publisher Worker adapter owned by Electron main. */
+  readonly publisher: DesktopPublisherRuntime
 
   /**
    * Register one shell generation while the Cordis profile is activating.

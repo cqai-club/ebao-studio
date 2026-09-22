@@ -1,94 +1,45 @@
-# Bundled MatrixMedia runtime (矩媒)
+# MatrixMedia Publisher Worker source and license
 
-Desktop ships the MatrixMedia Windows runtime so 一稿多发 works out of the box.
-`cqai-dsh-plugin-publisher` spawns `matrixmedia.exe cli …` as a child process;
-the binary is **not** an npm dependency and never passes through `verify-licenses.mjs`.
+e宝工坊不再打包或调用旧的 Windows `matrixmedia.exe + cli` 运行体。多平台发布改为 macOS 内置 **MatrixMedia Publisher Worker**：源码以根目录 `matrixmedia-publisher/` Git submodule 固定，构建产物作为独立 Electron Helper App 放在外层应用的 `resources/publisher/`。
 
-## Layout
+## 固定源码
 
-```
-vendor/matrixmedia/
-  README.md                        # this file — committed
-  fetch-matrixmedia.mjs            # snapshot script (--check re-hashes the tree) — committed
-  0.11.3/
-    manifest.json                  # per-file {path, bytes, sha256}, plus files/bytes totals — committed
-    provenance.json                # release tag, asset digest, install args, upstream LICENSE digest — committed
-    LICENSE                        # upstream GPL-2.0-only text, shipped to resources/matrixmedia/LICENSE — committed
-    MatrixMedia-0.11.3-win-x64.exe # pinned upstream release asset — NOT committed (gitignored)
-    matrixmedia-win-x64/           # expanded runtime tree — NOT committed (gitignored)
+- 上游仓库：<https://github.com/hanliang97/MatrixMedia.git>
+- e宝集成分支：`feat/ebao-publisher-worker`
+- 精确提交、许可证和构建命令：[`publisher-worker.json`](./publisher-worker.json)
+- submodule：`matrixmedia-publisher/`
+
+初始化源码：
+
+```bash
+git submodule update --init --recursive matrixmedia-publisher
 ```
 
-The two large artifacts are deliberately outside version control: 253 MB of expanded Electron
-runtime would make every clone pay for a third-party binary. What *is* committed is the pin
-that makes the tree reproducible — `manifest.json` holds a SHA-256 per file, `provenance.json`
-holds the release asset's own digest, and `fetch-matrixmedia.mjs` rejects either on mismatch.
-Run the fetch once after cloning; `verify:vendor` re-hashes afterwards and fails loudly if a
-file drifted. A missing tree therefore produces an explicit error naming the command to run,
-never a silently incomplete build.
+MatrixMedia 保持自己的 Node.js 20 / Yarn 1 构建，不加入 e宝 Yarn workspace。在 Node 20 环境中执行：
 
-`build.extraResources` copies `matrixmedia-win-x64/` to `resources/matrixmedia/` beside
-`app.asar` — outside the ASAR, outside `app.asar.unpacked`, and therefore outside
-`verify-packaged-runtime.ts`'s unpacked-file budget and smart-unpack allowlist. The tree
-must stay outside the ASAR because it is an independent Electron app that has to be
-spawned from a real filesystem path. Upstream's GPL-2.0 text rides along as a second
-`extraResources` entry landing at `resources/matrixmedia/LICENSE`.
-
-## Release-time updates
-
-```sh
-# Fetch the pinned runtime (needs the tree to exist at all, and to rebuild it)
-node vendor/matrixmedia/fetch-matrixmedia.mjs
-
-# Re-hash the working tree against manifest.json (no network)
-node vendor/matrixmedia/fetch-matrixmedia.mjs --check
-
-# Refresh from GitHub — needs egress; a proxy is used only if the environment supplies one
-MATRIXMEDIA_PROXY=socks5://127.0.0.1:10808 node vendor/matrixmedia/fetch-matrixmedia.mjs
-# Or expand an installer already on disk, with no network at all
-MATRIXMEDIA_ASSET=/path/to/MatrixMedia-<version>-win-x64.exe node vendor/matrixmedia/fetch-matrixmedia.mjs
+```bash
+cd matrixmedia-publisher
+corepack yarn@1.22.22 install --frozen-lockfile
+corepack yarn@1.22.22 test:publisher-worker
+corepack yarn@1.22.22 build:publisher-worker:universal
 ```
 
-`MATRIXMEDIA_PROXY` is a workstation convenience for reaching GitHub and is never read by
-the plugin or the desktop app: end users connect directly. The script downloads the pinned
-asset, rejects a byte-count or SHA-256 mismatch, expands the NSIS installer with `/S /D=`,
-drops the per-machine `Uninstall matrixmedia.exe`, and rewrites `manifest.json` plus the
-asset fields of `provenance.json`. Bump `RELEASE` in the script when adopting a version;
-the upstream `LICENSE` digest is recorded in `provenance.json.license`.
+产物路径：
 
-`/S /D=` is NSIS's own silent-expand path; it needs no 7-Zip, `innounp` or other unpacker,
-and `/D=` must stay last and unquoted. The expanded tree is an "installed" shape — the
-runtime does not care, because the plugin starts the executable and reads its data
-directory rather than its install registry.
+```text
+matrixmedia-publisher/build/publisher-worker/mac-universal/MatrixMedia Publisher Worker.app
+```
 
-## Product behavior
+e宝 macOS 打包前会校验 Helper 主可执行文件和 Electron Framework 同时包含 `x86_64`、`arm64`，并校验 submodule 精确提交与 GPL 许可证文本。签名构建由 Electron Builder 的 depth-first bundle walker 先签 Helper 的内部组件和 Helper App，再封装签名外层 e宝 App；发布验收会独立校验 Helper 的 Universal 架构和签名，然后再校验外层签名、Gatekeeper 与公证票据。非 macOS 平台不打包旧 CLI 作为回退。
 
-The publisher panel resolves the runtime by environment variable and never by a hardcoded
-path: `EJIANBAO_MATRIXMEDIA` (set by `portable-runtime.ts` for the USB build), else
-`process.resourcesPath/matrixmedia` when packaged, else the vendored development tree.
-When the runtime is missing the panel says so instead of failing silently.
+## GPL-2.0-only
 
-MatrixMedia keeps its own state under `<Documents>/MatrixMedia/data/` — `account/*.json`,
-`publishData`/`pushData/YYYY-MM-DD.json`, and `config.json` — shared with its own GUI. The
-plugin treats those files as the authoritative record of what actually published and only
-treats CLI exit codes and stdout as weak signals.
+MatrixMedia 为 GPL-2.0-only。分发包包含：
 
-`cli login` covers 抖音 and 视频号 only; the remaining platforms are signed in through the
-MatrixMedia GUI. This is an upstream limitation, surfaced in the panel's copy.
+- `resources/publisher/MatrixMedia Publisher Worker.app`
+- `resources/publisher/LICENSE`
+- `resources/publisher/SOURCE.json`
 
-## Licensing
+`SOURCE.json` 记录仓库 URL、分支和精确源码提交；对应完整源码由 Git submodule 提供。发布前仍须完成最终许可证审查，并确保该提交已在公开来源可获取。
 
-MatrixMedia is GPL-2.0-only. The obligation is discharged the way this repository already
-does it: `THIRD_PARTY_NOTICES.md` carries the declaration and provenance, and the upstream
-`LICENSE` text ships at `resources/matrixmedia/LICENSE`. `ALLOWED_LICENSES` is unchanged and
-`verify-licenses.mjs` is untouched — the binary is not on the npm dependency graph.
-
-## Validation history
-
-v0.11.3 (`MatrixMedia-0.11.3-win-x64.exe`, 71,587,366 bytes, sha256
-`461e958d…75d072`, matching the GitHub release's own reported digest) was expanded with
-`/S /D=` into 22 files / 253,462,689 bytes. The expanded tree is not committed; the
-manifest that pins it is. `--check` round-trips against `manifest.json`. The CLI surface
-was read out of `resources/app.asar` rather than from `CLI_SKILLS.md`: `publish` exits
-0 success / 1 error / 2 bad args / 3 task failure / 4 saved as draft, and `accounts`
-and `history` both support `--json`. No interactive publishing against a live platform
-account has been exercised yet.
+`0.11.3/` 和 `fetch-matrixmedia.mjs` 仅保留为历史供应链证据，不再参与 e宝构建或运行。

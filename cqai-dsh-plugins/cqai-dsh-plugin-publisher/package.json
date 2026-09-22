@@ -1,7 +1,7 @@
 {
   "name": "cqai-dsh-plugin-publisher",
   "version": "0.1.0",
-  "description": "一稿多发：把 e剪宝成片投放到抖音、快手、百家号、哔哩哔哩、头条、视频号、小红书、番茄视频与掘金",
+  "description": "e宝工坊内置的多平台账号管理与视频发布页面",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",

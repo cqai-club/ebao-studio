@@ -16,7 +16,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+const workspaceRoot = dirname(packageRoot)
 const rootManifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
+const publisherSource = JSON.parse(readFileSync(join(workspaceRoot, 'vendor/matrixmedia/publisher-worker.json'), 'utf8'))
 
 /** Licenses accepted for redistribution inside the desktop installers. */
 const ALLOWED_LICENSES = new Set([
@@ -46,18 +48,18 @@ const NOTICE_LICENSES = new Set([
   'Apache-2.0 AND LGPL-3.0-or-later',
 ])
 
-/** MatrixMedia（矩媒） release bundled beside app.asar by `build.win.extraResources`. */
+/** MatrixMedia source-built Helper bundled beside app.asar by `build.mac.extraResources`. */
 const BUNDLED_APPLICATION = {
   name: 'MatrixMedia（矩媒）',
-  version: '0.11.3',
-  spdx: 'GPL-2.0-only',
-  source: 'https://github.com/hanliang97/MatrixMedia',
+  version: publisherSource.version,
+  spdx: publisherSource.license,
+  source: `${publisherSource.repository} @ ${publisherSource.commit}`,
 }
 
 /**
  * Notice lines for the prebuilt runtimes shipped beside app.asar. They are not
  * npm packages, so no dependency walk reaches them; the version and digest
- * recorded here are mirrored in `vendor/matrixmedia/0.11.3/provenance.json`.
+ * recorded here are mirrored in `vendor/matrixmedia/publisher-worker.json`.
  * @returns Markdown lines declaring each bundled application and its obligations.
  */
 function bundledApplicationNotices() {
@@ -69,10 +71,10 @@ function bundledApplicationNotices() {
     '| Package | Version | License | Source |',
     '| --- | --- | --- | --- |',
     `| ${name} | ${version} | ${spdx} | ${source} |`,
-    `${name} is bundled at \`resources/matrixmedia/\` as the 一稿多发 publishing runtime and`,
-    'is started as a child process by the `cqai-dsh-plugin-publisher` bundle. Its complete',
-    'license text is installed alongside it at `resources/matrixmedia/LICENSE`, and the exact',
-    'release asset digest is recorded in `vendor/matrixmedia/0.11.3/provenance.json`.',
+    `${name} is built from the pinned \`matrixmedia-publisher/\` Git submodule and bundled at`,
+    '`resources/publisher/MatrixMedia Publisher Worker.app` as the isolated publishing Helper.',
+    'Its complete license is installed at `resources/publisher/LICENSE`; `resources/publisher/SOURCE.json`',
+    'records the public repository, branch, exact source commit, build command, and license digest.',
   ]
 }
 

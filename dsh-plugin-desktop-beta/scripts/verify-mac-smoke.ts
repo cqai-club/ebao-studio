@@ -6,6 +6,10 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MACOS_UNIVERSAL_NATIVE_ENTRIES } from './mac-universal.ts'
+import {
+  PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH,
+  PUBLISHER_HELPER_UNIVERSAL_ENTRIES,
+} from './publisher-helper.ts'
 
 /** Injectable filesystem and command boundaries for smoke verification. */
 export interface MacSmokeVerificationOptions {
@@ -140,6 +144,20 @@ export function verifyMacSmoke(
         throw new Error(`universal application has a non-executable node-pty helper: ${nativePath}`)
       }
       options.run('lipo', [nativePath, '-verify_arch', entry.arch])
+    }
+
+    const publisherHelperPath = join(appPath, PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH)
+    for (const entry of PUBLISHER_HELPER_UNIVERSAL_ENTRIES) {
+      const nativePath = join(publisherHelperPath, entry)
+      if (!options.exists(nativePath)) {
+        throw new Error(`Universal Publisher Worker is missing ${nativePath}`)
+      }
+      const nativeStat = options.stat(nativePath)
+      if (!nativeStat.isFile || nativeStat.size === 0) {
+        throw new Error(`Universal Publisher Worker has an invalid native file: ${nativePath}`)
+      }
+      options.run('lipo', [nativePath, '-verify_arch', 'x86_64'])
+      options.run('lipo', [nativePath, '-verify_arch', 'arm64'])
     }
   } catch (cause) {
     failure = cause
