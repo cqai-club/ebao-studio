@@ -14,7 +14,7 @@ No. 易宝工坊 is an independent, community-maintained open-source project. It
 
 ## Which operating systems are supported?
 
-Current prerelease artifacts support Windows x64 and universal macOS (Intel and Apple Silicon). `v0.0.3` macOS release artifacts are Developer ID-signed and notarized; Windows artifacts are not yet Authenticode-signed and may show a SmartScreen warning. There is currently no Linux installer.
+Current prerelease artifacts support Windows x64 and universal macOS (Intel and Apple Silicon). `v0.0.3` is an explicitly **unsigned macOS test release**: testers must deliberately download it and approve Gatekeeper manually before opening it. It is not a production macOS auto-update package. Windows artifacts are not yet Authenticode-signed and may show a SmartScreen warning. There is currently no Linux installer.
 
 ## Do I need to install Node.js, pnpm, or DSH?
 
@@ -42,7 +42,7 @@ No plugins are copied automatically. Each profile has its own bundle and depende
 
 ## How are updates installed?
 
-Packaged stable applications check for releases in the background but never install silently. A newer version requires confirmation. After confirmation, Electron Updater stages a verified Windows NSIS installer or macOS ZIP in its private cache, without a save-location dialog, opened DMG, or manual installer handoff. When staging completes, select **Restart and Update** to apply and reopen; choosing later leaves the current version running. Network, metadata, download, cancellation, or installation failures leave the current installation intact and can be retried. macOS automatic updates require the official Developer ID-signed and notarized build.
+Packaged stable applications check for releases in the background but never install silently. A newer version requires confirmation. After confirmation, Electron Updater stages a verified Windows NSIS installer or macOS ZIP in its private cache, without a save-location dialog, opened DMG, or manual installer handoff. When staging completes, select **Restart and Update** to apply and reopen; choosing later leaves the current version running. Network, metadata, download, cancellation, or installation failures leave the current installation intact and can be retried. macOS automatic updates require the official Developer ID-signed and notarized build. The unsigned `v0.0.3` macOS test release is intentionally excluded from that production claim: download and open its DMG manually, then approve Gatekeeper only if you are an authorized tester.
 
 ## Where can I download the app or report a problem?
 

@@ -1,6 +1,20 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing canonical vMAJOR.MINOR.PATCH tag to publish
+        required: true
+        type: string
+      macos_mode:
+        description: Signed production artifacts, or an explicitly unsigned macOS test release
+        required: true
+        default: signed
+        type: choice
+        options:
+          - signed
+          - unsigned-test
   push:
     tags:
       - 'v*'
@@ -14,6 +28,9 @@ concurrency:
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+  RELEASE_REF: ${{ inputs.release_tag || github.ref }}
+  MACOS_UNSIGNED_TEST: ${{ inputs.macos_mode == 'unsigned-test' }}
 
 jobs:
   verify:
@@ -23,6 +40,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+          ref: ${{ env.RELEASE_REF }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22.23.2
@@ -39,9 +57,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_version="${GITHUB_REF_NAME#v}"
+          release_version="${RELEASE_TAG#v}"
           if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tag must be canonical vMAJOR.MINOR.PATCH SemVer: $GITHUB_REF_NAME" >&2
+            echo "Release tag must be canonical vMAJOR.MINOR.PATCH SemVer: $RELEASE_TAG" >&2
             exit 1
           fi
           RELEASE_VERSION="$release_version" node --input-type=module <<'NODE'
@@ -87,6 +105,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+          ref: ${{ env.RELEASE_REF }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22.23.2
@@ -113,7 +132,7 @@ jobs:
       - name: Stage Windows release assets and updater metadata
         shell: pwsh
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $version = $env:RELEASE_TAG.Substring(1)
           $assets = @(
             "dsh-plugin-desktop/dist/eBao-Studio-$version-x64-Setup.exe",
             "dsh-plugin-desktop/dist/eBao-Studio-$version-x64-Portable.zip",
@@ -142,6 +161,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+          ref: ${{ env.RELEASE_REF }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22.23.2
@@ -157,6 +177,7 @@ jobs:
       - name: Run macOS package gate
         run: yarn workspace dsh-plugin-desktop check:mac-package
       - name: Build signed and notarized macOS updater artifacts
+        if: env.MACOS_UNSIGNED_TEST != 'true'
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
           MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
@@ -166,15 +187,24 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: yarn workspace dsh-plugin-desktop dist:mac
+      - name: Build unsigned macOS test updater artifacts
+        if: env.MACOS_UNSIGNED_TEST == 'true'
+        env:
+          DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
+        run: yarn workspace dsh-plugin-desktop dist:mac-smoke
       - name: Stage macOS release assets and updater metadata
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
+          output_dir='dsh-plugin-desktop/dist/mac-release'
+          if [[ "$MACOS_UNSIGNED_TEST" == 'true' ]]; then
+            output_dir='dsh-plugin-desktop/dist/mac-smoke'
+          fi
           assets=(
-            "dsh-plugin-desktop/dist/mac-release/eBao-Studio-${version}-universal.dmg"
-            "dsh-plugin-desktop/dist/mac-release/eBao-Studio-${version}-universal.zip"
-            "dsh-plugin-desktop/dist/mac-release/latest-mac.yml"
+            "$output_dir/eBao-Studio-${version}-universal.dmg"
+            "$output_dir/eBao-Studio-${version}-universal.zip"
+            "$output_dir/latest-mac.yml"
           )
           mkdir -p release-assets
           for asset in "${assets[@]}"; do
@@ -199,6 +229,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
+          ref: ${{ env.RELEASE_REF }}
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -208,7 +239,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           checksum_assets=(
             "eBao-Studio-${version}-universal.dmg"
             "eBao-Studio-${version}-universal.zip"
@@ -236,6 +267,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          release_title="易宝工坊 ${RELEASE_TAG}（预发布）"
+          macos_note='macOS 自动更新构件必须使用 Developer ID 签名并完成 Apple 公证；本工作流会在缺少签名或公证凭据时失败，而不会发布不可自动更新的 macOS 构件。'
+          if [[ "$MACOS_UNSIGNED_TEST" == 'true' ]]; then
+            release_title="易宝工坊 ${RELEASE_TAG}（未签名 macOS 测试预发布）"
+            macos_note='本次 macOS 构件是未签名测试包：仅供测试者明确下载、在 Gatekeeper 提示中手动授权打开及验证更新发现链路。它不是生产 macOS 自动更新构件；不要将其作为正式发布或静默替换的依据。后续生产 macOS 发布仍必须使用 Developer ID 签名并完成 Apple 公证。'
+          fi
           cat > RELEASE_NOTES.md <<'NOTES'
           ## 易宝工坊首个预发布版本
 
@@ -250,12 +287,19 @@ jobs:
 
           ### 预发布说明
 
-          macOS 自动更新构件必须使用 Developer ID 签名并完成 Apple 公证；本工作流会在缺少签名或公证凭据时失败，而不会发布不可自动更新的 macOS 构件。Windows 安装包和便携包尚未进行 Authenticode 签名，可能显示“未知发布者”或 SmartScreen 提示。SHA-256 与 Electron Updater 的 SHA-512 仅验证传输完整性，不替代平台代码签名。
+          __MACOS_RELEASE_NOTE__ Windows 安装包和便携包尚未进行 Authenticode 签名，可能显示“未知发布者”或 SmartScreen 提示。SHA-256 与 Electron Updater 的 SHA-512 仅验证传输完整性，不替代平台代码签名。
           NOTES
-          gh release create "$GITHUB_REF_NAME" \
+          python3 - "$macos_note" <<'PY'
+          from pathlib import Path
+          import sys
+
+          notes = Path('RELEASE_NOTES.md')
+          notes.write_text(notes.read_text().replace('__MACOS_RELEASE_NOTE__', sys.argv[1]))
+          PY
+          gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "易宝工坊 $GITHUB_REF_NAME（预发布）" \
+            --target "$RELEASE_TAG" \
+            --title "$release_title" \
             --prerelease \
             --notes-file RELEASE_NOTES.md \
             release-assets/*
@@ -265,9 +309,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          release_json="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease)"
-          RELEASE_JSON="$release_json" RELEASE_TAG="$GITHUB_REF_NAME" node --input-type=module <<'NODE'
+          version="${RELEASE_TAG#v}"
+          release_json="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease)"
+          RELEASE_JSON="$release_json" RELEASE_TAG="$RELEASE_TAG" node --input-type=module <<'NODE'
           const release = JSON.parse(process.env.RELEASE_JSON)
           if (release.tagName !== process.env.RELEASE_TAG || release.isPrerelease !== true) {
             throw new Error(`Published release identity is invalid: ${process.env.RELEASE_TAG}`)
@@ -275,7 +319,7 @@ jobs:
           NODE
           downloaded="$(mktemp -d)"
           trap 'rm -rf "$downloaded"' EXIT
-          gh release download "$GITHUB_REF_NAME" \
+          gh release download "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --dir "$downloaded"
           node scripts/verify-release-assets.mjs --directory "$downloaded" --version "$version"

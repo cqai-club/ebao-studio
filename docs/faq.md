@@ -14,7 +14,7 @@
 
 ## 支持哪些操作系统？
 
-当前预发布构件支持 Windows x64 和 universal macOS（Intel 与 Apple Silicon）。`v0.0.3` 的 macOS 发布构件已完成 Developer ID 签名与 Apple 公证；Windows 构件尚未进行 Authenticode 签名，可能显示 SmartScreen 提示。当前没有 Linux 安装包。
+当前预发布构件支持 Windows x64 和 universal macOS（Intel 与 Apple Silicon）。`v0.0.3` 是明确标注的**未签名 macOS 测试发布**：测试者必须主动下载，并在 Gatekeeper 提示中手动授权后才能打开；它不是 macOS 生产自动升级包。Windows 构件尚未进行 Authenticode 签名，可能显示 SmartScreen 提示。当前没有 Linux 安装包。
 
 ## 需要安装 Node.js、pnpm 或 DSH 吗？
 
@@ -42,7 +42,7 @@ Desktop Host、profile 和 DSH home 位于本机。是否向外部服务发送�
 
 ## 应用如何更新？
 
-打包后的稳定版会在后台检查版本，但不会静默安装。发现新版本后先征得用户确认；确认后 Electron Updater 会把已校验的 Windows NSIS 安装器或 macOS ZIP 暂存在应用私有缓存中，不显示保存位置、不打开 DMG，也不把安装器交给用户手动运行。暂存完成后，选择 **重启并更新** 才会应用更新并重新打开；选择稍后则继续运行当前版本。网络、元数据、下载、取消或安装失败都不会破坏当前安装，并且可以重试。macOS 自动升级要求官方构件已完成 Developer ID 签名和 Apple 公证。
+打包后的稳定版会在后台检查版本，但不会静默安装。发现新版本后先征得用户确认；确认后 Electron Updater 会把已校验的 Windows NSIS 安装器或 macOS ZIP 暂存在应用私有缓存中，不显示保存位置、不打开 DMG，也不把安装器交给用户手动运行。暂存完成后，选择 **重启并更新** 才会应用更新并重新打开；选择稍后则继续运行当前版本。网络、元数据、下载、取消或安装失败都不会破坏当前安装，并且可以重试。macOS 自动升级要求官方构件已完成 Developer ID 签名和 Apple 公证。未签名的 `v0.0.3` macOS 测试发布不属于这项生产承诺：请测试者手动下载并打开 DMG，且仅在获授权测试时通过 Gatekeeper。
 
 ## 在哪里下载和报告问题？
 
