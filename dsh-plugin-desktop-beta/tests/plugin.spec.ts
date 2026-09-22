@@ -122,7 +122,8 @@ function createHarness(
       request: async () => new Response(null, { status: 304 }),
       confirmDownload: async () => false,
       showManualCheckResult: async () => {},
-      downloadAndOpen: async () => {},
+      downloadAndInstall: async () => {},
+      registerNotificationAction: () => () => {},
       notify: () => {},
     },
     schedule: (spec) => {

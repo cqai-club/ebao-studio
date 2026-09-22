@@ -28,18 +28,8 @@ export interface DesktopNativeCopy {
   readonly installerUnavailable: string
   readonly updateDownloadedTitle: string
   readonly updateReady: (version: string) => string
-  readonly macInstallInstructions: string
-  readonly windowsInstallQuestion: string
-  readonly restartAndInstall: string
-  readonly saveInstallerTitle: string
-  readonly saveAndDownload: string
-  readonly diskImage: string
-  readonly windowsInstaller: string
-  readonly removeInstallerTitle: string
-  readonly updateInstalled: (version: string) => string
-  readonly removeInstallerQuestion: (path: string) => string
-  readonly deleteInstaller: string
-  readonly keepInstaller: string
+  readonly restartToUpdateQuestion: string
+  readonly restartAndUpdate: string
   readonly terminalErrorTitle: string
   readonly terminalErrorMessage: string
   readonly diagnosticsErrorTitle: string
@@ -96,18 +86,8 @@ const COPY: Record<DesktopLocale, DesktopNativeCopy> = {
     installerUnavailable: 'This version cannot download installers from within the app.',
     updateDownloadedTitle: '易宝工坊 Update Downloaded',
     updateReady: version => `易宝工坊 ${version} is ready to install.`,
-    macInstallInstructions: 'The disk image has opened. Replace 易宝工坊 in Applications, then reopen it.',
-    windowsInstallQuestion: 'Restart 易宝工坊 and run the installer now?',
-    restartAndInstall: 'Restart and Install',
-    saveInstallerTitle: 'Save Update Installer',
-    saveAndDownload: 'Save and Download',
-    diskImage: 'Disk Image',
-    windowsInstaller: 'Windows Installer',
-    removeInstallerTitle: 'Remove Update Installer',
-    updateInstalled: version => `易宝工坊 ${version} has been installed.`,
-    removeInstallerQuestion: path => `Delete the downloaded installer to free disk space?\n\n${path}`,
-    deleteInstaller: 'Delete Installer',
-    keepInstaller: 'Keep Installer',
+    restartToUpdateQuestion: 'Restart 易宝工坊 now to install the verified update automatically.',
+    restartAndUpdate: 'Restart and Update',
     terminalErrorTitle: 'Unable to Open DSH Terminal',
     terminalErrorMessage: 'Could not start the terminal. Please try again.',
     diagnosticsErrorTitle: 'Unable to Export Diagnostics',
@@ -157,18 +137,8 @@ const COPY: Record<DesktopLocale, DesktopNativeCopy> = {
     installerUnavailable: '当前版本不支持在应用内下载安装包。',
     updateDownloadedTitle: '易宝工坊 更新已下载',
     updateReady: version => `易宝工坊 ${version} 已可安装。`,
-    macInstallInstructions: '磁盘映像已打开。请替换“应用程序”中的 易宝工坊，然后重新打开。',
-    windowsInstallQuestion: '现在重启 易宝工坊 并运行安装程序？',
-    restartAndInstall: '重启并安装',
-    saveInstallerTitle: '保存更新安装包',
-    saveAndDownload: '保存并下载',
-    diskImage: '磁盘映像',
-    windowsInstaller: 'Windows 安装程序',
-    removeInstallerTitle: '删除更新安装包',
-    updateInstalled: version => `易宝工坊 ${version} 已安装。`,
-    removeInstallerQuestion: path => `是否删除下载的安装包以释放磁盘空间？\n\n${path}`,
-    deleteInstaller: '删除安装包',
-    keepInstaller: '保留安装包',
+    restartToUpdateQuestion: '现在重启 易宝工坊，自动安装已校验的更新。',
+    restartAndUpdate: '重启并更新',
     terminalErrorTitle: '无法打开 DSH 终端',
     terminalErrorMessage: '未能启动终端。请重试。',
     diagnosticsErrorTitle: '无法导出诊断信息',

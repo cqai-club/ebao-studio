@@ -17,6 +17,7 @@ import {
   FORBIDDEN_UNPACKED_RUNTIME_ENTRIES,
   indexPackagedAsarHeader,
   listDesktopRuntimeEntries,
+  MAX_DATAIKU_UV_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_FILES,
   MAX_UNPACKED_RUNTIME_BYTES,
@@ -210,6 +211,8 @@ describe('packaged desktop runtime verification', () => {
   it('keeps stable root files explicit without hand-listing desktop lib output', () => {
     expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain('package.json')
     expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain('cordis.patch.yml')
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain('node_modules/electron-updater/out/main.js')
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain('node_modules/builder-util-runtime/out/CancellationToken.js')
     expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES.some(entry => entry.startsWith('lib/'))).toBe(false)
     expect(DESKTOP_RUNTIME_ENTRIES).toContain('lib/main.js')
     expect(DESKTOP_RUNTIME_ENTRIES).toContain('lib/native-ui/setup-wizard.html')
@@ -564,6 +567,9 @@ describe('packaged desktop runtime verification', () => {
   })
 
   it('keeps the reviewed smart-unpack surface explicit', () => {
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-arm64')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-x64')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-win32-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/fs-ext')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/node-pty')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
@@ -581,6 +587,20 @@ describe('packaged desktop runtime verification', () => {
       '/build/resources/app.asar.unpacked',
       files,
     )).not.toThrow()
+  })
+
+  it('accepts the reviewed bundled uv executable with a per-platform size ceiling', () => {
+    const path = 'node_modules/@dataiku/uv-darwin-arm64/bin/uv'
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([path]),
+      '/build/resources/app.asar.unpacked',
+      [{ path, bytes: MAX_DATAIKU_UV_SMART_UNPACK_BYTES }],
+    )).not.toThrow()
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([path]),
+      '/build/resources/app.asar.unpacked',
+      [{ path, bytes: MAX_DATAIKU_UV_SMART_UNPACK_BYTES + 1 }],
+    )).toThrow(`@dataiku/uv smart-unpack budget ${String(MAX_DATAIKU_UV_SMART_UNPACK_BYTES)} bytes`)
   })
 
   it('caps pnpm smart-unpack independently of the full physical payload budget', () => {
@@ -649,7 +669,6 @@ describe('packaged desktop runtime verification', () => {
     'lib/diagnostic-export-worker.js',
     'lib/packaged-runtime-smoke.js',
     'lib/pnpm.js',
-    'lib/update-download.js',
     ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
     ...REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
     'node_modules/open/index.js',

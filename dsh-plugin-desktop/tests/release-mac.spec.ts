@@ -72,7 +72,7 @@ describe('macOS release command boundary', () => {
     expect(calls[1]).toEqual({
       command: 'yarn',
       args: [
-        'exec', 'electron-builder', '--mac', 'dmg', '--universal',
+        'exec', 'electron-builder', '--mac', 'dmg', 'zip', '--universal', '--publish', 'never',
         '--config.forceCodeSigning=true', '--config.mac.notarize=true',
         '--config.npmRebuild=false',
         '--config.directories.output=/repo/dsh-plugin-desktop/dist/mac-release',
@@ -99,6 +99,23 @@ describe('macOS release command boundary', () => {
     expect(logs).toHaveLength(1)
     expect(logs[0]).toContain('signing via keychain; notarization via apple-id')
     expect(logs[0]).not.toContain(appPassword)
+  })
+
+  it('skips the repeated full check only after CI has completed its verified gate', () => {
+    const calls: CommandCall[] = []
+    const logs: string[] = []
+
+    releaseMac(baseOptions({
+      PATH: '/usr/bin',
+      DSH_PACKAGE_CHECK_ALREADY_RAN: '1',
+      APPLE_ID: 'developer@example.test',
+      APPLE_APP_SPECIFIC_PASSWORD: 'notary-password',
+      APPLE_TEAM_ID: 'TEAM123456',
+    }, calls, [], logs))
+
+    expect(calls).toHaveLength(2)
+    expect(calls[0]?.args).toContain('electron-builder')
+    expect(logs).toContain('Skipping the macOS release preflight; the verified CI gate already passed.')
   })
 
   it('adapts the existing P12 variables only for electron-builder', () => {

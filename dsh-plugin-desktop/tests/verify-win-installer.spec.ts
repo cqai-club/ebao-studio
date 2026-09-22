@@ -24,7 +24,7 @@ function fixture(version = '2.0.0'): {
   const dist = join(root, 'dist')
   const unpacked = join(dist, 'win-unpacked')
   mkdirSync(unpacked, { recursive: true })
-  const installer = join(dist, `易宝工坊-${version}-x64-Setup.exe`)
+  const installer = join(dist, `eBao-Studio-${version}-x64-Setup.exe`)
   const application = join(unpacked, '易宝工坊.exe')
   writeFileSync(installer, portableExecutable())
   writeFileSync(application, portableExecutable())
@@ -49,7 +49,7 @@ describe('Windows installer artifact verification', () => {
     const value = fixture('1.9.0')
 
     expect(() => verifyWindowsInstaller({ desktopRoot: value.root, version: '2.0.0' }))
-      .toThrow('易宝工坊-2.0.0-x64-Setup.exe')
+      .toThrow('eBao-Studio-2.0.0-x64-Setup.exe')
   })
 
   it('rejects an artifact without a Windows PE header', () => {

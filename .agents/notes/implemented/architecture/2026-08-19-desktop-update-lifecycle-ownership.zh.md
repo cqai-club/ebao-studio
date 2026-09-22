@@ -74,23 +74,25 @@ flowchart LR
 1. 同时最多存在一个版本检查请求，手动调用者与后台调用者共享该请求。
 2. 同时最多存在一个确认和下载 task。
 3. 已确认版本必须在下载交接前重新检查。
-4. 后台提示会在打开确认前记录版本，并且不会为同一个持久化版本重复提示。
-5. 释放时先把 generation 标记为不再活跃，再清理 timer、取消请求和下载，并移除托盘项。
-6. 释放只等待状态就绪过程和可取消的版本请求。原生对话框仍不可取消，也不会阻塞 Host 释放。
-7. 重复释放会返回同一个 task，只移除一次托盘，并且不能重新启动轮询。
+4. 后台发现会注册 `open-update` 动作，在通知前记录版本，并且不会为同一个持久化版本重复发送通知。
+5. 点击动作会进入与托盘命令相同的确认和重新检查路径；重复点击会共享现有的手工/下载 task。
+6. 释放时先把 generation 标记为不再活跃，再释放通知动作、清理 timer、取消请求和下载，并移除托盘项。
+7. 释放只等待状态就绪过程和可取消的版本请求。原生对话框仍不可取消，也不会阻塞 Host 释放。
+8. 重复释放会返回同一个 task，只释放一次通知动作和托盘，并且不能重新启动轮询。
 
 ## 保持不变的行为和限制
 
-- 更新状态继续使用 version 2，保持相同的 4 KiB 读取上限和原子 best-effort 持久化。
-- 手动失败仍只通过现有原生结果对话框显示。定时检查、文件系统、下载和安装器打开失败继续保持现有静默行为。
-- 下载端点、artifact 校验、安装器交接和更新发现保持不变。
-- 本次重构不会新增加密 artifact 身份、断点续传、自动重试或远程 telemetry。
+- 更新状态改为 version 3，保持相同的 4 KiB 读取上限和原子 best-effort 持久化；version-2 提示历史迁移为 `lastNotifiedVersion`。
+- 手动失败仍只通过现有原生结果对话框显示。定时检查、元数据、暂存、文件系统和 updater 失败继续保持静默，后台检查不会打断用户工作。
+- 后台通知仍按持久化版本只发送一次，点击不会绕过确认或重新检查。
+- 稳定版下载会重新检查清单，要求 Electron Updater 元数据命名该精确版本，并由 Electron Updater 在私有暂存后校验完整平台构件的 SHA-512，等待明确重启。
+- 本次变更只为打包后的稳定 macOS/Windows 引入 `electron-updater`；不会自动下载、退出即安装、自动重试、远程 telemetry、Beta 构件，也不会绕过用户确认和明确重启。
 - 原生确认和结果对话框仍不能取消。Owner 会阻止其延迟结果在释放后启动新工作。
 
 ## 验证
 
-现有更新测试继续覆盖调度、提示持久化、手动与后台检查共享、确认和复查、下载 single-flight、取消、超时、平台能力以及不阻塞释放的原生对话框。新增生命周期测试还验证释放幂等，并且释放后不会重新开始轮询。Desktop package 的构建、类型检查、完整测试套件、runtime closure 检查和 license 检查均通过。
+更新测试覆盖调度、version-3 状态迁移、通知动作注册/点击分发、确认/复查、single-flight/cancellation/disposal，以及 Electron Updater 版本/cancellation 行为。Host bridge 与 Electron 测试覆盖回调释放、聚焦、原生通知分发和重启交接。Release 验证检查已发布更新元数据 SHA-512 与手动下载 SHA-256 记录。
 
 ## 后果
 
-以后更新 timer、操作 task、提示历史、托盘状态或释放行为的变化应集中在 `update-lifecycle.ts`。`updates.ts` 继续作为 Cordis adapter 和配置 surface。只有共享这一代生命周期的新更新能力才应扩展该 lifecycle module；artifact 校验和平台安装器 adapter 仍属于独立 module。
+以后更新 timer、操作 task、提示历史、托盘状态或 release 行为的变化应集中在 `update-lifecycle.ts`。`electron-auto-updater.ts` 负责窄范围的 Electron Updater 配置、版本相等性与 abort bridge；`electron-runtime.ts` 负责明确重启请求。`updates.ts` 继续作为 Cordis adapter 和配置 surface。

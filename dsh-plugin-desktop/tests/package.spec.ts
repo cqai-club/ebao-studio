@@ -34,6 +34,7 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
     asar?: unknown
     afterPack?: unknown
     afterAllArtifactBuild?: unknown
+    publish?: unknown
     electronFuses?: unknown
     toolsets?: Record<string, unknown>
     files?: unknown
@@ -46,6 +47,7 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
       notarize?: unknown
       signIgnore?: unknown
       target?: unknown
+      artifactName?: unknown
       x64ArchFiles?: unknown
     }
     win?: { icon?: unknown; asarUnpack?: unknown; target?: unknown; artifactName?: unknown }
@@ -411,7 +413,7 @@ describe('published package surface', () => {
     expect(config).toContain("preload: 'src/preload.ts', 'compatibility-preload': 'src/compatibility-preload.ts'")
     expect(config).toContain("entryFileNames: '[name].cjs'")
     expect(config).toContain("terminal: 'src/terminal.ts'")
-    expect(config).toContain("'update-download': 'src/update-download.ts'")
+    expect(config).not.toContain("'update-download': 'src/update-download.ts'")
     expect(config).toContain("updates: 'src/updates.ts'")
   })
 
@@ -766,7 +768,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.2')
+    expect(manifest.version).toBe('0.0.3')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
@@ -833,7 +835,7 @@ describe('published package surface', () => {
       target: 'nsis',
       arch: ['x64'],
     }])
-    expect(manifest.build?.win?.artifactName).toBe('易宝工坊-${version}-${arch}-Portable.${ext}')
+    expect(manifest.build?.win?.artifactName).toBe('eBao-Studio-${version}-${arch}-Portable.${ext}')
     expect(manifest.build?.nsis).toEqual({
       include: 'installer.nsh',
       installerIcon: 'build/app-icon.ico',
@@ -848,7 +850,7 @@ describe('published package surface', () => {
       shortcutName: '易宝工坊',
       uninstallerIcon: 'build/app-icon.ico',
       useZip: false,
-      artifactName: '易宝工坊-${version}-${arch}-Setup.${ext}',
+      artifactName: 'eBao-Studio-${version}-${arch}-Setup.${ext}',
     })
     expect(manifest.build?.linux?.icon).toBe('build/app-icon.png')
   })
@@ -879,7 +881,7 @@ describe('published package surface', () => {
     expect(manifest.scripts?.['check:win-package']).toContain('tests/installer-nsh.spec.ts')
     expect(manifest.scripts?.['check:win-package']).toContain('tests/verify-win-portable.spec.ts')
     expect(manifest.scripts?.['check:win-package']).toContain('tests/update-checker.spec.ts')
-    expect(manifest.scripts?.['check:win-package']).toContain('tests/update-download.spec.ts')
+    expect(manifest.scripts?.['check:win-package']).toContain('tests/electron-auto-updater.spec.ts')
     expect(manifest.scripts?.['check:win-package']).toContain('tests/windows-volume-diagnostics.spec.ts')
     expect(manifest.scripts?.['check:win-package']).not.toContain('verify:win-minimal-pty')
     expect(manifest.scripts?.['check:win-package']).toContain('yarn run verify:closure')
@@ -902,6 +904,13 @@ describe('published package surface', () => {
       .toBe('yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:win-portable')
     expect(manifest.build?.afterPack).toBe('./scripts/verify-packaged-runtime.ts')
     expect(manifest.build?.afterAllArtifactBuild).toBe('./scripts/verify-electron-fuses.ts')
+    expect(manifest.build?.publish).toEqual([{
+      provider: 'github',
+      owner: 'cqai-club',
+      repo: 'ebao-studio',
+      releaseType: 'prerelease',
+      tagNamePrefix: 'v',
+    }])
     expect(manifest.build?.mac).toEqual(expect.objectContaining({
       extendInfo: {
         CFBundleAllowMixedLocalizations: true,
@@ -913,9 +922,11 @@ describe('published package surface', () => {
       notarize: true,
       signIgnore: ['\\.(?:pak|dat|wasm)$'],
       target: ['dir'],
+      artifactName: 'eBao-Studio-${version}-${arch}.${ext}',
       x64ArchFiles: expect.stringContaining('node-pty/prebuilds/darwin-*'),
     }))
     expect(manifest.build?.files).toContain('!node_modules/node-pty/build/**')
+    expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
     expect(manifest.devDependencies?.['@electron/asar']).toBe('3.4.1')
     expect(manifest.devDependencies?.['@electron/fuses']).toBe('1.8.0')
   })
@@ -1067,6 +1078,8 @@ describe('published package surface', () => {
     expect(manifest.peerDependencies?.electron).toBe('43.3.0')
     expect(manifest.devDependencies?.electron).toBe('43.3.0')
     expect(manifest.dependencies?.pnpm).toBe('11.8.0')
+    expect(manifest.dependencies?.['electron-updater']).toBe('6.8.9')
+    expect(manifest.dependencies?.['builder-util-runtime']).toBe('9.7.0')
   })
 
   it('keeps the packaged pnpm manifest, lock entry, and installed runtime on 11.8.0', () => {

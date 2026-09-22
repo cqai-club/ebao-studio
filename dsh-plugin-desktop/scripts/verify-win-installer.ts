@@ -90,7 +90,7 @@ export function verifyWindowsInstaller(
   const distDir = join(options.desktopRoot, 'dist')
   const installerPath = join(
     distDir,
-    `易宝工坊-${options.version}-x64-Setup.exe`,
+    `eBao-Studio-${options.version}-x64-Setup.exe`,
   )
   const applicationPath = join(distDir, 'win-unpacked', '易宝工坊.exe')
 

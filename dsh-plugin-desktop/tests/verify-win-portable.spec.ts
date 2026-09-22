@@ -20,7 +20,7 @@ function fixture(version = '2.0.0'): { readonly root: string; readonly portable:
   temporaryRoots.push(root)
   const dist = join(root, 'dist')
   mkdirSync(dist, { recursive: true })
-  const portable = join(dist, `易宝工坊-${version}-x64-Portable.zip`)
+  const portable = join(dist, `eBao-Studio-${version}-x64-Portable.zip`)
   const archive = new AdmZip()
   archive.addFile('易宝工坊.exe', portableExecutable())
   archive.addFile('resources/app.asar', Buffer.from('asar'))
@@ -43,7 +43,7 @@ describe('Windows portable artifact verification', () => {
     const value = fixture('1.9.0')
 
     expect(() => verifyWindowsPortable({ desktopRoot: value.root, version: '2.0.0' }))
-      .toThrow('易宝工坊-2.0.0-x64-Portable.zip')
+      .toThrow('eBao-Studio-2.0.0-x64-Portable.zip')
   })
 
   it('rejects an application entry without a Windows PE header', () => {

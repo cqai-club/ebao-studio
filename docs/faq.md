@@ -14,7 +14,7 @@
 
 ## 支持哪些操作系统？
 
-当前预发布构件支持 Windows x64 和 universal macOS（Intel 与 Apple Silicon）。`v0.0.2` 尚未进行 macOS Developer ID/Apple 公证或 Windows Authenticode 签名，安装时可能出现 Gatekeeper 或 SmartScreen 提示。当前没有 Linux 安装包。
+当前预发布构件支持 Windows x64 和 universal macOS（Intel 与 Apple Silicon）。`v0.0.3` 的 macOS 发布构件已完成 Developer ID 签名与 Apple 公证；Windows 构件尚未进行 Authenticode 签名，可能显示 SmartScreen 提示。当前没有 Linux 安装包。
 
 ## 需要安装 Node.js、pnpm 或 DSH 吗？
 
@@ -42,7 +42,7 @@ Desktop Host、profile 和 DSH home 位于本机。是否向外部服务发送�
 
 ## 应用如何更新？
 
-打包后的应用会在后台检查稳定版本，但不会静默安装。发现新版本后先征得用户确认；下载前可以在原生保存对话框中选择安装包的目录和文件名，取消保存不会开始下载。macOS 下载并打开 DMG，Windows 下载并启动 NSIS 安装程序。升级完成并重新启动后，应用会询问是否删除或保留安装包。网络或下载失败不会破坏当前安装。
+打包后的稳定版会在后台检查版本，但不会静默安装。发现新版本后先征得用户确认；确认后 Electron Updater 会把已校验的 Windows NSIS 安装器或 macOS ZIP 暂存在应用私有缓存中，不显示保存位置、不打开 DMG，也不把安装器交给用户手动运行。暂存完成后，选择 **重启并更新** 才会应用更新并重新打开；选择稍后则继续运行当前版本。网络、元数据、下载、取消或安装失败都不会破坏当前安装，并且可以重试。macOS 自动升级要求官方构件已完成 Developer ID 签名和 Apple 公证。
 
 ## 在哪里下载和报告问题？
 

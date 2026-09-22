@@ -3,12 +3,14 @@ import type { BrowserWindow, MenuItemConstructorOptions, NativeImage } from 'ele
 import { macApplicationMenuTemplate, nativeMenuLocale } from './native-menu.ts'
 import type { DesktopPlatform } from './runtime.ts'
 import type { DesktopWindowMaterial } from './window-material.ts'
-import type { DesktopDownloadPlatform } from './update-download.ts'
+
+/** Platforms with an Electron Updater handoff. */
+export type ElectronUpdatePlatform = 'darwin' | 'win32'
 
 /** Native presentation and capability differences selected once at startup. */
 export interface ElectronPlatformStrategy {
   readonly platform: DesktopPlatform
-  readonly updateDownloadPlatform: DesktopDownloadPlatform | undefined
+  readonly updateDownloadPlatform: ElectronUpdatePlatform | undefined
   readonly canPickDirectory: boolean
   readonly canToggleShellMode: boolean
   configureApplication(

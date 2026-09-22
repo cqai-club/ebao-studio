@@ -5,7 +5,7 @@ the package names, versions, and licenses for transparency.
 | Package | Version | License |
 | --- | --- | --- |
 | @agentclientprotocol/sdk | 1.4.0 | Apache-2.0 |
-| @agents-anywhere/dsh-bridge-next | 0.1.0-dev.0.desktop.cc26402633cb8.r16f8dfa9 | MIT |
+| @agents-anywhere/dsh-bridge-next | 0.1.0-dev.0.desktop.cb413330914fb.rcda81994 | MIT |
 | @anthropic-ai/sdk | 0.123.0 | MIT |
 | @aws-crypto/sha256-browser | 5.2.0 | Apache-2.0 |
 | @aws-crypto/sha256-js | 5.2.0 | Apache-2.0 |
@@ -34,6 +34,7 @@ the package names, versions, and licenses for transparency.
 | @babel/code-frame | 7.29.7 | MIT |
 | @babel/helper-validator-identifier | 7.29.7 | MIT |
 | @babel/runtime | 7.29.7 | MIT |
+| @cqaiclub/dsn-account | 0.1.1 | MIT |
 | @deepseek-ai/cordis | 4.0.2 | MIT |
 | @deepseek-ai/cordis-plugin-group | 1.0.2 | MIT |
 | @deepseek-ai/cordis-plugin-hmr | 1.0.17 | MIT |
@@ -365,6 +366,7 @@ the package names, versions, and licenses for transparency.
 | body-parser | 2.3.0 | MIT |
 | bowser | 2.14.1 | MIT |
 | buffer-equal-constant-time | 1.0.1 | BSD-3-Clause |
+| builder-util-runtime | 9.7.0 | MIT |
 | bundle-name | 4.1.0 | MIT |
 | bytes | 3.1.2 | MIT |
 | bytestreamjs | 2.0.1 | BSD-3-Clause |
@@ -384,9 +386,13 @@ the package names, versions, and licenses for transparency.
 | cookie | 0.7.2 | MIT |
 | cookie-signature | 1.2.2 | MIT |
 | cors | 2.8.6 | MIT |
+| cosmokit | 1.8.1 | MIT |
+| cqai-dsh-plugin-imagegen | 0.1.0 | Apache-2.0 |
+| cqai-dsh-plugin-market | 0.1.0 | MIT |
+| cqai-dsh-plugin-video | 0.1.0 | MIT |
 | cross-spawn | 7.0.6 | MIT |
 | data-uri-to-buffer | 4.0.1 | MIT |
-| debug | 2.6.9 | MIT |
+| debug | 4.4.3 | MIT |
 | decamelize | 1.2.0 | MIT |
 | default-browser | 5.5.1 | MIT |
 | default-browser-id | 5.0.1 | MIT |
@@ -400,6 +406,7 @@ the package names, versions, and licenses for transparency.
 | dunder-proto | 1.0.1 | MIT |
 | ecdsa-sig-formatter | 1.0.11 | Apache-2.0 |
 | ee-first | 1.1.1 | MIT |
+| electron-updater | 6.8.9 | MIT |
 | emoji-regex | 8.0.0 | MIT |
 | encodeurl | 2.0.0 | MIT |
 | es-define-property | 1.0.1 | MIT |
@@ -423,6 +430,7 @@ the package names, versions, and licenses for transparency.
 | forwarded | 0.2.0 | MIT |
 | fresh | 2.0.0 | MIT |
 | fs-ext | 2.1.1 | MIT |
+| fs-extra | 10.1.0 | MIT |
 | function-bind | 1.1.2 | MIT |
 | gaxios | 7.3.1 | Apache-2.0 |
 | gcp-metadata | 8.1.2 | Apache-2.0 |
@@ -433,6 +441,7 @@ the package names, versions, and licenses for transparency.
 | google-auth-library | 10.9.1 | Apache-2.0 |
 | google-logging-utils | 1.1.3 | Apache-2.0 |
 | gopd | 1.2.0 | MIT |
+| graceful-fs | 4.2.11 | ISC |
 | has-symbols | 1.1.0 | MIT |
 | hasown | 2.0.4 | MIT |
 | hono | 4.13.2 | MIT |
@@ -457,10 +466,14 @@ the package names, versions, and licenses for transparency.
 | json-schema-to-ts | 3.1.1 | MIT |
 | json-schema-traverse | 1.0.0 | MIT |
 | json-schema-typed | 8.0.2 | BSD-2-Clause |
+| jsonfile | 6.2.1 | MIT |
 | jwa | 2.0.1 | MIT |
 | jws | 4.0.1 | MIT |
 | koffi | 3.1.5 | MIT |
+| lazy-val | 1.0.5 | MIT |
 | locate-path | 5.0.0 | MIT |
+| lodash.escaperegexp | 4.1.2 | MIT |
+| lodash.isequal | 4.5.0 | MIT |
 | long | 5.3.2 | Apache-2.0 |
 | loose-envify | 1.4.0 | MIT |
 | lucide-react | 1.41.0 | ISC |
@@ -469,7 +482,7 @@ the package names, versions, and licenses for transparency.
 | merge-descriptors | 2.0.0 | MIT |
 | mime-db | 1.54.0 | MIT |
 | mime-types | 3.0.2 | MIT |
-| ms | 2.0.0 | MIT |
+| ms | 2.1.3 | MIT |
 | nan | 2.28.0 | MIT |
 | negotiator | 1.0.0 | MIT |
 | node-addon-api | 7.1.1 | MIT |
@@ -512,6 +525,7 @@ the package names, versions, and licenses for transparency.
 | range-parser | 1.3.0 | MIT |
 | raw-body | 3.0.2 | MIT |
 | react | 18.3.1 | MIT |
+| react-dom | 18.3.1 | MIT |
 | readdirp | 4.1.2 | MIT |
 | reflect-metadata | 0.2.2 | Apache-2.0 |
 | require-directory | 2.1.1 | MIT |
@@ -523,6 +537,9 @@ the package names, versions, and licenses for transparency.
 | run-applescript | 7.1.0 | MIT |
 | safe-buffer | 5.2.1 | MIT |
 | safer-buffer | 2.1.2 | MIT |
+| sax | 1.6.1 | BlueOak-1.0.0 |
+| scheduler | 0.23.2 | MIT |
+| schemastery | 3.18.0 | MIT |
 | selfsigned | 5.5.0 | MIT |
 | semver | 7.8.5 | ISC |
 | send | 1.2.1 | MIT |
@@ -541,6 +558,7 @@ the package names, versions, and licenses for transparency.
 | statuses | 2.0.2 | MIT |
 | string-width | 4.2.3 | MIT |
 | strip-ansi | 6.0.1 | MIT |
+| tiny-typed-emitter | 2.1.0 | MIT |
 | toidentifier | 1.0.1 | MIT |
 | ts-algebra | 2.0.0 | MIT |
 | tslib | 2.8.1 | 0BSD |
@@ -550,6 +568,7 @@ the package names, versions, and licenses for transparency.
 | typebox | 1.3.7 | MIT |
 | undici | 8.10.0 | MIT |
 | undici-types | 8.3.0 | MIT |
+| universalify | 2.0.1 | MIT |
 | unpipe | 1.0.0 | MIT |
 | vary | 1.1.2 | MIT |
 | web-streams-polyfill | 3.3.3 | MIT |
@@ -565,4 +584,4 @@ the package names, versions, and licenses for transparency.
 | yargs-parser | 18.1.3 | ISC |
 | zod | 4.4.3 | MIT |
 | zod-to-json-schema | 3.25.2 | ISC |
-> Notice-required licenses in use: LGPL-3.0-or-later. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.
+> Notice-required licenses in use: BlueOak-1.0.0, LGPL-3.0-or-later. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.

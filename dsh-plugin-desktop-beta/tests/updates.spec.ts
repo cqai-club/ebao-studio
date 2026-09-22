@@ -39,7 +39,10 @@ interface Harness {
   readonly warnings: unknown[][]
   readonly confirmDownload: ReturnType<typeof vi.fn>
   readonly showManualCheckResult: ReturnType<typeof vi.fn>
-  readonly downloadAndOpen: ReturnType<typeof vi.fn>
+  readonly downloadAndInstall: ReturnType<typeof vi.fn>
+  readonly registerNotificationAction: ReturnType<typeof vi.fn>
+  readonly notificationActionRelease: ReturnType<typeof vi.fn>
+  clickUpdateNotification(): Promise<void>
   readonly refresh: ReturnType<typeof vi.fn>
   readonly registrationDispose: ReturnType<typeof vi.fn>
   readonly requestRejection: ReturnType<typeof vi.fn<(
@@ -58,7 +61,7 @@ async function createHarness(options: {
   readonly currentVersion?: string
   readonly confirmDownload?: (version: string, channel?: 'stable' | 'beta') => Promise<boolean>
   readonly showManualCheckResult?: (result: UpdateCheckResult | null) => Promise<void>
-  readonly downloadAndOpen?: (version: string, signal: AbortSignal, channel?: 'stable' | 'beta') => Promise<void>
+  readonly downloadAndInstall?: (version: string, signal: AbortSignal, channel?: 'stable' | 'beta') => Promise<void>
   readonly notify?: (notification: DesktopNotification) => void
   readonly locale?: DesktopRuntime['locale']
   readonly state?: string
@@ -75,7 +78,13 @@ async function createHarness(options: {
   const registrationDispose = vi.fn()
   const confirmDownload = vi.fn(options.confirmDownload ?? (async () => false))
   const showManualCheckResult = vi.fn(options.showManualCheckResult ?? (async () => {}))
-  const downloadAndOpen = vi.fn(options.downloadAndOpen ?? (async () => {}))
+  const downloadAndInstall = vi.fn(options.downloadAndInstall ?? (async () => {}))
+  const notificationActionRelease = vi.fn()
+  let notificationAction: (() => void | Promise<void>) | undefined
+  const registerNotificationAction = vi.fn((_action: 'open-update', handler: () => void | Promise<void>) => {
+    notificationAction = handler
+    return notificationActionRelease
+  })
   const requestRejection = vi.fn<(
     request: ConnectionTrustRequest,
   ) => ConnectionRequestRejection>(() => undefined)
@@ -94,7 +103,8 @@ async function createHarness(options: {
       request: options.request ?? (async () => versionResponse('2.0.0')),
       confirmDownload,
       showManualCheckResult,
-      downloadAndOpen,
+      downloadAndInstall,
+      registerNotificationAction,
       notify: options.notify ?? ((notification: DesktopNotification) => { notifications.push(notification) }),
     },
     registerTrayItem: (item: DesktopTrayItem) => {
@@ -131,7 +141,10 @@ async function createHarness(options: {
     warnings,
     confirmDownload,
     showManualCheckResult,
-    downloadAndOpen,
+    downloadAndInstall,
+    registerNotificationAction,
+    notificationActionRelease,
+    clickUpdateNotification: async () => { await notificationAction?.() },
     refresh,
     registrationDispose,
     requestRejection,
@@ -161,11 +174,11 @@ describe('desktop update Host plugin', () => {
 
     expect(harness.trays).toHaveLength(2)
     await harness.tray.invoke()
-    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
 
     await harness.trays[1]!.invoke()
     expect(harness.confirmDownload).toHaveBeenCalledWith('2.0.4', 'stable')
-    expect(harness.downloadAndOpen).toHaveBeenCalledWith(
+    expect(harness.downloadAndInstall).toHaveBeenCalledWith(
       '2.0.4',
       expect.any(AbortSignal),
       'stable',
@@ -278,7 +291,7 @@ describe('desktop update Host plugin', () => {
       latestVersion: '2.0.0',
     })
     expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
     expect(harness.notifications).toEqual([])
     expect(harness.warnings).toEqual([])
   })
@@ -292,11 +305,13 @@ describe('desktop update Host plugin', () => {
     await vi.waitFor(() => {
       expect(harness.notifications).toEqual([{
         title: '易宝工坊 Update Available',
-        body: 'Version 2.1.0 is ready to download. Open 易宝工坊 to continue.',
+        body: 'Version 2.1.0 is ready to download. Click this notification to review the update.',
+        action: 'open-update',
       }])
     })
+    expect(harness.registerNotificationAction).toHaveBeenCalledWith('open-update', expect.any(Function))
     expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
     expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available')
     await vi.waitFor(async () => {
       expect(JSON.parse(await readFile(harness.statePath, 'utf8'))).toEqual({
@@ -315,6 +330,61 @@ describe('desktop update Host plugin', () => {
     expect(harness.warnings).toEqual([])
   })
 
+  it('clicking the background update notification reuses confirmation and recheck', async () => {
+    vi.useFakeTimers()
+    const request = vi.fn(async () => versionResponse('2.1.0'))
+    const harness = await createHarness({
+      request,
+      confirmDownload: async () => true,
+    })
+
+    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
+    await vi.waitFor(() => { expect(harness.notifications).toHaveLength(1) })
+    await harness.clickUpdateNotification()
+
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(harness.confirmDownload).toHaveBeenCalledWith('2.1.0')
+    expect(harness.downloadAndInstall).toHaveBeenCalledWith('2.1.0', expect.any(AbortSignal))
+  })
+
+  it('coalesces repeated notification clicks into one confirmation and download', async () => {
+    vi.useFakeTimers()
+    let resolveDownload!: () => void
+    const pendingDownload = new Promise<void>(resolve => { resolveDownload = resolve })
+    const harness = await createHarness({
+      request: async () => versionResponse('2.1.0'),
+      confirmDownload: async () => true,
+      downloadAndInstall: async () => pendingDownload,
+    })
+
+    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
+    await vi.waitFor(() => { expect(harness.notifications).toHaveLength(1) })
+    const firstClick = harness.clickUpdateNotification()
+    const secondClick = harness.clickUpdateNotification()
+    await vi.waitFor(() => {
+      expect(harness.confirmDownload).toHaveBeenCalledOnce()
+      expect(harness.downloadAndInstall).toHaveBeenCalledOnce()
+    })
+
+    resolveDownload()
+    await Promise.all([firstClick, secondClick])
+  })
+
+  it('does not download when the notification confirmation is cancelled', async () => {
+    vi.useFakeTimers()
+    const harness = await createHarness({
+      request: async () => versionResponse('2.1.0'),
+      confirmDownload: async () => false,
+    })
+
+    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
+    await vi.waitFor(() => { expect(harness.notifications).toHaveLength(1) })
+    await harness.clickUpdateNotification()
+
+    expect(harness.confirmDownload).toHaveBeenCalledOnce()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
+  })
+
   it('downloads and opens only after confirmation', async () => {
     vi.useFakeTimers()
     let resolveDownload!: () => void
@@ -323,12 +393,12 @@ describe('desktop update Host plugin', () => {
       packaged: false,
       request: async () => versionResponse('2.1.0'),
       confirmDownload: async () => true,
-      downloadAndOpen: async () => download,
+      downloadAndInstall: async () => download,
     })
 
     const pending = harness.tray.invoke()
-    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
-    const [version, signal] = harness.downloadAndOpen.mock.calls[0] as [string, AbortSignal]
+    await vi.waitFor(() => { expect(harness.downloadAndInstall).toHaveBeenCalledOnce() })
+    const [version, signal] = harness.downloadAndInstall.mock.calls[0] as [string, AbortSignal]
     expect(version).toBe('2.1.0')
     expect(signal).toBeInstanceOf(AbortSignal)
     expect(signal.aborted).toBe(false)
@@ -354,12 +424,12 @@ describe('desktop update Host plugin', () => {
 
     await harness.tray.invoke()
     expect(confirmDownload).toHaveBeenCalledOnce()
-    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
     expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available')
 
     await harness.tray.invoke()
     expect(confirmDownload).toHaveBeenCalledTimes(2)
-    expect(harness.downloadAndOpen).toHaveBeenCalledOnce()
+    expect(harness.downloadAndInstall).toHaveBeenCalledOnce()
     expect(harness.showManualCheckResult).not.toHaveBeenCalled()
   })
 
@@ -377,7 +447,7 @@ describe('desktop update Host plugin', () => {
 
     expect(request).toHaveBeenCalledTimes(2)
     expect(harness.confirmDownload).toHaveBeenCalledWith('2.1.0')
-    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
     expect(harness.showManualCheckResult).not.toHaveBeenCalled()
     expect(harness.tray.label()).toBe('易宝工坊 2.2.0 Available')
   })
@@ -395,7 +465,7 @@ describe('desktop update Host plugin', () => {
 
     expect(harness.showManualCheckResult).not.toHaveBeenCalled()
     expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -415,7 +485,7 @@ describe('desktop update Host plugin', () => {
 
     expect(harness.showManualCheckResult).toHaveBeenCalledWith(expected)
     expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
     expect(harness.notifications).toEqual([])
     expect(harness.warnings).toEqual([])
     expect(harness.tray.label()).toBe('Check for Updates…')
@@ -486,7 +556,7 @@ describe('desktop update Host plugin', () => {
       currentVersion: '2.0.0',
       latestVersion: '2.1.0',
     })
-    expect(harness.downloadAndOpen).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
     expect(harness.notifications).toEqual([])
     expect(harness.tray.label()).toBe('Check for Updates…')
   })
@@ -498,17 +568,17 @@ describe('desktop update Host plugin', () => {
       packaged: false,
       request: async () => versionResponse('2.1.0'),
       confirmDownload: async () => true,
-      downloadAndOpen: async () => download,
+      downloadAndInstall: async () => download,
     })
 
     const first = harness.tray.invoke()
-    await vi.waitFor(() => { expect(harness.downloadAndOpen).toHaveBeenCalledOnce() })
+    await vi.waitFor(() => { expect(harness.downloadAndInstall).toHaveBeenCalledOnce() })
     const second = harness.tray.invoke()
-    expect(harness.downloadAndOpen).toHaveBeenCalledOnce()
+    expect(harness.downloadAndInstall).toHaveBeenCalledOnce()
     rejectDownload(new Error('offline'))
     await Promise.all([first, second])
 
-    expect(harness.downloadAndOpen).toHaveBeenCalledOnce()
+    expect(harness.downloadAndInstall).toHaveBeenCalledOnce()
     expect(harness.notifications).toEqual([])
     expect(harness.warnings).toEqual([])
     expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available')
@@ -538,7 +608,7 @@ describe('desktop update Host plugin', () => {
       packaged: false,
       request: async () => versionResponse('2.1.0'),
       confirmDownload: async () => true,
-      downloadAndOpen: async (_version, signal) => new Promise<void>((_resolve, reject) => {
+      downloadAndInstall: async (_version, signal) => new Promise<void>((_resolve, reject) => {
         downloadSignal = signal
         signal.addEventListener('abort', () => {
           reject(new DOMException('disposed', 'AbortError'))
@@ -566,6 +636,18 @@ describe('desktop update Host plugin', () => {
 
     expect(request).not.toHaveBeenCalled()
     expect(harness.registrationDispose).toHaveBeenCalledOnce()
+    expect(harness.notificationActionRelease).not.toHaveBeenCalled()
+  })
+
+  it('releases a registered notification action with the update generation', async () => {
+    vi.useFakeTimers()
+    const harness = await createHarness({ request: async () => versionResponse('2.1.0') })
+    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
+    await vi.waitFor(() => { expect(harness.registerNotificationAction).toHaveBeenCalledOnce() })
+
+    await harness.dispose()
+
+    expect(harness.notificationActionRelease).toHaveBeenCalledOnce()
   })
 
   it('does not wait for an open manual result dialog during disposal', async () => {

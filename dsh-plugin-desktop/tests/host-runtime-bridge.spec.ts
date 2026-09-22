@@ -14,11 +14,18 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
   let tray!: DesktopTrayItem
   const disposeShell = vi.fn(async () => {})
   const disposeTray = vi.fn()
+  const notificationActionRelease = vi.fn()
+  let invokeNotificationAction!: () => void | Promise<void>
+  const registerNotificationAction = vi.fn((_action: 'open-update', handler: () => void | Promise<void>) => {
+    invokeNotificationAction = handler
+    return notificationActionRelease
+  })
   const native = {
     platform: 'win32', windowsBuild: 22631, locale: 'en',
-    loginCompletionUrl: 'dsh-desktop://oauth/complete',
+    loginCompletionUrl: 'dsh-desktop-beta://oauth/complete',
     updates: { isPackaged: true, canDownload: true, currentVersion: '2.0.7-beta.1', statePath: '/tmp/update',
       request: vi.fn(async () => new Response('{"version":"2.0.8-beta.1"}', { headers: { 'x-test': 'yes' } })),
+      registerNotificationAction,
     },
     schedule: (value: DesktopShellSpec) => { shell = value; return disposeShell },
     openExternal: vi.fn(async () => {}),
@@ -27,7 +34,7 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
   const release = bindNativeRuntime(parent, native)
   try {
     const runtime = createHostRuntime(child, runtimeSnapshot(native))
-    expect(runtime.loginCompletionUrl).toBe('dsh-desktop://oauth/complete')
+    expect(runtime.loginCompletionUrl).toBe('dsh-desktop-beta://oauth/complete')
     let language: 'zh' | undefined
     const mode = vi.fn(async () => {})
     const invoke = vi.fn(async () => {})
@@ -59,6 +66,13 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
     const response = await runtime.updates.request('https://example.invalid', { headers: { accept: 'application/json' } })
     expect(response.headers.get('x-test')).toBe('yes')
     expect(await response.json()).toEqual({ version: '2.0.8-beta.1' })
+    const notificationHandler = vi.fn()
+    const releaseNotificationAction = runtime.updates.registerNotificationAction('open-update', notificationHandler)
+    await vi.waitFor(() => { expect(registerNotificationAction).toHaveBeenCalledOnce() })
+    await invokeNotificationAction()
+    expect(notificationHandler).toHaveBeenCalledOnce()
+    releaseNotificationAction()
+    await vi.waitFor(() => { expect(notificationActionRelease).toHaveBeenCalledOnce() })
     await runtime.openExternal('https://auth.example.test/authorize')
     expect(native.openExternal).toHaveBeenCalledWith('https://auth.example.test/authorize')
     await stopShell()

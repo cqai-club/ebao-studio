@@ -10,7 +10,7 @@ Status: implemented
 
 这些操作必须保留兼容模式与高级模式已经建立的产品边界。固定的上游 checkout 保持不变；兼容模式继续使用没有 override 的官方 Web client；沙箱 renderer 不获得 Electron、Node、文件系统、进程或终端能力。desktop package 也不能修改用户的全局 `PATH` 或 shell 启动文件。
 
-公开 release service 提供一份 no-cache 版本文档与两个计数用 installer redirect，但不提供 Squirrel.Mac 所需的签名 ZIP feed，也不提供 NSIS updater 的 publisher metadata。因此 Desktop 可以负责经用户确认的下载与原生 installer 交接，但不能宣称无人值守替换或经过验证的 publisher 身份。
+仓库自有清单仍是发现来源。稳定 GitHub 预发布现在还提供 Electron Builder 更新元数据（Windows 的 `latest.yml`、macOS 的 `latest-mac.yml`）、完整 NSIS 安装器与 macOS ZIP、供手动下载的构件和 `SHA256SUMS`。因此可在用户明确确认后暂存并在重启时更新，无需选择保存位置；但 macOS 替换仍以 Developer ID 签名和公证为前提。
 
 ## 决策
 
@@ -20,17 +20,17 @@ Desktop 原生操作是围绕同一个 Electron adapter 组合的独立 Cordis H
 
 ## Stable release 更新交接
 
-`desktop-updates` 只查询 `https://www.dshdesktop.cn/api/desktop/version`。其显式配置默认启用后台检查：首次延迟 60 秒，每次检查完成六小时后安排下一次，并为每个请求设置 15 秒期限。只有 Electron 报告为打包应用时才会自动调度。开发运行与其他未打包启动会保留手工托盘命令，但不会主动发起后台网络流量。
+`desktop-updates` 只查询仓库自有清单 `https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json`。其显式配置默认启用后台检查：首次延迟 60 秒，每次检查完成六小时后安排下一次，并为每个请求设置 15 秒期限。只有 Electron 报告为打包应用时才会自动调度。开发运行与其他未打包启动会保留手工托盘命令，但不会主动发起后台网络流量。
 
-手工检查与定时检查共用一个 in-flight request。Checker 使用 no-cache 语义发送 `GET`，拒绝 redirect 与非 200 响应，把响应正文限制为 4 KiB，并且只接受名为 `version` 的 JSON string 字段及规范的 stable Semantic Versioning。比较过程不会把 SemVer identifier 转成 JavaScript number。定时检查遇到无效、相同、旧版本、HTTP、timeout、cancellation、正文超限与网络结果时保持静默。手工检查得到相同或旧版本时会显示包含当前安装版本的“已是最新”对话框；请求或校验失败时则显示一条固定重试提示，不暴露响应或错误细节。
+手工检查与定时检查共用一个 in-flight request。Checker 使用 no-cache 语义发送 `GET`，拒绝 redirect 与非 200 响应，把响应正文限制为 4 KiB，并且只接受请求通道及规范 Semantic Versioning。比较过程不会把 SemVer identifier 转成 JavaScript number。定时检查遇到无效、相同、旧版本、HTTP、timeout、cancellation、正文超限与网络结果时保持静默。手工检查得到相同或旧版本时会显示包含当前安装版本的“已是最新”对话框；请求或校验失败时则显示一条固定重试提示，不暴露响应或错误细节。
 
-只有严格更新的远端版本才会进入可用状态。托盘会显示空闲、检查中、下载中或可用版本。后台结果会为每个版本跨重启显示一次原生 **Download** 或 **Later** 提示；手工选择托盘命令时可以再次询问，并直接以该提示作为结果对话框，不会额外弹出通知。Updater 会在 Electron user-data 目录下原子写入 version-2 JSON 文档。文件上限为 4 KiB，只保存 `lastPromptedVersion`，绝不会在未查询 service 的情况下从状态恢复可用 release。状态不存在时从空状态开始；旧版、格式损坏、体积超限或包含不安全值的状态会被静默替换，而不会被信任。
+只有严格更新的远端版本才会进入可用状态。托盘会显示空闲、检查中、下载中或可用版本。后台结果通过 `host-runtime-bridge` 注册可序列化的 `open-update` 通知动作，持久化 `lastNotifiedVersion`，并且每个版本跨重启只发送一次原生系统通知，不会自动打开确认框。点击通知会聚焦应用，并复用托盘的确认、重新请求清单及 single-flight 下载流程；取消不会下载。Updater 会在 Electron user-data 目录下原子写入 version-3 JSON 文档。文件上限为 4 KiB，会迁移原有 version-2 提示历史，绝不会在未查询清单的情况下恢复可用 release。生命周期释放会与 timer、请求、下载和托盘注册一起释放动作回调。
 
-只有用户选择 **Download** 后，固定的 macOS 或 Windows 下载入口才会被访问。Checker 会先重复版本请求，只有仍然发布同一个更新版本时才继续。Electron `net.fetch` 会跟随 service redirect，把不超过 1 GiB 的文件流式写入私有、按版本划分的 user-data 目录，同步并原子重命名完整文件，并在失败或取消后清理 partial 文件。这个即时复查可以缩小 release rotation 窗口，但不能把固定 endpoint 与版本建立加密绑定；后续 service 应返回 versioned URL 与平台 hash。交接前要求 macOS 产物包含 UDIF `koly` trailer，Windows 产物包含 DOS 与 PE signature。这些检查可以拒绝 HTML error 或结构错误的产物，但不能证明 publisher 身份。
+只有用户确认更新且清单仍发布同一版本时，才会请求更新资产。稳定 runtime 会把 `electron-updater` 配置为 `autoDownload=false`、不在退出时安装、允许发现预发布、不允许降级，并关闭差分和 web-installer 回退；随后从匹配 GitHub 预发布重新读取更新元数据，要求其版本等于重新检查的清单版本，并交由 Electron Updater 校验完整 NSIS 安装器或 macOS ZIP 的 SHA-512。其 cancellation token 与 Host generation 释放相连。partial、取消、元数据、网络和摘要失败都会使当前版本继续可用，托盘操作仍可重试。`SHA256SUMS` 继续作为有界的公开手动下载构件校验记录，而不是应用内更新传输。
 
-macOS 会打开经过校验的 DMG，并说明用户必须替换 `Applications` 中的 易宝工坊 后重新打开；它不会自行 mount 并修改已安装的签名 bundle。Windows 会在 NSIS installer 准备完成后再次询问。选择 **Restart and Install** 会使用准确 argv 且不经过 shell 启动 installer，等待其 spawn event，然后在当前应用退出前请求既有的有界 Cordis teardown。选择 **Later**，或任何下载、文件系统与 installer 打开错误，都不会显示 failure UI，同时会保留托盘中的可重试版本操作。手工检查失败会使用上述固定重试对话框。
+完成校验后的传输会显示 **重启并更新**。选择 **稍后** 会保留已暂存更新而不退出；选择重启会进入既有 quit guard，因此 Cordis teardown 会先执行，随后 Electron Updater 的平台助手应用更新并重新启动应用。不会打开 DMG、手工复制、显示保存对话框或让用户选择安装器路径。macOS 生产替换需要完成 Developer ID 签名和公证的 ZIP；缺少签名或更新元数据会安全失败。Windows 的 NSIS 构件可以自更新，但仍要受 Authenticode 与 SmartScreen 策略约束。
 
-发布顺序是一项运维 invariant：必须先准备好两个 installer artifact 及其 redirect，再修改 Upstash Redis key `deepseek-harness-desktop:release:version`。更新该 key 会立即让版本可被发现，无需重新部署 service。Key 缺失、服务不可用或值无效时，公开 endpoint 不会返回可用版本，Desktop checker 会直接忽略。
+发布顺序是一项运维 invariant。匹配的 `v<version>` GitHub 预发布必须精确包含 `eBao-Studio-<version>-universal.dmg`、`eBao-Studio-<version>-universal.zip`、`eBao-Studio-<version>-x64-Setup.exe`、`eBao-Studio-<version>-x64-Portable.zip`、`latest.yml`、`latest-mac.yml` 与 `SHA256SUMS`。workflow 会在发布前校验手动下载构件的 SHA-256 以及每份更新元数据 SHA-512/size 与目标文件一致，发布后再次下载并校验。macOS job 只有在配置的 Developer ID 与公证凭据生成可更新构件时才会通过；Beta Release 资产仍不在本轮范围。
 
 ## 隔离终端环境
 
@@ -46,7 +46,7 @@ System terminal 是由本地用户显式发起的能力，而不是 renderer 或
 
 ## 验证
 
-Headless update 测试覆盖 strict SemVer 顺序、固定版本与下载 endpoint、no-cache 请求选项、定时检查失败静默、手工结果对话框、响应与 installer 体积上限、version-2 状态解析、定时与手工请求共享、timeout 与下载 cancellation、计数请求之前的确认和版本复查、单一下载任务、DMG 与 PE rejection、partial 文件清理、动态托盘 label，以及 effect disposal。Electron adapter 测试会在不打开真实窗口的情况下覆盖原生确认与结果对话框、macOS DMG 打开、Windows installer 在退出前 spawn、普通原生通知，以及有序、可 dispose 的托盘 contribution registry。
+Headless update 测试覆盖 strict SemVer 顺序、清单检查、通知动作注册/点击/释放、确认与版本复查、lifecycle single-flight/cancellation/disposal、Electron Updater 配置、元数据版本一致性和 cancellation-token bridge。Host bridge 与 Electron 测试覆盖原生通知聚焦/动作分发和不打开真实 GUI 的明确重启交接。Release-asset 测试校验精确资产集合、严格 SHA-256 清单以及更新元数据 SHA-512/size 一致性。
 
 Headless terminal 测试会检查生成的 macOS 与 Windows 文件、空格与 shell metacharacter quoting、通过 child environment 携带本地化路径的 ASCII Windows 模板、私有 POSIX mode、`DSH_HOME` 与 `PATH` 隔离、`--expose-internals`、不会覆盖显式 profile 或 `web` alias 的 default-desktop 参数注入、继承 Electron Node mode 的移除、交互式 shell 启动、Windows Terminal 选择、可见控制台 broker、PowerShell 与命令提示符 fallback、launcher 错误处理，以及对不支持平台或不安全生成脚本值的明确拒绝。Packaged-runtime gate 会在签名前要求 `app.asar` 包含 terminal 与 update 模块及 desktop CLI bootstrap，并要求 `app.asar.unpacked` 以物理文件形式包含上游 DSH CLI、Web runtime sentinel 与内置 pnpm 入口。
 
@@ -54,7 +54,7 @@ Headless terminal 测试会检查生成的 macOS 与 Windows 文件、空格与 
 
 ## 考虑过的替代方案
 
-**立即使用 Electron `autoUpdater` 或 `electron-updater`。** 当前 macOS endpoint 跳转到 DMG，而不是通过 Squirrel.Mac feed 暴露签名应用 ZIP；Windows release path 也尚未建立无人值守 NSIS 更新所需的 publisher 校验。经确认的下载与 installer 交接可以直接利用现有 service，而不虚构不兼容的 update metadata。
+**使用 Electron Updater 与现有手动安装器路径。** 旧 GitHub 资产缺少 `latest*.yml`、macOS ZIP 与已签名/已公证的生产构件。现在 Electron Builder 会生成确定性元数据，release workflow 会校验并发布所需资产；Updater 仍由确认触发，并且只在独立的明确重启选择后安装。
 
 **在 Web renderer 中嵌入终端。** 嵌入式终端需要 renderer UI、preload 与 IPC protocol、pseudo-terminal 所有权、进程 teardown，以及更大的安全面。所需的插件管理工作流只需要一个具有受控环境且由用户显式打开的 system terminal。
 
@@ -68,6 +68,6 @@ Headless terminal 测试会检查生成的 macOS 与 Windows 文件、空格与 
 
 ## 结果
 
-打包后的 易宝工坊 只有在用户明确确认后才能发现并下载较新的 stable release，同时仍可提供普通 desktop-profile 插件工作流，而无需修改上游 checkout 或削弱 renderer 隔离。macOS 替换仍由用户手工完成；Windows 会在第二次确认后使用下载好的 NSIS 程序安装。生成的 CLI 环境仍只存在于从托盘打开的终端内。
+打包后的 易宝工坊 可以在后台发现较新的 stable release，但只有点击通知或托盘命令、再明确确认后才会开始暂存。用户随后选择 **重启并更新**，Electron Updater 才替换并重新启动应用。macOS 生产构件需要签名和公证 ZIP；Windows 使用 NSIS 自更新，而 SmartScreen/Authenticode 仍是独立平台问题。SHA-512 更新元数据与发布的 SHA-256 校验和可证明构件完整性，但不独立证明 publisher 身份。生成的 CLI 环境仍只存在于从托盘打开的终端内。
 
-公开 易宝工坊 版本 service 现在是 release version 的权威来源；各平台 download redirect 则保留为计数用 delivery entry，检查阶段绝不会探测它们。Desktop package 也开始拥有内置 pnpm 版本和生成 shim 行为，这会扩大打包 runtime closure，并且必须持续与 Electron ABI 对齐。Linux 保留兼容模式，但在形成独立平台设计前既没有 installer download path，也没有 desktop 终端。
+仓库清单仍是可发现版本的权威来源；按版本发布的 GitHub 预发布是唯一稳定应用内 payload 与元数据来源。Electron Updater 会被打包进 Desktop runtime，其更新元数据必须与清单版本保持一致。Linux 继续保持兼容模式，在形成独立平台设计前没有安装包下载路径或 desktop 终端。

@@ -27,7 +27,8 @@ The Module owns:
 - confirmation followed by a fresh version check;
 - one active download and its cancellation controller;
 - available/downloading tray presentation and its registration;
-- generation disposal, including idempotent cancellation and tray removal.
+- serializable native-notification action registration, invocation, and release;
+- generation disposal, including idempotent cancellation, notification-action release, and tray removal.
 
 `updates.ts` now validates Cordis configuration, starts one lifecycle in one effect, and delegates effect disposal to the returned handle. It does not inspect or mutate lifecycle state.
 
@@ -74,23 +75,25 @@ For one update lifecycle generation:
 1. At most one version-check request is active; manual and background callers share it.
 2. At most one confirmation/download task is active.
 3. A confirmed version is checked again before download handoff.
-4. Background prompting records the version before opening confirmation and does not repeat it for the same persisted version.
-5. Disposal marks the generation inactive before clearing timers, aborting requests/downloads, and removing the tray item.
-6. Disposal waits only for state readiness and the abortable version request; native dialogs remain non-cancellable and do not block Host release.
-7. Repeated disposal returns the same task, removes the tray item once, and cannot restart polling.
+4. Background discovery registers the `open-update` action, records the version before notifying, and does not repeat the notification for the same persisted version.
+5. Clicking the action enters the same confirmation and fresh-check path as the tray command, while repeated clicks share the existing manual/download tasks.
+6. Disposal marks the generation inactive before releasing the notification action, clearing timers, aborting requests/downloads, and removing the tray item.
+7. Disposal waits only for state readiness and the abortable version request; native dialogs remain non-cancellable and do not block Host release.
+8. Repeated disposal returns the same task, releases the notification action and tray item once, and cannot restart polling.
 
 ## Preserved behavior and limits
 
-- The update state remains version 2 with the same 4 KiB read limit and atomic best-effort persistence.
-- Manual failures remain visible only through the existing native result dialog. Scheduled, filesystem, download, and installer-opening failures retain their existing silent behavior.
-- Download endpoints, artifact validation, installer handoff, and update discovery are unchanged.
-- This refactor does not add cryptographic artifact identity, resumable downloads, automatic retries, or remote telemetry.
+- The update state is version 3 with the same 4 KiB read limit and atomic best-effort persistence; version-2 prompt history migrates to `lastNotifiedVersion`.
+- Manual failures remain visible only through the existing native result dialog. Scheduled, metadata, staging, filesystem, and updater failures remain silent so a background check never interrupts work.
+- Background notifications remain once per persisted version, and clicking one never bypasses confirmation or the fresh version check.
+- Stable downloads recheck the manifest, require Electron Updater metadata to name that exact version, and let Electron Updater validate the complete platform artifact SHA-512 before staging it privately for an explicit restart.
+- This change adds `electron-updater` only for packaged stable macOS/Windows builds; it does not add automatic download, install-on-quit, retries, remote telemetry, Beta assets, or a bypass of user confirmation and explicit restart.
 - Native confirmation and result dialogs still cannot be cancelled. The owner prevents their late result from starting new work after disposal.
 
 ## Verification
 
-Existing update tests continue to cover scheduling, prompt persistence, manual/background check sharing, confirmation and recheck, download single-flight, cancellation, timeout, platform capability, and non-blocking native dialogs. A lifecycle test also verifies idempotent disposal and that polling does not restart afterward. The Desktop package build, type check, full test suite, runtime-closure check, and license check pass.
+Update tests cover scheduling, version-3 state migration, notification action registration/click dispatch, confirmation/recheck, single-flight/cancellation/disposal, and Electron Updater version/cancellation behavior. Host bridge and Electron tests cover callback release, focus, native notification dispatch, and restart handoff. Release verification checks the published updater metadata SHA-512 and manual-download SHA-256 records.
 
 ## Consequences
 
-Future changes to update timers, operation tasks, prompt history, tray state, or release behavior belong in `update-lifecycle.ts`. `updates.ts` remains the Cordis adapter and configuration surface. New update capabilities should extend the lifecycle Module only when they share this generation lifetime; artifact verification and platform installer adapters remain separate Modules.
+Future changes to update timers, operation tasks, prompt history, tray state, or release behavior belong in `update-lifecycle.ts`. `electron-auto-updater.ts` owns the narrow Electron Updater configuration, version equality, and abort bridge; `electron-runtime.ts` owns the explicit restart request. `updates.ts` remains the Cordis adapter and configuration surface.

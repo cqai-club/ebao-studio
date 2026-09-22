@@ -132,6 +132,7 @@ export function packageMacSmoke(options: MacSmokePackageOptions = defaultOptions
       options.builderCli,
       '--mac',
       'dmg',
+      'zip',
       '--universal',
       '--publish',
       'never',

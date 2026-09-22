@@ -1,9 +1,16 @@
 /** Native capability adapters; frontend HTTP and WebSocket connections are unchanged. */
-import type { DesktopRuntime, DesktopShellSpec, DesktopTrayItem, DesktopTrayItemRegistration, DesktopUpdateAdapter } from './runtime.ts'
+import type {
+  DesktopNotificationAction,
+  DesktopRuntime,
+  DesktopShellSpec,
+  DesktopTrayItem,
+  DesktopTrayItemRegistration,
+  DesktopUpdateAdapter,
+} from './runtime.ts'
 import { HostRpc } from './host-rpc.ts'
 
 export type RuntimeSnapshot = Pick<DesktopRuntime, 'platform' | 'windowsBuild' | 'locale' | 'loginCompletionUrl'> & {
-  updates: Omit<DesktopUpdateAdapter, 'request' | 'confirmDownload' | 'showManualCheckResult' | 'downloadAndOpen' | 'notify'>
+  updates: Omit<DesktopUpdateAdapter, 'request' | 'confirmDownload' | 'showManualCheckResult' | 'downloadAndInstall' | 'registerNotificationAction' | 'notify'>
 }
 export function runtimeSnapshot(runtime: DesktopRuntime): RuntimeSnapshot {
   const { isPackaged, canDownload, currentVersion, releaseChannel, statePath, installationId } = runtime.updates
@@ -24,7 +31,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
   const trackSetup = (task: Promise<unknown>) => { if (booting) setup.push(task) }
   const shellSpecs = new Map<string, DesktopShellSpec>()
   const send = <T = void>(method: string, args: unknown[] = [], signal?: AbortSignal): Promise<T> => {
-    const interactive = ['update:confirmDownload', 'update:showManualCheckResult', 'update:downloadAndOpen',
+    const interactive = ['update:confirmDownload', 'update:showManualCheckResult', 'update:downloadAndInstall',
       'native:pickDirectory', 'native:exportDiagnostics'].includes(method)
     const task = rpc.call<T>(method, args, signal, interactive ? 0 : undefined)
     calls.add(task)
@@ -51,7 +58,20 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
       },
       confirmDownload: (version, channel) => send('update:confirmDownload', [version, channel]),
       showManualCheckResult: result => send('update:showManualCheckResult', [result]),
-      downloadAndOpen: (version, signal, channel) => send('update:downloadAndOpen', [version, channel], signal),
+      downloadAndInstall: (version, signal, channel) => send('update:downloadAndInstall', [version, channel], signal),
+      registerNotificationAction: (action, handler) => {
+        const callback = callbacks({ invoke: handler })
+        let active = true
+        trackSetup(send('update:registerNotificationAction', [action, callback.id]))
+        return () => {
+          if (!active) return
+          active = false
+          void send('update:disposeNotificationAction', [action, callback.id]).then(
+            () => { callback.release() },
+            () => { callback.release() },
+          )
+        }
+      },
       notify: notification => { void send('update:notify', [notification]) },
     },
     schedule(spec) {
@@ -123,6 +143,7 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   const trays = new Map<string, DesktopTrayItemRegistration>()
   const shells = new Map<string, () => Promise<void>>()
   const preferences = new Map<string, { locale: any; theme: any }>()
+  const notificationActions = new Map<DesktopNotificationAction, { id: string; release: () => void }>()
   const releases: (() => void)[] = []
   const handle = (name: string, fn: (args: any[], signal: AbortSignal) => unknown) => { releases.push(rpc.handle(name, fn)) }
   const callback = (method: string, args: unknown[] = []) => rpc.call(method, args)
@@ -172,11 +193,27 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   })
   handle('update:confirmDownload', ([version, channel]) => runtime.updates.confirmDownload(version, channel))
   handle('update:showManualCheckResult', ([result]) => runtime.updates.showManualCheckResult(result))
-  handle('update:downloadAndOpen', ([version, channel], signal) => runtime.updates.downloadAndOpen(version, signal, channel))
+  handle('update:downloadAndInstall', ([version, channel], signal) => runtime.updates.downloadAndInstall(version, signal, channel))
+  handle('update:registerNotificationAction', ([action, id]) => {
+    if (action !== 'open-update' || typeof id !== 'string' || id.length === 0) {
+      throw new Error('Invalid desktop notification action registration')
+    }
+    notificationActions.get(action)?.release()
+    const release = runtime.updates.registerNotificationAction(action, () => callback(`${id}:invoke`))
+    notificationActions.set(action, { id, release })
+  })
+  handle('update:disposeNotificationAction', ([action, id]) => {
+    if (action !== 'open-update' || typeof id !== 'string') return
+    const current = notificationActions.get(action)
+    if (current?.id !== id) return
+    current.release()
+    notificationActions.delete(action)
+  })
   handle('update:notify', ([value]) => runtime.updates.notify(value))
   return async () => {
     trays.forEach(tray => tray.dispose()); trays.clear()
     await Promise.all([...shells.values()].map(dispose => dispose())); shells.clear(); preferences.clear()
+    notificationActions.forEach(action => action.release()); notificationActions.clear()
     releases.forEach(release => release())
   }
 }

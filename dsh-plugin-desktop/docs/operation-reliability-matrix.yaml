@@ -60,20 +60,20 @@ operations:
     faultContracts:
       - { id: update-check.network.cancelled, test: tests/update-checker.spec.ts, title: silently ignores network failure and caller cancellation }
       - { id: update-check.response.oversized, test: tests/update-checker.spec.ts, title: silently ignores declared and streamed oversized responses }
-  - id: update-download-handoff
-    owner: downloadDesktopUpdate (src/update-download.ts)
-    entrypoints: [downloadDesktopUpdate, recordDesktopUpdateArtifact, resolveDesktopUpdateArtifact]
-    deadline: { owner: caller, maximum: caller request deadline }
-    cancellation: { owner: caller, behavior: abort removes partial artifact }
-    exclusivity: atomic destination replacement
-    idempotency: validated destination may replace only after complete download
-    persistedState: { owner: update-download.ts, atomic: true, corruption: typed failure, cleanup: download operation }
-    retry: { policy: caller-controlled, authority: caller after partial cleanup }
-    recovery: preserve existing installer until replacement validates; never hand off partial artifact
-    evidence: validated artifact and pending installer receipt
+  - id: electron-update-staging
+    owner: downloadElectronDesktopUpdate (src/electron-auto-updater.ts)
+    entrypoints: [configureElectronAutoUpdater, downloadElectronDesktopUpdate]
+    deadline: { owner: caller, maximum: caller download deadline }
+    cancellation: { owner: caller, behavior: AbortSignal bridges into Electron Updater CancellationToken }
+    exclusivity: update lifecycle owns one confirmation and download flight per confirmed version
+    idempotency: Electron Updater must agree with the fresh manifest-confirmed version before staging; no quit-time installation
+    persistedState: { owner: Electron Updater cache, policy: staged updater artifact only, cleanup: Electron Updater }
+    retry: { policy: explicit, authority: user repeats the update action after a failed or cancelled download }
+    recovery: failed or cancelled staging leaves the current application version running and permits a later retry
+    evidence: Electron Updater's verified staged artifact; user explicitly chooses Restart and Update before quitAndInstall
     faultContracts:
-      - { id: update-download-handoff.network.cancelled, test: tests/update-download.spec.ts, title: passes the caller signal and removes a partial file when aborted during streaming }
-      - { id: update-download-handoff.artifact.validation, test: tests/update-download.spec.ts, title: keeps an existing destination until its validated replacement is ready }
+      - { id: electron-update-staging.check.version-agreement, test: tests/electron-auto-updater.spec.ts, title: requires Electron Updater to agree with the manifest-confirmed version before downloading }
+      - { id: electron-update-staging.download.cancelled, test: tests/electron-auto-updater.spec.ts, title: bridges Host cancellation into Electron Updater downloads }
   - id: diagnostics-export
     owner: exportDiagnosticsZip (src/diagnostic-export.ts)
     entrypoints: [exportDiagnosticsZip, exportDesktopDiagnostics]

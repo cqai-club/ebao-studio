@@ -110,25 +110,21 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: yarn workspace dsh-plugin-desktop dist:win-portable
-      - name: Stage Windows release assets
+      - name: Stage Windows release assets and updater metadata
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME.Substring(1)
           $assets = @(
-            "dsh-plugin-desktop/dist/易宝工坊-$version-x64-Setup.exe",
-            "dsh-plugin-desktop/dist/易宝工坊-$version-x64-Portable.zip"
+            "dsh-plugin-desktop/dist/eBao-Studio-$version-x64-Setup.exe",
+            "dsh-plugin-desktop/dist/eBao-Studio-$version-x64-Portable.zip",
+            "dsh-plugin-desktop/dist/latest.yml"
           )
           New-Item -ItemType Directory -Path release-assets | Out-Null
-          $destinations = @(
-            "eBao-Studio-$version-x64-Setup.exe",
-            "eBao-Studio-$version-x64-Portable.zip"
-          )
-          for ($index = 0; $index -lt $assets.Count; $index++) {
-            $asset = $assets[$index]
+          foreach ($asset in $assets) {
             if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
               throw "Expected Windows release asset is missing: $asset"
             }
-            Copy-Item -LiteralPath $asset -Destination (Join-Path release-assets $destinations[$index])
+            Copy-Item -LiteralPath $asset -Destination (Join-Path release-assets (Split-Path -Leaf $asset))
           }
       - uses: actions/upload-artifact@v7
         with:
@@ -160,19 +156,31 @@ jobs:
       - run: yarn install --immutable
       - name: Run macOS package gate
         run: yarn workspace dsh-plugin-desktop check:mac-package
-      - name: Build unsigned macOS universal DMG
+      - name: Build signed and notarized macOS updater artifacts
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
-        run: yarn workspace dsh-plugin-desktop dist:mac-smoke
-      - name: Stage macOS release asset
+          MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: yarn workspace dsh-plugin-desktop dist:mac
+      - name: Stage macOS release assets and updater metadata
         shell: bash
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          asset="dsh-plugin-desktop/dist/mac-smoke/易宝工坊-${version}-universal.dmg"
-          test -f "$asset"
+          assets=(
+            "dsh-plugin-desktop/dist/mac-release/eBao-Studio-${version}-universal.dmg"
+            "dsh-plugin-desktop/dist/mac-release/eBao-Studio-${version}-universal.zip"
+            "dsh-plugin-desktop/dist/mac-release/latest-mac.yml"
+          )
           mkdir -p release-assets
-          cp "$asset" "release-assets/eBao-Studio-${version}-universal.dmg"
+          for asset in "${assets[@]}"; do
+            test -f "$asset"
+            cp "$asset" "release-assets/$(basename "$asset")"
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: release-macos
@@ -187,6 +195,10 @@ jobs:
       actions: read
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -197,25 +209,28 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          expected=(
+          checksum_assets=(
             "eBao-Studio-${version}-universal.dmg"
+            "eBao-Studio-${version}-universal.zip"
             "eBao-Studio-${version}-x64-Setup.exe"
             "eBao-Studio-${version}-x64-Portable.zip"
           )
+          expected=("${checksum_assets[@]}" latest.yml latest-mac.yml)
           for asset in "${expected[@]}"; do
             test -f "release-assets/$asset"
           done
-          if [[ "$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')" != '3' ]]; then
+          if [[ "$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')" != '6' ]]; then
             echo 'Unexpected release asset set:' >&2
             find release-assets -maxdepth 1 -type f -print >&2
             exit 1
           fi
           (
             cd release-assets
-            sha256sum "${expected[@]}" > SHA256SUMS
+            sha256sum "${checksum_assets[@]}" > SHA256SUMS
             sha256sum --check SHA256SUMS
           )
-      - name: Publish unsigned prerelease
+          node scripts/verify-release-assets.mjs --directory release-assets --version "$version"
+      - name: Publish prerelease
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -226,15 +241,16 @@ jobs:
 
           本版本将 CQAI 账号能力与默认的“e图宝”生图插件集成到易宝工坊 Desktop，包含文生图、图生图、Agent 工具、任务队列、普通生图历史瀑布流、图库、模板、电商模式和无限画布。
 
-          ### 下载
+          ### 下载与自动更新
 
-          - Windows x64：安装版 `Setup.exe` 或免安装 `Portable.zip`
-          - macOS：Intel 与 Apple Silicon 通用的 `universal.dmg`
-          - `SHA256SUMS`：三个安装构件的 SHA-256 校验值
+          - Windows x64：安装版 `Setup.exe` 或免安装 `Portable.zip`；已安装的稳定版会在确认后下载 `Setup.exe`，选择“重启并更新”后由安装器自动接管。
+          - macOS：Intel 与 Apple Silicon 通用的 `universal.dmg`；`universal.zip` 和 `latest-mac.yml` 仅供已安装应用的安全自动更新使用。
+          - `latest.yml`、`latest-mac.yml`：Electron Updater 的 SHA-512 更新元数据。
+          - `SHA256SUMS`：四个可下载安装构件的 SHA-256 校验值。
 
           ### 预发布说明
 
-          这是用于首轮安装和功能验证的未签名预发布构件。macOS DMG 尚未进行 Developer ID 签名和 Apple 公证，Gatekeeper 可能阻止直接打开；Windows 安装包和便携包尚未进行 Authenticode 签名，可能显示“未知发布者”或 SmartScreen 提示。请勿将本版本作为已完成生产签名的正式发行版分发。
+          macOS 自动更新构件必须使用 Developer ID 签名并完成 Apple 公证；本工作流会在缺少签名或公证凭据时失败，而不会发布不可自动更新的 macOS 构件。Windows 安装包和便携包尚未进行 Authenticode 签名，可能显示“未知发布者”或 SmartScreen 提示。SHA-256 与 Electron Updater 的 SHA-512 仅验证传输完整性，不替代平台代码签名。
           NOTES
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
@@ -243,3 +259,23 @@ jobs:
             --prerelease \
             --notes-file RELEASE_NOTES.md \
             release-assets/*
+      - name: Verify published release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          release_json="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease)"
+          RELEASE_JSON="$release_json" RELEASE_TAG="$GITHUB_REF_NAME" node --input-type=module <<'NODE'
+          const release = JSON.parse(process.env.RELEASE_JSON)
+          if (release.tagName !== process.env.RELEASE_TAG || release.isPrerelease !== true) {
+            throw new Error(`Published release identity is invalid: ${process.env.RELEASE_TAG}`)
+          }
+          NODE
+          downloaded="$(mktemp -d)"
+          trap 'rm -rf "$downloaded"' EXIT
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$downloaded"
+          node scripts/verify-release-assets.mjs --directory "$downloaded" --version "$version"

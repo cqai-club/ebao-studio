@@ -69,14 +69,21 @@ const PNPM_RUNTIME_VERSION = packageVersion(PNPM_PACKAGE_ROOT)
 export const MAX_UNPACKED_RUNTIME_FILES = 1_500
 
 /** Maximum physical payload accepted beside ASAR after smart unpack. */
-export const MAX_UNPACKED_RUNTIME_BYTES = 128 * 1024 * 1024
+export const MAX_UNPACKED_RUNTIME_BYTES = 160 * 1024 * 1024
 
 /** Narrow ceiling for pnpm's smart-unpacked native-helper package root. */
 export const MAX_PNPM_SMART_UNPACK_FILES = 32
 export const MAX_PNPM_SMART_UNPACK_BYTES = 32 * 1024 * 1024
 
+/** Per-platform ceiling for the reviewed bundled uv executable. */
+export const MAX_DATAIKU_UV_SMART_UNPACK_BYTES = 64 * 1024 * 1024
+
 /** Package roots electron-builder may smart-unpack as one indivisible unit. */
 export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
+  // Agents Anywhere launches its bundled Python connector through uv.
+  'node_modules/@dataiku/uv-darwin-arm64',
+  'node_modules/@dataiku/uv-darwin-x64',
+  'node_modules/@dataiku/uv-win32-x64',
   'node_modules/fs-ext',
   'node_modules/koffi',
   'node_modules/node-addon-require-builtin',
@@ -148,6 +155,9 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   ...REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   'node_modules/open/index.js',
+  // In-app update staging and its abort bridge must remain ASAR-integrity protected.
+  'node_modules/electron-updater/out/main.js',
+  'node_modules/builder-util-runtime/out/CancellationToken.js',
   'node_modules/pnpm/bin/pnpm.mjs',
 ] as const
 
@@ -722,6 +732,18 @@ export function verifySelectiveUnpackedRuntime(
     throw new Error(
       `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds pnpm smart-unpack budget `
       + `${String(MAX_PNPM_SMART_UNPACK_FILES)} files/${String(MAX_PNPM_SMART_UNPACK_BYTES)} bytes; `
+      + `inventory: ${inventory}`,
+    )
+  }
+  const oversizedUv = summary.groups.find(group => (
+    group.root === 'node_modules/@dataiku/uv-darwin-arm64'
+    || group.root === 'node_modules/@dataiku/uv-darwin-x64'
+    || group.root === 'node_modules/@dataiku/uv-win32-x64'
+  ) && group.bytes > MAX_DATAIKU_UV_SMART_UNPACK_BYTES)
+  if (oversizedUv !== undefined) {
+    throw new Error(
+      `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds @dataiku/uv smart-unpack budget `
+      + `${String(MAX_DATAIKU_UV_SMART_UNPACK_BYTES)} bytes for ${oversizedUv.root}; `
       + `inventory: ${inventory}`,
     )
   }

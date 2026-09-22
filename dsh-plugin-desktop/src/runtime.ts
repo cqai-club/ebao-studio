@@ -93,18 +93,23 @@ export interface DesktopTrayItemRegistration {
 }
 
 /** Native notification shown by a desktop-owned Host plugin. */
+export type DesktopNotificationAction = 'open-update'
+
+/** Native notification shown by a desktop-owned Host plugin. */
 export interface DesktopNotification {
   /** Notification heading. */
   title: string
   /** Concise user-facing status. */
   body: string
+  /** Optional serializable action invoked when this notification is clicked. */
+  action?: DesktopNotificationAction
 }
 
 /** Electron capabilities used by the headless update plugin. */
 export interface DesktopUpdateAdapter {
   /** Whether the running executable came from an Electron package. */
   readonly isPackaged: boolean
-  /** Whether this platform has a fixed installer download endpoint. */
+  /** Whether this packaged product can perform an in-place stable update. */
   readonly canDownload: boolean
   /** Installed desktop product version. */
   readonly currentVersion: string
@@ -120,8 +125,13 @@ export interface DesktopUpdateAdapter {
   confirmDownload(version: string, channel?: DesktopReleaseChannel): Promise<boolean>
   /** Present the outcome of a user-triggered version check. */
   showManualCheckResult(result: UpdateCheckResult | null): Promise<void>
-  /** Download and hand one confirmed update to the platform installer. */
-  downloadAndOpen(version: string, signal: AbortSignal, channel?: DesktopReleaseChannel): Promise<void>
+  /** Download one confirmed update and stage it for an explicit restart. */
+  downloadAndInstall(version: string, signal: AbortSignal, channel?: DesktopReleaseChannel): Promise<void>
+  /** Register a serializable native-notification action for the current Host generation. */
+  registerNotificationAction(
+    action: DesktopNotificationAction,
+    handler: () => void | Promise<void>,
+  ): () => void
   /** Present a native status notification without blocking the Host tree. */
   notify(notification: DesktopNotification): void
 }
@@ -182,7 +192,7 @@ export interface DesktopRuntime {
   /** Fixed, credential-free URL that activates the app after browser login. */
   readonly loginCompletionUrl?: string
 
-  /** Native network, update-download, and notification adapter. */
+  /** Native network, update staging, and notification adapter. */
   readonly updates: DesktopUpdateAdapter
 
   /**
