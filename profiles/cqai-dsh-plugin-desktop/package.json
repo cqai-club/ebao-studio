@@ -10,7 +10,8 @@
     "@cqaiclub/dsn-account": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-account",
     "cqai-dsh-plugin-imagegen": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-imagegen",
     "cqai-dsh-plugin-quicknav": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-quicknav",
-    "cqai-dsh-plugin-market": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-market"
+    "cqai-dsh-plugin-market": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-market",
+    "cqai-dsh-plugin-publisher": "link:../../cqai-dsh-plugins/cqai-dsh-plugin-publisher"
   },
   "dsh": {
     "profile": {
@@ -23,7 +24,8 @@
         "cqai-dsh-plugin-imagegen",
         "dsh-community-market",
         "cqai-dsh-plugin-quicknav",
-        "cqai-dsh-plugin-market"
+        "cqai-dsh-plugin-market",
+        "cqai-dsh-plugin-publisher"
       ],
       "patchReload": "live"
     }

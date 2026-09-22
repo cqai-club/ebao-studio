@@ -132,6 +132,7 @@ function makeRuntime(options: {
       },
     }),
     agentDefaultModel: defaultModel,
+    logger: { warn: vi.fn() },
     reflect: { provide: () => () => undefined },
     effect: () => undefined,
     emit,
@@ -163,6 +164,15 @@ async function waitForSignedIn(runtime: DsnAccountServiceRuntime): Promise<void>
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
   throw new Error('runtime did not finish browser authorization')
+}
+
+async function waitForAuthorizationError(runtime: DsnAccountServiceRuntime) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const snapshot = await runtime.getStatus()
+    if (snapshot.state === 'error') return snapshot
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error('runtime did not report browser authorization failure')
 }
 
 afterEach(() => {
@@ -226,7 +236,7 @@ describe('DsnAccountServiceRuntime', () => {
     const authorization = new URL(start.value.authorizationUrl)
     const redirectUri = authorization.searchParams.get('redirect_uri')
     expect(redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/cqaiclub-dsn-account\/oauth\/callback$/)
-    expect(authorization.searchParams.get('prompt')).toBe('login')
+    expect(authorization.searchParams.get('prompt')).toBe('login consent')
     expect(openExternal).toHaveBeenCalledWith(start.value.authorizationUrl)
     const callback = new URL(redirectUri ?? '')
     callback.searchParams.set('code', 'authorization-code')
@@ -251,6 +261,42 @@ describe('DsnAccountServiceRuntime', () => {
     const rpcResult = await harness.rpc('snapshot/get', { refreshAccount: false }, new AbortController().signal)
     expect(JSON.stringify(rpcResult)).not.toContain('access-secret')
     expect(JSON.stringify(rpcResult)).not.toContain('refresh-secret')
+  })
+
+  it('rejects an authorization result without a refresh token', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) {
+        return json({
+          issuer,
+          authorization_endpoint: `${issuer}/authorize`,
+          token_endpoint: `${issuer}/token`,
+        })
+      }
+      if (url.endsWith('/token')) {
+        return json({ access_token: 'header.payload.signature', expires_in: 3600 })
+      }
+      throw new Error(`unexpected test URL: ${url}`)
+    }))
+    const harness = makeRuntime({ openExternal: async () => undefined })
+
+    const start = await harness.rpc('authorization/start', {}, new AbortController().signal) as {
+      ok: boolean
+      value: { state: 'authorizing'; authorizationUrl: string }
+    }
+    const authorization = new URL(start.value.authorizationUrl)
+    const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '')
+    callback.searchParams.set('code', 'authorization-code')
+    callback.searchParams.set('state', authorization.searchParams.get('state') ?? '')
+    await nativeFetch(callback)
+
+    const snapshot = await waitForAuthorizationError(harness.runtime)
+    expect(snapshot).toMatchObject({
+      state: 'error',
+      code: 'DSN_PROTOCOL_ERROR',
+      message: 'CQAI Club 未返回刷新令牌，请重新授权。',
+    })
+    expect(harness.records.has(credential)).toBe(false)
   })
 
   it('fetches, caches, refreshes, and exposes the typed model catalog RPC', async () => {

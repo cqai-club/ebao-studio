@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -24,6 +24,7 @@ import {
   MAX_UNPACKED_RUNTIME_FILES,
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
+  REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
   REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
   REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
@@ -32,6 +33,7 @@ import {
   REQUIRED_POSIX_FS_EXT_ENTRIES,
   REQUIRED_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
+  REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
   resolvePackagedAsarPath,
   resolvePackagedExecutablePath,
@@ -168,18 +170,57 @@ function requiredPhysicalEntries(runtimeContext: PackagedRuntimeContext): string
   return [...desktopAssets]
 }
 
+function requiredExternalEntries(runtimeContext: PackagedRuntimeContext): string[] {
+  return runtimeContext.electronPlatformName === 'win32'
+    ? [...REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES]
+    : []
+}
+
+interface PhysicalBundle {
+  files: UnpackedRuntimeFile[]
+  exists: FileProbe
+  paths: string[]
+  /** Files landed by `extraResources` beside app.asar, not below it. */
+  externalPaths: string[]
+}
+
+/**
+ * The real probe answers for both halves of the packaged runtime: the
+ * smart-unpacked dependency tree below app.asar.unpacked, and the Windows
+ * `extraResources` payload that lands beside app.asar.
+ */
+function bundleFixture(
+  runtimeContext: PackagedRuntimeContext,
+  options: { missing?: string; extra?: readonly string[] } = {},
+): PhysicalBundle {
+  const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
+  const externalRoot = dirname(resolvePackagedAsarPath(runtimeContext))
+  const under = (root: string, filename: string): string | undefined => {
+    const prefix = `${root}${sep}`
+    return filename.startsWith(prefix) ? relative(root, filename).replaceAll('\\', '/') : undefined
+  }
+  const paths = [...requiredPhysicalEntries(runtimeContext), ...(options.extra ?? [])]
+    .filter(entry => entry !== options.missing)
+  const externalPaths = requiredExternalEntries(runtimeContext).filter(entry => entry !== options.missing)
+  return {
+    files: paths.map(path => ({ path, bytes: 1 })),
+    paths,
+    externalPaths,
+    exists: filename => {
+      const unpacked = under(unpackedRoot, filename)
+      if (unpacked !== undefined) return paths.includes(unpacked)
+      const external = under(externalRoot, filename)
+      return external !== undefined && externalPaths.includes(external)
+    },
+  }
+}
+
 function physicalFixture(
   runtimeContext: PackagedRuntimeContext,
   options: { missing?: string; extra?: readonly string[] } = {},
 ): { exists: FileProbe; files: UnpackedRuntimeFile[]; paths: string[] } {
-  const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
-  const paths = [...requiredPhysicalEntries(runtimeContext), ...(options.extra ?? [])]
-    .filter(entry => entry !== options.missing)
-  return {
-    files: paths.map(path => ({ path, bytes: 1 })),
-    exists: filename => paths.includes(relative(unpackedRoot, filename).replaceAll('\\', '/')),
-    paths,
-  }
+  const bundle = bundleFixture(runtimeContext, options)
+  return { files: bundle.files, exists: bundle.exists, paths: bundle.paths }
 }
 
 describe('packaged desktop runtime verification', () => {
@@ -239,6 +280,57 @@ describe('packaged desktop runtime verification', () => {
     for (const entry of REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES) {
       expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
     }
+  })
+
+  it('keeps the default 一稿多发 bundle present in app.asar', () => {
+    expect(REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES).toEqual([
+      'node_modules/cqai-dsh-plugin-publisher/package.json',
+      'node_modules/cqai-dsh-plugin-publisher/cordis.patch.yml',
+      'node_modules/cqai-dsh-plugin-publisher/lib/index.js',
+      'node_modules/cqai-dsh-plugin-publisher/lib/client.js',
+    ])
+    for (const entry of REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES) {
+      expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
+    }
+  })
+
+  it('requires the Windows-only MatrixMedia payload beside app.asar', () => {
+    expect(REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES).toEqual([
+      'matrixmedia/matrixmedia.exe',
+      'matrixmedia/resources/app.asar',
+      'matrixmedia/LICENSE',
+    ])
+    // Nothing here belongs in app.asar: the runtime is a separate Electron tree
+    // that has to be spawned from a physical path.
+    for (const entry of REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES) {
+      expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).not.toContain(entry)
+    }
+  })
+
+  it.each(REQUIRED_WINDOWS_EXTERNAL_RUNTIME_ENTRIES)(
+    'fails loud when extraResources entry %s is absent',
+    (missing) => {
+      const runtimeContext = context('/build', 'win32')
+      const bundle = bundleFixture(runtimeContext, { missing })
+
+      expect(() => verifyPackagedRuntime(
+        runtimeContext,
+        headerReader(completeArchiveEntries(), bundle.paths),
+        bundle.exists,
+        () => bundle.files,
+      )).toThrow(`missing required extraResources entries: ${missing}`)
+    },
+  )
+
+  it('does not demand the MatrixMedia payload from a non-Windows package', () => {
+    const runtimeContext = context('/build', 'darwin', 3)
+    const bundle = bundleFixture(runtimeContext)
+    expect(() => verifyPackagedRuntime(
+      runtimeContext,
+      headerReader(completeArchiveEntries(), bundle.paths),
+      bundle.exists,
+      () => bundle.files,
+    )).not.toThrow()
   })
 
   it('recursively derives every non-map desktop runtime file from the completed build', () => {

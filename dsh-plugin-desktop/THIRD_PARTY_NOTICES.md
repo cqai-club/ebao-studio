@@ -2,6 +2,17 @@
 易宝工坊 distributes the following third-party packages inside its installers.
 Each package ships with its own license text in the application files; this list records
 the package names, versions, and licenses for transparency.
+## Bundled applications
+These ship as prebuilt runtimes inside the installer rather than as npm dependencies, so
+they are not enumerated in the table below.
+| Package | Version | License | Source |
+| --- | --- | --- | --- |
+| MatrixMedia（矩媒） | 0.11.3 | GPL-2.0-only | https://github.com/hanliang97/MatrixMedia |
+MatrixMedia（矩媒） is bundled at `resources/matrixmedia/` as the 一稿多发 publishing runtime and
+is started as a child process by the `cqai-dsh-plugin-publisher` bundle. Its complete
+license text is installed alongside it at `resources/matrixmedia/LICENSE`, and the exact
+release asset digest is recorded in `vendor/matrixmedia/0.11.3/provenance.json`.
+## npm dependencies
 | Package | Version | License |
 | --- | --- | --- |
 | @agentclientprotocol/sdk | 1.4.0 | Apache-2.0 |
@@ -389,6 +400,7 @@ the package names, versions, and licenses for transparency.
 | cosmokit | 1.8.1 | MIT |
 | cqai-dsh-plugin-imagegen | 0.1.0 | Apache-2.0 |
 | cqai-dsh-plugin-market | 0.1.0 | MIT |
+| cqai-dsh-plugin-publisher | 0.1.0 | MIT |
 | cqai-dsh-plugin-video | 0.1.0 | MIT |
 | cross-spawn | 7.0.6 | MIT |
 | data-uri-to-buffer | 4.0.1 | MIT |

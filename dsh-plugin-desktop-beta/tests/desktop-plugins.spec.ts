@@ -141,6 +141,7 @@ describe('desktop direct bundle management', () => {
     expect(desktopPluginBundleMutable('@cqaiclub/dsn-account')).toBe(false)
     expect(desktopPluginBundleMutable('cqai-dsh-plugin-imagegen')).toBe(false)
     expect(desktopPluginBundleMutable('cqai-dsh-plugin-market')).toBe(false)
+    expect(desktopPluginBundleMutable('cqai-dsh-plugin-publisher')).toBe(false)
     expect(desktopPluginBundleMutable('dsh-community-market')).toBe(false)
     expect(desktopPluginBundleMutable('../third-party-plugin')).toBe(false)
     expect(desktopPluginBundleMutable('Third-Party-Plugin')).toBe(false)

@@ -46,6 +46,36 @@ const NOTICE_LICENSES = new Set([
   'Apache-2.0 AND LGPL-3.0-or-later',
 ])
 
+/** MatrixMedia（矩媒） release bundled beside app.asar by `build.win.extraResources`. */
+const BUNDLED_APPLICATION = {
+  name: 'MatrixMedia（矩媒）',
+  version: '0.11.3',
+  spdx: 'GPL-2.0-only',
+  source: 'https://github.com/hanliang97/MatrixMedia',
+}
+
+/**
+ * Notice lines for the prebuilt runtimes shipped beside app.asar. They are not
+ * npm packages, so no dependency walk reaches them; the version and digest
+ * recorded here are mirrored in `vendor/matrixmedia/0.11.3/provenance.json`.
+ * @returns Markdown lines declaring each bundled application and its obligations.
+ */
+function bundledApplicationNotices() {
+  const { name, version, spdx, source } = BUNDLED_APPLICATION
+  return [
+    '## Bundled applications',
+    'These ship as prebuilt runtimes inside the installer rather than as npm dependencies, so',
+    'they are not enumerated in the table below.',
+    '| Package | Version | License | Source |',
+    '| --- | --- | --- | --- |',
+    `| ${name} | ${version} | ${spdx} | ${source} |`,
+    `${name} is bundled at \`resources/matrixmedia/\` as the 一稿多发 publishing runtime and`,
+    'is started as a child process by the `cqai-dsh-plugin-publisher` bundle. Its complete',
+    'license text is installed alongside it at `resources/matrixmedia/LICENSE`, and the exact',
+    'release asset digest is recorded in `vendor/matrixmedia/0.11.3/provenance.json`.',
+  ]
+}
+
 /**
  * Locate one installed package manifest by walking node_modules directories
  * upward from the parent manifest. Reads the real package.json regardless of
@@ -140,11 +170,12 @@ if (noticesArg !== -1) {
   }
   const lines = [
     '# Third-Party Notices',
-    '',
     '易宝工坊 distributes the following third-party packages inside its installers.',
     'Each package ships with its own license text in the application files; this list records',
     'the package names, versions, and licenses for transparency.',
     '',
+    ...bundledApplicationNotices(),
+    '## npm dependencies',
     '| Package | Version | License |',
     '| --- | --- | --- |',
     ...manifests

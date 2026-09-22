@@ -93,11 +93,13 @@ const REQUIRED_BUNDLES = requiredWebBundles()
 const REQUIRED_BUNDLE_SET = new Set(REQUIRED_BUNDLES)
 const CQAI_ACCOUNT_PACKAGE = '@cqaiclub/dsn-account'
 const CQAI_IMAGEGEN_PACKAGE = 'cqai-dsh-plugin-imagegen'
+const CQAI_PUBLISHER_PACKAGE = 'cqai-dsh-plugin-publisher'
 const CQAI_MARKET_PACKAGE = 'cqai-dsh-plugin-market'
 const DEFAULT_PRODUCT_BUNDLES = [
   CQAI_ACCOUNT_PACKAGE,
   CQAI_IMAGEGEN_PACKAGE,
   'cqai-dsh-plugin-video',
+  CQAI_PUBLISHER_PACKAGE,
   CQAI_MARKET_PACKAGE,
 ] as const
 const DEFAULT_PRODUCT_BUNDLE_SET = new Set<string>(DEFAULT_PRODUCT_BUNDLES)

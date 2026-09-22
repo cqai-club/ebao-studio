@@ -1,5 +1,6 @@
 import {
   attributionHeaders,
+  contentHasImage,
   LlmAdapter,
   LlmError,
   ToolCallId,
@@ -12,21 +13,38 @@ import type {
   LlmProviderInfo,
   LlmResolvedModelInfo,
   Message,
+  PreparedAdapterCall,
   StreamChunk,
   TokenUsage,
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
+import type {
+  AttachmentStore,
+  ImageAttachmentRef,
+  ImageRequestPolicy,
+  RequestImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 
-import { isChatModel, type DsnAccountService, type DsnModel } from './protocol.ts'
+import {
+  isChatModel,
+  isVisionChatModel,
+  type DsnAccountService,
+  type DsnModel,
+} from './protocol.ts'
 
 /** Provider route used by the DSH model selector and session headers. */
 export const CQAI_PROVIDER = 'cqaiclub'
 
 type WireMessage =
   | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: WireUserContent }
   | { role: 'assistant'; content: string; reasoning_content?: string; tool_calls?: WireToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string }
+
+type WireTextContentPart = { type: 'text'; text: string }
+type WireImageContentPart = { type: 'image_url'; image_url: { url: string } }
+type WireUserContentPart = WireTextContentPart | WireImageContentPart
+type WireUserContent = string | WireUserContentPart[]
 
 type WireToolCall = {
   id: string
@@ -81,6 +99,18 @@ type OpenBlock = {
   name?: string
 }
 
+export interface CqaiClubAdapterOptions {
+  /** Resolve the current durable attachment service only when a request contains images. */
+  resolveAttachments?: () => AttachmentStore | undefined
+}
+
+const CQAI_IMAGE_REQUEST_POLICY = {
+  maxPixels: 640_000,
+  maxBytes: 1024 * 1024,
+} as const satisfies ImageRequestPolicy
+
+const TOOL_RESULT_IMAGE_TEXT = 'Attached image(s) from tool result:'
+
 /**
  * DSH adapter for CQAI Club's authenticated OpenAI-compatible gateway.
  *
@@ -89,7 +119,10 @@ type OpenBlock = {
  * the current Account Service bearer token server-side.
  */
 export class CqaiClubAdapter extends LlmAdapter {
-  constructor(private readonly account: DsnAccountService) {
+  constructor(
+    private readonly account: DsnAccountService,
+    private readonly options: CqaiClubAdapterOptions = {},
+  ) {
     super()
   }
 
@@ -104,26 +137,67 @@ export class CqaiClubAdapter extends LlmAdapter {
       .map((model) => modelInfo(provider, model))
   }
 
-  override resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    // The account catalog is advisory in DSH. Keeping exact-model resolution
-    // side-effect free also lets the gateway accept a newly-added model before
-    // the next catalog refresh has completed.
-    return Promise.resolve({
-      provider,
-      id: model,
-      name: model,
-      inputModalities: ['text'],
-    })
+  override async resolveModel(
+    provider: string,
+    model: string,
+    signal?: AbortSignal,
+  ): Promise<LlmResolvedModelInfo> {
+    return resolvedModelInfo(provider, model, await this.catalogModel(model, signal))
+  }
+
+  override async prepareCall(
+    provider: string,
+    model: string,
+    signal?: AbortSignal,
+  ): Promise<PreparedAdapterCall> {
+    const catalogModel = await this.catalogModel(model, signal)
+    return {
+      model: resolvedModelInfo(provider, model, catalogModel),
+      stream: options => this.streamRequest(options, catalogModel),
+    }
   }
 
   override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    return this.streamRequest(options)
+    return this.streamWithCatalog(options)
   }
 
-  private async * streamRequest(options: GenerateOptions): AsyncIterable<StreamChunk> {
+  private async catalogModel(model: string, signal?: AbortSignal): Promise<DsnModel | undefined> {
+    const catalog = await this.account.listModels({ signal })
+    return catalog.models.find(entry => entry.id === model && isChatModel(entry))
+  }
+
+  private async * streamWithCatalog(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const catalogModel = await this.catalogModel(options.model, options.signal)
+    yield* this.streamRequest(options, catalogModel)
+  }
+
+  private async * streamRequest(
+    options: GenerateOptions,
+    catalogModel: DsnModel | undefined,
+  ): AsyncIterable<StreamChunk> {
+    const hasImages = options.messages.some(message => contentHasImage(message.content))
+    let messages: WireMessage[]
+    if (hasImages) {
+      if (catalogModel === undefined || !isVisionChatModel(catalogModel)) {
+        throw new LlmError(
+          `CQAI Club 模型 "${options.model}" 的目录元数据未声明 image 输入`,
+          'UNSUPPORTED_CONTENT',
+        )
+      }
+      const attachments = this.options.resolveAttachments?.()
+      if (attachments === undefined) {
+        throw new LlmError('CQAI Club 图片输入需要附件存储服务', 'UNSUPPORTED_CONTENT')
+      }
+      assertSupportedImageRoles(options.messages)
+      const requestImages = await prepareRequestImages(options.messages, attachments, options.signal)
+      messages = await serializeMessagesWithImages(options.system, options.messages, requestImages)
+    } else {
+      messages = serializeMessages(options.system, options.messages)
+    }
+
     const body: Record<string, unknown> = {
       model: options.model,
-      messages: serializeMessages(options.system, options.messages),
+      messages,
       stream: true,
       stream_options: { include_usage: true },
       ...options.tools === undefined || options.tools.length === 0 ? {} : { tools: serializeTools(options.tools) },
@@ -167,7 +241,48 @@ function modelInfo(provider: string, model: DsnModel): LlmModelInfo {
     id: model.id,
     name: model.id,
     ...model.description === undefined ? {} : { description: model.description },
-    inputModalities: ['text'],
+    inputModalities: modelInputModalities(model),
+  }
+}
+
+function resolvedModelInfo(
+  provider: string,
+  model: string,
+  catalogModel: DsnModel | undefined,
+): LlmResolvedModelInfo {
+  if (catalogModel !== undefined) return modelInfo(provider, catalogModel)
+  // Exact ids remain routable even when absent from the advisory catalog, but
+  // unknown capability must stay conservative so images are never sent blindly.
+  return { provider, id: model, name: model, inputModalities: ['text'] }
+}
+
+function modelInputModalities(model: DsnModel): readonly ['text'] | readonly ['text', 'image'] {
+  return isVisionChatModel(model) ? ['text', 'image'] : ['text']
+}
+
+function serializeAssistant(message: Message): Extract<WireMessage, { role: 'assistant' }> {
+  const text: string[] = []
+  const reasoning: string[] = []
+  const toolCalls: WireToolCall[] = []
+  for (const block of message.content) {
+    switch (block.type) {
+      case 'text': text.push(block.text); break
+      case 'reasoning': reasoning.push(block.text); break
+      case 'tool-call':
+        toolCalls.push({
+          id: String(block.id),
+          type: 'function',
+          function: { name: block.name, arguments: block.arguments },
+        })
+        break
+      default: assertTextOnly(block)
+    }
+  }
+  return {
+    role: 'assistant',
+    content: text.join(''),
+    ...reasoning.length === 0 ? {} : { reasoning_content: reasoning.join('') },
+    ...toolCalls.length === 0 ? {} : { tool_calls: toolCalls },
   }
 }
 
@@ -181,29 +296,7 @@ function serializeMessages(system: string | undefined, messages: Message[]): Wir
       continue
     }
     if (message.role === 'assistant') {
-      const text: string[] = []
-      const reasoning: string[] = []
-      const toolCalls: WireToolCall[] = []
-      for (const block of message.content) {
-        switch (block.type) {
-          case 'text': text.push(block.text); break
-          case 'reasoning': reasoning.push(block.text); break
-          case 'tool-call':
-            toolCalls.push({
-              id: String(block.id),
-              type: 'function',
-              function: { name: block.name, arguments: block.arguments },
-            })
-            break
-          default: assertTextOnly(block)
-        }
-      }
-      wire.push({
-        role: 'assistant',
-        content: text.join(''),
-        ...reasoning.length === 0 ? {} : { reasoning_content: reasoning.join('') },
-        ...toolCalls.length === 0 ? {} : { tool_calls: toolCalls },
-      })
+      wire.push(serializeAssistant(message))
       continue
     }
 
@@ -227,6 +320,146 @@ function serializeMessages(system: string | undefined, messages: Message[]): Wir
     }
   }
   return wire
+}
+
+async function serializeMessagesWithImages(
+  system: string | undefined,
+  messages: readonly Message[],
+  requestImages: ReadonlyMap<ImageAttachmentRef['attachmentId'], RequestImageAttachment>,
+): Promise<WireMessage[]> {
+  const wire: WireMessage[] = []
+  if (system !== undefined && system.length > 0) wire.push({ role: 'system', content: system })
+
+  let pendingToolImages: WireImageContentPart[] = []
+  const flushToolImages = (): void => {
+    if (pendingToolImages.length === 0) return
+    wire.push({
+      role: 'user',
+      content: [{ type: 'text', text: TOOL_RESULT_IMAGE_TEXT }, ...pendingToolImages],
+    })
+    pendingToolImages = []
+  }
+
+  for (const message of messages) {
+    if (message.role === 'system') {
+      flushToolImages()
+      wire.push({ role: 'system', content: flattenText(message.content) })
+      continue
+    }
+    if (message.role === 'assistant') {
+      flushToolImages()
+      wire.push(serializeAssistant(message))
+      continue
+    }
+
+    const regular = message.content.filter(block => block.type !== 'tool-result')
+    const toolResults = message.content.filter((block): block is Extract<ContentBlock, { type: 'tool-result' }> => (
+      block.type === 'tool-result'
+    ))
+    const content = wireUserContent(imageContentParts(regular, requestImages))
+    if (content.length > 0 || toolResults.length === 0) {
+      flushToolImages()
+      wire.push({ role: 'user', content })
+    }
+    for (const result of toolResults) {
+      const parts = imageContentParts(result.content, requestImages)
+      const images = parts.filter((part): part is WireImageContentPart => part.type === 'image_url')
+      const text = parts.filter((part): part is WireTextContentPart => part.type === 'text')
+        .map(part => part.text)
+        .join('')
+      wire.push({
+        role: 'tool',
+        tool_call_id: String(result.toolCallId),
+        content: text || '(no output)',
+      })
+      pendingToolImages.push(...images)
+    }
+  }
+  flushToolImages()
+  return wire
+}
+
+function imageContentParts(
+  blocks: readonly ContentBlock[],
+  requestImages: ReadonlyMap<ImageAttachmentRef['attachmentId'], RequestImageAttachment>,
+): WireUserContentPart[] {
+  const parts: WireUserContentPart[] = []
+  for (const block of blocks) {
+    switch (block.type) {
+      case 'text':
+      case 'reasoning':
+        if (block.text.length > 0) parts.push({ type: 'text', text: block.text })
+        break
+      case 'image': {
+        const version = requestImages.get(block.attachment.attachmentId)
+        if (version === undefined) {
+          throw new LlmError(
+            `CQAI Club 请求图片 ${block.attachment.attachmentId} 未完成准备`,
+            'INVALID_REQUEST',
+          )
+        }
+        parts.push({
+          type: 'image_url',
+          image_url: {
+            url: `data:${version.mediaType};base64,${Buffer.from(version.data).toString('base64')}`,
+          },
+        })
+        break
+      }
+      case 'tool-result':
+        parts.push(...imageContentParts(block.content, requestImages))
+        break
+      default:
+        assertTextOnly(block)
+    }
+  }
+  return parts
+}
+
+function wireUserContent(parts: readonly WireUserContentPart[]): WireUserContent {
+  const text: string[] = []
+  for (const part of parts) {
+    if (part.type !== 'text') return [...parts]
+    text.push(part.text)
+  }
+  return text.join('')
+}
+
+function assertSupportedImageRoles(messages: readonly Message[]): void {
+  for (const message of messages) {
+    if (message.role !== 'user' && contentHasImage(message.content)) {
+      throw new LlmError(
+        `CQAI Club 无法在 ${message.role} 消息中表示图片输入`,
+        'UNSUPPORTED_CONTENT',
+      )
+    }
+  }
+}
+
+function collectImageRefs(
+  blocks: readonly ContentBlock[],
+  refs: Map<ImageAttachmentRef['attachmentId'], ImageAttachmentRef>,
+): void {
+  for (const block of blocks) {
+    if (block.type === 'image') refs.set(block.attachment.attachmentId, block.attachment)
+    else if (block.type === 'tool-result') collectImageRefs(block.content, refs)
+  }
+}
+
+async function prepareRequestImages(
+  messages: readonly Message[],
+  attachments: AttachmentStore,
+  signal?: AbortSignal,
+): Promise<Map<ImageAttachmentRef['attachmentId'], RequestImageAttachment>> {
+  const refs = new Map<ImageAttachmentRef['attachmentId'], ImageAttachmentRef>()
+  for (const message of messages) collectImageRefs(message.content, refs)
+  const orderedRefs = [...refs.values()]
+  const projected = await Promise.all(orderedRefs.map(
+    ref => attachments.readImageRequest(ref, CQAI_IMAGE_REQUEST_POLICY, signal),
+  ))
+  return new Map(orderedRefs.map((ref, index) => (
+    [ref.attachmentId, projected[index] as RequestImageAttachment]
+  )))
 }
 
 function serializeTools(tools: ToolSchema[]): WireTool[] {
