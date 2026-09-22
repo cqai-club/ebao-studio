@@ -150,13 +150,19 @@ function parseUpdaterMetadata(buffer, path, version, asset, allowedAssets) {
     const filename = url[1]
     const sha512 = /^    sha512: ([A-Za-z0-9+/=]+)$/u.exec(lines[index + 1] ?? '')
     const size = /^    size: ([1-9][0-9]*)$/u.exec(lines[index + 2] ?? '')
-    if (sha512 === null || size === null || fileEntries.has(filename)) {
+    if (sha512 === null || fileEntries.has(filename)) {
       throw new Error(`${path} has an invalid or duplicate file entry for ${filename}`)
     }
-    const parsedSize = Number(size[1])
-    if (!Number.isSafeInteger(parsedSize)) throw new Error(`${path} has an unsafe artifact size`)
+    let parsedSize
+    if (size !== null) {
+      parsedSize = Number(size[1])
+      if (!Number.isSafeInteger(parsedSize)) throw new Error(`${path} has an unsafe artifact size`)
+      index += 1
+    } else if ((lines[index + 2] ?? '').startsWith('    size:')) {
+      throw new Error(`${path} has an invalid artifact size for ${filename}`)
+    }
     fileEntries.set(filename, { sha512: validateSha512(sha512[1], path), size: parsedSize })
-    index += 2
+    index += 1
   }
   if (fileEntries.size !== allowedAssets.length
     || allowedAssets.some(filename => !fileEntries.has(filename))) {
@@ -202,7 +208,9 @@ export async function verifyReleaseAssets(directory, version) {
     const parsed = parseUpdaterMetadata(await readFile(metadataPath), metadataPath, version, entry.asset, entry.files)
     const assetPath = resolve(root, entry.asset)
     const size = (await requireRegularFile(assetPath, entry.asset)).size
-    if (size !== parsed.size) throw new Error(`${entry.filename} size does not match ${entry.asset}`)
+    if (parsed.size !== undefined && size !== parsed.size) {
+      throw new Error(`${entry.filename} size does not match ${entry.asset}`)
+    }
     const actual = await hashFile(assetPath, 'sha512')
     if (actual !== parsed.sha512) throw new Error(`${entry.filename} SHA-512 does not match ${entry.asset}`)
   }

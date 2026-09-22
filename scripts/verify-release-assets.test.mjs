@@ -59,6 +59,20 @@ test('verifies the exact release asset set, SHA256SUMS, and Electron Updater SHA
   }
 })
 
+test('accepts Electron Builder metadata that omits optional artifact sizes', async () => {
+  const directory = await createFixture()
+  try {
+    for (const entry of expectedUpdaterMetadata(version)) {
+      const metadataPath = join(directory, entry.filename)
+      const metadata = await readFile(metadataPath, 'utf8')
+      await writeFile(metadataPath, metadata.replaceAll(/^    size: [1-9][0-9]*\n/gmu, ''))
+    }
+    await assert.doesNotReject(verifyReleaseAssets(directory, version))
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test('rejects a checksum mismatch and an unexpected asset', async () => {
   const directory = await createFixture()
   try {

@@ -229,7 +229,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
-          ref: ${{ env.RELEASE_REF }}
+          # The artifacts were built from RELEASE_REF by the platform jobs. For a
+          # manually dispatched release, validate and publish them with the
+          # workflow revision that was dispatched, so a verifier repair does not
+          # require moving the immutable release tag.
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
