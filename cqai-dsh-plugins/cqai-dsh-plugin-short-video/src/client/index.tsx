@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { useEffect, useRef, useState } from 'react'
-import { API, defaultParams, defaultSettings, type Catalog, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from '../protocol.ts'
+import { API, defaultParams, defaultSettings, needsText, stageRequirements, type Catalog, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from '../protocol.ts'
 
 export const inject = ['slots']
 const PANEL = 'cqai-short-video' as MainPanelId
@@ -50,7 +50,7 @@ function Studio(){
   const importRef=useRef<HTMLInputElement>(null)
   const job=jobs.find(x=>x.id===selected)
   const filteredJobs=jobs.filter(item=>filter==='all'||(filter==='failed'&&['failed','interrupted','cancelled'].includes(item.status))||item.status===filter)
-  const modelNeeded=!draft.params.video_script||(draft.stopAt!=='script'&&draft.params.video_source!=='local'&&!draft.params.video_terms)||draft.params.video_source==='openai_image'
+  const modelNeeded=needsText(draft)||stageRequirements(draft).imageModel
   const update=(key:string,value:unknown)=>{setPreview(undefined);setDraft(prev=>({...prev,params:{...prev.params,[key]:value}}))}
   const value=(key:string)=>draft.params[key]
   const refresh=()=>api<Job[]>('jobs').then(setJobs)
@@ -82,9 +82,10 @@ function Studio(){
   async function create(){
     await action('正在创建任务…',async()=>{
       const next=await api<Job>('jobs',draft);setSelected(next.id);setTab('history')
-      for(const file of materials)await upload(next.id,'material',file)
-      if(voiceFile)await upload(next.id,'audio',voiceFile)
-      if(bgmFile)await upload(next.id,'bgm',bgmFile)
+      const requirements=stageRequirements(draft)
+      if(requirements.materialUpload)for(const file of materials)await upload(next.id,'material',file)
+      if(voiceFile&&['audio','subtitle','materials','video'].includes(draft.stopAt))await upload(next.id,'audio',voiceFile)
+      if(requirements.backgroundMusicUpload&&bgmFile)await upload(next.id,'bgm',bgmFile)
       await api<Job>(`start?id=${next.id}`,{});await refresh()
       setNotice('任务已开始，制作进度保存在本机。')
     })
@@ -99,7 +100,7 @@ function Studio(){
   async function importPreset(file:File){await action('导入预设…',async()=>{const value=JSON.parse(await file.text()) as Partial<Draft>;if(!value.params||typeof value.params!=='object')throw new Error('预设格式无效');const keys=Object.keys(defaultParams);const params=Object.fromEntries(Object.entries(value.params).filter(([key])=>keys.includes(key)));params.video_language=normalizeLanguage(params.video_language);setDraft({...initial,textModel:catalog?.text.some(m=>m.id===value.textModel)?value.textModel||'':'',imageModel:catalog?.image.some(m=>m.id===value.imageModel)?value.imageModel||'':'',stopAt:stages.some(s=>s.id===value.stopAt)?value.stopAt!:'video',params:{...defaultParams,...params}});setPreview(undefined);setNotice('预设已导入，模型仅保留当前 CQAI Club 账号可用的选择。')})}
   return <section className="sv"><style>{css}</style><div className="sv-wrap">
     <header className="sv-top"><div><h1>短视频制作</h1><div className="sv-sub">从主题到成片 · MoneyPrinterTurbo 制作引擎 · CQAI Club 模型</div></div><span className="sv-badge">独立插件</span></header>
-    <nav className="sv-tabs">{([['create','① 主题与文案'],['assets','② 素材与画面'],['audio','③ 声音与字幕'],['advanced','④ 制作与开始'],['history','任务'],['settings','设置']] as const).map(([id,label])=><button key={id} aria-selected={tab===id} onClick={()=>setTab(id)}>{label}</button>)}</nav>
+    <nav className="sv-tabs">{([['create','① 主题与文案'],['audio','② 声音与字幕'],['assets','③ 素材与画面'],['advanced','④ 制作与开始'],['history','任务'],['settings','设置']] as const).map(([id,label])=><button key={id} aria-selected={tab===id} onClick={()=>setTab(id)}>{label}</button>)}</nav>
     {error&&<div className="sv-error">{error}</div>}{notice&&<div className="sv-success">{notice}</div>}
     {tab==='create'&&<div className="sv-grid"><div>
       <div className="sv-card"><h2>01 · 确定视频主题</h2>{field('视频主题','video_subject','例如：人工智能如何改变日常生活。已有完整文案时，主题可以留空。',true)}
@@ -121,34 +122,34 @@ function Studio(){
         {field('视频文案','video_script','可以自行撰写或修改生成结果。',true)}
         <div className="sv-actions"><button className="sv-secondary" disabled={!!busy||!String(value('video_script')||'').trim()||!draft.textModel||!catalog?.signedIn||health?.python===false} onClick={()=>void contentAction('terms')}>单独生成关键词</button></div>
         {field('素材关键词','video_terms','多个词用逗号分隔；可手动修改。',true)}
-        <div className="sv-actions"><button className="sv-primary" disabled={!String(value('video_script')||'').trim()} onClick={()=>setTab('assets')}>确认内容，下一步：素材与画面</button></div>
+        <div className="sv-actions"><button className="sv-primary" disabled={!String(value('video_script')||'').trim()} onClick={()=>setTab('audio')}>确认内容，下一步：声音与字幕</button></div>
       </div>
-    </div><aside><div className="sv-card"><h2>制作顺序</h2><p className="sv-help">先确定主题并生成文案、关键词。检查和修改后，再选择画面、声音与字幕，最后开始制作。</p><p className="sv-help">已有文案也可直接粘贴；需要素材关键词时使用“单独生成关键词”。</p>
+    </div><aside><div className="sv-card"><h2>制作顺序</h2><p className="sv-help">先确定主题并准备文案、关键词，再设置配音和字幕，然后选择画面素材，最后开始制作。引擎会先生成声音与字幕，再根据配音时长准备画面。</p><p className="sv-help">已有文案也可直接粘贴；需要素材关键词时使用“单独生成关键词”。</p>
       <div className="sv-kv"><span className={health?.python?'ok':''}>Python {health?.python?'就绪':'未就绪'}</span><span className={health?.ffmpeg?'ok':''}>FFmpeg {health?.ffmpeg?'就绪':'未就绪'}</span></div>
       {health?.python===false&&<button className="sv-secondary" onClick={()=>setTab('settings')}>前往安装运行环境</button>}</div>
       <div className="sv-card"><h2>预设</h2><p className="sv-help">导入或导出表单参数；不会导出账号凭据或本地素材。</p><div className="sv-actions"><button className="sv-secondary" disabled={!!busy} onClick={exportPreset}>导出 JSON</button><button className="sv-secondary" disabled={!!busy} onClick={()=>importRef.current?.click()}>导入 JSON</button></div><input ref={importRef} type="file" hidden accept=".json,application/json" onChange={e=>{const f=e.target.files?.[0];if(f)void importPreset(f);e.target.value=''}}/></div>
     </aside></div>}
-    {tab==='assets'&&<div className="sv-grid"><div><div className="sv-card"><h2>02 · 素材与画面</h2>{choice('视频 / 图片来源','video_source',sources)}
+    {tab==='assets'&&<div className="sv-grid"><div><div className="sv-card"><h2>03 · 素材与画面</h2>{choice('视频 / 图片来源','video_source',sources)}
       {draft.params.video_source==='local'&&<div className="sv-upload"><strong>本地素材（可多选）</strong><input type="file" multiple accept="video/*,image/*" onChange={e=>setMaterials([...e.target.files||[]])}/><p className="sv-help">{materials.length?materials.map(f=>f.name).join('、'):'上传的视频或图片将用于剪辑。'}</p></div>}
       {draft.params.video_source==='openai_image'&&<div className="sv-field"><label htmlFor="imageModel">CQAI Club 图片模型</label><select className="sv-input" id="imageModel" disabled={!!busy} value={draft.imageModel} onChange={e=>setDraft({...draft,imageModel:e.target.value})}><option value="">请选择</option>{catalog?.image.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select><p className="sv-help">使用当前账号的图片生成模型，按关键词生成镜头图片。</p></div>}
       {draft.params.video_source==='pexels'||draft.params.video_source==='pixabay'||draft.params.video_source==='coverr'?<p className="sv-help">素材平台 API Key 在“设置”页配置。授权与可用素材以平台为准。</p>:null}
       <p className="sv-help">当前关键词：{String(value('video_terms')||'未填写；可以返回主题与文案页生成或修改')}</p>{check('按文案顺序匹配镜头','match_materials_to_script')}
-      <div className="sv-actions"><button className="sv-secondary" onClick={()=>setTab('create')}>返回修改文案</button><button className="sv-primary" onClick={()=>setTab('audio')}>下一步：声音与字幕</button></div></div></div><aside><div className="sv-card"><h2>剪辑设置</h2>
+      <div className="sv-actions"><button className="sv-secondary" onClick={()=>setTab('audio')}>返回声音与字幕</button><button className="sv-primary" onClick={()=>setTab('advanced')}>下一步：制作与开始</button></div></div></div><aside><div className="sv-card"><h2>剪辑设置</h2>
       {choice('画幅','video_aspect',[{id:'9:16',name:'竖屏 9:16'},{id:'16:9',name:'横屏 16:9'},{id:'1:1',name:'方形 1:1'}])}
       {choice('画面适配','video_fit_mode',[{id:'cover',name:'填满画面'},{id:'contain',name:'完整显示'}])}
       {number('单镜头时长（秒）','video_clip_duration',1,30)}
       {number('播放速度','video_clip_speed',.1,4,.1)}
        </div></aside></div>}
-    {tab==='audio'&&<div className="sv-grid"><div><div className="sv-card"><h2>配音</h2>
+    {tab==='audio'&&<div className="sv-grid"><div><div className="sv-card"><h2>02 · 声音与字幕</h2><h3>配音</h3>
       <div className="sv-upload"><strong>上传自己的旁白（可选）</strong><input type="file" accept="audio/*" onChange={e=>setVoiceFile(e.target.files?.[0])}/><p className="sv-help">{voiceFile?.name||'上传后会跳过语音合成；字幕可使用 Whisper 引擎生成。'}</p></div>
       {!voiceFile&&<><div className="sv-field"><label htmlFor="voice_name">Edge TTS 声音</label><select className="sv-input" id="voice_name" value={String(value('voice_name'))} onChange={e=>update('voice_name',e.target.value)}>{!health?.voices?.includes(String(value('voice_name')))&&<option value={String(value('voice_name'))}>{String(value('voice_name'))}</option>}{health?.voices?.map(v=><option key={v} value={v}>{v}</option>)}</select></div><div className="sv-row">{number('语速','voice_rate',.5,2,.1)}{number('音量','voice_volume',0,2,.1)}</div></>}</div>
-      <div className="sv-card"><h2>背景音乐</h2>{choice('配乐方式','bgm_type',[{id:'none',name:'关闭'},{id:'random',name:'从已上传音乐中随机选取'},{id:'custom',name:'上传音乐'}])}{draft.params.bgm_type==='custom'&&<div className="sv-upload"><strong>上传背景音乐</strong><input type="file" accept="audio/*" onChange={e=>setBgmFile(e.target.files?.[0])}/><p className="sv-help">{bgmFile?.name||'支持 MP3 / M4A / WAV / OGG / FLAC'}</p></div>}{number('配乐音量','bgm_volume',0,1,.05)}</div>
+       <div className="sv-card"><h2>背景音乐</h2><p className="sv-help">配乐只在生成完整成片时混入，单独制作配音或字幕时不会使用。</p>{choice('配乐方式','bgm_type',[{id:'none',name:'关闭'},{id:'random',name:'从已上传音乐中随机选取'},{id:'custom',name:'上传音乐'}])}{draft.params.bgm_type==='custom'&&<div className="sv-upload"><strong>上传背景音乐</strong><input type="file" accept="audio/*" onChange={e=>setBgmFile(e.target.files?.[0])}/><p className="sv-help">{bgmFile?.name||'支持 MP3 / M4A / WAV / OGG / FLAC'}</p></div>}{number('配乐音量','bgm_volume',0,1,.05)}</div>
     </div><aside><div className="sv-card"><h2>字幕样式</h2>{check('添加字幕','subtitle_enabled')}
       {Boolean(draft.params.subtitle_enabled)&&<>{choice('显示方式','subtitle_display_mode',[{id:'sentence',name:'整句'},{id:'word_by_word',name:'逐字'}])}{choice('字幕动画','subtitle_animation',[{id:'none',name:'无'},{id:'pop_spring',name:'弹跳'}])}{choice('位置','subtitle_position',[{id:'bottom',name:'底部'},{id:'two_thirds_bottom',name:'下三分之一'},{id:'center',name:'居中'},{id:'top',name:'顶部'},{id:'custom',name:'自定义'}])}{draft.params.subtitle_position==='custom'&&number('自定义位置 %','custom_position',0,100)}
       <div className="sv-field"><label htmlFor="font_name">本机字体</label><select className="sv-input" id="font_name" value={String(value('font_name'))} onChange={e=>update('font_name',e.target.value)}><option value="">自动选择系统字体</option>{health?.fonts?.map(f=><option key={f.path} value={f.path}>{f.name}</option>)}</select></div>
       <div className="sv-row">{number('字号','font_size',12,160)}{number('描边宽度','stroke_width',0,10,.5)}</div>
       <div className="sv-row">{field('文字颜色','text_fore_color')}{field('描边颜色','stroke_color')}</div>
-       <div className="sv-field"><label htmlFor="subtitleBackground">字幕背景</label><select className="sv-input" id="subtitleBackground" value={String(value('text_background_color')||'')} onChange={e=>update('text_background_color',e.target.value||false)}><option value="">无</option><option value="#000000">黑色</option><option value="#333333">深灰</option><option value="#FFFFFF">白色</option></select></div>{check('字幕背景圆角','rounded_subtitle_background')}</>}</div><div className="sv-actions"><button className="sv-secondary" onClick={()=>setTab('assets')}>返回素材设置</button><button className="sv-primary" onClick={()=>setTab('advanced')}>下一步：制作与开始</button></div></aside></div>}
+       <div className="sv-field"><label htmlFor="subtitleBackground">字幕背景</label><select className="sv-input" id="subtitleBackground" value={String(value('text_background_color')||'')} onChange={e=>update('text_background_color',e.target.value||false)}><option value="">无</option><option value="#000000">黑色</option><option value="#333333">深灰</option><option value="#FFFFFF">白色</option></select></div>{check('字幕背景圆角','rounded_subtitle_background')}</>}</div><div className="sv-actions"><button className="sv-secondary" onClick={()=>setTab('create')}>返回主题与文案</button><button className="sv-primary" onClick={()=>setTab('assets')}>下一步：素材与画面</button></div></aside></div>}
     {tab==='advanced'&&<div className="sv-grid"><div><div className="sv-card"><h2>04 · 制作参数</h2>
       <div className="sv-row">{choice('拼接顺序','video_concat_mode',[{id:'random',name:'随机'},{id:'sequential',name:'顺序'}])}{choice('转场','video_transition_mode',transitions)}</div>
       <div className="sv-row">{number('生成成片数量','video_count',1,5)}{number('渲染线程','n_threads',1,16)}</div>
@@ -156,7 +157,7 @@ function Studio(){
     </div></div><aside><div className="sv-card"><h2>开始制作</h2><p className="sv-help">主题：{String(value('video_subject')||'使用自写文案')}</p><p className="sv-help">文案：{String(value('video_script')||'未填写').slice(0,100)}</p><p className="sv-help">关键词：{String(value('video_terms')||'未填写，制作时自动生成').slice(0,100)}</p><p className="sv-help">文本模型：{catalog?.text.find(m=>m.id===draft.textModel)?.name||'未选择'}</p>
       <h3>制作到哪一步</h3><div className="sv-stage">{stages.map(s=><label key={s.id}><input type="radio" name="stage" disabled={!!busy} checked={draft.stopAt===s.id} onChange={()=>setDraft({...draft,stopAt:s.id})}/>{s.label}</label>)}</div>
       {modelNeeded&&!catalog?.signedIn&&<div className="sv-error">需要模型时，请先在“设置 · CQAI Club”登录账号。</div>}
-      <div className="sv-actions"><button className="sv-secondary" onClick={()=>setTab('create')}>返回修改内容</button><button className="sv-primary" disabled={!!busy||(!String(value('video_subject')||'').trim()&&!String(value('video_script')||'').trim())||(modelNeeded&&!catalog?.signedIn)||health?.python===false} onClick={()=>void create()}>{busy||'开始制作'}</button></div>
+      <div className="sv-actions"><button className="sv-secondary" onClick={()=>setTab('assets')}>返回素材与画面</button><button className="sv-primary" disabled={!!busy||(!String(value('video_subject')||'').trim()&&!String(value('video_script')||'').trim())||(modelNeeded&&!catalog?.signedIn)||health?.python===false} onClick={()=>void create()}>{busy||'开始制作'}</button></div>
       <p className="sv-help">模型请求和第三方素材服务可能消耗额度。渲染期间请保持应用运行。</p></div></aside></div>}
     {tab==='history'&&<div className="sv-grid"><div><div className="sv-card"><h2>制作记录</h2><div className="sv-actions">{([['all','全部'],['running','进行中'],['completed','已完成'],['failed','失败 / 中断']] as const).map(([id,label])=><button className="sv-secondary" aria-pressed={filter===id} key={id} onClick={()=>setFilter(id)}>{label}</button>)}</div><div className="sv-list">{filteredJobs.length?filteredJobs.map(item=><button className="sv-job" aria-selected={selected===item.id} key={item.id} onClick={()=>setSelected(item.id)}><span><strong>{String(item.params.video_subject||item.params.video_script||'未命名').slice(0,50)}</strong><small>{new Date(item.createdAt).toLocaleString()} · {item.stopAt}</small></span><em>{labels[item.status]}</em></button>):<div className="sv-empty">还没有任务。到“主题与文案”页开始制作。</div>}</div></div></div><aside>{job?<div className="sv-card"><h2>任务详情</h2><p className="sv-sub">{labels[job.status]} · {job.progress}%</p><progress className="sv-progress" max="100" value={job.progress}/>{job.error&&<div className="sv-error">{job.error}</div>}
       <div className="sv-actions">{job.status==='running'?<button className="sv-secondary sv-danger" disabled={!!busy} onClick={()=>void action('取消任务…',async()=>{await api(`cancel?id=${job.id}`,{});await refresh()})}>取消</button>:<><button className="sv-secondary" disabled={!!busy} onClick={()=>restore(job)}>使用相同参数</button>{job.status!=='completed'&&<button className="sv-primary" disabled={!!busy} onClick={()=>void action('重新开始…',async()=>{await api(`start?id=${job.id}`,{});await refresh()})}>重新开始</button>}<button className="sv-secondary sv-danger" disabled={!!busy} onClick={()=>void action('删除任务…',async()=>{await api(`delete?id=${job.id}`,{});setSelected('');await refresh()})}>删除</button></>}</div>
