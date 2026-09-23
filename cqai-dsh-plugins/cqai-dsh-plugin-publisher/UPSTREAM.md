@@ -4,7 +4,7 @@
 | --- | --- |
 | 项目 | MatrixMedia（矩媒） |
 | 仓库 | https://github.com/hanliang97/MatrixMedia.git |
-| e宝集成分支 | `feat/ebao-publisher-worker` |
+| e宝集成分支 | `codex/ebao-article-adapters`（从 `feat/ebao-publisher-worker` 固定提交派生） |
 | 精确提交 | 见 `vendor/matrixmedia/publisher-worker.json` |
 | 版本 | 0.11.4 |
 | 许可证 | GPL-2.0-only |

@@ -7,7 +7,7 @@ These ship as prebuilt runtimes inside the installer rather than as npm dependen
 they are not enumerated in the table below.
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| MatrixMedia（矩媒） | 0.11.4 | GPL-2.0-only | https://github.com/hanliang97/MatrixMedia.git @ bcd9d0033d6ab5c2906001eb077628e3d4678705 |
+| MatrixMedia（矩媒） | 0.11.4 | GPL-2.0-only | https://github.com/hanliang97/MatrixMedia.git @ 02b38a6cf0df7caa5fe257f701d19051de374fec |
 MatrixMedia（矩媒） is built from the pinned `matrixmedia-publisher/` Git submodule and bundled at
 `resources/publisher/MatrixMedia Publisher Worker.app` as the isolated publishing Helper.
 Its complete license is installed at `resources/publisher/LICENSE`; `resources/publisher/SOURCE.json`
@@ -421,6 +421,7 @@ records the public repository, branch, exact source commit, build command, and l
 | electron-updater | 6.8.9 | MIT |
 | emoji-regex | 8.0.0 | MIT |
 | encodeurl | 2.0.0 | MIT |
+| entities | 4.5.0 | BSD-2-Clause |
 | es-define-property | 1.0.1 | MIT |
 | es-errors | 1.3.0 | MIT |
 | es-object-atoms | 1.1.2 | MIT |
@@ -483,13 +484,16 @@ records the public repository, branch, exact source commit, build command, and l
 | jws | 4.0.1 | MIT |
 | koffi | 3.1.5 | MIT |
 | lazy-val | 1.0.5 | MIT |
+| linkify-it | 5.0.2 | MIT |
 | locate-path | 5.0.0 | MIT |
 | lodash.escaperegexp | 4.1.2 | MIT |
 | lodash.isequal | 4.5.0 | MIT |
 | long | 5.3.2 | Apache-2.0 |
 | loose-envify | 1.4.0 | MIT |
 | lucide-react | 1.41.0 | ISC |
+| markdown-it | 14.1.0 | MIT |
 | math-intrinsics | 1.1.0 | MIT |
+| mdurl | 2.1.0 | MIT |
 | media-typer | 1.1.1 | MIT |
 | merge-descriptors | 2.0.0 | MIT |
 | mime-db | 1.54.0 | MIT |
@@ -530,6 +534,7 @@ records the public repository, branch, exact source commit, build command, and l
 | powershell-utils | 0.2.0 | MIT |
 | protobufjs | 7.6.5 | BSD-3-Clause |
 | proxy-addr | 2.0.7 | MIT |
+| punycode.js | 2.3.1 | MIT |
 | pvtsutils | 1.3.6 | MIT |
 | pvutils | 1.2.0 | MIT |
 | qrcode | 1.5.4 | MIT |
@@ -578,6 +583,7 @@ records the public repository, branch, exact source commit, build command, and l
 | turndown | 7.2.4 | MIT |
 | type-is | 2.1.0 | MIT |
 | typebox | 1.3.7 | MIT |
+| uc.micro | 2.1.0 | MIT |
 | undici | 8.10.0 | MIT |
 | undici-types | 8.3.0 | MIT |
 | universalify | 2.0.1 | MIT |

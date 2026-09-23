@@ -5,7 +5,7 @@ e宝工坊不再打包或调用旧的 Windows `matrixmedia.exe + cli` 运行体�
 ## 固定源码
 
 - 上游仓库：<https://github.com/hanliang97/MatrixMedia.git>
-- e宝集成分支：`feat/ebao-publisher-worker`
+- e宝集成分支：`codex/ebao-article-adapters`（从 `feat/ebao-publisher-worker` 固定提交派生）
 - 精确提交、许可证和构建命令：[`publisher-worker.json`](./publisher-worker.json)
 - submodule：`matrixmedia-publisher/`
 

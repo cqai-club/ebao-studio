@@ -4,4 +4,4 @@
 [submodule "matrixmedia-publisher"]
 	path = matrixmedia-publisher
 	url = https://github.com/hanliang97/MatrixMedia.git
-	branch = feat/ebao-publisher-worker
+	branch = codex/ebao-article-adapters
