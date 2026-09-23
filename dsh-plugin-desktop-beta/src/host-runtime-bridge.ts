@@ -42,7 +42,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
   const shellSpecs = new Map<string, DesktopShellSpec>()
   const send = <T = void>(method: string, args: unknown[] = [], signal?: AbortSignal): Promise<T> => {
     const interactive = ['update:confirmDownload', 'update:showManualCheckResult', 'update:downloadAndInstall',
-      'native:pickDirectory', 'native:exportDiagnostics'].includes(method)
+      'native:pickDirectory', 'native:exportDiagnostics', 'publisher:selectLocalVideo'].includes(method)
     const task = rpc.call<T>(method, args, signal, interactive ? 0 : undefined)
     calls.add(task)
     // Report fire-and-forget failures without creating an unhandled rejection.
@@ -86,6 +86,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
     },
     publisher: {
       status: () => snapshot.publisher,
+      selectLocalVideo: () => send('publisher:selectLocalVideo'),
       request: (method, params, signal) => send('publisher:request', [method, params ?? {}], signal),
     },
     schedule(spec) {
@@ -228,6 +229,10 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
     if (!isPublisherWorkerMethod(method)) throw new Error('Invalid Publisher Worker method')
     if (runtime.publisher === undefined) throw new Error('Publisher Worker is unavailable')
     return runtime.publisher.request(method, params ?? {}, signal)
+  })
+  handle('publisher:selectLocalVideo', () => {
+    if (runtime.publisher === undefined) throw new Error('Publisher Worker is unavailable')
+    return runtime.publisher.selectLocalVideo()
   })
   return async () => {
     trays.forEach(tray => tray.dispose()); trays.clear()

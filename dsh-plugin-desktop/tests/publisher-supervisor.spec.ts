@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -178,6 +178,55 @@ describe('PublisherSupervisor', () => {
     await expect(supervisor.request('submissions.create', { workId: 'test' }))
       .rejects.toMatchObject({ code: 'submission-uncertain', message: expect.stringContaining('切勿立即重复提交') })
     await supervisor.shutdown()
+  })
+
+  it('keeps native-picked paths in main and revalidates them before submission', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'publisher-local-video-'))
+    roots.push(directory)
+    const file = join(directory, '片段.mp4')
+    writeFileSync(file, 'sample-video')
+    let forwarded: Record<string, unknown> | undefined
+    const { supervisor } = fixture((frame, worker) => {
+      if (handshake(frame, worker)) return
+      if (frame.method === 'submissions.create') {
+        forwarded = frame.params as Record<string, unknown>
+        worker.reply(frame.id, { accepted: true })
+      }
+      if (frame.method === 'system.shutdown') { worker.reply(frame.id, { ok: true }); worker.exit(0) }
+    }, { pickLocalVideo: async () => file })
+    const selection = await supervisor.selectLocalVideo()
+    expect(selection).toMatchObject({ fileName: '片段.mp4', title: '片段', bytes: 12 })
+    expect(selection).not.toHaveProperty('file')
+    expect(selection).not.toHaveProperty('path')
+    await expect(supervisor.request('submissions.create', {
+      contentType: 'video', localVideoId: selection!.id, title: '片段', mode: 'draft', accountIds: ['account'],
+    })).resolves.toEqual({ accepted: true })
+    expect(forwarded).toMatchObject({ file: realpathSync(file), workId: selection!.id, title: '片段' })
+    expect(forwarded).not.toHaveProperty('localVideoId')
+    writeFileSync(file, 'changed-video-content')
+    await expect(supervisor.request('submissions.create', {
+      contentType: 'video', localVideoId: selection!.id, title: '片段', mode: 'draft', accountIds: ['account'],
+    })).rejects.toMatchObject({ code: 'video-file-changed' })
+    await expect(supervisor.request('submissions.create', {
+      contentType: 'video', localVideoId: selection!.id, file: '/tmp/attacker.mp4', title: '片段', mode: 'draft', accountIds: ['account'],
+    })).rejects.toMatchObject({ code: 'invalid-video-selection' })
+    await supervisor.shutdown()
+  })
+
+  it('treats a cancelled picker as no change and refuses non-MP4 files', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'publisher-local-video-'))
+    roots.push(directory)
+    const file = join(directory, 'article.txt')
+    writeFileSync(file, 'not a video')
+    const cancelled = fixture(() => { throw new Error('must not start') }, { pickLocalVideo: async () => undefined })
+    await expect(cancelled.supervisor.selectLocalVideo()).resolves.toBeNull()
+    expect(cancelled.workers).toHaveLength(0)
+    const invalid = fixture(() => { throw new Error('must not start') }, { pickLocalVideo: async () => file })
+    await expect(invalid.supervisor.selectLocalVideo()).rejects.toMatchObject({ code: 'invalid-video-file' })
+    expect(invalid.workers).toHaveLength(0)
+    const failed = fixture(() => { throw new Error('must not start') }, { pickLocalVideo: async () => { throw new Error(file) } })
+    await expect(failed.supervisor.selectLocalVideo()).rejects.toMatchObject({ code: 'file-picker-failed' })
+    expect(failed.workers).toHaveLength(0)
   })
 
   it('reports unsupported systems without launching a legacy fallback', async () => {

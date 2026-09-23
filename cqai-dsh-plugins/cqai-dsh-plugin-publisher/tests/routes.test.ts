@@ -12,6 +12,7 @@ import { listWorks, resolveWork, worksRoot } from '../src/works.ts'
 
 const WORK_ID = '11111111-1111-4111-8111-111111111111'
 const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222'
+const LOCAL_VIDEO_ID = '44444444-4444-4444-8444-444444444444'
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 function temp(): string { const root = mkdtempSync(join(tmpdir(), 'ebao-publisher-')); roots.push(root); return root }
@@ -91,6 +92,7 @@ describe('the Host publisher route', () => {
     }
     const publisher = {
       status: () => ({ supported: true, running: false }),
+      selectLocalVideo: async () => ({ id: LOCAL_VIDEO_ID, fileName: '本地视频.mp4', title: '本地视频', bytes: 123 }),
       request: async (method: string, params: unknown = {}) => {
         calls.push({ method, params })
         if (method === 'accounts.list') return [account]
@@ -147,12 +149,31 @@ describe('the Host publisher route', () => {
         workId: WORK_ID, file: realpathSync(join(directory, 'final_video.mp4')), mode: 'draft', accountIds: [ACCOUNT_ID],
       })
 
+      const chosen = await send('local-video-select', {})
+      expect(chosen.status).toBe(200)
+      expect(await chosen.json()).toEqual({ id: LOCAL_VIDEO_ID, fileName: '本地视频.mp4', title: '本地视频', bytes: 123 })
+      const localAccepted = await send('submissions', {
+        contentType: 'video', localVideoId: LOCAL_VIDEO_ID, title: '本地视频', mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(localAccepted.status).toBe(202)
+      const localCreate = calls.filter(call => call.method === 'submissions.create').at(-1)?.params as Record<string, unknown>
+      expect(localCreate).toMatchObject({ localVideoId: LOCAL_VIDEO_ID, title: '本地视频' })
+      expect(localCreate).not.toHaveProperty('file')
+      expect(localCreate).not.toHaveProperty('workId')
+
       const beforeRejected = calls.filter(call => call.method === 'submissions.create').length
       const rejected = await send('submissions', {
         workId: WORK_ID, file: '/tmp/attacker.mp4', title: '标题', mode: 'publish', accountIds: [ACCOUNT_ID],
       })
       expect(rejected.status).toBe(400)
       expect((await rejected.json()).error).toContain('不支持的字段')
+      expect((await send('submissions', {
+        workId: WORK_ID, localVideoId: LOCAL_VIDEO_ID, title: '标题', mode: 'draft', accountIds: [ACCOUNT_ID],
+      })).status).toBe(400)
+      expect((await send('submissions', {
+        title: '标题', mode: 'draft', accountIds: [ACCOUNT_ID],
+      })).status).toBe(400)
+      expect((await send('local-video-select', { file: '/tmp/attacker.mp4' })).status).toBe(400)
       expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(beforeRejected)
 
       expect((await send('jobs')).status).toBe(404)

@@ -143,6 +143,16 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
           platform: process.platform,
           resourcesPath: (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath ?? '',
           userDataPath: app.getPath('userData'),
+          pickLocalVideo: async () => {
+            const options: Electron.OpenDialogOptions = {
+              title: '选择本地视频', properties: ['openFile'],
+              filters: [{ name: 'MP4 视频', extensions: ['mp4'] }],
+            }
+            const result = this.generation === undefined
+              ? await dialog.showOpenDialog(options)
+              : await this.generation.showOpenDialog(options)
+            return result.canceled ? undefined : result.filePaths[0]
+          },
           ...(logger === undefined ? {} : { logger }),
         })
       : undefined

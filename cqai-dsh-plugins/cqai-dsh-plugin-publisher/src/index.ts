@@ -15,6 +15,7 @@ import {
   type PublisherAccount,
   type PublisherCapability,
   type PublisherContent,
+  type PublisherLocalVideo,
   type PublisherPlatformCapability,
 } from './protocol.ts'
 import {
@@ -38,6 +39,7 @@ type WorkerMethod =
 
 interface PublisherRuntime {
   status(): PublisherCapability
+  selectLocalVideo(): Promise<PublisherLocalVideo | null>
   request<T = unknown>(method: WorkerMethod, params?: unknown, signal?: AbortSignal): Promise<T>
 }
 
@@ -125,7 +127,7 @@ function submissionBody(value: unknown): CreateSubmissionRequest {
     }
   }
   const body = exact(value, [
-    'contentType', 'workId', 'title', 'description', 'shortTitle', 'tags', 'creativeStatement', 'mode', 'accountIds',
+    'contentType', 'workId', 'localVideoId', 'title', 'description', 'shortTitle', 'tags', 'creativeStatement', 'mode', 'accountIds',
   ])
   if (body.contentType !== undefined && body.contentType !== 'video') throw new Error('内容类型无效')
   if (body.mode !== 'publish' && body.mode !== 'draft') throw new Error('发布方式无效')
@@ -142,9 +144,12 @@ function submissionBody(value: unknown): CreateSubmissionRequest {
   if (typeof creativeStatement !== 'string' || !(CREATIVE_STATEMENTS as readonly string[]).includes(creativeStatement)) {
     throw new Error('AI 内容声明无效')
   }
+  const hasWork = body.workId !== undefined
+  const hasLocalVideo = body.localVideoId !== undefined
+  if (hasWork === hasLocalVideo) throw new Error('请选择一条 e剪宝成片或一个本地视频')
   return {
     contentType: 'video',
-    workId: uuid(body.workId, '作品 ID'),
+    ...(hasWork ? { workId: uuid(body.workId, '作品 ID') } : { localVideoId: uuid(body.localVideoId, '本地视频 ID') }),
     title: text(body.title, '标题', TITLE_MAX),
     description: optionalText(body.description, '简介', DESCRIPTION_MAX),
     shortTitle: optionalText(body.shortTitle, '视频号短标题', 32),
@@ -266,6 +271,10 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     exact(body, [])
     return { code: 200, data: await runtime.request('accounts.importApply') }
   }
+  if (action === 'local-video-select') {
+    exact(body, [])
+    return { code: 200, data: await runtime.selectLocalVideo() }
+  }
   if (action === 'submissions') {
     const input = submissionBody(body)
     const accounts = await runtime.request<PublisherAccount[]>('accounts.list')
@@ -289,8 +298,11 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
         ...input, contentDirectory: directory,
       }) }
     }
-    const work = resolveWork((input as CreateVideoSubmissionRequest).workId)
-    return { code: 202, data: await runtime.request('submissions.create', { ...input, file: work.file }) }
+    const video = input as CreateVideoSubmissionRequest
+    if (video.localVideoId !== undefined) return { code: 202, data: await runtime.request('submissions.create', video) }
+    if (video.workId === undefined) throw new Error('视频来源无效')
+    const work = resolveWork(video.workId)
+    return { code: 202, data: await runtime.request('submissions.create', { ...video, file: work.file }) }
   }
   return { code: 404, data: { error: '接口不存在' } }
 }

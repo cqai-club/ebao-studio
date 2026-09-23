@@ -32,10 +32,20 @@ export interface PublisherRuntimeStatus {
   message?: string
 }
 
+/** Native-picked file metadata; the absolute path stays in Electron main. */
+export interface PublisherLocalVideo {
+  id: string
+  fileName: string
+  title: string
+  bytes: number
+}
+
 /** Electron-main capability projected into the isolated DSH Host. */
 export interface DesktopPublisherRuntime {
   /** Return a side-effect-free support snapshot. */
   status(): PublisherRuntimeStatus
+  /** Open the native file chooser and return an opaque selection ID. */
+  selectLocalVideo(): Promise<PublisherLocalVideo | null>
   /** Forward one explicitly allowed RPC method. */
   request<T = unknown>(method: PublisherWorkerMethod, params?: unknown, signal?: AbortSignal): Promise<T>
 }

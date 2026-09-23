@@ -1,14 +1,16 @@
 /** Electron-main supervisor for the isolated MatrixMedia Publisher Worker. */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, realpathSync, statSync } from 'node:fs'
+import { basename, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { DesktopLogger } from './desktop-logger.ts'
 import { maskSecrets } from './mask-secrets.ts'
 import {
   isPublisherWorkerMethod,
   type DesktopPublisherRuntime,
+  type PublisherLocalVideo,
   type PublisherRuntimeStatus,
   type PublisherWorkerMethod,
 } from './publisher-runtime.ts'
@@ -21,6 +23,17 @@ const IMPORT_TIMEOUT_MS = 5 * 60_000
 const SUBMISSION_TIMEOUT_MS = 5 * 60_000
 const WINDOW_TIMEOUT_MS = 60_000
 const MAX_AUTOMATIC_RESTARTS = 3
+const LOCAL_VIDEO_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+// MP4 is the common upload format across the enabled video adapters.
+const LOCAL_VIDEO_EXTENSIONS = new Set(['.mp4'])
+
+interface SelectedVideo {
+  file: string
+  size: number
+  mtimeMs: number
+  dev: number
+  ino: number
+}
 
 type WorkerLauncher = (
   executable: string,
@@ -54,6 +67,7 @@ export interface PublisherSupervisorOptions {
   importTimeoutMs?: number
   submissionTimeoutMs?: number
   developmentAppPath?: string
+  pickLocalVideo?: () => Promise<string | undefined>
 }
 
 /** Resolve an override that may point at either an executable or a macOS app bundle. */
@@ -107,6 +121,8 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
   private readonly handshakeTimeoutMs: number
   private readonly importTimeoutMs: number
   private readonly submissionTimeoutMs: number
+  private readonly pickLocalVideo: () => Promise<string | undefined>
+  private readonly localVideos = new Map<string, SelectedVideo>()
   private child: ChildProcessWithoutNullStreams | undefined
   private startTask: Promise<void> | undefined
   private sequence = 0
@@ -130,6 +146,50 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? HANDSHAKE_TIMEOUT_MS
     this.importTimeoutMs = options.importTimeoutMs ?? IMPORT_TIMEOUT_MS
     this.submissionTimeoutMs = options.submissionTimeoutMs ?? SUBMISSION_TIMEOUT_MS
+    this.pickLocalVideo = options.pickLocalVideo ?? (async () => undefined)
+  }
+
+  async selectLocalVideo(): Promise<PublisherLocalVideo | null> {
+    const state = this.status()
+    if (!state.supported) throw new PublisherWorkerError(state.reason ?? 'publisher-not-supported', state.message ?? '发布能力不可用')
+    let chosen: string | undefined
+    try { chosen = await this.pickLocalVideo() }
+    catch { throw new PublisherWorkerError('file-picker-failed', '无法打开本地文件选择器，请重试') }
+    if (!chosen) return null
+    let file: string
+    try { file = realpathSync(chosen) }
+    catch { throw new PublisherWorkerError('invalid-video-file', '本地视频文件无法读取，请重新选择') }
+    const fileName = basename(file)
+    if (!LOCAL_VIDEO_EXTENSIONS.has(extname(fileName).toLowerCase())) {
+      throw new PublisherWorkerError('invalid-video-file', '请选择 MP4 视频文件')
+    }
+    let stat: ReturnType<typeof statSync>
+    try { stat = statSync(file) }
+    catch { throw new PublisherWorkerError('invalid-video-file', '本地视频文件无法读取，请重新选择') }
+    if (!stat.isFile() || stat.size < 1) throw new PublisherWorkerError('invalid-video-file', '本地视频文件无效或为空')
+    const id = randomUUID()
+    this.localVideos.set(id, { file, size: stat.size, mtimeMs: stat.mtimeMs, dev: stat.dev, ino: stat.ino })
+    return { id, fileName, title: fileName.slice(0, -extname(fileName).length).slice(0, 120), bytes: stat.size }
+  }
+
+  private resolveLocalVideoSubmission(params: unknown): unknown {
+    if (!params || typeof params !== 'object' || Array.isArray(params) || !('localVideoId' in params)) return params
+    const input = params as Record<string, unknown>
+    const id = input.localVideoId
+    if (typeof id !== 'string' || !LOCAL_VIDEO_ID.test(id) || 'file' in input || 'workId' in input) {
+      throw new PublisherWorkerError('invalid-video-selection', '本地视频选择无效，请重新选择')
+    }
+    const selected = this.localVideos.get(id)
+    if (!selected) throw new PublisherWorkerError('video-selection-expired', '本地视频选择已失效，请重新选择文件')
+    let stat: ReturnType<typeof statSync>
+    try { stat = statSync(selected.file) }
+    catch { throw new PublisherWorkerError('video-file-changed', '本地视频已移动或删除，请重新选择文件') }
+    if (!stat.isFile() || stat.size !== selected.size || stat.mtimeMs !== selected.mtimeMs
+      || stat.dev !== selected.dev || stat.ino !== selected.ino) {
+      throw new PublisherWorkerError('video-file-changed', '本地视频已发生变化，请重新选择文件')
+    }
+    const { localVideoId: _localVideoId, ...rest } = input
+    return { ...rest, workId: id, file: selected.file }
   }
 
   status(): PublisherRuntimeStatus {
@@ -156,6 +216,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     if (!isPublisherWorkerMethod(method)) throw new PublisherWorkerError('method-not-allowed', '不允许的发布操作')
     if (signal?.aborted) throw new PublisherWorkerError('request-cancelled', '发布操作已取消')
     await this.ensureStarted()
+    const workerParams = method === 'submissions.create' ? this.resolveLocalVideoSubmission(params) : params
     const timeoutMs = method === 'accounts.importApply'
       ? this.importTimeoutMs
       : method === 'submissions.create'
@@ -163,7 +224,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
       : method === 'accounts.openLogin' || method === 'accounts.openDashboard'
         ? Math.max(this.requestTimeoutMs, WINDOW_TIMEOUT_MS)
         : this.requestTimeoutMs
-    const result = await this.call<T>(method, params, signal, timeoutMs)
+    const result = await this.call<T>(method, workerParams, signal, timeoutMs)
     this.restartCount = 0
     // Import swaps a Chromium profile on disk. Restart before another request
     // can acquire one of those partitions so Electron reloads the copied state.

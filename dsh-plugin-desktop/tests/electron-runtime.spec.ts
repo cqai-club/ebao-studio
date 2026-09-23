@@ -2617,6 +2617,7 @@ describe('Electron desktop runtime', () => {
     const publisherRequest = vi.fn(async () => ({ busy: true }))
     const publisher: DesktopPublisherRuntime = {
       status: () => ({ supported: true, running: true }),
+      selectLocalVideo: async () => null,
       request: publisherRequest as DesktopPublisherRuntime['request'],
     }
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')

@@ -99,6 +99,14 @@ export interface Work {
   bytes: number
 }
 
+/** A native file chooser selection; the absolute path remains in Electron main. */
+export interface PublisherLocalVideo {
+  id: string
+  fileName: string
+  title: string
+  bytes: number
+}
+
 /** Existing standalone MatrixMedia accounts that can be copied into e宝. */
 export interface PublisherImportPreview {
   running: boolean
@@ -109,10 +117,9 @@ export interface PublisherImportPreview {
   }>
 }
 
-/** Browser request; Host resolves workId to its actual final_video.mp4. */
-export interface CreateVideoSubmissionRequest {
+/** Browser request; Host resolves works while Electron main resolves native-picked videos. */
+export type CreateVideoSubmissionRequest = {
   contentType?: 'video'
-  workId: string
   title: string
   description?: string
   shortTitle?: string
@@ -120,7 +127,7 @@ export interface CreateVideoSubmissionRequest {
   creativeStatement?: CreativeStatement
   mode: PublisherMode
   accountIds: string[]
-}
+} & ({ workId: string; localVideoId?: never } | { localVideoId: string; workId?: never })
 
 export interface CreateContentSubmissionRequest {
   contentType: 'article' | 'image-note'

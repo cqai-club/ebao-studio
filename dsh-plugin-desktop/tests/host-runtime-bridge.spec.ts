@@ -23,6 +23,10 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
   const native = {
     platform: 'win32', windowsBuild: 22631, locale: 'en',
     loginCompletionUrl: 'dsh-desktop-beta://oauth/complete',
+    publisher: {
+      status: () => ({ supported: true, running: false }),
+      selectLocalVideo: vi.fn(async () => ({ id: '44444444-4444-4444-8444-444444444444', fileName: '本地.mp4', title: '本地', bytes: 12 })),
+    },
     updates: { isPackaged: true, canDownload: true, currentVersion: '2.0.7-beta.1', statePath: '/tmp/update',
       request: vi.fn(async () => new Response('{"version":"2.0.8-beta.1"}', { headers: { 'x-test': 'yes' } })),
       registerNotificationAction,
@@ -35,6 +39,10 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
   try {
     const runtime = createHostRuntime(child, runtimeSnapshot(native))
     expect(runtime.loginCompletionUrl).toBe('dsh-desktop-beta://oauth/complete')
+    expect(await runtime.publisher.selectLocalVideo()).toEqual({
+      id: '44444444-4444-4444-8444-444444444444', fileName: '本地.mp4', title: '本地', bytes: 12,
+    })
+    expect(native.publisher.selectLocalVideo).toHaveBeenCalledOnce()
     let language: 'zh' | undefined
     const mode = vi.fn(async () => {})
     const invoke = vi.fn(async () => {})

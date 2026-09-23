@@ -59,10 +59,11 @@ export function errorMessage(cause: unknown): string {
 }
 
 export function ConfirmDialog({
-  contentType, title, mode, accounts, onCancel, onConfirm, busy,
+  contentType, title, sourceName, mode, accounts, onCancel, onConfirm, busy,
 }: {
   contentType: PublisherContentType
   title: string
+  sourceName?: string
   mode: 'publish' | 'draft'
   accounts: PublisherAccount[]
   onCancel(): void
@@ -74,6 +75,7 @@ export function ConfirmDialog({
       <h2>确认提交</h2>
       <p><strong>内容类型：</strong>{CONTENT_LABELS[contentType]}</p>
       <p><strong>标题：</strong>{title}</p>
+      {sourceName && <p><strong>视频来源：</strong>{sourceName}</p>}
       <p><strong>提交方式：</strong>{mode === 'publish' ? '立即发布' : '转存草稿'}</p>
       <p><strong>目标账号：</strong></p>
       <ul>{accounts.map(account => <li key={account.id}>{PLATFORM_LABELS[account.platform]} · {account.displayName}</li>)}</ul>
@@ -114,7 +116,7 @@ export const css = `
 .pub-head h1{font-size:26px;margin:0 0 8px;letter-spacing:-1px}.pub-muted{font-size:13px;color:#9b9ba4;line-height:1.7}
 .pub-tabs{display:flex;gap:6px;border-bottom:1px solid #ffffff20;margin-bottom:22px}.pub-tab{border:0;background:none;color:#aaaab4;padding:12px 18px;border-bottom:2px solid transparent}.pub-tab[aria-selected=true]{color:#d6c7ff;border-bottom-color:#aa90fb;font-weight:650}
 .pub-layout{display:grid;grid-template-columns:128px minmax(0,1fr);gap:20px}.pub-type-nav{display:flex;flex-direction:column;gap:6px}.pub-type{width:100%;text-align:left;border:1px solid transparent;background:none;color:#b9b9c2;padding:12px;border-radius:9px}.pub-type[aria-current=true]{border-color:#a78bfa50;background:#a78bfa16;color:#dbcfff;font-weight:650}
-.pub-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.85fr);gap:18px}.pub-card{border:1px solid #ffffff18;background:#ffffff04;border-radius:15px;padding:20px;margin-bottom:18px}.pub-card h2{font-size:15px;margin:0 0 16px}
+.pub-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.85fr);gap:18px}.pub-card{border:1px solid #ffffff18;background:#ffffff04;border-radius:15px;padding:20px;margin-bottom:18px}.pub-card h2{font-size:15px;margin:0 0 16px}.pub-card h3{font-size:13px;color:#c9c9d0;margin:18px 0 10px}.pub-card h2+h3{margin-top:0}
 .pub-field{margin-bottom:16px}.pub-field label{display:block;font-size:13px;margin-bottom:7px;color:#c9c9d0}.pub-input{width:100%;padding:10px 12px;border:1px solid #ffffff25;border-radius:9px;background:#08080c55;color:inherit;outline:none}.pub-input:focus{border-color:#a78bfa}.pub textarea.pub-input{min-height:110px;resize:vertical;line-height:1.7}
 .pub-primary,.pub-secondary,.pub-danger{border-radius:9px;padding:9px 13px}.pub-primary{border:0;background:#b8a1ff;color:#171020;font-weight:650}.pub-secondary{border:1px solid #ffffff24;background:#ffffff06;color:inherit}.pub-danger{border:1px solid #ff777744;background:#ff77770d;color:#ffb6b6}
 .pub-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.pub-error,.pub-notice{border-radius:9px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.6}.pub-error{color:#ffb6b6;background:#ff666614;border:1px solid #ff66662a}.pub-notice{color:#a8e2c4;background:#45b98112;border:1px solid #45b98135}

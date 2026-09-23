@@ -128,6 +128,7 @@ function createHarness(
     },
     publisher: {
       status: () => ({ supported: false, running: false, reason: 'publisher-not-supported' }),
+      selectLocalVideo: async () => null,
       request: async () => { throw new Error('publisher unavailable in plugin fixture') },
     },
     schedule: (spec) => {
