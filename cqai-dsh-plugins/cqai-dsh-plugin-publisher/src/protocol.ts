@@ -1,13 +1,16 @@
-/** Loopback HTTP surface shared by the DSH Host and the two React panels. */
+/** Loopback HTTP surface shared by the DSH Host and the React publisher panel. */
 export const API = '/api/cqai-publisher'
 
 /** Video platforms supported by the embedded MatrixMedia Worker. */
 export const VIDEO_PLATFORMS = ['dy', 'sph', 'xhs', 'blbl', 'ks', 'tt', 'bjh', 'fqsp'] as const
-export type Platform = typeof VIDEO_PLATFORMS[number]
+export const PLATFORMS = [...VIDEO_PLATFORMS, 'juejin'] as const
+export type Platform = typeof PLATFORMS[number]
+export type PublisherContentType = 'video' | 'article' | 'image-note'
+export type PublisherMode = 'publish' | 'draft'
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
   dy: '抖音', sph: '视频号', xhs: '小红书', blbl: '哔哩哔哩',
-  ks: '快手', tt: '头条', bjh: '百家号', fqsp: '番茄视频',
+  ks: '快手', tt: '头条', bjh: '百家号', fqsp: '番茄视频', juejin: '掘金',
 }
 
 export const MAX_TAGS = 8
@@ -32,14 +35,49 @@ export interface PublisherAccount {
 export interface PublisherSubmission {
   id: string
   createdAt: string
-  workId: string
+  contentId: string
+  contentType: PublisherContentType
+  /** Retained for old video submissions and e剪宝 handoff lookup. */
+  workId?: string
   title: string
-  mode: 'publish' | 'draft'
+  mode: PublisherMode
   targets: Array<{
     accountId: string
     platform: Platform
     accountName: string
   }>
+}
+
+export interface PublisherPlatformCapability {
+  platform: Platform
+  contentTypes: PublisherContentType[]
+  modes: Partial<Record<PublisherContentType, PublisherMode[]>>
+  requiredFields: Partial<Record<PublisherContentType, string[]>>
+  maxAssets?: Partial<Record<PublisherContentType, number>>
+  maxTitleLength?: Partial<Record<PublisherContentType, number>>
+}
+
+export interface PublisherAsset {
+  id: string
+  name: string
+  mime: 'image/jpeg' | 'image/png' | 'image/webp'
+  bytes: number
+}
+
+export interface PublisherContent {
+  id: string
+  contentType: 'article' | 'image-note'
+  revision: number
+  createdAt: string
+  updatedAt: string
+  title: string
+  body: string
+  summary: string
+  tags: string[]
+  creativeStatement: CreativeStatement
+  assets: PublisherAsset[]
+  coverAssetId?: string
+  platformFields: Partial<Record<Platform, Record<string, string>>>
 }
 
 /** Side-effect-free desktop capability answer. */
@@ -72,16 +110,27 @@ export interface PublisherImportPreview {
 }
 
 /** Browser request; Host resolves workId to its actual final_video.mp4. */
-export interface CreateSubmissionRequest {
+export interface CreateVideoSubmissionRequest {
+  contentType?: 'video'
   workId: string
   title: string
   description?: string
   shortTitle?: string
   tags?: string[]
   creativeStatement?: CreativeStatement
-  mode: 'publish' | 'draft'
+  mode: PublisherMode
   accountIds: string[]
 }
+
+export interface CreateContentSubmissionRequest {
+  contentType: 'article' | 'image-note'
+  contentId: string
+  revision: number
+  mode: PublisherMode
+  accountIds: string[]
+}
+
+export type CreateSubmissionRequest = CreateVideoSubmissionRequest | CreateContentSubmissionRequest
 
 /** Worker acceptance response. */
 export interface CreateSubmissionResult {

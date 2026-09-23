@@ -3,6 +3,7 @@
 /** RPC methods the DSH Host is allowed to send to the Publisher Worker. */
 export const PUBLISHER_WORKER_METHODS = [
   'system.health',
+  'system.capabilities',
   'accounts.list',
   'accounts.create',
   'accounts.update',

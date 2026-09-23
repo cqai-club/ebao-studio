@@ -90,7 +90,7 @@ function fixture(handler: (frame: Frame, worker: FakeWorker) => void, overrides:
 function handshake(frame: Frame, worker: FakeWorker, fragments = false): boolean {
   if (frame.method !== 'system.handshake') return false
   worker.reply(frame.id, {
-    protocolVersion: 1, workerVersion: 'test',
+    protocolVersion: 2, workerVersion: 'test',
     platforms: ['dy', 'sph', 'xhs', 'blbl', 'ks', 'tt', 'bjh', 'fqsp'],
     modes: ['publish', 'draft'],
   }, fragments)

@@ -1,7 +1,7 @@
 {
   "name": "cqai-dsh-plugin-publisher",
   "version": "0.1.0",
-  "description": "e宝工坊内置的多平台账号管理与视频发布页面",
+  "description": "e宝工坊内置的统一多平台内容发布页面",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",

@@ -94,6 +94,10 @@ describe('the Host publisher route', () => {
       request: async (method: string, params: unknown = {}) => {
         calls.push({ method, params })
         if (method === 'accounts.list') return [account]
+        if (method === 'system.capabilities') return [{
+          platform: 'dy', contentTypes: ['video'],
+          modes: { video: ['publish', 'draft'] }, requiredFields: {},
+        }]
         if (method === 'accounts.importPreview') return {
           sourceData: '/private/source', sourceProfile: '/private/profile', running: false,
           accounts: [{ displayName: '旧账号', platform: 'dy', platformName: '抖音', partition: 'secret' }],
@@ -103,7 +107,7 @@ describe('the Host publisher route', () => {
           accepted: true,
           submission: {
             id: '33333333-3333-4333-8333-333333333333', createdAt: '2026-09-22T03:00:00.000Z',
-            workId: WORK_ID, title: '发布标题', mode: 'draft',
+            contentId: WORK_ID, contentType: 'video', workId: WORK_ID, title: '发布标题', mode: 'draft',
             targets: [{ accountId: ACCOUNT_ID, platform: 'dy', accountName: '品牌主账号' }],
           },
         }
@@ -155,6 +159,107 @@ describe('the Host publisher route', () => {
       expect((await send('history')).status).toBe(404)
       expect((await fetch(`${base}/capability`, { headers: { origin: 'https://evil.example' } })).status).toBe(403)
       expect((await fetch(`${base}/accounts`, { method: 'POST', body: '{}' })).status).toBe(403)
+    } finally {
+      await ctx.fiber.dispose()
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+    }
+  }, 30_000)
+
+  it('owns draft files, previews binary assets and forwards only a resolved content package', async () => {
+    const home = temp()
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    const calls: Array<{ method: string; params: unknown }> = []
+    let articleEnabled = true
+    const account: PublisherAccount = {
+      id: ACCOUNT_ID, displayName: '掘金主账号', platform: 'juejin', loginState: 'logged-in',
+    }
+    const publisher = {
+      status: () => ({ supported: true, running: true }),
+      request: async (method: string, params: unknown = {}) => {
+        calls.push({ method, params })
+        if (method === 'accounts.list') return [account]
+        if (method === 'system.capabilities') return articleEnabled ? [{
+          platform: 'juejin', contentTypes: ['article'],
+          modes: { article: ['publish', 'draft'] }, requiredFields: { article: ['category'] },
+        }] : []
+        if (method === 'submissions.create') return {
+          accepted: true, submission: {
+            id: '33333333-3333-4333-8333-333333333333', contentId: (params as { contentId: string }).contentId,
+            contentType: 'article', title: '文章', mode: 'draft', createdAt: new Date().toISOString(),
+            targets: [{ accountId: ACCOUNT_ID, accountName: '掘金主账号', platform: 'juejin' }],
+          },
+        }
+        return []
+      },
+    }
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
+      ctx.provide('desktopRuntime', { publisher } as never)
+      await ctx.plugin(plugin)
+      const base = `http://127.0.0.1:${String(ctx.webServer.port)}${API}`
+      const send = (action: string, body: unknown) => fetch(`${base}/${action}`, {
+        method: 'POST', headers: { 'x-ejianbao': '1', 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const created = await (await send('contents', { contentType: 'article' })).json() as { id: string; revision: number }
+      const saved = await (await send('content-save', {
+        id: created.id, revision: created.revision, title: '文章', body: '# 正文',
+        summary: '', tags: ['AI'], creativeStatement: 'none',
+        platformFields: { juejin: { category: '前端' } },
+      })).json() as { revision: number }
+      expect(saved.revision).toBe(2)
+      const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1])
+      const uploaded = await fetch(`${base}/content-asset-upload/${created.id}`, {
+        method: 'POST', headers: {
+          'x-ejianbao': '1', 'x-publisher-file-name': encodeURIComponent('封面.png'),
+          'content-type': 'application/octet-stream',
+        },
+        body: png,
+      })
+      expect(uploaded.status).toBe(201)
+      const withAsset = await uploaded.json() as { revision: number; assets: Array<{ id: string }> }
+      const image = await fetch(`${base}/content-asset/${created.id}/${withAsset.assets[0]!.id}`)
+      expect(image.headers.get('content-type')).toBe('image/png')
+      expect(Buffer.from(await image.arrayBuffer())).toEqual(png)
+      const invalid = await send('submissions', {
+        contentType: 'article', contentId: created.id, revision: saved.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(invalid.status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(0)
+      const accepted = await send('submissions', {
+        contentType: 'article', contentId: created.id, revision: withAsset.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(accepted.status).toBe(202)
+      const forwarded = calls.find(call => call.method === 'submissions.create')?.params as Record<string, unknown>
+      expect(forwarded).toMatchObject({ contentId: created.id, contentType: 'article', revision: withAsset.revision })
+      expect(String(forwarded.contentDirectory)).toContain(join('publisher', 'contents', created.id))
+      expect(forwarded).not.toHaveProperty('file')
+      const attacker = await send('submissions', {
+        contentType: 'article', contentId: created.id, revision: withAsset.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID], contentDirectory: '/tmp/attacker',
+      })
+      expect(attacker.status).toBe(400)
+      articleEnabled = false
+      const disabled = await send('submissions', {
+        contentType: 'article', contentId: created.id, revision: withAsset.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(disabled.status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(1)
+      const malformed = await fetch(`${base}/content-save`, {
+        method: 'POST', headers: { 'x-ejianbao': '1', 'content-type': 'application/json' }, body: '{bad',
+      })
+      expect(malformed.status).toBe(400)
+      expect((await malformed.json() as { error: string }).error).toContain('JSON')
+      const oversized = await fetch(`${base}/content-save`, {
+        method: 'POST', headers: { 'x-ejianbao': '1', 'content-type': 'application/json' }, body: `{"body":"${'x'.repeat(4 * 1024 * 1024)}"}`,
+      })
+      expect(oversized.status).toBe(400)
     } finally {
       await ctx.fiber.dispose()
       if (previousHome === undefined) delete process.env.DSH_HOME

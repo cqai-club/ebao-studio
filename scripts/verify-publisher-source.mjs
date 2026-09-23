@@ -33,6 +33,9 @@ for (const entry of [
   'src/main/publisher-worker/index.js',
   'src/main/publisher-worker/protocol.js',
   'src/main/publisher-worker/service.js',
+  'src/main/publisher-worker/capabilities.js',
+  'src/main/publisher-worker/content-package.js',
+  'src/main/publisher-worker/article.js',
 ]) {
   if (!existsSync(join(source, entry))) fail(`submodule is missing ${entry}`)
 }

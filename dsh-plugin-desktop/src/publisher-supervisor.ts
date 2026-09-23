@@ -13,7 +13,7 @@ import {
   type PublisherWorkerMethod,
 } from './publisher-runtime.ts'
 
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = 2
 const MAX_FRAME_BYTES = 1024 * 1024
 const REQUEST_TIMEOUT_MS = 30_000
 const HANDSHAKE_TIMEOUT_MS = 15_000
