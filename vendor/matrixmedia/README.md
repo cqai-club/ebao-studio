@@ -15,7 +15,7 @@ e宝工坊不再打包或调用旧的 Windows `matrixmedia.exe + cli` 运行体�
 git submodule update --init --recursive matrixmedia-publisher
 ```
 
-MatrixMedia 保持自己的 Node.js 20 / Yarn 1 构建，不加入 e宝 Yarn workspace。Publisher Worker 的打包配置单独固定 Electron 43.3.0（Chromium 150），不会改变 MatrixMedia 原主程序的 Electron 依赖；头条账号与发布窗口使用与内核一致的 UA。在 Node 20 环境中执行：
+MatrixMedia 保持自己的 Node.js 20 / Yarn 1 构建，不加入 e宝 Yarn workspace。Publisher Worker 的打包配置单独固定已验收的 Electron 24.8.8，与 MatrixMedia 自身依赖一致，并保留现有账号的 Chromium Profile；头条账号与发布窗口使用与内核一致的 UA。在 Node 20 环境中执行：
 
 ```bash
 cd matrixmedia-publisher
