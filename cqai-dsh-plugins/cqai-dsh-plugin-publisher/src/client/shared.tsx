@@ -116,15 +116,17 @@ export function DraftToolbar({ contents, draft, busy, dirty, saveError, onSelect
 }
 
 export function PlatformAccountSelect({
-  platform, accounts, value, onChange,
+  idPrefix, platform, accounts, value, onChange,
 }: {
+  idPrefix: string
   platform: Platform
   accounts: PublisherAccount[]
   value: string
   onChange(id: string): void
 }) {
-  return <div className="pub-platform"><label htmlFor={`pub-target-${platform}`}>{PLATFORM_LABELS[platform]}</label>
-    <select className="pub-input" id={`pub-target-${platform}`} value={value} onChange={event => onChange(event.target.value)}>
+  const id = `pub-target-${idPrefix}-${platform}`
+  return <div className="pub-platform"><label htmlFor={id}>{PLATFORM_LABELS[platform]}</label>
+    <select className="pub-input" id={id} value={value} onChange={event => onChange(event.target.value)}>
       <option value="">不发布</option>
       {accounts.filter(account => account.platform === platform).map(account =>
         <option key={account.id} value={account.id}>{account.displayName}{account.loginState === 'logged-in' ? '' : '（需检查登录）'}</option>)}

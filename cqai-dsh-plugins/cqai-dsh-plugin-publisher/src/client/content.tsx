@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  API, CREATIVE_STATEMENTS, MAX_TAGS, PLATFORMS, PLATFORM_LABELS, TITLE_MAX,
+  API, CREATIVE_STATEMENTS, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX,
   type CreateSubmissionResult, type Platform, type PublisherAccount,
   type PublisherCapability, type PublisherContent, type PublisherPlatformCapability,
 } from '../protocol.ts'
+import { CONTENT_ACCOUNT_PLATFORMS, contentModeAvailable, selectedContentAccounts } from '../content-targets.ts'
 import {
   api, capabilityMessage, ConfirmDialog, DraftToolbar, errorMessage, PlatformAccountSelect, STATEMENT_LABELS, uploadAsset,
 } from './shared.tsx'
@@ -69,6 +70,10 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   const [tagsInput, setTagsInput] = useState('')
   const [accounts, setAccounts] = useState<PublisherAccount[]>([])
   const [capabilities, setCapabilities] = useState<PublisherPlatformCapability[]>([])
+  const [accountsPending, setAccountsPending] = useState(true)
+  const [capabilitiesPending, setCapabilitiesPending] = useState(true)
+  const [accountsError, setAccountsError] = useState('')
+  const [capabilitiesError, setCapabilitiesError] = useState('')
   const [selection, setSelection] = useState<Partial<Record<Platform, string>>>({})
   const [mode, setMode] = useState<Mode>('publish')
   const [preview, setPreview] = useState(false)
@@ -112,15 +117,21 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   useEffect(() => {
     if (!active) return
     let live = true
+    setAccountsPending(true)
+    setCapabilitiesPending(true)
     void api<PublisherCapability>('capability').then(value => {
       if (live) setRuntimeCapability(value)
     }).catch(cause => { if (live) showError(errorMessage(cause)) })
-    void Promise.all([
-      api<PublisherAccount[]>('accounts'),
-      api<PublisherPlatformCapability[]>('platform-capabilities'),
-    ]).then(([accountRows, capabilityRows]) => {
-      if (live) { setAccounts(accountRows); setCapabilities(capabilityRows) }
-    }).catch(() => { if (live) setCapabilities([]) })
+    void api<PublisherAccount[]>('accounts').then(rows => {
+      if (live) { setAccounts(rows); setAccountsError(''); setAccountsPending(false) }
+    }).catch(cause => {
+      if (live) { setAccounts([]); setAccountsError(errorMessage(cause)); setAccountsPending(false) }
+    })
+    void api<PublisherPlatformCapability[]>('platform-capabilities').then(rows => {
+      if (live) { setCapabilities(rows); setCapabilitiesError(''); setCapabilitiesPending(false) }
+    }).catch(cause => {
+      if (live) { setCapabilities([]); setCapabilitiesError(errorMessage(cause)); setCapabilitiesPending(false) }
+    })
     return () => { live = false }
   }, [active])
 
@@ -284,16 +295,18 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     if (index >= 0) moveAsset(assetId, index + delta)
   }
 
-  const supportedPlatforms = useMemo(() => PLATFORMS.filter(platform =>
-    capabilities.some(item => item.platform === platform && item.modes[contentType]?.length)), [capabilities, contentType])
-  const selectedAccounts = supportedPlatforms.flatMap(platform => accounts.filter(account => account.id === selection[platform]))
-  const submitReady = supportedPlatforms.length > 0 && selectedAccounts.length > 0
+  const accountPlatforms = CONTENT_ACCOUNT_PLATFORMS[contentType]
+  const selectedAccounts = selectedContentAccounts(contentType, accounts, selection)
+  const unavailableTargets = selectedAccounts.filter(account =>
+    !contentModeAvailable(account.platform, contentType, mode, capabilities))
+  const submitReady = runtimeCapability?.supported === true && !accountsPending && !capabilitiesPending
+    && selectedAccounts.length > 0 && unavailableTargets.length === 0
   const titleLimit = Math.min(TITLE_MAX, ...selectedAccounts.map(account =>
     capabilities.find(item => item.platform === account.platform)?.maxTitleLength?.[contentType] ?? TITLE_MAX))
   const assetLimit = Math.min(20, ...selectedAccounts.map(account =>
     capabilities.find(item => item.platform === account.platform)?.maxAssets?.[contentType] ?? 20))
   const enteredTags = [...new Set(tagsInput.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))]
-  const validationError = draft && selectedAccounts.length > 0
+  const validationError = draft && selectedAccounts.length > 0 && !capabilitiesPending && !capabilitiesError
     ? contentSubmissionError(draft, selectedAccounts, capabilities, mode) : undefined
   const requestConfirm = () => void act(async () => {
     const current = await flush()
@@ -353,8 +366,15 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
       </div>
       <div>
         <div className="pub-card"><h2>选择平台账号</h2>
-          {supportedPlatforms.length === 0 ? <p className="pub-muted">{contentType === 'article' ? '掘金、B站专栏' : '小红书图文'}适配器仍在真实平台验收中。草稿可先编辑保存，验收通过前不能提交。</p> : supportedPlatforms.map(platform =>
-            <PlatformAccountSelect key={platform} platform={platform} accounts={accounts} value={selection[platform] ?? ''} onChange={id => setSelection(current => ({ ...current, [platform]: id || undefined }))}/>)}
+          {accountPlatforms.map(platform => <div key={platform}>
+            <PlatformAccountSelect idPrefix={contentType} platform={platform} accounts={accounts} value={selection[platform] ?? ''} onChange={id => setSelection(current => ({ ...current, [platform]: id || undefined }))}/>
+            {!capabilitiesPending && !capabilitiesError && !contentModeAvailable(platform, contentType, mode, capabilities) && <p className="pub-muted">{PLATFORM_LABELS[platform]}{mode === 'publish' ? '立即发布' : '转存草稿'}尚未开放；可先选择账号并保存本地草稿。</p>}
+          </div>)}
+          {accountsPending && <p className="pub-muted">正在加载平台账号…</p>}
+          {accountsError ? <p className="pub-warn" role="status">账号加载失败：{accountsError}</p>
+            : !accountsPending && !accounts.some(account => accountPlatforms.some(platform => platform === account.platform)) && <p className="pub-muted">还没有适用于当前内容类型的账号，请先到“平台账号管理”添加并登录。</p>}
+          {capabilitiesPending && <p className="pub-muted">正在检查平台提交能力…</p>}
+          {capabilitiesError && <p className="pub-warn" role="status">平台能力加载失败：{capabilitiesError}</p>}
           {selectedAccounts.map(account => {
             const fields = capabilities.find(item => item.platform === account.platform)?.requiredFields[contentType] ?? []
             return fields.map(field => <div className="pub-field" key={`${account.platform}:${field}`}>
@@ -368,7 +388,8 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
           <label><input type="radio" name={`pub-mode-${contentType}`} checked={mode === 'draft'} onChange={() => setMode('draft')}/>转存草稿</label>
         </div></div>
         <button className="pub-primary pub-submit" disabled={busy || !submitReady} onClick={requestConfirm}>检查并提交</button>
-        {validationError && <p className="pub-warn" role="status">提交前需补齐：{validationError}</p>}
+        {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">所选平台的当前提交方式尚未开放，暂不能提交；本地草稿仍会保存。</p>
+          : validationError && <p className="pub-warn" role="status">提交前需补齐：{validationError}</p>}
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。</p>
       </div>
     </div>}

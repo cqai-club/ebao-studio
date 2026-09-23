@@ -5,6 +5,7 @@ const entry = readFileSync(new URL('../src/client/index.tsx', import.meta.url), 
 const video = readFileSync(new URL('../src/client/video.tsx', import.meta.url), 'utf8')
 const article = readFileSync(new URL('../src/client/content.tsx', import.meta.url), 'utf8')
 const history = readFileSync(new URL('../src/client/history.tsx', import.meta.url), 'utf8')
+const shared = readFileSync(new URL('../src/client/shared.tsx', import.meta.url), 'utf8')
 
 describe('unified publisher client contract', () => {
   it('registers one panel with internal navigation', () => {
@@ -44,6 +45,11 @@ describe('unified publisher client contract', () => {
 
   it('keeps article and image-note editing local, preflighted and safely previewed', () => {
     expect(article).toContain('contentSubmissionError(current, selectedAccounts, capabilities, mode)')
+    expect(article).toContain('accountPlatforms.map(platform =>')
+    expect(article).toContain('selectedContentAccounts(contentType, accounts, selection)')
+    expect(article).toContain('unavailableTargets.length === 0')
+    expect(article).toContain('idPrefix={contentType}')
+    expect(shared).toContain('pub-target-${idPrefix}-${platform}')
     expect(article).toContain('onDrop={event =>')
     expect(article).toContain('setServerDraft(current)')
     expect(article).toContain('runtimeCapability && !runtimeCapability.supported')
