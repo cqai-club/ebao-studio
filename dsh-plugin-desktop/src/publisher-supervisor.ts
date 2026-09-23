@@ -18,6 +18,7 @@ const MAX_FRAME_BYTES = 1024 * 1024
 const REQUEST_TIMEOUT_MS = 30_000
 const HANDSHAKE_TIMEOUT_MS = 15_000
 const IMPORT_TIMEOUT_MS = 5 * 60_000
+const SUBMISSION_TIMEOUT_MS = 5 * 60_000
 const WINDOW_TIMEOUT_MS = 60_000
 const MAX_AUTOMATIC_RESTARTS = 3
 
@@ -51,6 +52,7 @@ export interface PublisherSupervisorOptions {
   requestTimeoutMs?: number
   handshakeTimeoutMs?: number
   importTimeoutMs?: number
+  submissionTimeoutMs?: number
   developmentAppPath?: string
 }
 
@@ -104,6 +106,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
   private readonly requestTimeoutMs: number
   private readonly handshakeTimeoutMs: number
   private readonly importTimeoutMs: number
+  private readonly submissionTimeoutMs: number
   private child: ChildProcessWithoutNullStreams | undefined
   private startTask: Promise<void> | undefined
   private sequence = 0
@@ -126,6 +129,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     this.requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS
     this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? HANDSHAKE_TIMEOUT_MS
     this.importTimeoutMs = options.importTimeoutMs ?? IMPORT_TIMEOUT_MS
+    this.submissionTimeoutMs = options.submissionTimeoutMs ?? SUBMISSION_TIMEOUT_MS
   }
 
   status(): PublisherRuntimeStatus {
@@ -154,6 +158,8 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     await this.ensureStarted()
     const timeoutMs = method === 'accounts.importApply'
       ? this.importTimeoutMs
+      : method === 'submissions.create'
+        ? this.submissionTimeoutMs
       : method === 'accounts.openLogin' || method === 'accounts.openDashboard'
         ? Math.max(this.requestTimeoutMs, WINDOW_TIMEOUT_MS)
         : this.requestTimeoutMs
@@ -251,8 +257,10 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
         }
       }
       const reject = (error: Error) => { cleanup(); rejectRequest(error) }
-      const abort = () => reject(new PublisherWorkerError('request-cancelled', '发布操作已取消或超时'))
-      const timer = setTimeout(abort, timeoutMs)
+      const abort = () => reject(new PublisherWorkerError('request-cancelled', '发布操作已取消'))
+      const timer = setTimeout(() => reject(method === 'submissions.create'
+        ? new PublisherWorkerError('submission-uncertain', '提交响应超时，状态未确认。请先查看发布历史和平台后台，切勿立即重复提交')
+        : new PublisherWorkerError('request-cancelled', '发布操作已超时')), timeoutMs)
       signal?.addEventListener('abort', abort, { once: true })
       this.pending.set(id, {
         timer,

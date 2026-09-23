@@ -170,6 +170,16 @@ describe('PublisherSupervisor', () => {
     await supervisor.shutdown()
   })
 
+  it('treats an unanswered submission as uncertain rather than safe to retry', async () => {
+    const { supervisor } = fixture((frame, worker) => {
+      if (handshake(frame, worker)) return
+      if (frame.method === 'system.shutdown') { worker.reply(frame.id, { ok: true }); worker.exit(0) }
+    }, { requestTimeoutMs: 5, submissionTimeoutMs: 30 })
+    await expect(supervisor.request('submissions.create', { workId: 'test' }))
+      .rejects.toMatchObject({ code: 'submission-uncertain', message: expect.stringContaining('切勿立即重复提交') })
+    await supervisor.shutdown()
+  })
+
   it('reports unsupported systems without launching a legacy fallback', async () => {
     expect(resolvePublisherWorker({ platform: 'win32', resourcesPath: '/tmp', env: {} })).toBe('')
     const supervisor = new PublisherSupervisor({
