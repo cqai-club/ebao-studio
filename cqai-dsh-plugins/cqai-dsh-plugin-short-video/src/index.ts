@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { API, defaultParams, defaultSettings, needsText, stageRequirements, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
+import { API, audioPreviewReuseIssue, defaultParams, defaultSettings, needsText, stageRequirements, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
 export { needsText } from './protocol.ts'
 
 export const name = 'cqai-short-video'
@@ -129,7 +129,7 @@ function serveFile(req: IncomingMessage, res: ServerResponse, file: string, down
     if (start > end || start >= size) { res.writeHead(416, {'content-range': `bytes */${size}`}); res.end(); return }
     status = 206
   }
-  const contentType: Record<string,string> = {'.mp4':'video/mp4','.mp3':'audio/mpeg','.wav':'audio/wav','.srt':'text/plain; charset=utf-8','.json':'application/json','.png':'image/png','.jpg':'image/jpeg'}
+  const contentType: Record<string,string> = {'.mp4':'video/mp4','.mp3':'audio/mpeg','.m4a':'audio/mp4','.wav':'audio/wav','.ogg':'audio/ogg','.flac':'audio/flac','.srt':'text/plain; charset=utf-8','.json':'application/json','.png':'image/png','.jpg':'image/jpeg'}
   res.writeHead(status, {'content-type': contentType[extname(file).toLowerCase()] ?? 'application/octet-stream', 'content-length': String(end-start+1), 'accept-ranges':'bytes', 'x-content-type-options':'nosniff', ...(status === 206 ? {'content-range':`bytes ${start}-${end}/${size}`} : {}), ...(download ? {'content-disposition':`attachment; filename="${basename(file)}"`} : {})})
   const stream = createReadStream(file, {start,end}); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res)
 }
@@ -148,19 +148,44 @@ function terminate(child: ChildProcess): void {
   if (process.platform === 'win32') spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {windowsHide:true, stdio:'ignore'})
   else child.kill('SIGTERM')
 }
-async function artifactsFor(root: string): Promise<Artifact[]> {
+export async function artifactsFor(root: string): Promise<Artifact[]> {
   if (!existsSync(root)) return []
   const files = await readdir(root, {withFileTypes:true})
   const result: Artifact[] = []
   for (const entry of files) {
     if (!entry.isFile()) continue
     const ext = extname(entry.name).toLowerCase()
-    if (!['.mp4','.mp3','.wav','.srt','.json','.png','.jpg'].includes(ext)) continue
+    if (!['.mp4',...EXTENSIONS.audio,'.srt','.json','.png','.jpg'].includes(ext)) continue
     const full = safePath(root, entry.name)
     const size = statSync(full).size
-    result.push({file: entry.name, name: entry.name, size, kind: ext === '.mp4' ? 'video' : ['.mp3','.wav'].includes(ext) ? 'audio' : ext === '.srt' ? 'subtitle' : 'data'})
+    result.push({file: entry.name, name: entry.name, size, kind: ext === '.mp4' ? 'video' : EXTENSIONS.audio.includes(ext) ? 'audio' : ext === '.srt' ? 'subtitle' : 'data'})
   }
   return result
+}
+export async function copyAudioPreview(storage: string, preview: Job, targetId: string, includeSubtitle: boolean): Promise<string> {
+  const sourceDir=safePath(storage,preview.id),targetDir=safePath(storage,targetId)
+  const audio=preview.artifacts.find(a=>a.kind==='audio')
+  if(!audio)throw new Error('试听任务没有音频文件')
+  const extension=extname(audio.file).toLowerCase()
+  if(!EXTENSIONS.audio.includes(extension))throw new Error('配音文件类型无效')
+  const storedAudio=`voice-preview${extension}`
+  await mkdir(targetDir)
+  try{
+    const storageReal=realpathSync(storage),sourceReal=realpathSync(sourceDir)
+    if(!sourceReal.startsWith(storageReal+sep)||!realpathSync(targetDir).startsWith(storageReal+sep))throw new Error('配音任务目录无效')
+    const copyArtifact=async(file:string,target:string)=>{
+      const real=realpathSync(safePath(sourceDir,file))
+      if(!real.startsWith(sourceReal+sep))throw new Error('配音产物路径无效')
+      await copyFile(real,safePath(targetDir,target))
+    }
+    await copyArtifact(audio.file,storedAudio)
+    if(includeSubtitle){
+      const subtitle=preview.artifacts.find(a=>a.kind==='subtitle')
+      if(!subtitle||extname(subtitle.file).toLowerCase()!=='.srt')throw new Error('字幕文件类型无效')
+      await copyArtifact(subtitle.file,'subtitle.srt')
+    }
+    return storedAudio
+  }catch(error){await rm(targetDir,{recursive:true,force:true});throw error}
 }
 
 export function apply(ctx: Context): void {
@@ -320,8 +345,10 @@ export function apply(ctx: Context): void {
     if (requirements.materialUpload && !job.uploads.material.length) throw new Error('请上传本地视频或图片素材')
     if (requirements.backgroundMusicUpload && !job.uploads.bgm) throw new Error('请上传自定义背景音乐')
     const settings = await readSettings(root)
+    if (job.audioPreviewJobId && job.params.subtitle_enabled && job.subtitleProvider !== settings.subtitle_provider) throw new Error('字幕引擎已改变，请重新生成配音和字幕')
+    job.subtitleProvider = settings.subtitle_provider
     const requestFile=join(jobDir(job.id),'request.json')
-    await writeFile(requestFile,JSON.stringify({id:job.id,params:job.params,stopAt:job.stopAt,textModel:job.textModel,imageModel:job.imageModel,uploads:job.uploads,settings}), 'utf8')
+    await writeFile(requestFile,JSON.stringify({id:job.id,params:job.params,stopAt:job.stopAt,textModel:job.textModel,imageModel:job.imageModel,uploads:job.uploads,settings,reuseSubtitle:!!job.audioPreviewJobId}), 'utf8')
     if(job.status==='cancelled')return
     job.status='running';job.progress=0;job.error=undefined;job.logs=[];await save(job)
     const child=spawn(pythonPath(root),[join(runtime,'bridge.py'),'run',requestFile],{windowsHide:true,cwd:runtime,env:{...process.env,MPT_DSH_DATA_ROOT:root,PYTHONUTF8:'1'},stdio:['pipe','pipe','pipe']})
@@ -373,13 +400,29 @@ export function apply(ctx: Context): void {
         if(req.method==='GET' && action==='health')return json(res,200,{...(await health()),setup})
         if(req.method==='POST' && action==='setup'){if(setup.status==='running')throw new Error('正在安装运行环境');setup={status:'running',logs:[]};void setupEngine(root,runtime,(line)=>{setup.logs.push(line);setup.logs=setup.logs.slice(-30)}).then(()=>{setup.status='completed';healthCache=undefined}).catch(e=>{setup.status='failed';healthCache=undefined;setup.logs.push(e instanceof Error?e.message:String(e))});return json(res,202,setup)}
         if(req.method==='GET' && action==='jobs')return json(res,200,[...jobs.values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))
-        if(req.method==='POST' && action==='jobs'){const draft=validateDraft(await readJson(req));await verifyModels(draft);const id=randomUUID();const job:Job={...draft,id,status:'draft',createdAt:now(),updatedAt:now(),progress:0,logs:[],uploads:{material:[]},artifacts:[]};jobs.set(id,job);await save(job);return json(res,201,job)}
+         if(req.method==='POST' && action==='jobs'){
+           const raw=await readJson(req),draft=validateDraft(raw)
+           const previewId=isRecord(raw)?raw.audioPreviewJobId:undefined
+           if(previewId!==undefined && (typeof previewId!=='string'||!previewId))throw new Error('配音试听任务 ID 无效')
+           const preview=previewId?get(previewId):undefined
+           if(preview){const issue=audioPreviewReuseIssue(preview,draft,(await readSettings(root)).subtitle_provider);if(issue)throw new Error(issue)}
+           if(preview&&['script','terms'].includes(draft.stopAt))throw new Error('当前阶段无需复用配音')
+           await verifyModels(draft)
+           const id=randomUUID(),job:Job={...draft,id,status:'draft',createdAt:now(),updatedAt:now(),progress:0,logs:[],uploads:{material:[]},artifacts:[]}
+           if(preview){
+             job.uploads.audio=await copyAudioPreview(join(root,'storage','tasks'),preview,id,Boolean(draft.params.subtitle_enabled))
+             job.audioPreviewJobId=preview.id
+             job.subtitleProvider=preview.subtitleProvider
+           }
+           jobs.set(id,job);await save(job);return json(res,201,job)
+         }
         if(req.method==='POST' && action==='start')return json(res,200,await start(get(id)))
         if(req.method==='POST' && action==='cancel'){const job=get(id);if(job.status!=='running')throw new Error('任务没有运行');job.status='cancelled';job.error='用户已取消';const child=children.get(id);if(child)terminate(child);await save(job);return json(res,200,job)}
         if(req.method==='POST' && action==='delete'){const job=get(id);if(job.status==='running')throw new Error('运行中的任务不可删除');await removeTaskDirectory(jobsRoot,id);await removeTaskDirectory(join(root,'storage','tasks'),id);for(const file of job.uploads.material){const target=safePath(join(root,'storage','local_videos'),file);await rm(target,{force:true})}if(job.uploads.bgm){const target=safePath(join(root,'storage','bgm'),job.uploads.bgm);await rm(target,{force:true})}jobs.delete(id);return json(res,200,{ok:true})}
-        if(req.method==='POST' && action==='upload'){
-          const job=get(id);if(job.status!=='draft')throw new Error('只能给待开始任务上传素材')
-          const kind=url.searchParams.get('kind') as UploadKind;const filename=url.searchParams.get('name')||'';const ext=extname(filename).toLowerCase()
+         if(req.method==='POST' && action==='upload'){
+           const job=get(id);if(job.status!=='draft')throw new Error('只能给待开始任务上传素材')
+           const kind=url.searchParams.get('kind') as UploadKind;const filename=url.searchParams.get('name')||'';const ext=extname(filename).toLowerCase()
+           if(kind==='audio'&&job.audioPreviewJobId)throw new Error('已复用试听配音，不能再上传另一段旁白')
           if(!Object.hasOwn(EXTENSIONS,kind)||!EXTENSIONS[kind].includes(ext))throw new Error('文件类型不支持')
           const destRoot=kind==='material'?join(root,'storage','local_videos'):kind==='bgm'?join(root,'storage','bgm'):join(root,'storage','tasks',id)
           await mkdir(destRoot,{recursive:true});const stored=`${randomUUID()}${ext}`;const dest=safePath(destRoot,stored)
