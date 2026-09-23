@@ -12,6 +12,18 @@ const content = (contentType: PublisherContent['contentType']): PublisherContent
 })
 
 describe('article and image-note preflight', () => {
+  it('rejects Toutiao article summary before acceptance without blocking other article platforms', () => {
+    const draft = { ...content('article'), summary: '摘要内容' }
+    const capabilities: PublisherPlatformCapability[] = [{
+      platform: 'tt', contentTypes: ['article'], modes: { article: ['draft', 'publish'] }, requiredFields: {},
+    }, {
+      platform: 'juejin', contentTypes: ['article'], modes: { article: ['draft', 'publish'] }, requiredFields: {},
+    }]
+    expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toContain('请清空摘要')
+    expect(contentSubmissionError(draft, [account('juejin')], capabilities, 'draft')).toBeUndefined()
+    expect(contentSubmissionError({ ...draft, summary: '' }, [account('tt')], capabilities, 'draft')).toBeUndefined()
+  })
+
   it('requires article text, the selected platform fields, and a single designated cover', () => {
     const draft = content('article')
     const capabilities: PublisherPlatformCapability[] = [{

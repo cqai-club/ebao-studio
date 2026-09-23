@@ -24,6 +24,8 @@ export function contentSubmissionError(
     && content.body.includes('ebao-asset://')) return '掘金和B站专栏暂不支持正文插图，请分开提交'
   if (content.contentType === 'article' && content.tags.length > 0
     && accounts.some(account => account.platform === 'tt' || account.platform === 'bjh')) return '头条、百家号文章标签写入尚未验收，请先清空标签'
+  if (content.contentType === 'article' && content.summary.trim()
+    && accounts.some(account => account.platform === 'tt')) return '头条当前文章编辑页没有可写的独立摘要，请清空摘要后再提交'
   if (content.contentType === 'article' && accounts.some(account => account.platform === 'tt' || account.platform === 'bjh')) {
     try { articleAssetIds(content) } catch (cause) { return cause instanceof Error ? cause.message : '正文图片引用无效' }
   }
