@@ -43,6 +43,8 @@ const LAN_HTTPS = Object.freeze({
   async stop() { return LAN_HTTPS_SNAPSHOT },
 })
 const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-profile-'))
+const previousDshHome = process.env.DSH_HOME
+process.env.DSH_HOME = home
 let ctx
 let releasePackageResolver
 let pnpmRuntime
@@ -212,6 +214,12 @@ try {
     throw new Error(`assembled desktop profile is missing the default CQAI ImageGen plugin: ${entries.join(', ')}`)
   }
 
+  const shortVideoEntry = [...ctx.loader.entries()]
+    .find(entry => entry.options.name === 'cqai-dsh-plugin-short-video')
+  if (shortVideoEntry === undefined) {
+    throw new Error('assembled desktop profile is missing the Short Video plugin')
+  }
+
   if (ctx.get('desktopPnpm') === undefined) {
     throw new Error('assembled desktop profile is missing the desktop pnpm Host capability')
   }
@@ -324,6 +332,27 @@ try {
   if (cookie === undefined || cookie.length === 0) {
     throw new Error('browser authentication exchange did not mint a cookie')
   }
+  const shortVideoResponse = await fetch(new URL('/cqai-short-video/jobs', expectedUrl), {
+    headers: {
+      [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
+      Cookie: cookie,
+    },
+  })
+  const shortVideoJobs = await shortVideoResponse.json()
+  if (shortVideoResponse.status !== 200 || !Array.isArray(shortVideoJobs)) {
+    throw new Error('assembled Short Video Host API is unavailable')
+  }
+  const catalogResponse = await fetch(new URL('/cqai-short-video/catalog', expectedUrl), {
+    headers: {
+      [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
+      Cookie: cookie,
+    },
+  })
+  const modelCatalog = await catalogResponse.json()
+  if (catalogResponse.status !== 200 || modelCatalog.signedIn !== false
+    || !Array.isArray(modelCatalog.text) || !Array.isArray(modelCatalog.image)) {
+    throw new Error('assembled Short Video CQAI model catalog is unavailable')
+  }
   const response = await fetch(expectedUrl, {
     headers: {
       [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
@@ -340,6 +369,9 @@ try {
   }
   const graph = JSON.parse(bootMatch[1])
   const ids = new Set(graph.entries.map(entry => entry.id))
+  if (!ids.has('cqai-dsh-plugin-short-video')) {
+    throw new Error('assembled Web graph is missing the Short Video client')
+  }
   const aaEnabled = aaRequested && !brokenAa
   if (ids.has('@agents-anywhere/dsh-bridge-next') !== aaEnabled) throw new Error('AA client graph does not match explicit selection')
   if (aaEnabled && (!ctx.get('agentsAnywhereRuntime') || !ctx.get('agentsAnywhereOnboarding'))) {
@@ -374,5 +406,7 @@ try {
   await ctx?.fiber.dispose()
   releasePackageResolver?.()
   pnpmRuntime?.dispose()
+  if (previousDshHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = previousDshHome
   rmSync(home, { recursive: true, force: true })
 }
