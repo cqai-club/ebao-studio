@@ -25,6 +25,11 @@ if (manifest.license !== metadata.license) fail(`MatrixMedia license is ${manife
 if (manifest.scripts?.['build:publisher-worker:universal'] !== metadata.buildScript) {
   fail('Publisher Worker build command drifted from the source declaration')
 }
+const builderConfig = readFileSync(join(source, 'electron-builder.publisher.yml'), 'utf8')
+const electronVersion = /^electronVersion:\s*(\d+\.\d+\.\d+)\s*$/m.exec(builderConfig)?.[1]
+if (electronVersion !== metadata.electronVersion) {
+  fail(`Publisher Worker Electron version is ${electronVersion || 'missing'}, expected ${metadata.electronVersion}`)
+}
 
 for (const entry of [
   'LICENSE',
