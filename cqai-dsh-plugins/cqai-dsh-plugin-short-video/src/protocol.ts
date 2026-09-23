@@ -2,6 +2,8 @@ export const API = '/cqai-short-video'
 export type Stage = 'script' | 'terms' | 'audio' | 'subtitle' | 'materials' | 'video'
 export type Status = 'draft' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
 export type UploadKind = 'material' | 'audio' | 'bgm'
+export type ContentAction = 'preview' | 'script' | 'terms'
+export type ContentResult = { prompt?: string; defaultSystemPrompt?: string; script?: string; terms?: string[] }
 export type Artifact = { file: string; name: string; size: number; kind: 'video' | 'audio' | 'subtitle' | 'data' }
 export type Draft = {
   textModel: string

@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { API, defaultParams, defaultSettings, type Artifact, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
+import { API, defaultParams, defaultSettings, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
 
 export const name = 'cqai-short-video'
 export const inject = ['webServer', 'dsnAccount', 'llm']
@@ -90,6 +90,14 @@ export function validateDraft(raw: unknown): Draft {
 export function needsText(draft: Draft): boolean {
   return !draft.params.video_script || (draft.stopAt !== 'script' && draft.params.video_source !== 'local' && !draft.params.video_terms)
 }
+export function validateContentRequest(raw: unknown): {action: ContentAction; draft: Draft} {
+  if (!isRecord(raw) || !['preview', 'script', 'terms'].includes(String(raw.action))) throw new Error('文案操作无效')
+  const action = raw.action as ContentAction
+  const draft = validateDraft(raw.draft)
+  if (action !== 'terms' && !draft.params.video_subject) throw new Error('请先填写视频主题')
+  if (action === 'terms' && !draft.params.video_script) throw new Error('请先填写视频文案')
+  return {action, draft}
+}
 function validateSettings(raw: unknown): Settings {
   if (!isRecord(raw)) throw new Error('设置格式无效')
   const result = {...defaultSettings}
@@ -163,6 +171,8 @@ export function apply(ctx: Context): void {
   const runtime = physicalRuntime()
   const jobs = new Map<string, Job>()
   const children = new Map<string, ChildProcessWithoutNullStreams>()
+  const contentChildren = new Set<ChildProcessWithoutNullStreams>()
+  let contentReserved = false
   const writes = new Map<string, Promise<void>>()
   let setup: { status: 'idle' | 'running' | 'completed' | 'failed'; logs: string[] } = {status:'idle', logs:[]}
   let healthCache: Promise<Record<string,unknown>> | undefined
@@ -232,6 +242,69 @@ export function apply(ctx: Context): void {
     if (!output.trim()) throw new Error('CQAI Club 模型返回空内容')
     return output
   }
+  const runContent = async (action: ContentAction, draft: Draft, res: ServerResponse): Promise<ContentResult> => {
+    if (action !== 'preview') {
+      const available = await catalog()
+      if (!draft.textModel || !available.text.some(m => m.id === draft.textModel)) throw new Error('请选择当前 CQAI Club 账号可用的文本模型')
+    }
+    const requestDir = join(root, 'content-requests')
+    await mkdir(requestDir, {recursive:true})
+    const requestFile = join(requestDir, `${randomUUID()}.json`)
+    let child: ChildProcessWithoutNullStreams | undefined
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    let result: ContentResult | undefined
+    let fatal = ''
+    let stdout = '', stderr = ''
+    const disconnected = () => {fatal = '页面已关闭，生成已取消'; if (child) terminate(child)}
+    try {
+      await writeFile(requestFile, JSON.stringify({action, params:draft.params}), 'utf8')
+      child = spawn(pythonPath(root), [join(runtime, 'bridge.py'), 'content', requestFile], {
+        windowsHide:true, cwd:runtime, env:{...process.env, MPT_DSH_DATA_ROOT:root, PYTHONUTF8:'1'}, stdio:['pipe','pipe','pipe'],
+      })
+      contentChildren.add(child)
+      res.once('close', disconnected)
+      timeout = setTimeout(() => {fatal = '文案生成超时'; if (child) terminate(child)}, 10 * 60 * 1000)
+      child.stderr.on('data', (chunk: Buffer) => {stderr = (stderr + chunk.toString()).slice(-4000)})
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString()
+        const lines = stdout.split(/\r?\n/)
+        stdout = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('MPT_EVENT ')) continue
+          let event: Record<string, unknown>
+          try {event = JSON.parse(line.slice(10))} catch {continue}
+          if (event.type === 'llm_request') {
+            const active = child
+            void llmCall(draft.textModel, String(event.prompt)).then(
+              value => {if (active?.stdin.writable) active.stdin.write(JSON.stringify({ok:true,value}) + '\n')},
+              error => {if (active?.stdin.writable) active.stdin.write(JSON.stringify({ok:false,error:error instanceof Error ? error.message : String(error)}) + '\n')},
+            )
+          } else if (event.type === 'content_result') {
+            if (action === 'preview' && typeof event.prompt === 'string' && typeof event.defaultSystemPrompt === 'string') result = {prompt:event.prompt, defaultSystemPrompt:event.defaultSystemPrompt}
+            if (action !== 'preview' && typeof event.script === 'string' && Array.isArray(event.terms) && event.terms.every(term => typeof term === 'string')) result = {script:event.script, terms:event.terms as string[]}
+          } else if (event.type === 'fatal') fatal = String(event.error || '文案生成失败')
+        }
+      })
+      const exitCode = await new Promise<number | null>((resolve, reject) => {
+        child!.once('error', reject)
+        child!.once('close', resolve)
+      })
+      if (fatal || exitCode !== 0) throw new Error(fatal || stderr.trim() || `Python 进程退出: ${exitCode}`)
+      if (!result) throw new Error(fatal || stderr.trim() || '文案生成未返回结果')
+      return result
+    } finally {
+      if (timeout) clearTimeout(timeout)
+      res.off('close', disconnected)
+      if (child) contentChildren.delete(child)
+      await rm(requestFile, {force:true})
+    }
+  }
+  const generateContent = async (action: ContentAction, draft: Draft, res: ServerResponse): Promise<ContentResult> => {
+    if (contentReserved) throw new Error('已有文案生成请求正在运行')
+    contentReserved = true
+    try {return await runContent(action, draft, res)}
+    finally {contentReserved = false}
+  }
   const imageCall = async (model: string, payload: Record<string, unknown>) => {
     const available=await catalog()
     if (!available.image.some(m=>m.id===model)) throw new Error('CQAI Club 图片模型已不可用')
@@ -261,7 +334,10 @@ export function apply(ctx: Context): void {
       }else if(event.type==='progress' && isRecord(event.state)){
         job.state=event.state;job.progress=Number(event.state.progress)||0;void save(job)
       }else if(event.type==='result' && isRecord(event.state)){
-        gotResult=true;job.state=event.state;job.progress=Number(event.state.progress)||100
+        const output=isRecord(event.result)?event.result:{}
+        const script=typeof output.script==='string'?output.script:undefined
+        const terms=Array.isArray(output.terms)&&output.terms.every(term=>typeof term==='string')?output.terms as string[]:undefined
+        gotResult=true;job.state={...event.state,...(script?{script}:{}),...(terms?{terms}:{})};job.progress=Number(event.state.progress)||100
         if(event.state.state===1)job.status='completed';else{job.status='failed';job.error=String(event.state.error||'制作失败')}
       }else if(event.type==='fatal') fatal=String(event.error||'Python 执行失败')
     }})
@@ -287,6 +363,10 @@ export function apply(ctx: Context): void {
         const url=new URL(req.url||'', 'http://localhost');const action=url.pathname.slice(API.length+1)
         const id=url.searchParams.get('id')||''
         if(req.method==='GET' && action==='catalog')return json(res,200,await catalog())
+        if(req.method==='POST' && action==='content'){
+          const request=validateContentRequest(await readJson(req))
+          return json(res,200,await generateContent(request.action,request.draft,res))
+        }
         if(req.method==='GET' && action==='settings')return json(res,200,await readSettings(root))
         if(req.method==='POST' && action==='settings'){const settings=validateSettings(await readJson(req));await mkdir(root,{recursive:true});await writeFile(join(root,'settings.json'),JSON.stringify(settings,null,2));return json(res,200,settings)}
         if(req.method==='GET' && action==='health')return json(res,200,{...(await health()),setup})
@@ -312,7 +392,7 @@ export function apply(ctx: Context): void {
         return json(res,404,{error:'接口不存在'})
       }catch(e){if(!res.headersSent&&!res.destroyed)json(res,400,{error:e instanceof Error?e.message:'操作失败'})}
     }})
-    return async()=>{unregister();for(const child of children.values())terminate(child)}
+    return async()=>{unregister();for(const child of children.values())terminate(child);for(const child of contentChildren)terminate(child)}
   },'短视频制作任务与本地服务')
 }
 function requireDirs(path: string): string[] {

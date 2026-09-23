@@ -69,13 +69,62 @@ def main():
             send("health", python=False, ffmpeg=False, error=f"{type(exc).__name__}: {exc}",
                  uv=bool(shutil.which("uv")))
         return
-    if operation != "run" or len(sys.argv) != 3:
-        raise ValueError("expected: bridge.py run <request.json>")
+    if operation not in {"run", "content"} or len(sys.argv) != 3:
+        raise ValueError("expected: bridge.py <run|content> <request.json>")
 
     request_path = Path(sys.argv[2]).resolve()
     if not request_path.is_relative_to(data_root):
         raise ValueError("request must be inside plugin data directory")
     payload = json.loads(request_path.read_text(encoding="utf-8"))
+    if operation == "content":
+        from app.models.schema import VideoParams
+        from app.services import llm
+
+        params = VideoParams.model_validate(payload["params"])
+        action = payload["action"]
+        if action == "preview":
+            send(
+                "content_result",
+                prompt=llm.build_script_prompt(
+                    video_subject=params.video_subject,
+                    language=params.video_language,
+                    paragraph_number=params.paragraph_number,
+                    video_script_prompt=params.video_script_prompt,
+                    custom_system_prompt=params.custom_system_prompt,
+                ),
+                defaultSystemPrompt=llm.DEFAULT_SCRIPT_SYSTEM_PROMPT,
+            )
+            return
+
+        llm._generate_response = lambda prompt, app_config=None: request(
+            "llm_request", prompt=prompt
+        )
+        if action == "script":
+            script = llm.generate_script(
+                video_subject=params.video_subject,
+                language=params.video_language,
+                paragraph_number=params.paragraph_number,
+                video_script_prompt=params.video_script_prompt,
+                custom_system_prompt=params.custom_system_prompt,
+            )
+            if not script or "Error: " in script:
+                raise RuntimeError(str(script or "视频文案生成失败"))
+        elif action == "terms":
+            script = params.video_script
+        else:
+            raise ValueError("invalid content action")
+
+        terms = llm.generate_terms(
+            params.video_subject,
+            script,
+            amount=8 if params.match_materials_to_script else 5,
+            match_script_order=params.match_materials_to_script,
+        )
+        if not terms:
+            raise RuntimeError("素材关键词生成失败")
+        send("content_result", script=script, terms=terms)
+        return
+
     task_id = payload["id"]
     if not isinstance(task_id, str) or not task_id.isascii() or not task_id.replace("-", "").isalnum():
         raise ValueError("invalid task id")
