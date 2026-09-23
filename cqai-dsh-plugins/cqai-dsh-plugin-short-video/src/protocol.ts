@@ -33,6 +33,22 @@ export type Job = Draft & {
   logs: string[]
   uploads: { material: string[]; audio?: string; bgm?: string }
   artifacts: Artifact[]
+  audioPreviewJobId?: string
+  subtitleProvider?: Settings['subtitle_provider']
+}
+export function audioPreviewReuseIssue(source: Job, draft: Draft, subtitleProvider: Settings['subtitle_provider']): string | undefined {
+  if (source.status !== 'completed' || source.stopAt !== 'subtitle') return '请先完成配音和字幕生成'
+  if (!source.artifacts.some(a => a.kind === 'audio')) return '试听任务没有音频文件，请重新生成配音'
+  if (!source.params.video_script || !draft.params.video_script) return '请先确认视频文案，再生成配音'
+  if (['video_script', 'voice_name', 'voice_rate', 'voice_volume'].some(key => source.params[key] !== draft.params[key])) {
+    return '文案或配音设置已改变，请重新生成配音'
+  }
+  if (draft.params.subtitle_enabled && (
+    !source.params.subtitle_enabled ||
+    source.params.subtitle_display_mode !== draft.params.subtitle_display_mode ||
+    source.subtitleProvider !== subtitleProvider ||
+    !source.artifacts.some(a => a.kind === 'subtitle')
+  )) return '字幕未生成或字幕设置已改变，请重新生成配音和字幕'
 }
 export type Catalog = {
   signedIn: boolean

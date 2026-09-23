@@ -175,7 +175,7 @@ def main():
     state.state.update_task = update
 
     params = VideoParams.model_validate(payload["params"])
-    if params.subtitle_enabled:
+    if params.subtitle_enabled and stop_at == "video":
         fonts = system_fonts()
         chosen = params.font_name
         allowed = {item["path"] for item in fonts}
@@ -200,6 +200,20 @@ def main():
     if payload.get("uploads", {}).get("bgm"):
         params.bgm_type = "custom"
         params.bgm_file = payload["uploads"]["bgm"]
+
+    if payload.get("reuseSubtitle"):
+        if not payload.get("uploads", {}).get("audio"):
+            raise ValueError("reused subtitle requires preview audio")
+        cached_subtitle = (Path(utils.task_dir(task_id)) / "subtitle.srt").resolve()
+        if not cached_subtitle.is_relative_to(Path(utils.task_dir(task_id)).resolve()):
+            raise ValueError("invalid reused subtitle path")
+        if params.subtitle_enabled and not cached_subtitle.is_file():
+            raise ValueError("reused subtitle file is missing")
+
+        def use_preview_subtitle(task_id, params, video_script, sub_maker, audio_file):
+            return str(cached_subtitle) if params.subtitle_enabled else ""
+
+        task.generate_subtitle = use_preview_subtitle
 
     result = task.start(task_id, params, stop_at=stop_at)
     snapshot = state.state.get_task(task_id) or {}
