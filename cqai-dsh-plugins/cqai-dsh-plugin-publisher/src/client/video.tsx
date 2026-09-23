@@ -23,6 +23,7 @@ export function VideoPage({ active }: { active: boolean }) {
   const [mode, setMode] = useState<'publish' | 'draft'>('publish')
   const [selection, setSelection] = useState<Partial<Record<Platform, string>>>({})
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [confirm, setConfirm] = useState(false)
 
   const grouped = useMemo(() => Object.fromEntries(VIDEO_PLATFORMS.map(platform => [platform, accounts.filter(account => account.platform === platform)])) as Record<Platform, PublisherAccount[]>, [accounts])
@@ -38,9 +39,11 @@ export function VideoPage({ active }: { active: boolean }) {
     setDraft(value)
     setTagsInput(value?.tags.join(' ') ?? '')
   }
-  const refreshContents = async () => {
+  const refreshContents = async (): Promise<PublisherContent[]> => {
     const rows = await api<PublisherContent[]>('contents')
-    setContents(rows.filter(item => item.contentType === 'video'))
+    const matches = rows.filter(item => item.contentType === 'video')
+    setContents(matches)
+    return matches
   }
 
   useEffect(() => {
@@ -112,10 +115,11 @@ export function VideoPage({ active }: { active: boolean }) {
   }, [editVersion])
 
   const act = async (task: () => Promise<void>) => {
-    if (busy) return
+    if (busyRef.current) return
+    busyRef.current = true
     setBusy(true); clearTip()
     try { await task() } catch (cause) { showError(errorMessage(cause)) }
-    finally { setBusy(false) }
+    finally { busyRef.current = false; setBusy(false) }
   }
   const selectDraft = (id: string) => void act(async () => {
     await flush()
@@ -135,11 +139,17 @@ export function VideoPage({ active }: { active: boolean }) {
     await refreshContents()
   })
   const remove = () => {
-    if (!draftRef.current || !window.confirm('删除这份本地视频草稿？已经提交的记录不受影响。')) return
+    const id = draftRef.current?.id
+    if (!id || !window.confirm('删除这份本地视频草稿？已经提交的记录不受影响。')) return
     void act(async () => {
-      await api('content-delete', { id: draftRef.current!.id })
+      try { if (saveTask.current) await saveTask.current } catch { /* discard failed save */ }
+      const wasDirty = dirtyRef.current
+      dirtyRef.current = false
+      try { await api('content-delete', { id }) }
+      catch (cause) { dirtyRef.current = wasDirty; throw cause }
       setServerDraft(undefined)
-      await refreshContents()
+      const remaining = await refreshContents()
+      setServerDraft(remaining[0])
     })
   }
 

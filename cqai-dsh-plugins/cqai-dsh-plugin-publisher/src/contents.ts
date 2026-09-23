@@ -270,7 +270,10 @@ export function addAsset(id: string, name: string, data: Buffer, env: NodeJS.Pro
   const file = join(directory, 'assets', asset.id)
   writeFileSync(file, data, { flag: 'wx', mode: 0o600 })
   try {
-    const next: PublisherContent = { ...content, revision: content.revision + 1, updatedAt: new Date().toISOString(), assets: [...content.assets, asset] }
+    const next: PublisherContent = {
+      ...content, revision: content.revision + 1, updatedAt: new Date().toISOString(), assets: [...content.assets, asset],
+      ...(content.contentType === 'article' && !content.coverAssetId ? { coverAssetId: asset.id } : {}),
+    }
     writeManifest(directory, next)
     return next
   } catch (error) {
@@ -285,7 +288,10 @@ export function removeAsset(id: string, assetId: string, env: NodeJS.ProcessEnv 
   if (!content.assets.some(asset => asset.id === assetId)) throw new Error('素材不存在')
   const file = safeAssetPath(directory, assetId)
   const next = { ...content, revision: content.revision + 1, updatedAt: new Date().toISOString(), assets: content.assets.filter(asset => asset.id !== assetId) }
-  if (next.coverAssetId === assetId) delete next.coverAssetId
+  if (next.coverAssetId === assetId) {
+    delete next.coverAssetId
+    if (content.contentType === 'article' && next.assets.length > 0) next.coverAssetId = next.assets[0]!.id
+  }
   writeManifest(directory, next)
   rmSync(file)
   return next

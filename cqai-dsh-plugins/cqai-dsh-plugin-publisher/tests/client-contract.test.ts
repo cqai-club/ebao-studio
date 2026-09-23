@@ -41,4 +41,12 @@ describe('unified publisher client contract', () => {
     expect(article).not.toMatch(/\b(?:videoPath|filePath)\s*:/u)
     expect(history).toContain("api('account-open-dashboard', { id: target.accountId })")
   })
+
+  it('keeps article and image-note editing local, preflighted and safely previewed', () => {
+    expect(article).toContain('contentSubmissionError(current, selectedAccounts, capabilities, mode)')
+    expect(article).toContain('onDrop={event =>')
+    expect(article).toContain('setServerDraft(current)')
+    expect(article).toContain('runtimeCapability && !runtimeCapability.supported')
+    expect(article).not.toContain('dangerouslySetInnerHTML')
+  })
 })

@@ -240,15 +240,22 @@ describe('the Host publisher route', () => {
     const account: PublisherAccount = {
       id: ACCOUNT_ID, displayName: '掘金主账号', platform: 'juejin', loginState: 'logged-in',
     }
+    const imageAccount: PublisherAccount = {
+      id: LOCAL_VIDEO_ID, displayName: '小红书主账号', platform: 'xhs', loginState: 'logged-in',
+    }
     const publisher = {
       status: () => ({ supported: true, running: true }),
       request: async (method: string, params: unknown = {}) => {
         calls.push({ method, params })
-        if (method === 'accounts.list') return [account]
-        if (method === 'system.capabilities') return articleEnabled ? [{
+        if (method === 'accounts.list') return [account, imageAccount]
+        if (method === 'system.capabilities') return [...(articleEnabled ? [{
           platform: 'juejin', contentTypes: ['article'],
-          modes: { article: ['publish', 'draft'] }, requiredFields: { article: ['category'] },
-        }] : []
+          modes: { article: ['publish', 'draft'] }, requiredFields: { article: ['category'] }, maxAssets: { article: 1 },
+        }] : []), {
+          platform: 'xhs', contentTypes: ['image-note'],
+          modes: { 'image-note': ['publish', 'draft'] }, requiredFields: {},
+          maxTitleLength: { 'image-note': 20 }, maxAssets: { 'image-note': 20 },
+        }]
         if (method === 'submissions.create') return {
           accepted: true, submission: {
             id: '33333333-3333-4333-8333-333333333333', contentId: (params as { contentId: string }).contentId,
@@ -286,6 +293,7 @@ describe('the Host publisher route', () => {
       })
       expect(uploaded.status).toBe(201)
       const withAsset = await uploaded.json() as { revision: number; assets: Array<{ id: string }> }
+      expect((withAsset as typeof withAsset & { coverAssetId: string }).coverAssetId).toBe(withAsset.assets[0]!.id)
       const image = await fetch(`${base}/content-asset/${created.id}/${withAsset.assets[0]!.id}`)
       expect(image.headers.get('content-type')).toBe('image/png')
       expect(Buffer.from(await image.arrayBuffer())).toEqual(png)
@@ -316,6 +324,52 @@ describe('the Host publisher route', () => {
       })
       expect(disabled.status).toBe(400)
       expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(1)
+
+      const imageDraft = await (await send('contents', { contentType: 'image-note' })).json() as { id: string; revision: number }
+      const imageSaved = await (await send('content-save', {
+        id: imageDraft.id, revision: imageDraft.revision, title: '图文笔记', body: '正文',
+        summary: '', tags: ['话题'], creativeStatement: 'none',
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'image-note', contentId: imageDraft.id, revision: imageSaved.revision,
+        mode: 'draft', accountIds: [imageAccount.id],
+      })).status).toBe(400)
+      const imageUploaded = await fetch(`${base}/content-asset-upload/${imageDraft.id}`, {
+        method: 'POST', headers: {
+          'x-ejianbao': '1', 'x-publisher-file-name': encodeURIComponent('图片.png'),
+          'content-type': 'application/octet-stream',
+        }, body: png,
+      })
+      expect(imageUploaded.status).toBe(201)
+      const imageWithAsset = await imageUploaded.json() as { revision: number; assets: Array<{ id: string }> }
+      const tooLong = await (await send('content-save', {
+        id: imageDraft.id, revision: imageWithAsset.revision, title: '这是一条超过小红书二十个字限制的图文笔记标题', body: '正文',
+        summary: '', tags: ['话题'], creativeStatement: 'none', assetOrder: imageWithAsset.assets.map(asset => asset.id),
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'image-note', contentId: imageDraft.id, revision: tooLong.revision,
+        mode: 'draft', accountIds: [imageAccount.id],
+      })).status).toBe(400)
+      const invalidStatement = await (await send('content-save', {
+        id: imageDraft.id, revision: tooLong.revision, title: '图文笔记', body: '正文',
+        summary: '', tags: ['话题'], creativeStatement: 'repost', assetOrder: imageWithAsset.assets.map(asset => asset.id),
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'image-note', contentId: imageDraft.id, revision: invalidStatement.revision,
+        mode: 'draft', accountIds: [imageAccount.id],
+      })).status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(1)
+      const validImage = await (await send('content-save', {
+        id: imageDraft.id, revision: invalidStatement.revision, title: '图文笔记', body: '正文',
+        summary: '', tags: ['话题'], creativeStatement: 'none', assetOrder: imageWithAsset.assets.map(asset => asset.id),
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'image-note', contentId: imageDraft.id, revision: validImage.revision,
+        mode: 'draft', accountIds: [imageAccount.id],
+      })).status).toBe(202)
+      expect(calls.filter(call => call.method === 'submissions.create').at(-1)?.params).toMatchObject({
+        contentType: 'image-note', contentId: imageDraft.id, revision: validImage.revision,
+      })
       const malformed = await fetch(`${base}/content-save`, {
         method: 'POST', headers: { 'x-ejianbao': '1', 'content-type': 'application/json' }, body: '{bad',
       })

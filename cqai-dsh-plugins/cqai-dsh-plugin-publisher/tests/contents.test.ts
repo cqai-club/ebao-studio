@@ -59,10 +59,21 @@ describe('publisher local content library', () => {
     expect(readContent(draft.id, env).body).toBe('# 标题\n内容')
     expect(() => saveContent(draft.id, { ...saved, revision: 1 }, env)).toThrow('重新加载')
     const withAsset = addAsset(draft.id, '封面.png', png, env)
+    expect(withAsset.coverAssetId).toBe(withAsset.assets[0]!.id)
     expect(readAsset(draft.id, withAsset.assets[0]!.id, env).data).toEqual(png)
+    const secondAsset = addAsset(draft.id, '第二张.png', png, env)
+    const reordered = saveContent(draft.id, {
+      revision: secondAsset.revision, title: secondAsset.title, body: secondAsset.body,
+      summary: secondAsset.summary, tags: secondAsset.tags, creativeStatement: secondAsset.creativeStatement,
+      coverAssetId: secondAsset.coverAssetId, platformFields: secondAsset.platformFields,
+      assetOrder: [secondAsset.assets[1]!.id, secondAsset.assets[0]!.id],
+    }, env)
+    expect(reordered.assets.map(asset => asset.id)).toEqual([secondAsset.assets[1]!.id, secondAsset.assets[0]!.id])
+    const replacedCover = removeAsset(draft.id, withAsset.assets[0]!.id, env)
+    expect(replacedCover.coverAssetId).toBe(secondAsset.assets[1]!.id)
     const copy = duplicateContent(draft.id, env)
     expect(copy.id).not.toBe(draft.id)
-    expect(copy.assets).toEqual(withAsset.assets)
+    expect(copy.assets).toEqual(replacedCover.assets)
     deleteContent(draft.id, env)
     expect(readAsset(copy.id, copy.assets[0]!.id, env).data).toEqual(png)
     expect(listContents(env)).toHaveLength(1)

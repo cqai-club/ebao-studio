@@ -24,6 +24,7 @@ import {
   listContents, readAsset, readContent, removeAsset, resolveContent, saveContent,
   type SaveContentInput,
 } from './contents.ts'
+import { contentSubmissionError } from './submission-validation.ts'
 import { listWorks, resolveWork } from './works.ts'
 
 export const name = 'cqai-publisher'
@@ -329,8 +330,8 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
           ...video, workId: content.videoSource.workId, file: work.file,
         }) }
       }
-      if (!content.title || !content.body.trim() && content.contentType === 'article') throw new Error('请填写标题和正文')
-      if (content.contentType === 'image-note' && content.assets.length === 0) throw new Error('图文至少需要一张图片')
+      const error = contentSubmissionError(content, selected as PublisherAccount[], capabilities, input.mode)
+      if (error) throw new Error(error)
       return { code: 202, data: await runtime.request('submissions.create', {
         ...input, contentDirectory: directory,
       }) }
