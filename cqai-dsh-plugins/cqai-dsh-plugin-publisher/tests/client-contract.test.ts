@@ -55,6 +55,8 @@ describe('unified publisher client contract', () => {
     expect(article).toContain('插入正文')
     expect(article).toContain('ebao-asset://${assetId}')
     expect(article).toContain('runtimeCapability && !runtimeCapability.supported')
+    expect(article).toContain('请更新 Helper 并完全重启应用')
+    expect(article).not.toContain('所选平台的当前提交方式尚未开放')
     expect(article).not.toContain('dangerouslySetInnerHTML')
   })
 })

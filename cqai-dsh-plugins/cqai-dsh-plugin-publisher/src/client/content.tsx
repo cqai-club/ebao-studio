@@ -393,7 +393,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
         <div className="pub-card"><h2>选择平台账号</h2>
           {accountPlatforms.map(platform => <div key={platform}>
             <PlatformAccountSelect idPrefix={contentType} platform={platform} accounts={accounts} value={selection[platform] ?? ''} onChange={id => setSelection(current => ({ ...current, [platform]: id || undefined }))}/>
-            {!capabilitiesPending && !capabilitiesError && !contentModeAvailable(platform, contentType, mode, capabilities) && <p className="pub-muted">{PLATFORM_LABELS[platform]}{mode === 'publish' ? '立即发布' : '转存草稿'}尚未开放；可先选择账号并保存本地草稿。</p>}
+            {!capabilitiesPending && !capabilitiesError && !contentModeAvailable(platform, contentType, mode, capabilities) && <p className="pub-muted">当前发布引擎未提供{PLATFORM_LABELS[platform]}{mode === 'publish' ? '立即发布' : '转存草稿'}能力；请完全退出应用并使用最新 Helper 重启。</p>}
           </div>)}
           {accountsPending && <p className="pub-muted">正在加载平台账号…</p>}
           {accountsError ? <p className="pub-warn" role="status">账号加载失败：{accountsError}</p>
@@ -413,9 +413,9 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
           <label><input type="radio" name={`pub-mode-${contentType}`} checked={mode === 'draft'} onChange={() => setMode('draft')}/>转存草稿</label>
         </div></div>
         <button className="pub-primary pub-submit" disabled={busy || !submitReady} onClick={requestConfirm}>检查并提交</button>
-        {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">所选平台的当前提交方式尚未开放，暂不能提交；本地草稿仍会保存。</p>
+        {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">当前发布引擎缺少所选平台的提交能力，请更新 Helper 并完全重启应用；本地草稿仍会保存。</p>
           : validationError && <p className="pub-warn" role="status">提交前需补齐：{validationError}</p>}
-        <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。</p>
+        <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </div>
     </div>}
     {confirm && draft && <ConfirmDialog contentType={contentType} title={draft.title} mode={mode} accounts={selectedAccounts} busy={busy} onCancel={() => setConfirm(false)} onConfirm={submit}/>}

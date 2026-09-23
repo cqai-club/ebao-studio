@@ -62,6 +62,7 @@ class FakeWorker extends EventEmitter {
 const roots: string[] = []
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllEnvs()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -98,6 +99,15 @@ function handshake(frame: Frame, worker: FakeWorker, fragments = false): boolean
 }
 
 describe('PublisherSupervisor', () => {
+  it('uses the Electron process environment for a Worker override', () => {
+    const root = mkdtempSync(join(tmpdir(), 'publisher-env-override-'))
+    roots.push(root)
+    const executable = join(root, 'worker')
+    writeFileSync(executable, '')
+    vi.stubEnv('EBAO_PUBLISHER_WORKER', executable)
+    expect(resolvePublisherWorker({ platform: 'darwin', resourcesPath: root })).toBe(executable)
+  })
+
   it('frames split NDJSON responses and redacts Worker stderr', async () => {
     const logs: string[] = []
     const { supervisor, workers } = fixture((frame, worker) => {

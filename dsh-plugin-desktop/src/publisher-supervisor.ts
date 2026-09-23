@@ -82,7 +82,7 @@ function executableFromOverride(value: string): string {
 /** Locate the helper without starting it. v1 intentionally has no Windows fallback. */
 export function resolvePublisherWorker(options: Pick<PublisherSupervisorOptions, 'platform' | 'resourcesPath' | 'env' | 'developmentAppPath'>): string {
   if (options.platform !== 'darwin') return ''
-  const override = String(options.env?.EBAO_PUBLISHER_WORKER ?? '').trim()
+  const override = String((options.env ?? process.env).EBAO_PUBLISHER_WORKER ?? '').trim()
   if (override !== '') return executableFromOverride(override)
   const packaged = join(
     options.resourcesPath,
@@ -93,12 +93,21 @@ export function resolvePublisherWorker(options: Pick<PublisherSupervisorOptions,
     'MatrixMedia Publisher Worker',
   )
   if (existsSync(packaged)) return packaged
-  const developmentApp = options.developmentAppPath ?? fileURLToPath(new URL(
-    '../../matrixmedia-publisher/build/publisher-worker/mac-universal/MatrixMedia Publisher Worker.app',
-    import.meta.url,
-  ))
-  const development = executableFromOverride(developmentApp)
-  return existsSync(development) ? development : packaged
+  const developmentApps = options.developmentAppPath === undefined ? [
+    fileURLToPath(new URL(
+      '../../matrixmedia-publisher/build/publisher-worker-open/mac-universal/MatrixMedia Publisher Worker.app',
+      import.meta.url,
+    )),
+    fileURLToPath(new URL(
+      '../../matrixmedia-publisher/build/publisher-worker/mac-universal/MatrixMedia Publisher Worker.app',
+      import.meta.url,
+    )),
+  ] : [options.developmentAppPath]
+  for (const app of developmentApps) {
+    const development = executableFromOverride(app)
+    if (existsSync(development)) return development
+  }
+  return packaged
 }
 
 /** Error retaining the Worker's stable code without leaking protocol payloads. */

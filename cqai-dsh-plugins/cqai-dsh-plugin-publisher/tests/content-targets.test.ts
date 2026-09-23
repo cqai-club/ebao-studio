@@ -7,7 +7,7 @@ const account = (id: string, platform: PublisherAccount['platform']): PublisherA
 })
 
 describe('article and image-note account choices', () => {
-  it('keeps adapter accounts selectable even while their submission capability is closed', () => {
+  it('keeps adapter accounts selectable while Worker capability data loads', () => {
     const accounts = [account('juejin-1', 'juejin'), account('blbl-1', 'blbl'), account('xhs-1', 'xhs'), account('tt-1', 'tt'), account('bjh-1', 'bjh')]
     expect(CONTENT_ACCOUNT_PLATFORMS.article).toEqual(['juejin', 'blbl', 'tt', 'bjh'])
     expect(CONTENT_ACCOUNT_PLATFORMS['image-note']).toEqual(['xhs'])
