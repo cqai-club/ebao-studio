@@ -2,7 +2,7 @@ import {
   copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
   readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
@@ -74,6 +74,7 @@ function readManifest(directory: string): PublisherContent {
     || content.assets.some(asset => !asset || !CONTENT_ID.test(asset.id)
       || typeof asset.name !== 'string' || typeof asset.bytes !== 'number'
       || asset.bytes < 1 || asset.bytes > MAX_ASSET_BYTES
+      || (asset.sha256 !== undefined && !/^[0-9a-f]{64}$/u.test(asset.sha256))
       || !['image/jpeg', 'image/png', 'image/webp'].includes(asset.mime))
     || !content.platformFields || typeof content.platformFields !== 'object' || Array.isArray(content.platformFields)
     || (content.coverAssetId !== undefined && !content.assets.some(asset => asset.id === content.coverAssetId))
@@ -266,7 +267,7 @@ export function addAsset(id: string, name: string, data: Buffer, env: NodeJS.Pro
   if (!mime) throw new Error('仅支持 JPEG、PNG、WebP 图片')
   const safeName = basename(name).slice(0, 160)
   if (!safeName || safeName === '.' || safeName === '..') throw new Error('素材名称无效')
-  const asset: PublisherAsset = { id: randomUUID(), name: safeName, mime, bytes: data.length }
+  const asset: PublisherAsset = { id: randomUUID(), name: safeName, mime, bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') }
   const file = join(directory, 'assets', asset.id)
   writeFileSync(file, data, { flag: 'wx', mode: 0o600 })
   try {
@@ -315,6 +316,7 @@ export function resolveContent(id: string, revision: number, env: NodeJS.Process
   for (const asset of content.assets) {
     const file = safeAssetPath(directory, asset.id)
     if (statSync(file).size !== asset.bytes) throw new Error('素材已改变，请重新上传')
+    if (asset.sha256 && createHash('sha256').update(readFileSync(file)).digest('hex') !== asset.sha256) throw new Error('素材已改变，请重新上传')
   }
   return { content, directory }
 }

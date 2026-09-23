@@ -2,6 +2,7 @@ import {
   PLATFORM_LABELS, type PublisherAccount, type PublisherContent,
   type PublisherMode, type PublisherPlatformCapability,
 } from './protocol.ts'
+import { articleAssetIds } from './article-assets.ts'
 
 const FIELD_LABELS: Record<string, string> = { category: '分类', topic: '话题', original: '原创声明' }
 const XHS_IMAGE_STATEMENTS = new Set(['none', 'ai_generated', 'fiction', 'marketing'])
@@ -19,6 +20,11 @@ export function contentSubmissionError(
   if (content.contentType === 'image-note' && content.assets.length === 0) return '图文至少添加一张图片'
   if (accounts.length === 0) return '请选择支持此类型的发布账号'
   if (content.contentType === 'article' && content.assets.length > 0 && !content.coverAssetId) return '请为文章选择封面图片'
+  if (content.contentType === 'article' && accounts.some(account => account.platform === 'juejin' || account.platform === 'blbl')
+    && content.body.includes('ebao-asset://')) return '掘金和B站专栏暂不支持正文插图，请分开提交'
+  if (content.contentType === 'article' && accounts.some(account => account.platform === 'tt' || account.platform === 'bjh')) {
+    try { articleAssetIds(content) } catch (cause) { return cause instanceof Error ? cause.message : '正文图片引用无效' }
+  }
 
   for (const account of accounts) {
     const capability = capabilities.find(item => item.platform === account.platform)

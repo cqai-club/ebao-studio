@@ -60,6 +60,7 @@ describe('publisher local content library', () => {
     expect(() => saveContent(draft.id, { ...saved, revision: 1 }, env)).toThrow('重新加载')
     const withAsset = addAsset(draft.id, '封面.png', png, env)
     expect(withAsset.coverAssetId).toBe(withAsset.assets[0]!.id)
+    expect(withAsset.assets[0]!.sha256).toMatch(/^[0-9a-f]{64}$/u)
     expect(readAsset(draft.id, withAsset.assets[0]!.id, env).data).toEqual(png)
     const secondAsset = addAsset(draft.id, '第二张.png', png, env)
     const reordered = saveContent(draft.id, {
@@ -100,6 +101,9 @@ describe('publisher local content library', () => {
     expect(() => resolveContent('../outside', 1, env)).toThrow('草稿 ID')
     rmSync(file)
     expect(existsSync(outside)).toBe(true)
+    writeFileSync(file, png)
+    writeFileSync(file, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 9, 2, 3]))
+    expect(() => resolveContent(draft.id, withAsset.revision, env)).toThrow('素材已改变')
     writeFileSync(file, png)
     const withoutAsset = removeAsset(draft.id, asset.id, env)
     expect(withoutAsset.assets).toEqual([])

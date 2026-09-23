@@ -52,6 +52,8 @@ describe('unified publisher client contract', () => {
     expect(shared).toContain('pub-target-${idPrefix}-${platform}')
     expect(article).toContain('onDrop={event =>')
     expect(article).toContain('setServerDraft(current)')
+    expect(article).toContain('插入正文')
+    expect(article).toContain('ebao-asset://${assetId}')
     expect(article).toContain('runtimeCapability && !runtimeCapability.supported')
     expect(article).not.toContain('dangerouslySetInnerHTML')
   })

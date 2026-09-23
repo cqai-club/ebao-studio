@@ -6,7 +6,7 @@ type EditableContentType = Exclude<PublisherContentType, 'video'>
 
 /** Account choices are independent of the Worker capability/acceptance gate. */
 export const CONTENT_ACCOUNT_PLATFORMS = {
-  article: ['juejin', 'blbl'],
+  article: ['juejin', 'blbl', 'tt', 'bjh'],
   'image-note': ['xhs'],
 } as const satisfies Record<EditableContentType, readonly Platform[]>
 

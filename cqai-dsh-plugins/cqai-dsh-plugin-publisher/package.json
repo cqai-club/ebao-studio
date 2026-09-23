@@ -55,11 +55,15 @@
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-home-paths": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-host-webserver": "^0.1.5-rc.1",
+    "@types/markdown-it": "14.1.2",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",
     "react": "^18.3.1",
     "tsdown": "0.22.2",
     "typescript": "~5.7.2",
     "vitest": "4.1.8"
+  },
+  "dependencies": {
+    "markdown-it": "14.1.0"
   }
 }

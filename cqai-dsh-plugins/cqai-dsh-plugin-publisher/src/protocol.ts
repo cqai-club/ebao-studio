@@ -62,6 +62,8 @@ export interface PublisherAsset {
   name: string
   mime: 'image/jpeg' | 'image/png' | 'image/webp'
   bytes: number
+  /** New uploads are bound to their original bytes; legacy manifests may omit it. */
+  sha256?: string
 }
 
 /** A video draft remembers only a managed work ID or an opaque native selection ID. */

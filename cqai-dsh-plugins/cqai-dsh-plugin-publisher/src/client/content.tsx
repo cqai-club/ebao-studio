@@ -11,7 +11,7 @@ import {
 import { contentSubmissionError } from '../submission-validation.ts'
 import { usePublisherTips } from './tips.tsx'
 
-function MarkdownPreview({ value }: { value: string }) {
+function MarkdownPreview({ value, content }: { value: string; content: PublisherContent }) {
   const inline = (line: string) => {
     const nodes: React.ReactNode[] = []
     const tokens = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/gu
@@ -38,6 +38,11 @@ function MarkdownPreview({ value }: { value: string }) {
       continue
     }
     if (code) { code.push(line); continue }
+    const image = /^!\[([^\]]*)\]\(ebao-asset:\/\/([0-9a-f-]{36})\)$/iu.exec(line.trim())
+    if (image && content.assets.some(asset => asset.id === image[2])) {
+      blocks.push(<figure key={index}><img src={`${API}/content-asset/${content.id}/${image[2]}`} alt={image[1]}/><figcaption>{image[1]}</figcaption></figure>)
+      continue
+    }
     const heading = /^(#{1,3})\s+(.+)$/u.exec(line)
     if (heading) {
       const text = inline(heading[2])
@@ -64,6 +69,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   const [contents, setContents] = useState<PublisherContent[]>([])
   const [draft, setDraft] = useState<PublisherContent>()
   const draftRef = useRef<PublisherContent>()
+  const bodyInputRef = useRef<HTMLTextAreaElement>(null)
   const dirtyRef = useRef(false)
   const saveTask = useRef<Promise<void>>()
   const [editVersion, setEditVersion] = useState(0)
@@ -275,6 +281,25 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     setServerDraft(await api<PublisherContent>('content-asset-delete', { id: current.id, assetId }))
     await refreshContents()
   })
+  const insertImage = (assetId: string, name: string) => {
+    const current = draftRef.current
+    if (!current || contentType !== 'article') return
+    const textarea = bodyInputRef.current
+    const start = textarea?.selectionStart ?? current.body.length
+    const end = textarea?.selectionEnd ?? start
+    const label = name.replace(/[\[\]\\\r\n]/gu, ' ').trim().slice(0, 80) || '图片'
+    const marker = `![${label}](ebao-asset://${assetId})`
+    const before = current.body.slice(0, start)
+    const after = current.body.slice(end)
+    const insertion = `${before && !before.endsWith('\n') ? '\n' : ''}${marker}${after && !after.startsWith('\n') ? '\n' : ''}`
+    const cursor = before.length + insertion.length
+    setPreview(false)
+    update({ body: before + insertion + after })
+    requestAnimationFrame(() => {
+      bodyInputRef.current?.focus()
+      bodyInputRef.current?.setSelectionRange(cursor, cursor)
+    })
+  }
   const moveAsset = (assetId: string, target: number) => void act(async () => {
     const current = await flush()
     if (!current) return
@@ -340,7 +365,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
             <label className="pub-secondary">导入 .md/.txt<input type="file" accept=".md,.txt,text/markdown,text/plain" style={{ display: 'none' }} onChange={event => { importText(event.target.files?.[0]); event.target.value = '' }}/></label>
           </div>}
           <div className="pub-field"><label htmlFor={`pub-${contentType}-body`}>{contentType === 'article' ? '正文' : '正文 / 话题'}</label>
-            {preview && contentType === 'article' ? <MarkdownPreview value={draft.body}/> : <textarea className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={draft.body} onChange={event => update({ body: event.target.value })}/>}
+            {preview && contentType === 'article' ? <MarkdownPreview value={draft.body} content={draft}/> : <textarea ref={bodyInputRef} className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={draft.body} onChange={event => update({ body: event.target.value })}/>}
           </div>
           {contentType === 'article' && preview && <p className="pub-muted">这里只预览基础 Markdown 排版；实际平台编辑器呈现可能不同，原始正文不会被预览修改。</p>}
           {contentType === 'article' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={draft.summary} onChange={event => update({ summary: event.target.value })}/></div>}
@@ -351,7 +376,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
         <div className="pub-card"><h2>{contentType === 'article' ? '封面图片' : '图片素材与排序'}</h2>
           <label className="pub-secondary">添加图片<input type="file" accept="image/jpeg,image/png,image/webp" multiple style={{ display: 'none' }} onChange={event => { addImages(event.target.files); event.target.value = '' }}/></label>
           <p className="pub-muted">{draft.assets.length}/{assetLimit} 张 · 仅支持 JPEG / PNG / WebP，每张不超过 20MB。{contentType === 'image-note' ? '可拖动排序，也可使用 ↑ ↓ 按钮。' : ''}</p>
-          {contentType === 'article' && <p className="pub-muted">首批文章平台目前只接受单张封面；正文插图仍在适配与验收中。</p>}
+          {contentType === 'article' && <p className="pub-muted">头条、百家号素材可插入正文，也可单独设为封面；掘金、B站专栏暂只支持单张封面。导入 Markdown 时不会读取相对路径图片，请先上传素材再插入。</p>}
           <div className="pub-assets">{draft.assets.map((asset, index) => <div className={`pub-asset${draggedAssetId === asset.id ? ' pub-asset-dragging' : ''}`} key={asset.id}
             draggable={contentType === 'image-note' && !busy}
             onDragStart={event => { if (contentType === 'image-note') { event.dataTransfer.effectAllowed = 'move'; setDraggedAssetId(asset.id) } }}
@@ -360,7 +385,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
             onDragEnd={() => setDraggedAssetId(undefined)}>
             <img src={`${API}/content-asset/${draft.id}/${asset.id}`} alt={asset.name}/><small>{String(index + 1).padStart(2, '0')} · {asset.name}</small>
             {contentType === 'article' && <label><input type="radio" name={`cover-${draft.id}`} checked={draft.coverAssetId === asset.id} onChange={() => update({ coverAssetId: asset.id })}/>封面</label>}
-            <div className="pub-actions"><button className="pub-secondary" disabled={index === 0 || busy} onClick={() => reorder(asset.id, -1)}>↑</button><button className="pub-secondary" disabled={index === draft.assets.length - 1 || busy} onClick={() => reorder(asset.id, 1)}>↓</button><button className="pub-danger" disabled={busy} onClick={() => removeImage(asset.id)}>删除</button></div>
+            <div className="pub-actions">{contentType === 'article' && <button className="pub-secondary" disabled={busy} onClick={() => insertImage(asset.id, asset.name)}>插入正文</button>}<button className="pub-secondary" disabled={index === 0 || busy} onClick={() => reorder(asset.id, -1)}>↑</button><button className="pub-secondary" disabled={index === draft.assets.length - 1 || busy} onClick={() => reorder(asset.id, 1)}>↓</button><button className="pub-danger" disabled={busy} onClick={() => removeImage(asset.id)}>删除</button></div>
           </div>)}</div>
         </div>
       </div>
