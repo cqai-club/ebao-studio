@@ -29,6 +29,8 @@
 
 ## 构建与测试
 
+头条文章草稿尚未经过真实账号验收，正式运行时能力仍关闭。macOS Beta 开发者如需受控验收，可先将当前源码构建的 Universal Helper 放在被 Git 忽略的 `matrixmedia-publisher/build/publisher-worker-article-test/mac-universal/MatrixMedia Publisher Worker.app`，完全退出已有 Beta 后运行 `corepack yarn dev:beta:tt-article-draft`。启动脚本会先用隔离临时数据目录检查 Helper 仅开放头条文章 `draft`，不会开放头条文章 `publish`；检查不通过则不启动 GUI。不要覆盖正在运行的默认 Helper，提交后仍需在同账号后台人工确认。
+
 ```bash
 corepack yarn workspace cqai-dsh-plugin-publisher build
 corepack yarn workspace cqai-dsh-plugin-publisher typecheck
