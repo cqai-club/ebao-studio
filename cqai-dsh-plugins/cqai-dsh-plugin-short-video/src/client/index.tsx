@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { useEffect, useRef, useState } from 'react'
-import { API, defaultParams, defaultSettings, type Catalog, type Draft, type Job, type Settings, type Stage, type UploadKind } from '../protocol.ts'
+import { API, defaultParams, defaultSettings, type Catalog, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from '../protocol.ts'
 
 export const inject = ['slots']
 const PANEL = 'cqai-short-video' as MainPanelId
@@ -13,6 +13,8 @@ const initial: Draft = {textModel:'',imageModel:'',stopAt:'video',params:{...def
 const stages: {id:Stage;label:string}[] = [{id:'script',label:'文案'},{id:'terms',label:'关键词'},{id:'audio',label:'配音'},{id:'subtitle',label:'字幕'},{id:'materials',label:'素材'},{id:'video',label:'完整成片'}]
 const sources = [{id:'pexels',name:'Pexels 素材库'},{id:'pixabay',name:'Pixabay 素材库'},{id:'coverr',name:'Coverr 素材库'},{id:'openai_image',name:'CQAI Club 图片生成'},{id:'local',name:'本地视频 / 图片'}]
 const transitions = [{id:'',name:'无转场'},{id:'Shuffle',name:'随机'},{id:'FadeIn',name:'渐入'},{id:'FadeOut',name:'渐出'},{id:'SlideIn',name:'滑入'},{id:'SlideOut',name:'滑出'},{id:'ZoomIn',name:'放大'},{id:'ZoomOut',name:'缩小'}]
+const scriptLanguages = [{id:'',name:'自动识别'},{id:'zh-CN',name:'简体中文'},{id:'zh-HK',name:'香港中文'},{id:'zh-TW',name:'繁体中文'},{id:'en-US',name:'English'},{id:'ca-ES',name:'Català'},{id:'de-DE',name:'Deutsch'},{id:'es-ES',name:'Español'},{id:'fr-FR',name:'Français'},{id:'it-IT',name:'Italiano'},{id:'ru-RU',name:'Русский'},{id:'vi-VN',name:'Tiếng Việt'},{id:'th-TH',name:'ไทย'},{id:'tr-TR',name:'Türkçe'}]
+const normalizeLanguage=(value:unknown):string=>value==='zh'?'zh-CN':value==='en'?'en-US':typeof value==='string'?value:''
 const labels: Record<Job['status'],string> = {draft:'待开始',running:'制作中',completed:'已完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'}
 type Health = {python?:boolean;ffmpeg?:boolean;voices?:string[];fonts?:{name:string;path:string}[];uv?:boolean;error?:string;setup?:{status:string;logs:string[]}}
 async function api<T>(route:string,data?:unknown):Promise<T>{
@@ -44,11 +46,12 @@ function Studio(){
   const [busy,setBusy]=useState('')
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
+  const [preview,setPreview]=useState<ContentResult>()
   const importRef=useRef<HTMLInputElement>(null)
   const job=jobs.find(x=>x.id===selected)
   const filteredJobs=jobs.filter(item=>filter==='all'||(filter==='failed'&&['failed','interrupted','cancelled'].includes(item.status))||item.status===filter)
   const modelNeeded=!draft.params.video_script||(draft.stopAt!=='script'&&draft.params.video_source!=='local'&&!draft.params.video_terms)||draft.params.video_source==='openai_image'
-  const update=(key:string,value:unknown)=>setDraft(prev=>({...prev,params:{...prev.params,[key]:value}}))
+  const update=(key:string,value:unknown)=>{setPreview(undefined);setDraft(prev=>({...prev,params:{...prev.params,[key]:value}}))}
   const value=(key:string)=>draft.params[key]
   const refresh=()=>api<Job[]>('jobs').then(setJobs)
   const reloadCatalog=()=>api<Catalog>('catalog').then(c=>{setCatalog(c);setDraft(prev=>({...prev,textModel:prev.textModel||c.defaultText||c.text[0]?.id||'',imageModel:prev.imageModel||c.defaultImage||c.image[0]?.id||''}))})
@@ -57,11 +60,25 @@ function Studio(){
     const timer=setInterval(poll,2000);const healthTimer=setInterval(()=>{void api<Health>('health').then(data=>{if(active)setHealth(data)}).catch(()=>{})},10000)
     return()=>{active=false;clearInterval(timer);clearInterval(healthTimer)}
   },[])
-  const field=(label:string,key:string,help?:string,multiline=false)=><div className="sv-field"><label htmlFor={key}>{label}</label>{multiline?<textarea className="sv-input long" id={key} value={String(value(key)??'')} onChange={e=>update(key,e.target.value)}/>:<input className="sv-input" id={key} value={String(value(key)??'')} onChange={e=>update(key,e.target.value)}/>} {help&&<p className="sv-help">{help}</p>}</div>
-  const number=(label:string,key:string,min:number,max:number,step=1)=><div className="sv-field"><label htmlFor={key}>{label}</label><input className="sv-input" id={key} type="number" min={min} max={max} step={step} value={Number(value(key))} onChange={e=>update(key,Number(e.target.value))}/></div>
-  const choice=(label:string,key:string,items:{id:string;name:string}[])=><div className="sv-field"><label htmlFor={key}>{label}</label><select className="sv-input" id={key} value={String(value(key)??'')} onChange={e=>update(key,e.target.value||null)}>{items.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></div>
-  const check=(label:string,key:string)=><label className="sv-check"><input type="checkbox" checked={Boolean(value(key))} onChange={e=>update(key,e.target.checked)}/>{label}</label>
+  const field=(label:string,key:string,help?:string,multiline=false)=>{
+    const maxLength:Record<string,number>={video_subject:500,video_script:30000,video_terms:4000,video_script_prompt:2000,custom_system_prompt:8000}
+    return <div className="sv-field"><label htmlFor={key}>{label}</label>{multiline?<textarea className="sv-input long" id={key} disabled={!!busy} maxLength={maxLength[key]} value={String(value(key)??'')} onChange={e=>update(key,e.target.value)}/>:<input className="sv-input" id={key} disabled={!!busy} maxLength={maxLength[key]} value={String(value(key)??'')} onChange={e=>update(key,e.target.value)}/>} {help&&<p className="sv-help">{help}</p>}</div>
+  }
+  const number=(label:string,key:string,min:number,max:number,step=1)=><div className="sv-field"><label htmlFor={key}>{label}</label><input className="sv-input" id={key} disabled={!!busy} type="number" min={min} max={max} step={step} value={Number(value(key))} onChange={e=>update(key,Number(e.target.value))}/></div>
+  const choice=(label:string,key:string,items:{id:string;name:string}[])=><div className="sv-field"><label htmlFor={key}>{label}</label><select className="sv-input" id={key} disabled={!!busy} value={String(value(key)??'')} onChange={e=>update(key,key==='video_transition_mode'&&!e.target.value?null:e.target.value)}>{items.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></div>
+  const check=(label:string,key:string)=><label className="sv-check"><input type="checkbox" disabled={!!busy} checked={Boolean(value(key))} onChange={e=>update(key,e.target.checked)}/>{label}</label>
   const action=async<T,>(label:string,operation:()=>Promise<T>)=>{setBusy(label);setError('');setNotice('');try{return await operation()}catch(e){setError(e instanceof Error?e.message:String(e));return undefined}finally{setBusy('')}}
+  async function contentAction(kind:ContentAction){
+    if(kind==='script'&&String(draft.params.video_script||'').trim()&&!window.confirm('重新生成会替换当前文案与关键词，继续吗？'))return
+    await action(kind==='preview'?'正在准备提示词…':'正在生成内容…',async()=>{
+      const result=await api<ContentResult>('content',{action:kind,draft})
+      if(kind==='preview'){setPreview(result);return}
+      if(!result.terms?.length || (kind==='script'&&!result.script?.trim()))throw new Error('未收到完整的文案或关键词')
+      setDraft(prev=>({...prev,params:{...prev.params,...(kind==='script'?{video_script:result.script}:{}),video_terms:result.terms!.join(', ')}}))
+      setPreview(undefined)
+      setNotice(kind==='script'?'文案与关键词已生成，请检查并修改后继续。':'关键词已更新，请检查后继续。')
+    })
+  }
   async function create(){
     await action('正在创建任务…',async()=>{
       const next=await api<Job>('jobs',draft);setSelected(next.id);setTab('history')
@@ -72,44 +89,56 @@ function Studio(){
       setNotice('任务已开始，制作进度保存在本机。')
     })
   }
-  function restore(item:Job){setDraft({textModel:item.textModel,imageModel:item.imageModel,stopAt:item.stopAt,params:{...item.params}});setMaterials([]);setVoiceFile(undefined);setBgmFile(undefined);setTab('create');setNotice('已载入任务参数；本地上传素材请重新选择。')}
+  function restore(item:Job){
+    const script=typeof item.state?.script==='string'?item.state.script:''
+    const terms=Array.isArray(item.state?.terms)&&item.state.terms.every(term=>typeof term==='string')?item.state.terms.join(', '):''
+    setDraft({textModel:item.textModel,imageModel:item.imageModel,stopAt:item.stopAt,params:{...item.params,video_language:normalizeLanguage(item.params.video_language),...(script?{video_script:script}:{}),...(terms?{video_terms:terms}:{})}})
+    setPreview(undefined);setMaterials([]);setVoiceFile(undefined);setBgmFile(undefined);setTab('create');setNotice('已载入任务内容；本地上传素材请重新选择。')
+  }
   function exportPreset(){const blob=new Blob([JSON.stringify(draft,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='short-video-preset.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-  async function importPreset(file:File){await action('导入预设…',async()=>{const value=JSON.parse(await file.text()) as Partial<Draft>;if(!value.params||typeof value.params!=='object')throw new Error('预设格式无效');const keys=Object.keys(defaultParams);const params=Object.fromEntries(Object.entries(value.params).filter(([key])=>keys.includes(key)));setDraft({...initial,textModel:catalog?.text.some(m=>m.id===value.textModel)?value.textModel||'':'',imageModel:catalog?.image.some(m=>m.id===value.imageModel)?value.imageModel||'':'',stopAt:stages.some(s=>s.id===value.stopAt)?value.stopAt!:'video',params:{...defaultParams,...params}});setNotice('预设已导入，模型仅保留当前 CQAI Club 账号可用的选择。')})}
+  async function importPreset(file:File){await action('导入预设…',async()=>{const value=JSON.parse(await file.text()) as Partial<Draft>;if(!value.params||typeof value.params!=='object')throw new Error('预设格式无效');const keys=Object.keys(defaultParams);const params=Object.fromEntries(Object.entries(value.params).filter(([key])=>keys.includes(key)));params.video_language=normalizeLanguage(params.video_language);setDraft({...initial,textModel:catalog?.text.some(m=>m.id===value.textModel)?value.textModel||'':'',imageModel:catalog?.image.some(m=>m.id===value.imageModel)?value.imageModel||'':'',stopAt:stages.some(s=>s.id===value.stopAt)?value.stopAt!:'video',params:{...defaultParams,...params}});setPreview(undefined);setNotice('预设已导入，模型仅保留当前 CQAI Club 账号可用的选择。')})}
   return <section className="sv"><style>{css}</style><div className="sv-wrap">
     <header className="sv-top"><div><h1>短视频制作</h1><div className="sv-sub">从主题到成片 · MoneyPrinterTurbo 制作引擎 · CQAI Club 模型</div></div><span className="sv-badge">独立插件</span></header>
-    <nav className="sv-tabs">{([['create','创作'],['assets','素材'],['audio','声音与字幕'],['advanced','高级'],['history','任务'],['settings','设置']] as const).map(([id,label])=><button key={id} aria-selected={tab===id} onClick={()=>setTab(id)}>{label}</button>)}</nav>
+    <nav className="sv-tabs">{([['create','① 主题与文案'],['assets','② 素材与画面'],['audio','③ 声音与字幕'],['advanced','④ 制作与开始'],['history','任务'],['settings','设置']] as const).map(([id,label])=><button key={id} aria-selected={tab===id} onClick={()=>setTab(id)}>{label}</button>)}</nav>
     {error&&<div className="sv-error">{error}</div>}{notice&&<div className="sv-success">{notice}</div>}
     {tab==='create'&&<div className="sv-grid"><div>
-      <div className="sv-card"><h2>01 · 视频内容</h2>{field('主题','video_subject','留空时可直接提供完整文案')}{field('自写文案','video_script','留空时调用所选 CQAI Club 文本模型自动生成',true)}
-        <div className="sv-row">{choice('文案语言','video_language',[{id:'',name:'自动识别'},{id:'zh',name:'中文'},{id:'en',name:'English'}])}{number('文案段落数','paragraph_number',1,10)}</div>
-        {field('脚本补充要求','video_script_prompt')}{field('自定义系统提示','custom_system_prompt')}
+      <div className="sv-card"><h2>01 · 确定视频主题</h2>{field('视频主题','video_subject','例如：人工智能如何改变日常生活。已有完整文案时，主题可以留空。',true)}
+        <div className="sv-row">{choice('文案语言','video_language',scriptLanguages)}{number('文案段落数','paragraph_number',1,10)}</div>
+        {check('关键词按文案顺序排列','match_materials_to_script')}
+        <details><summary>高级文案设置</summary><div style={{paddingTop:14}}>
+          {field('文案补充要求','video_script_prompt','例如受众、语气、需要包含的内容。',true)}
+          {field('自定义系统提示','custom_system_prompt','留空使用 MoneyPrinterTurbo 默认规则。',true)}
+          <div className="sv-actions"><button className="sv-secondary" onClick={()=>update('custom_system_prompt','')}>恢复默认提示词</button><button className="sv-secondary" disabled={!!busy||!String(value('video_subject')||'').trim()||health?.python===false} onClick={()=>void contentAction('preview')}>预览最终提示词</button></div>
+          {preview?.prompt&&<details open><summary>最终提示词</summary><pre className="sv-log">{preview.prompt}</pre><details><summary>MoneyPrinterTurbo 默认规则</summary><pre className="sv-log">{preview.defaultSystemPrompt}</pre></details></details>}
+        </div></details>
       </div>
-      <div className="sv-card"><h2>02 · 关键词与画面</h2>{field('手动关键词','video_terms','逗号分隔；留空时从文案自动生成')}
-        {choice('素材来源','video_source',sources)}
-        {draft.params.video_source==='openai_image'&&<div className="sv-field"><label htmlFor="imageModel">CQAI Club 图片模型</label><select className="sv-input" id="imageModel" value={draft.imageModel} onChange={e=>setDraft({...draft,imageModel:e.target.value})}><option value="">请选择</option>{catalog?.image.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></div>}
-        {draft.params.video_source==='local'&&<p className="sv-help">到“素材”页上传本地视频或图片；可多选。</p>}
-        {check('素材按文案叙事顺序匹配','match_materials_to_script')}
+      <div className="sv-card"><h2>01 · 生成并校对文案与关键词</h2>
+        <div className="sv-field"><label htmlFor="textModel">CQAI Club 文本模型</label><select className="sv-input" id="textModel" disabled={!!busy} value={draft.textModel} onChange={e=>setDraft({...draft,textModel:e.target.value})}><option value="">请选择</option>{catalog?.text.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select><p className="sv-help">用于生成文案与素材关键词。仅显示此账号可用的模型。</p></div>
+        {!catalog?.signedIn&&<div className="sv-error">请先在“设置 · CQAI Club”登录账号，再返回选择模型。</div>}
+        {catalog?.warning&&<p className="sv-help">{catalog.warning}</p>}
+        <div className="sv-actions"><button className="sv-secondary" disabled={!!busy||!String(value('video_subject')||'').trim()||!draft.textModel||!catalog?.signedIn||health?.python===false} onClick={()=>void contentAction('script')}>{busy||'生成视频文案和关键词'}</button></div>
+        <p className="sv-help">生成会调用所选 CQAI Club 模型；结果会填入下方，仍可修改。</p>
+        {field('视频文案','video_script','可以自行撰写或修改生成结果。',true)}
+        <div className="sv-actions"><button className="sv-secondary" disabled={!!busy||!String(value('video_script')||'').trim()||!draft.textModel||!catalog?.signedIn||health?.python===false} onClick={()=>void contentAction('terms')}>单独生成关键词</button></div>
+        {field('素材关键词','video_terms','多个词用逗号分隔；可手动修改。',true)}
+        <div className="sv-actions"><button className="sv-primary" disabled={!String(value('video_script')||'').trim()} onClick={()=>setTab('assets')}>确认内容，下一步：素材与画面</button></div>
       </div>
-    </div><aside><div className="sv-card"><h2>03 · 开始制作</h2>
-      <div className="sv-field"><label htmlFor="textModel">CQAI Club 文本模型</label><select className="sv-input" id="textModel" value={draft.textModel} onChange={e=>setDraft({...draft,textModel:e.target.value})}><option value="">请选择</option>{catalog?.text.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select><p className="sv-help">用于生成文案与素材关键词。仅显示此账号可用的模型。</p></div>
-      {modelNeeded&&!catalog?.signedIn&&<div className="sv-error">请先在“设置 · CQAI Club”登录账号。</div>}
-      {catalog?.warning&&<p className="sv-help">{catalog.warning}</p>}
-      <h3>制作到哪一步</h3><div className="sv-stage">{stages.map(s=><label key={s.id}><input type="radio" name="stage" checked={draft.stopAt===s.id} onChange={()=>setDraft({...draft,stopAt:s.id})}/>{s.label}</label>)}</div>
-      <div className="sv-actions"><button className="sv-primary" disabled={!!busy||(modelNeeded&&!catalog?.signedIn)||health?.python===false} onClick={()=>void create()}>{busy||'开始制作'}</button></div><p className="sv-help">模型请求和第三方素材服务可能消耗额度。渲染期间请保持应用运行。</p>
+    </div><aside><div className="sv-card"><h2>制作顺序</h2><p className="sv-help">先确定主题并生成文案、关键词。检查和修改后，再选择画面、声音与字幕，最后开始制作。</p><p className="sv-help">已有文案也可直接粘贴；需要素材关键词时使用“单独生成关键词”。</p>
       <div className="sv-kv"><span className={health?.python?'ok':''}>Python {health?.python?'就绪':'未就绪'}</span><span className={health?.ffmpeg?'ok':''}>FFmpeg {health?.ffmpeg?'就绪':'未就绪'}</span></div>
       {health?.python===false&&<button className="sv-secondary" onClick={()=>setTab('settings')}>前往安装运行环境</button>}</div>
-      <div className="sv-card"><h2>预设</h2><p className="sv-help">导入或导出表单参数；不会导出账号凭据或本地素材。</p><div className="sv-actions"><button className="sv-secondary" onClick={exportPreset}>导出 JSON</button><button className="sv-secondary" onClick={()=>importRef.current?.click()}>导入 JSON</button></div><input ref={importRef} type="file" hidden accept=".json,application/json" onChange={e=>{const f=e.target.files?.[0];if(f)void importPreset(f);e.target.value=''}}/></div>
+      <div className="sv-card"><h2>预设</h2><p className="sv-help">导入或导出表单参数；不会导出账号凭据或本地素材。</p><div className="sv-actions"><button className="sv-secondary" disabled={!!busy} onClick={exportPreset}>导出 JSON</button><button className="sv-secondary" disabled={!!busy} onClick={()=>importRef.current?.click()}>导入 JSON</button></div><input ref={importRef} type="file" hidden accept=".json,application/json" onChange={e=>{const f=e.target.files?.[0];if(f)void importPreset(f);e.target.value=''}}/></div>
     </aside></div>}
-    {tab==='assets'&&<div className="sv-grid"><div><div className="sv-card"><h2>素材来源</h2>{choice('视频 / 图片来源','video_source',sources)}
+    {tab==='assets'&&<div className="sv-grid"><div><div className="sv-card"><h2>02 · 素材与画面</h2>{choice('视频 / 图片来源','video_source',sources)}
       {draft.params.video_source==='local'&&<div className="sv-upload"><strong>本地素材（可多选）</strong><input type="file" multiple accept="video/*,image/*" onChange={e=>setMaterials([...e.target.files||[]])}/><p className="sv-help">{materials.length?materials.map(f=>f.name).join('、'):'上传的视频或图片将用于剪辑。'}</p></div>}
-      {draft.params.video_source==='openai_image'&&<p className="sv-help">使用当前 CQAI Club 账号的图片生成模型，按关键词生成镜头图片。</p>}
+      {draft.params.video_source==='openai_image'&&<div className="sv-field"><label htmlFor="imageModel">CQAI Club 图片模型</label><select className="sv-input" id="imageModel" disabled={!!busy} value={draft.imageModel} onChange={e=>setDraft({...draft,imageModel:e.target.value})}><option value="">请选择</option>{catalog?.image.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select><p className="sv-help">使用当前账号的图片生成模型，按关键词生成镜头图片。</p></div>}
       {draft.params.video_source==='pexels'||draft.params.video_source==='pixabay'||draft.params.video_source==='coverr'?<p className="sv-help">素材平台 API Key 在“设置”页配置。授权与可用素材以平台为准。</p>:null}
-      {field('素材关键词','video_terms','多个词以逗号分隔；留空自动生成')}{check('按文案顺序匹配镜头','match_materials_to_script')}</div></div><aside><div className="sv-card"><h2>剪辑设置</h2>
+      <p className="sv-help">当前关键词：{String(value('video_terms')||'未填写；可以返回主题与文案页生成或修改')}</p>{check('按文案顺序匹配镜头','match_materials_to_script')}
+      <div className="sv-actions"><button className="sv-secondary" onClick={()=>setTab('create')}>返回修改文案</button><button className="sv-primary" onClick={()=>setTab('audio')}>下一步：声音与字幕</button></div></div></div><aside><div className="sv-card"><h2>剪辑设置</h2>
       {choice('画幅','video_aspect',[{id:'9:16',name:'竖屏 9:16'},{id:'16:9',name:'横屏 16:9'},{id:'1:1',name:'方形 1:1'}])}
       {choice('画面适配','video_fit_mode',[{id:'cover',name:'填满画面'},{id:'contain',name:'完整显示'}])}
       {number('单镜头时长（秒）','video_clip_duration',1,30)}
       {number('播放速度','video_clip_speed',.1,4,.1)}
-      </div></aside></div>}
+       </div></aside></div>}
     {tab==='audio'&&<div className="sv-grid"><div><div className="sv-card"><h2>配音</h2>
       <div className="sv-upload"><strong>上传自己的旁白（可选）</strong><input type="file" accept="audio/*" onChange={e=>setVoiceFile(e.target.files?.[0])}/><p className="sv-help">{voiceFile?.name||'上传后会跳过语音合成；字幕可使用 Whisper 引擎生成。'}</p></div>
       {!voiceFile&&<><div className="sv-field"><label htmlFor="voice_name">Edge TTS 声音</label><select className="sv-input" id="voice_name" value={String(value('voice_name'))} onChange={e=>update('voice_name',e.target.value)}>{!health?.voices?.includes(String(value('voice_name')))&&<option value={String(value('voice_name'))}>{String(value('voice_name'))}</option>}{health?.voices?.map(v=><option key={v} value={v}>{v}</option>)}</select></div><div className="sv-row">{number('语速','voice_rate',.5,2,.1)}{number('音量','voice_volume',0,2,.1)}</div></>}</div>
@@ -119,15 +148,20 @@ function Studio(){
       <div className="sv-field"><label htmlFor="font_name">本机字体</label><select className="sv-input" id="font_name" value={String(value('font_name'))} onChange={e=>update('font_name',e.target.value)}><option value="">自动选择系统字体</option>{health?.fonts?.map(f=><option key={f.path} value={f.path}>{f.name}</option>)}</select></div>
       <div className="sv-row">{number('字号','font_size',12,160)}{number('描边宽度','stroke_width',0,10,.5)}</div>
       <div className="sv-row">{field('文字颜色','text_fore_color')}{field('描边颜色','stroke_color')}</div>
-      <div className="sv-field"><label htmlFor="subtitleBackground">字幕背景</label><select className="sv-input" id="subtitleBackground" value={String(value('text_background_color')||'')} onChange={e=>update('text_background_color',e.target.value||false)}><option value="">无</option><option value="#000000">黑色</option><option value="#333333">深灰</option><option value="#FFFFFF">白色</option></select></div>{check('字幕背景圆角','rounded_subtitle_background')}</>}</div></aside></div>}
-    {tab==='advanced'&&<div className="sv-grid"><div><div className="sv-card"><h2>画面组合</h2>
+       <div className="sv-field"><label htmlFor="subtitleBackground">字幕背景</label><select className="sv-input" id="subtitleBackground" value={String(value('text_background_color')||'')} onChange={e=>update('text_background_color',e.target.value||false)}><option value="">无</option><option value="#000000">黑色</option><option value="#333333">深灰</option><option value="#FFFFFF">白色</option></select></div>{check('字幕背景圆角','rounded_subtitle_background')}</>}</div><div className="sv-actions"><button className="sv-secondary" onClick={()=>setTab('assets')}>返回素材设置</button><button className="sv-primary" onClick={()=>setTab('advanced')}>下一步：制作与开始</button></div></aside></div>}
+    {tab==='advanced'&&<div className="sv-grid"><div><div className="sv-card"><h2>04 · 制作参数</h2>
       <div className="sv-row">{choice('拼接顺序','video_concat_mode',[{id:'random',name:'随机'},{id:'sequential',name:'顺序'}])}{choice('转场','video_transition_mode',transitions)}</div>
       <div className="sv-row">{number('生成成片数量','video_count',1,5)}{number('渲染线程','n_threads',1,16)}</div>
       {choice('视频比例','video_aspect',[{id:'9:16',name:'竖屏 9:16'},{id:'16:9',name:'横屏 16:9'},{id:'1:1',name:'方形 1:1'}])}
-    </div></div><aside><div className="sv-card"><h2>生产参数</h2><p className="sv-help">AI 模型始终从 CQAI Club 账号选择。素材平台密钥与 FFmpeg 编码器在设置页配置。</p><p className="sv-help">按制作阶段运行可预览文案、关键词、声音、字幕或素材中间结果。</p></div></aside></div>}
-    {tab==='history'&&<div className="sv-grid"><div><div className="sv-card"><h2>制作记录</h2><div className="sv-actions">{([['all','全部'],['running','进行中'],['completed','已完成'],['failed','失败 / 中断']] as const).map(([id,label])=><button className="sv-secondary" aria-pressed={filter===id} key={id} onClick={()=>setFilter(id)}>{label}</button>)}</div><div className="sv-list">{filteredJobs.length?filteredJobs.map(item=><button className="sv-job" aria-selected={selected===item.id} key={item.id} onClick={()=>setSelected(item.id)}><span><strong>{String(item.params.video_subject||item.params.video_script||'未命名').slice(0,50)}</strong><small>{new Date(item.createdAt).toLocaleString()} · {item.stopAt}</small></span><em>{labels[item.status]}</em></button>):<div className="sv-empty">还没有任务。到“创作”页开始制作。</div>}</div></div></div><aside>{job?<div className="sv-card"><h2>任务详情</h2><p className="sv-sub">{labels[job.status]} · {job.progress}%</p><progress className="sv-progress" max="100" value={job.progress}/>{job.error&&<div className="sv-error">{job.error}</div>}
-      <div className="sv-actions">{job.status==='running'?<button className="sv-secondary sv-danger" disabled={!!busy} onClick={()=>void action('取消任务…',async()=>{await api(`cancel?id=${job.id}`,{});await refresh()})}>取消</button>:<><button className="sv-secondary" onClick={()=>restore(job)}>使用相同参数</button>{job.status!=='completed'&&<button className="sv-primary" disabled={!!busy} onClick={()=>void action('重新开始…',async()=>{await api(`start?id=${job.id}`,{});await refresh()})}>重新开始</button>}<button className="sv-secondary sv-danger" disabled={!!busy} onClick={()=>void action('删除任务…',async()=>{await api(`delete?id=${job.id}`,{});setSelected('');await refresh()})}>删除</button></>}</div>
+    </div></div><aside><div className="sv-card"><h2>开始制作</h2><p className="sv-help">主题：{String(value('video_subject')||'使用自写文案')}</p><p className="sv-help">文案：{String(value('video_script')||'未填写').slice(0,100)}</p><p className="sv-help">关键词：{String(value('video_terms')||'未填写，制作时自动生成').slice(0,100)}</p><p className="sv-help">文本模型：{catalog?.text.find(m=>m.id===draft.textModel)?.name||'未选择'}</p>
+      <h3>制作到哪一步</h3><div className="sv-stage">{stages.map(s=><label key={s.id}><input type="radio" name="stage" disabled={!!busy} checked={draft.stopAt===s.id} onChange={()=>setDraft({...draft,stopAt:s.id})}/>{s.label}</label>)}</div>
+      {modelNeeded&&!catalog?.signedIn&&<div className="sv-error">需要模型时，请先在“设置 · CQAI Club”登录账号。</div>}
+      <div className="sv-actions"><button className="sv-secondary" onClick={()=>setTab('create')}>返回修改内容</button><button className="sv-primary" disabled={!!busy||(!String(value('video_subject')||'').trim()&&!String(value('video_script')||'').trim())||(modelNeeded&&!catalog?.signedIn)||health?.python===false} onClick={()=>void create()}>{busy||'开始制作'}</button></div>
+      <p className="sv-help">模型请求和第三方素材服务可能消耗额度。渲染期间请保持应用运行。</p></div></aside></div>}
+    {tab==='history'&&<div className="sv-grid"><div><div className="sv-card"><h2>制作记录</h2><div className="sv-actions">{([['all','全部'],['running','进行中'],['completed','已完成'],['failed','失败 / 中断']] as const).map(([id,label])=><button className="sv-secondary" aria-pressed={filter===id} key={id} onClick={()=>setFilter(id)}>{label}</button>)}</div><div className="sv-list">{filteredJobs.length?filteredJobs.map(item=><button className="sv-job" aria-selected={selected===item.id} key={item.id} onClick={()=>setSelected(item.id)}><span><strong>{String(item.params.video_subject||item.params.video_script||'未命名').slice(0,50)}</strong><small>{new Date(item.createdAt).toLocaleString()} · {item.stopAt}</small></span><em>{labels[item.status]}</em></button>):<div className="sv-empty">还没有任务。到“主题与文案”页开始制作。</div>}</div></div></div><aside>{job?<div className="sv-card"><h2>任务详情</h2><p className="sv-sub">{labels[job.status]} · {job.progress}%</p><progress className="sv-progress" max="100" value={job.progress}/>{job.error&&<div className="sv-error">{job.error}</div>}
+      <div className="sv-actions">{job.status==='running'?<button className="sv-secondary sv-danger" disabled={!!busy} onClick={()=>void action('取消任务…',async()=>{await api(`cancel?id=${job.id}`,{});await refresh()})}>取消</button>:<><button className="sv-secondary" disabled={!!busy} onClick={()=>restore(job)}>使用相同参数</button>{job.status!=='completed'&&<button className="sv-primary" disabled={!!busy} onClick={()=>void action('重新开始…',async()=>{await api(`start?id=${job.id}`,{});await refresh()})}>重新开始</button>}<button className="sv-secondary sv-danger" disabled={!!busy} onClick={()=>void action('删除任务…',async()=>{await api(`delete?id=${job.id}`,{});setSelected('');await refresh()})}>删除</button></>}</div>
       {typeof job.state?.script==='string'&&<details open><summary>生成文案</summary><pre className="sv-log">{job.state.script}</pre></details>}
+      {Array.isArray(job.state?.terms)&&<details><summary>素材关键词</summary><pre className="sv-log">{job.state.terms.join(', ')}</pre></details>}
       {job.artifacts.filter(a=>a.kind==='video').map(a=><video controls preload="metadata" key={a.file} src={url(job,a.file)} />)}
       {job.artifacts.length>0&&<div>{job.artifacts.map(a=><a className="sv-artifact" key={a.file} href={url(job,a.file,true)} download={a.name}><span>↓ {a.name}</span><span>{(a.size/1048576).toFixed(1)} MB</span></a>)}</div>}
       <details open={job.status==='failed'}><summary>制作日志</summary><pre className="sv-log">{job.logs.join('\n')||'暂无日志'}</pre></details></div>:<div className="sv-empty">选择一条任务查看制作进度、成片和日志。</div>}</aside></div>}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { IncomingMessage } from 'node:http'
-import { needsText, permitted, validateDraft } from '../src/index.ts'
+import { needsText, permitted, validateContentRequest, validateDraft } from '../src/index.ts'
 import { defaultParams } from '../src/protocol.ts'
 
 function draft(params: Record<string, unknown>) {
@@ -17,6 +17,13 @@ describe('short-video local job boundary', () => {
   it('rejects unimplemented paid video sources and unknown parameters before billing', () => {
     expect(() => draft({video_subject:'城市',video_source:'wavespeed'})).toThrow('素材来源暂不可用')
     expect(() => draft({video_subject:'城市',unknown_setting:true})).toThrow('不支持的参数')
+  })
+  it('requires a theme for script generation and an editable script for keyword regeneration', () => {
+    const base = {textModel:'cqai-model',imageModel:'',stopAt:'video',params:{...defaultParams}}
+    expect(() => validateContentRequest({action:'script',draft:{...base,params:{...base.params,video_script:'自写文案'}}})).toThrow('请先填写视频主题')
+    expect(() => validateContentRequest({action:'terms',draft:{...base,params:{...base.params,video_subject:'城市'}}})).toThrow('请先填写视频文案')
+    expect(validateContentRequest({action:'script',draft:{...base,params:{...base.params,video_subject:'城市'}}}).action).toBe('script')
+    expect(validateContentRequest({action:'terms',draft:{...base,params:{...base.params,video_script:'已修改的文案'}}}).draft.params.video_script).toBe('已修改的文案')
   })
   it('restricts mutations to same-origin loopback requests with the plugin header', () => {
     expect(permitted(request('127.0.0.1','POST',{'x-short-video':'1'}))).toBe(true)
