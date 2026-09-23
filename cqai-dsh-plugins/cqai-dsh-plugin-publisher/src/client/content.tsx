@@ -7,6 +7,7 @@ import {
 import {
   api, ConfirmDialog, errorMessage, PlatformAccountSelect, STATEMENT_LABELS, uploadAsset,
 } from './shared.tsx'
+import { usePublisherTips } from './tips.tsx'
 
 function MarkdownPreview({ value }: { value: string }) {
   const lines = value.split(/\r?\n/u)
@@ -38,6 +39,7 @@ type Mode = 'publish' | 'draft'
 const FIELD_LABELS: Record<string, string> = { category: '分类', topic: '话题', original: '原创声明' }
 
 export function ContentEditor({ contentType, active }: { contentType: EditorType; active: boolean }) {
+  const { showError, showSuccess, clearTip } = usePublisherTips()
   const [contents, setContents] = useState<PublisherContent[]>([])
   const [draft, setDraft] = useState<PublisherContent>()
   const draftRef = useRef<PublisherContent>()
@@ -52,8 +54,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   const [preview, setPreview] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  const [saveError, setSaveError] = useState('')
 
   const refreshContents = async () => {
     const rows = await api<PublisherContent[]>('contents')
@@ -62,19 +63,21 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   const setServerDraft = (value: PublisherContent | undefined) => {
     draftRef.current = value
     dirtyRef.current = false
+    setSaveError('')
     setDraft(value)
     setTagsInput(value?.tags.join(' ') ?? '')
   }
   useEffect(() => {
-    let active = true
+    if (!active) return
+    let live = true
     void api<PublisherContent[]>('contents').then(rows => {
-      if (!active || draftRef.current) return
+      if (!live || draftRef.current) return
       const matches = rows.filter(item => item.contentType === contentType)
       setContents(matches)
       setServerDraft(matches[0])
-    }).catch(cause => { if (active) setError(errorMessage(cause)) })
-    return () => { active = false }
-  }, [contentType])
+    }).catch(cause => { if (live) showError(errorMessage(cause)) })
+    return () => { live = false }
+  }, [contentType, active])
   useEffect(() => {
     if (!active) return
     let live = true
@@ -116,8 +119,10 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
           setDraft(merged)
         }
         setContents(rows => rows.map(row => row.id === saved.id ? saved : row))
+        setSaveError('')
       } catch (cause) {
         dirtyRef.current = true
+        setSaveError(errorMessage(cause))
         throw cause
       }
     })()
@@ -129,14 +134,14 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
 
   useEffect(() => {
     if (editVersion === 0) return
-    const timer = setTimeout(() => { void flush().catch(cause => setError(errorMessage(cause))) }, 800)
+    const timer = setTimeout(() => { void flush().catch(cause => showError(errorMessage(cause))) }, 800)
     return () => clearTimeout(timer)
   }, [editVersion])
 
   const act = async (task: () => Promise<void>) => {
     if (busy) return
-    setBusy(true); setError(''); setNotice('')
-    try { await task() } catch (cause) { setError(errorMessage(cause)) }
+    setBusy(true); clearTip()
+    try { await task() } catch (cause) { showError(errorMessage(cause)) }
     finally { setBusy(false) }
   }
 
@@ -176,7 +181,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
       await refreshContents()
     }
     update({ body: text, title: draftRef.current!.title || file.name.replace(/\.(md|txt)$/iu, '') })
-    setNotice('已导入编辑器，草稿会自动保存。')
+    showSuccess('已导入编辑器，草稿会自动保存。')
   })
   const addImages = (files: FileList | null) => {
     const selected = Array.from(files ?? [])
@@ -255,12 +260,10 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
       mode, accountIds: selectedAccounts.map(account => account.id),
     })
     setConfirm(false)
-    setNotice('已提交，请稍后到平台后台确认。')
+    showSuccess('已提交，请稍后到平台后台确认。')
   })
 
   return <div>
-    {error && <div className="pub-error" role="alert">{error}</div>}
-    {notice && <div className="pub-notice">{notice}</div>}
     <div className="pub-drafts">
       <select className="pub-input" aria-label="选择本地草稿" value={draft?.id ?? ''} onChange={event => selectDraft(event.target.value)}>
         <option value="">选择本地草稿</option>
@@ -269,7 +272,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
       <button className="pub-secondary" disabled={busy} onClick={create}>新建</button>
       <button className="pub-secondary" disabled={busy || !draft} onClick={duplicate}>复制</button>
       <button className="pub-danger" disabled={busy || !draft} onClick={remove}>删除</button>
-      <span className="pub-muted">{dirtyRef.current ? '自动保存中…' : '本地草稿自动保存'}</span>
+      <span className={saveError ? 'pub-warn' : 'pub-muted'}>{saveError ? '自动保存失败，请继续编辑以重试' : dirtyRef.current ? '自动保存中…' : '本地草稿自动保存'}</span>
     </div>
     {!draft ? <div className="pub-empty">点击“新建”开始编辑{contentType === 'article' ? '文章' : '图文'}。</div> : <div className="pub-grid">
       <div>

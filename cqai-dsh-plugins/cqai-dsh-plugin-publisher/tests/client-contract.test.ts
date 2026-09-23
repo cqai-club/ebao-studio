@@ -24,7 +24,8 @@ describe('unified publisher client contract', () => {
     expect(source).not.toContain('setInterval(')
     expect(source).not.toContain("api('jobs'")
     expect(source).not.toContain("api('status'")
-    expect(source).toContain("setNotice('已提交，请稍后到平台后台确认。')")
+    expect(source).toContain("showSuccess('已提交，请稍后到平台后台确认。')")
+    expect(entry).toContain('<PublisherTipsProvider>')
     expect(history).toContain('不代表平台最终发布成功')
   })
 

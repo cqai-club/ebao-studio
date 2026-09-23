@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { PLATFORMS, PLATFORM_LABELS, type Platform, type PublisherAccount, type PublisherCapability, type PublisherImportPreview, type PublisherPlatformCapability } from '../protocol.ts'
 import { api, capabilityMessage, CONTENT_LABELS } from './shared.tsx'
+import { usePublisherTips } from './tips.tsx'
 
 export function AccountsPage({ active }: { active: boolean }) {
+  const { showError, showSuccess, clearTip } = usePublisherTips()
   const [capability, setCapability] = useState<PublisherCapability>()
   const [accounts, setAccounts] = useState<PublisherAccount[]>([])
   const [platformCapabilities, setPlatformCapabilities] = useState<PublisherPlatformCapability[]>([])
@@ -10,8 +12,6 @@ export function AccountsPage({ active }: { active: boolean }) {
   const [platform, setPlatform] = useState<Platform>('dy')
   const [preview, setPreview] = useState<PublisherImportPreview>()
   const [busy, setBusy] = useState('')
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
 
   const refresh = async () => {
     const rows = await api<PublisherAccount[]>('accounts')
@@ -31,7 +31,7 @@ export function AccountsPage({ active }: { active: boolean }) {
         ])
         if (live) { setAccounts(rows); setPlatformCapabilities(supported) }
       }
-    }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : '发布能力检查失败') })
+    }).catch(cause => { if (live) showError(cause instanceof Error ? cause.message : '发布能力检查失败') })
     return () => { live = false }
   }, [active])
 
@@ -49,8 +49,8 @@ export function AccountsPage({ active }: { active: boolean }) {
   }, [accounts, busy])
 
   const act = async (label: string, task: () => Promise<void>) => {
-    setBusy(label); setError(''); setNotice('')
-    try { await task() } catch (cause) { setError(cause instanceof Error ? cause.message : '操作失败') }
+    setBusy(label); clearTip()
+    try { await task() } catch (cause) { showError(cause instanceof Error ? cause.message : '操作失败') }
     finally { setBusy('') }
   }
 
@@ -60,7 +60,7 @@ export function AccountsPage({ active }: { active: boolean }) {
     setDisplayName('')
     await api('account-open-login', { id: account.id })
     await refresh()
-    setNotice('登录窗口已打开；完成登录后回到 e宝工坊即可检查状态。')
+    showSuccess('登录窗口已打开；完成登录后回到 e宝工坊即可检查状态。')
   })
 
   const rename = (account: PublisherAccount) => {
@@ -84,13 +84,11 @@ export function AccountsPage({ active }: { active: boolean }) {
     await api('import-apply', {})
     setPreview(undefined)
     await refresh()
-    setNotice('导入完成。已复制旧 session，原 MatrixMedia 数据未移动或删除；请检查登录状态。')
+    showSuccess('导入完成。已复制旧 session，原 MatrixMedia 数据未移动或删除；请检查登录状态。')
   })
 
   const unavailable = capabilityMessage(capability)
   return <div>
-    {error && <div className="pub-error" role="alert">{error}</div>}
-    {notice && <div className="pub-notice">{notice}</div>}
     {unavailable && <div className="pub-error">{unavailable}</div>}
     <div className="pub-grid"><div><div className="pub-card"><h2>账号列表</h2>
       {accounts.length === 0 ? <div className="pub-empty">还没有发布账号<br/>请在右侧添加账号并完成平台登录。</div> : accounts.map(account => <div className="pub-row" key={account.id}><div><strong>{account.displayName}</strong><small>{PLATFORM_LABELS[account.platform]} · 支持：{platformCapabilities.find(item => item.platform === account.platform)?.contentTypes.map(type => CONTENT_LABELS[type]).join('、') || '验收中'}</small></div><div><span className={`pub-status ${account.loginState === 'logged-in' ? 'pub-ok' : account.loginState === 'logged-out' ? 'pub-warn' : ''}`}>{account.loginState === 'logged-in' ? '已登录' : account.loginState === 'logged-out' ? '需要登录' : '状态未知'}</span><div className="pub-actions">

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX, VIDEO_PLATFORMS, type CreateSubmissionResult, type CreativeStatement, type Platform, type PublisherAccount, type PublisherCapability, type PublisherLocalVideo, type Work } from '../protocol.ts'
 import { api, capabilityMessage, ConfirmDialog, STATEMENT_LABELS } from './shared.tsx'
+import { usePublisherTips } from './tips.tsx'
 
 export function VideoPage({ active }: { active: boolean }) {
+  const { showError, showSuccess, clearTip } = usePublisherTips()
   const [capability, setCapability] = useState<PublisherCapability>()
   const [works, setWorks] = useState<Work[]>([])
   const [accounts, setAccounts] = useState<PublisherAccount[]>([])
@@ -16,8 +18,6 @@ export function VideoPage({ active }: { active: boolean }) {
   const [mode, setMode] = useState<'publish' | 'draft'>('publish')
   const [selection, setSelection] = useState<Partial<Record<Platform, string>>>({})
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [confirm, setConfirm] = useState(false)
 
   const grouped = useMemo(() => Object.fromEntries(VIDEO_PLATFORMS.map(platform => [platform, accounts.filter(account => account.platform === platform)])) as Record<Platform, PublisherAccount[]>, [accounts])
@@ -36,7 +36,7 @@ export function VideoPage({ active }: { active: boolean }) {
     setAccounts(accountRows)
   }
 
-  useEffect(() => { if (active) void load().catch(cause => setError(cause instanceof Error ? cause.message : '页面加载失败')) }, [active])
+  useEffect(() => { if (active) void load().catch(cause => showError(cause instanceof Error ? cause.message : '页面加载失败')) }, [active])
 
   const chooseWork = (work: Work) => {
     setWorkId(work.id)
@@ -45,11 +45,11 @@ export function VideoPage({ active }: { active: boolean }) {
     setDescription(work.description)
     setTags(work.tags.join(' '))
     setStatement(work.aiGeneratedDisclosure ? 'ai_generated' : 'none')
-    setNotice('')
+    clearTip()
   }
 
   const chooseLocalVideo = async () => {
-    setBusy(true); setError(''); setNotice('')
+    setBusy(true); clearTip()
     try {
       const selected = await api<PublisherLocalVideo | null>('local-video-select', {})
       if (!selected) return
@@ -60,17 +60,17 @@ export function VideoPage({ active }: { active: boolean }) {
       setShortTitle('')
       setTags('')
       setStatement('none')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '选择本地视频失败') }
+    } catch (cause) { showError(cause instanceof Error ? cause.message : '选择本地视频失败') }
     finally { setBusy(false) }
   }
 
   const tagList = () => [...new Set(tags.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS)
 
   const requestConfirm = () => {
-    setError(''); setNotice('')
-    if (!workId && !localVideo) { setError('请先选择一条 e剪宝成片或一个本地视频'); return }
-    if (!title.trim()) { setError('请填写标题'); return }
-    if (selectedAccounts.length === 0) { setError('请至少选择一个发布账号'); return }
+    clearTip()
+    if (!workId && !localVideo) { showError('请先选择一条 e剪宝成片或一个本地视频'); return }
+    if (!title.trim()) { showError('请填写标题'); return }
+    if (selectedAccounts.length === 0) { showError('请至少选择一个发布账号'); return }
     setConfirm(true)
   }
 
@@ -83,16 +83,14 @@ export function VideoPage({ active }: { active: boolean }) {
         creativeStatement: statement, mode, accountIds: selectedAccounts.map(account => account.id),
       })
       setConfirm(false)
-      setNotice('已提交，请稍后到平台后台确认。')
+      showSuccess('已提交，请稍后到平台后台确认。')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '提交失败')
+      showError(cause instanceof Error ? cause.message : '提交失败')
     } finally { setBusy(false) }
   }
 
   const unavailable = capabilityMessage(capability)
   return <div>
-    {error && <div className="pub-error" role="alert">{error}</div>}
-    {notice && <div className="pub-notice">{notice}</div>}
     {unavailable && <div className="pub-error">{unavailable}</div>}
     <div className="pub-grid"><div><div className="pub-card"><h2><span className="pub-count">01</span>选择视频素材</h2>
       <h3>e剪宝成片</h3>

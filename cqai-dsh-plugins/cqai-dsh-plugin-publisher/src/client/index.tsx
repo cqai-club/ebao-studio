@@ -10,6 +10,7 @@ import { AccountsPage } from './accounts.tsx'
 import { ContentEditor } from './content.tsx'
 import { SubmissionHistory } from './history.tsx'
 import { css } from './shared.tsx'
+import { PublisherTipsProvider } from './tips.tsx'
 import { VideoPage } from './video.tsx'
 
 export const inject = ['slots']
@@ -32,7 +33,7 @@ function PublisherPage() {
     setContentType(value)
     try { localStorage.setItem('cqai-publisher-content-type', value) } catch { /* optional preference */ }
   }
-  return <section className="pub"><style>{css}</style><div className="pub-wrap">
+  return <PublisherTipsProvider><section className="pub"><style>{css}</style><div className="pub-wrap">
     <header className="pub-head"><div><h1>多平台发布</h1><div className="pub-muted">在 e宝工坊中编辑内容、选择账号并提交到本机发布队列。</div></div></header>
     <nav className="pub-tabs" role="tablist" aria-label="多平台发布导航">
       {([
@@ -53,7 +54,7 @@ function PublisherPage() {
     </div></div>
     <div hidden={tab !== 'history'}><SubmissionHistory active={tab === 'history'}/></div>
     <div hidden={tab !== 'accounts'}><AccountsPage active={tab === 'accounts'}/></div>
-  </div></section>
+  </div></section></PublisherTipsProvider>
 }
 
 export function apply(ctx: Context): void {
