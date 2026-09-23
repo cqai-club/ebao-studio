@@ -83,7 +83,7 @@ export type {
 } from './protocol.ts'
 export {
   DSN_DEFAULT_MODEL_CATEGORY_ORDER, DSN_MODEL_CATEGORY_ORDER, MODEL_CATALOG_CACHE_TTL_MS,
-  isAudioModel, isChatModel, isImageGenerationModel, isModelInCategory, isVideoModel, isVisionChatModel,
+  isAudioModel, isChatModel, isImageGenerationModel, isModelInCategory, isVideoCatalogEntry, isVideoModel, isVisionChatModel,
 } from './protocol.ts'
 export { DsnAccountError } from './errors.ts'
 export { AccountServiceClient, AccountServiceError } from './account-service.ts'

@@ -89,11 +89,19 @@ export function isImageGenerationModel(model: DsnModel): boolean {
   return model.categories.includes('image')
 }
 
+/** Video identity for catalog display, including Wan aliases with incomplete metadata. */
+export function isVideoCatalogEntry(model: DsnModel): boolean {
+  return model.categories.includes('video')
+    || model.architecture?.outputModalities.includes('video') === true
+    || /^wan3\.0-video(?:-(?:480|720|1080)p)?$/i.test(model.id)
+}
+
 /** Whether a catalog entry can serve the OpenAI-compatible video endpoints. */
 export function isVideoModel(model: DsnModel): boolean {
   if (!model.supportedEndpointTypes.includes('openai-video')) return false
-  if (model.architecture !== undefined) return model.architecture.outputModalities.includes('video')
-  return model.categories.includes('video')
+  const outputs = model.architecture?.outputModalities ?? []
+  if (outputs.length > 0) return outputs.includes('video')
+  return isVideoCatalogEntry(model)
 }
 
 /** Whether a catalog entry consumes or produces an audio-family modality. */

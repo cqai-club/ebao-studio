@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-llm'
 import type {} from '@cqaiclub/dsn-account'
-import { isChatModel, isImageGenerationModel } from '@cqaiclub/dsn-account'
+import { isChatModel, isImageGenerationModel, isVideoCatalogEntry, isVideoModel } from '@cqaiclub/dsn-account'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { randomUUID } from 'node:crypto'
@@ -236,12 +236,13 @@ export function apply(ctx: Context): void {
   }
   const catalog = async () => {
     const status=await ctx.dsnAccount.getStatus()
-    if (status.state !== 'signed-in') return {signedIn:false,text:[],image:[],warning:'请先登录 CQAI Club'}
+    if (status.state !== 'signed-in') return {signedIn:false,text:[],image:[],video:[],warning:'请先登录 CQAI Club'}
     const models=await ctx.dsnAccount.listModels()
     const defaults=await ctx.dsnAccount.getCategoryDefaultModels()
     return {
       signedIn:true, text:models.models.filter(isChatModel).map(m=>({id:m.id,name:m.name || m.id})),
       image:models.models.filter(isImageGenerationModel).map(m=>({id:m.id,name:m.name || m.id})),
+      video:models.models.filter(isVideoCatalogEntry).map(m=>({id:m.id,name:m.name || m.id,callable:isVideoModel(m)})),
       warning:models.warning, defaultText:defaults.global.provider === 'cqaiclub' ? defaults.global.model : undefined,
       defaultImage:defaults.categories.image?.provider === 'cqaiclub' ? defaults.categories.image.model : undefined,
     }

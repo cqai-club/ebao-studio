@@ -4,6 +4,7 @@ import { Button, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   isChatModel,
   isImageGenerationModel,
+  isVideoCatalogEntry,
   type DsnAccountSnapshot,
   type DsnCategoryDefaultModels,
   type DsnDefaultModelSelection,
@@ -18,7 +19,7 @@ const CQAI_PROVIDER = 'cqaiclub'
 export const modelsSettingsZh = {
   modelsEyebrow: '云端模型',
   modelsTitle: 'CQAI Club 模型',
-  modelsDescription: '模型目录由 CQAI Club 根据当前账号动态提供，供对话和生图功能共用。',
+  modelsDescription: '模型目录由 CQAI Club 根据当前账号动态提供。这里展示全部模型，并可设置默认对话和图像模型。',
   modelsConnected: '已连接',
   modelsSignedOut: '未登录',
   modelsLoading: '正在读取模型…',
@@ -35,8 +36,8 @@ export const modelsSettingsZh = {
   modelsImageDefaultSaved: '默认图像模型已更新。',
   modelsImageDefaultUnavailable: '原默认图像模型已不可用，请重新选择。',
   modelsImageEmpty: '当前账号没有可用的图像生成模型',
-  modelsAvailable: '可用对话模型',
-  modelsEmpty: '当前账号暂时没有可用的对话模型。',
+  modelsAvailable: '账号可用模型',
+  modelsEmpty: '当前账号暂时没有可用模型。',
   modelsStale: '当前展示的是上一次成功获取的模型目录。',
   modelCategoryImage: '图像',
   modelCategoryVideo: '视频',
@@ -51,7 +52,7 @@ export type ModelsSettingsKey = keyof typeof modelsSettingsZh
 export const modelsSettingsEn: Record<ModelsSettingsKey, string> = {
   modelsEyebrow: 'CLOUD MODELS',
   modelsTitle: 'CQAI Club models',
-  modelsDescription: 'CQAI Club provides this catalog for the current account and shares it across chat and image generation.',
+  modelsDescription: 'CQAI Club provides this catalog for the current account. All models appear here; chat and image defaults can be selected above.',
   modelsConnected: 'Connected',
   modelsSignedOut: 'Signed out',
   modelsLoading: 'Loading models…',
@@ -68,8 +69,8 @@ export const modelsSettingsEn: Record<ModelsSettingsKey, string> = {
   modelsImageDefaultSaved: 'Default image model updated.',
   modelsImageDefaultUnavailable: 'The previous default image model is unavailable. Choose another model.',
   modelsImageEmpty: 'This account has no available image-generation model',
-  modelsAvailable: 'Available chat models',
-  modelsEmpty: 'This account currently has no available chat models.',
+  modelsAvailable: 'Models available to this account',
+  modelsEmpty: 'This account currently has no available models.',
   modelsStale: 'Showing the last model catalog loaded successfully.',
   modelCategoryImage: 'Image',
   modelCategoryVideo: 'Video',
@@ -132,6 +133,11 @@ function modelOwner(model: DsnModel): string | undefined {
   return owner.length > 0 && owner !== model.id ? owner : undefined
 }
 
+function displayCategories(model: DsnModel): readonly DsnModelCategory[] {
+  if (!isVideoCatalogEntry(model) || model.categories.includes('video')) return model.categories
+  return [...model.categories.filter(category => category !== 'other'), 'video']
+}
+
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
@@ -188,6 +194,7 @@ export function CqaiModelsSettingsCard({ ctx, t }: CqaiModelsSettingsCardProps) 
 
   const models = useMemo(() => catalog?.models.filter(isChatModel) ?? [], [catalog])
   const imageModels = useMemo(() => catalog?.models.filter(isImageGenerationModel) ?? [], [catalog])
+  const availableModels = catalog?.models ?? []
   const selectedModel = selection?.provider === CQAI_PROVIDER
     && models.some(model => model.id === selection.model)
     ? selection.model
@@ -312,9 +319,9 @@ export function CqaiModelsSettingsCard({ ctx, t }: CqaiModelsSettingsCardProps) 
 
           <div style={{ display: 'grid', gap: 10 }}>
             <strong style={{ fontSize: 13 }}>{t('modelsAvailable')}</strong>
-            {models.length === 0 ? <p style={mutedStyle}>{t('modelsEmpty')}</p> : (
+            {availableModels.length === 0 ? <p style={mutedStyle}>{t('modelsEmpty')}</p> : (
               <div style={{ display: 'grid', gap: 8 }}>
-                {models.map(model => (
+                {availableModels.map(model => (
                   <article key={model.id} style={{ display: 'grid', gap: 7, padding: '12px 14px', border: '0.5px solid var(--dsw-alias-border-l1, #edf0f3)', borderRadius: 10, background: 'var(--dsw-alias-bg-module-platform, #f7f8fa)' }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                       <strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{model.id}</strong>
@@ -322,7 +329,7 @@ export function CqaiModelsSettingsCard({ ctx, t }: CqaiModelsSettingsCardProps) 
                     </div>
                     {model.description === undefined ? null : <p style={{ ...mutedStyle, fontSize: 12 }}>{model.description}</p>}
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {model.categories.map(category => (
+                      {displayCategories(model).map(category => (
                         <span key={category} style={{ padding: '3px 7px', borderRadius: 999, background: 'color-mix(in srgb, var(--dsw-alias-state-business-primary, #2f6fda) 9%, transparent)', color: 'var(--dsw-alias-state-business-primary, #2f6fda)', fontSize: 10, fontWeight: 600 }}>
                           {t(categoryKeys[category])}
                         </span>
