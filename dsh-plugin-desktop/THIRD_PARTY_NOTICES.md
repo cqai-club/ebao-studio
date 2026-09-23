@@ -389,6 +389,7 @@ the package names, versions, and licenses for transparency.
 | cosmokit | 1.8.1 | MIT |
 | cqai-dsh-plugin-imagegen | 0.1.0 | Apache-2.0 |
 | cqai-dsh-plugin-market | 0.1.0 | MIT |
+| cqai-dsh-plugin-short-video | 0.1.0 | MIT |
 | cqai-dsh-plugin-video | 0.1.0 | MIT |
 | cross-spawn | 7.0.6 | MIT |
 | data-uri-to-buffer | 4.0.1 | MIT |

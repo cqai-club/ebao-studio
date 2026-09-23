@@ -98,6 +98,7 @@ const DEFAULT_PRODUCT_BUNDLES = [
   CQAI_ACCOUNT_PACKAGE,
   CQAI_IMAGEGEN_PACKAGE,
   'cqai-dsh-plugin-video',
+  'cqai-dsh-plugin-short-video',
   CQAI_MARKET_PACKAGE,
 ] as const
 const DEFAULT_PRODUCT_BUNDLE_SET = new Set<string>(DEFAULT_PRODUCT_BUNDLES)
