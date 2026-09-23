@@ -5,7 +5,7 @@ import { startIsolatedDesktopHost } from './host-process.ts'
 import { app, crashReporter, safeStorage, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   boot,
@@ -387,6 +387,11 @@ async function mirrorDesktopProfilePreferences(
 
 /** Start one Electron process and leave lifetime to the mounted desktop plugin. */
 async function start(): Promise<void> {
+  const devUserDataDir = process.env.DSH_DESKTOP_DEV_USER_DATA
+  if (!app.isPackaged && devUserDataDir) {
+    if (!isAbsolute(devUserDataDir)) throw new Error('DSH_DESKTOP_DEV_USER_DATA must be an absolute path')
+    app.setPath('userData', devUserDataDir)
+  }
   if (!app.requestSingleInstanceLock()) {
     app.quit()
     return

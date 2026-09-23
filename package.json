@@ -601,6 +601,7 @@
     "check:layout": "yarn check:bilingual-docs && yarn test:release-assets && yarn check:architecture && yarn check:vendored-runtime && yarn check:desktop-variants && node scripts/verify-layout.mjs",
     "check": "yarn check:layout && yarn workspace dsh-community-fabric check && yarn workspace dsh-community-market check && yarn workspace dsh-plugin-desktop check && yarn workspace dsh-plugin-desktop-beta check",
     "dev": "yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dev",
+    "dev:short-video": "node scripts/dev-short-video.mjs",
     "start": "yarn workspace dsh-plugin-desktop start",
     "package:dir": "yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop package:dir",
     "dist:mac": "yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:mac",

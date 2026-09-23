@@ -16,13 +16,13 @@
 
 ## 使用
 
-在本分支仓库根目录用 Git Bash 启动开发版：
+在本分支仓库根目录启动开发版：
 
 ```bash
-DSH_AA_SOURCE_REF=pinned corepack yarn dev
+corepack yarn dev:short-video
 ```
 
-此命令复用仓库中已校验的 Agents Anywhere 包。直接运行 `corepack yarn dev` 会先尝试从 Agents Anywhere 的最新 main 重新打包；当它与仓库固定的 DSH 依赖不兼容时，会在打开桌面窗口前因类型检查失败而退出。
+此命令复用仓库中已校验的 Agents Anywhere 包，并在仓库同级的 `dsh-desktop-short-video-plugin-data/` 中使用独立的 DSH Home 和桌面用户目录。现有 Profile 可能含有此分支没有的插件（如 `cqai-dsh-plugin-publisher`）；隔离启动不会修改现有 Profile。首次使用需在独立目录重新登录 CQAI Club。
 
 首次打开“设置”页，点击“安装 / 修复依赖”。需要本机有 Python 3.11+、uv 和 FFmpeg；安装使用随插件附带的 uv.lock，把 Python 环境放在 DSH_HOME/short-video/engine/.venv，可能下载较大的语音识别和视频依赖。素材与任务位于 DSH_HOME/short-video/。可以用 MPT_PYTHON 环境变量指定已准备的 Python 解释器。
 
