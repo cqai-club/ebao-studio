@@ -414,7 +414,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
         </div></div>
         <button className="pub-primary pub-submit" disabled={busy || !submitReady} onClick={requestConfirm}>检查并提交</button>
         {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">当前发布引擎缺少所选平台的提交能力，请更新 Helper 并完全重启应用；本地草稿仍会保存。</p>
-          : validationError && <p className="pub-warn" role="status">提交前需补齐：{validationError}</p>}
+          : validationError && <p className="pub-warn" role="status">提交前请处理：{validationError}</p>}
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </div>
     </div>}
