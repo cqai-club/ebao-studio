@@ -7,7 +7,7 @@ These ship as prebuilt runtimes inside the installer rather than as npm dependen
 they are not enumerated in the table below.
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| MatrixMedia（矩媒） | 0.11.4 | GPL-2.0-only | https://github.com/hanliang97/MatrixMedia.git @ 02b38a6cf0df7caa5fe257f701d19051de374fec |
+| MatrixMedia（矩媒） | 0.11.4 | GPL-2.0-only | https://github.com/hanliang97/MatrixMedia.git @ 9ce1c867c50c3cc14fb45b51102f743972d39853 |
 MatrixMedia（矩媒） is built from the pinned `matrixmedia-publisher/` Git submodule and bundled at
 `resources/publisher/MatrixMedia Publisher Worker.app` as the isolated publishing Helper.
 Its complete license is installed at `resources/publisher/LICENSE`; `resources/publisher/SOURCE.json`
