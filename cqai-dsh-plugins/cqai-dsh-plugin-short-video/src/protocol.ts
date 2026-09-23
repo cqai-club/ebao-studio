@@ -11,6 +11,17 @@ export type Draft = {
   stopAt: Stage
   params: Record<string, unknown>
 }
+export function needsText(draft: Draft): boolean {
+  return !draft.params.video_script || (draft.stopAt !== 'script' && draft.params.video_source !== 'local' && !draft.params.video_terms)
+}
+export function stageRequirements(draft: Draft) {
+  const visuals = draft.stopAt === 'materials' || draft.stopAt === 'video'
+  return {
+    imageModel: visuals && draft.params.video_source === 'openai_image',
+    materialUpload: visuals && draft.params.video_source === 'local',
+    backgroundMusicUpload: draft.stopAt === 'video' && draft.params.bgm_type === 'custom',
+  }
+}
 export type Job = Draft & {
   id: string
   status: Status

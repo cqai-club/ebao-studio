@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { API, defaultParams, defaultSettings, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
+import { API, defaultParams, defaultSettings, needsText, stageRequirements, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
+export { needsText } from './protocol.ts'
 
 export const name = 'cqai-short-video'
 export const inject = ['webServer', 'dsnAccount', 'llm']
@@ -86,9 +87,6 @@ export function validateDraft(raw: unknown): Draft {
   const textModel = asText(raw.textModel, 200)
   const imageModel = asText(raw.imageModel, 200)
   return { textModel, imageModel, stopAt: stopAt as Stage, params }
-}
-export function needsText(draft: Draft): boolean {
-  return !draft.params.video_script || (draft.stopAt !== 'script' && draft.params.video_source !== 'local' && !draft.params.video_terms)
 }
 export function validateContentRequest(raw: unknown): {action: ContentAction; draft: Draft} {
   if (!isRecord(raw) || !['preview', 'script', 'terms'].includes(String(raw.action))) throw new Error('文案操作无效')
@@ -224,12 +222,14 @@ export function apply(ctx: Context): void {
     }
   }
   const verifyModels = async (draft: Draft) => {
-    if (!needsText(draft) && draft.params.video_source !== 'openai_image') return
+    const textNeeded = needsText(draft)
+    const imageNeeded = stageRequirements(draft).imageModel
+    if (!textNeeded && !imageNeeded) return
     const available=await catalog()
-    if (needsText(draft) && !draft.textModel) throw new Error('请选择 CQAI Club 文本模型')
-    if (draft.textModel && !available.text.some(m=>m.id===draft.textModel)) throw new Error('所选文本模型不在当前 CQAI Club 账号中')
-    if (draft.params.video_source === 'openai_image' && !draft.imageModel) throw new Error('请选择 CQAI Club 图片模型')
-    if (draft.imageModel && !available.image.some(m=>m.id===draft.imageModel)) throw new Error('所选图片模型不在当前 CQAI Club 账号中')
+    if (textNeeded && !draft.textModel) throw new Error('请选择 CQAI Club 文本模型')
+    if (textNeeded && !available.text.some(m=>m.id===draft.textModel)) throw new Error('所选文本模型不在当前 CQAI Club 账号中')
+    if (imageNeeded && !draft.imageModel) throw new Error('请选择 CQAI Club 图片模型')
+    if (imageNeeded && !available.image.some(m=>m.id===draft.imageModel)) throw new Error('所选图片模型不在当前 CQAI Club 账号中')
   }
   const llmCall = async (model: string, prompt: string): Promise<string> => {
     const available=await catalog()
@@ -316,8 +316,9 @@ export function apply(ctx: Context): void {
   }
   const run = async (job: Job) => {
     await verifyModels(job)
-    if (job.params.video_source === 'local' && !job.uploads.material.length && job.stopAt !== 'script' && job.stopAt !== 'terms') throw new Error('请上传本地视频或图片素材')
-    if (job.params.bgm_type === 'custom' && !job.uploads.bgm) throw new Error('请上传自定义背景音乐')
+    const requirements = stageRequirements(job)
+    if (requirements.materialUpload && !job.uploads.material.length) throw new Error('请上传本地视频或图片素材')
+    if (requirements.backgroundMusicUpload && !job.uploads.bgm) throw new Error('请上传自定义背景音乐')
     const settings = await readSettings(root)
     const requestFile=join(jobDir(job.id),'request.json')
     await writeFile(requestFile,JSON.stringify({id:job.id,params:job.params,stopAt:job.stopAt,textModel:job.textModel,imageModel:job.imageModel,uploads:job.uploads,settings}), 'utf8')

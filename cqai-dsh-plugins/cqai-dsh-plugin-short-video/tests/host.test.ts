@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IncomingMessage } from 'node:http'
 import { needsText, permitted, validateContentRequest, validateDraft } from '../src/index.ts'
-import { defaultParams } from '../src/protocol.ts'
+import { defaultParams, stageRequirements } from '../src/protocol.ts'
 
 function draft(params: Record<string, unknown>) {
   return validateDraft({textModel:'',imageModel:'',stopAt:'video',params:{...defaultParams,...params}})
@@ -13,6 +13,25 @@ describe('short-video local job boundary', () => {
   it('runs manual local content without asking an LLM and needs one for missing script', () => {
     expect(needsText(draft({video_subject:'城市',video_script:'已写好的旁白',video_source:'local'}))).toBe(false)
     expect(needsText(draft({video_subject:'城市',video_script:'',video_source:'local'}))).toBe(true)
+  })
+  it('prepares audio and subtitles without visual materials, image model, or background music', () => {
+    for (const stopAt of ['audio','subtitle'] as const) {
+      const local = {...draft({video_script:'已写好的旁白',video_source:'local',bgm_type:'custom'}),stopAt}
+      expect(stageRequirements(local)).toEqual({imageModel:false,materialUpload:false,backgroundMusicUpload:false})
+      expect(needsText(local)).toBe(false)
+      const generated = {...draft({video_script:'已写好的旁白',video_terms:'城市',video_source:'openai_image',bgm_type:'custom'}),stopAt}
+      expect(stageRequirements(generated)).toEqual({imageModel:false,materialUpload:false,backgroundMusicUpload:false})
+      expect(needsText(generated)).toBe(false)
+    }
+    expect(needsText({...draft({video_script:'已写好的旁白',video_source:'openai_image'}),stopAt:'audio'})).toBe(true)
+  })
+  it('requires visual and music inputs only when execution reaches those stages', () => {
+    const local = draft({video_script:'已写好的旁白',video_source:'local',bgm_type:'custom'})
+    expect(stageRequirements({...local,stopAt:'materials'})).toEqual({imageModel:false,materialUpload:true,backgroundMusicUpload:false})
+    expect(stageRequirements(local)).toEqual({imageModel:false,materialUpload:true,backgroundMusicUpload:true})
+    const generated = draft({video_script:'已写好的旁白',video_terms:'城市',video_source:'openai_image',bgm_type:'custom'})
+    expect(stageRequirements({...generated,stopAt:'materials'})).toEqual({imageModel:true,materialUpload:false,backgroundMusicUpload:false})
+    expect(stageRequirements(generated)).toEqual({imageModel:true,materialUpload:false,backgroundMusicUpload:true})
   })
   it('rejects unimplemented paid video sources and unknown parameters before billing', () => {
     expect(() => draft({video_subject:'城市',video_source:'wavespeed'})).toThrow('素材来源暂不可用')
