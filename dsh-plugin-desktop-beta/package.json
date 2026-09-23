@@ -109,7 +109,7 @@
     }
   },
   "scripts": {
-    "build": "yarn workspace cqai-dsh-plugin-video build && yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "yarn workspace cqai-dsh-plugin-video build && yarn workspace cqai-dsh-plugin-short-video build && yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "verify:closure": "node --test scripts/runtime-closure.spec.mjs && node scripts/verify-runtime-closure.mjs",
@@ -282,6 +282,7 @@
     "builder-util-runtime": "9.7.0",
     "cqai-dsh-plugin-imagegen": "0.1.0",
     "cqai-dsh-plugin-market": "0.1.0",
+    "cqai-dsh-plugin-short-video": "^0.1.0",
     "cqai-dsh-plugin-video": "^0.1.0",
     "dsh-community-market": "0.1.0-dev.0",
     "dshmarket": "1.38.1",
@@ -379,7 +380,8 @@
         "build/app-icon-mac.png",
         "build/tray-iconTemplate.png",
         "build/tray-iconTemplate@2x.png",
-        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
+        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**",
+        "node_modules/cqai-dsh-plugin-short-video/runtime/**"
       ],
       "artifactName": "易宝工坊-Beta-${version}-${arch}.${ext}",
       "target": [
@@ -410,7 +412,8 @@
         "build/tray-icon-white@1.25x.png",
         "build/tray-icon-white@1.5x.png",
         "build/tray-icon-white@2x.png",
-        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
+        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**",
+        "node_modules/cqai-dsh-plugin-short-video/runtime/**"
       ],
       "target": [
         {
@@ -444,7 +447,8 @@
         "build/tray-icon-blue@1.25x.png",
         "build/tray-icon-blue@1.5x.png",
         "build/tray-icon-blue@2x.png",
-        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
+        "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**",
+        "node_modules/cqai-dsh-plugin-short-video/runtime/**"
       ],
       "target": [
         "dir"

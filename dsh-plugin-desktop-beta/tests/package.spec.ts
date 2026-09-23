@@ -866,6 +866,7 @@ describe('published package surface', () => {
       'build/tray-iconTemplate.png',
       'build/tray-iconTemplate@2x.png',
       'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**',
+      'node_modules/cqai-dsh-plugin-short-video/runtime/**',
     ])
     const windowsIcons = [
       'build/app-icon.png',
@@ -881,8 +882,8 @@ describe('published package surface', () => {
       'build/tray-icon-blue@1.5x.png',
       'build/tray-icon-blue@2x.png',
     ]
-    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**'])
-    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**'])
+    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**'])
+    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**'])
     expect(manifest.build?.electronFuses).toEqual({
       enableEmbeddedAsarIntegrityValidation: true,
       onlyLoadAppFromAsar: true,
