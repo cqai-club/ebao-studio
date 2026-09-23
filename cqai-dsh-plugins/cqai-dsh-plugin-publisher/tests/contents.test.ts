@@ -18,6 +18,35 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3])
 
 describe('publisher local content library', () => {
+  it('keeps independent, restart-readable video drafts with editable source and metadata', () => {
+    const env = fixture()
+    const first = createContent('video', env)
+    const second = createContent('video', env)
+    const saved = saveContent(first.id, {
+      revision: first.revision, title: '第一条视频', body: '', summary: '',
+      description: '视频简介', shortTitle: '短标题', tags: ['AI'], creativeStatement: 'none',
+      videoSource: { kind: 'work', workId: '11111111-1111-4111-8111-111111111111' },
+    }, env)
+    expect(saved.videoSource).toEqual({ kind: 'work', workId: '11111111-1111-4111-8111-111111111111' })
+    expect(readContent(first.id, env)).toMatchObject({ title: '第一条视频', description: '视频简介', shortTitle: '短标题' })
+    expect(readContent(second.id, env).videoSource).toBeUndefined()
+    expect(readContent(second.id, env).revision).toBe(1)
+    const copy = duplicateContent(first.id, env)
+    expect(copy.id).not.toBe(first.id)
+    expect(copy.videoSource).toEqual(saved.videoSource)
+    expect(listContents(env).filter(item => item.contentType === 'video')).toHaveLength(3)
+    expect(() => addAsset(first.id, 'cover.png', png, env)).toThrow('不支持图片素材')
+    expect(() => saveContent(first.id, {
+      ...saved, revision: saved.revision, videoSource: { kind: 'local',
+        localVideoId: '22222222-2222-4222-8222-222222222222', fileName: '../evil.mp4', bytes: 12 },
+    }, env)).toThrow('视频草稿字段无效')
+    expect(() => saveContent(first.id, {
+      ...saved, revision: saved.revision, body: '文章正文',
+    }, env)).toThrow('视频草稿字段无效')
+    deleteContent(first.id, env)
+    expect(readContent(copy.id, env).videoSource).toEqual(saved.videoSource)
+  })
+
   it('persists independent revisions and copies assets into a duplicate draft', () => {
     const env = fixture()
     const draft = createContent('article', env)

@@ -31,8 +31,11 @@ describe('unified publisher client contract', () => {
 
   it('passes only IDs from browser forms and retains account scoped dashboards', () => {
     expect(video).toContain("api<PublisherLocalVideo | null>('local-video-select', {})")
-    expect(video).toContain("localVideoId: localVideo.id")
-    expect(video).toContain('localVideo ? { localVideoId: localVideo.id } : { workId }')
+    expect(video).toContain('localVideoId: selected.id')
+    expect(video).toContain("contentType: 'video', contentId: current.id, revision: current.revision")
+    expect(video).toContain('<DraftToolbar contents={contents}')
+    expect(video).toContain("api<PublisherContent>('contents', { contentType: 'video' })")
+    expect(video).toContain("api<PublisherContent>('content-copy', { id: current.id })")
     expect(article).toContain('contentType, contentId: current.id, revision: current.revision')
     expect(video).not.toMatch(/\b(?:file|videoPath|filePath)\s*:/u)
     expect(article).not.toMatch(/\b(?:videoPath|filePath)\s*:/u)

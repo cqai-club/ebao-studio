@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -211,6 +211,38 @@ describe('PublisherSupervisor', () => {
       contentType: 'video', localVideoId: selection!.id, file: '/tmp/attacker.mp4', title: '片段', mode: 'draft', accountIds: ['account'],
     })).rejects.toMatchObject({ code: 'invalid-video-selection' })
     await supervisor.shutdown()
+  })
+
+  it('restores an opaque native file selection after restarting e宝', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'publisher-restart-video-'))
+    roots.push(directory)
+    const file = join(directory, '片段.mp4')
+    writeFileSync(file, 'sample-video')
+    const first = fixture(() => { throw new Error('must not start') }, {
+      userDataPath: directory, pickLocalVideo: async () => file,
+    })
+    const selection = await first.supervisor.selectLocalVideo()
+    expect(selection).not.toHaveProperty('file')
+    const registry = join(directory, 'publisher', 'local-videos', `${selection!.id}.json`)
+    expect(statSync(registry).mode & 0o077).toBe(0)
+    let forwarded: Record<string, unknown> | undefined
+    const second = fixture((frame, worker) => {
+      if (handshake(frame, worker)) return
+      if (frame.method === 'submissions.create') {
+        forwarded = frame.params as Record<string, unknown>
+        worker.reply(frame.id, { accepted: true })
+      }
+      if (frame.method === 'system.shutdown') { worker.reply(frame.id, { ok: true }); worker.exit(0) }
+    }, { userDataPath: directory })
+    await expect(second.supervisor.request('submissions.create', {
+      contentType: 'video', localVideoId: selection!.id, title: '片段', mode: 'draft', accountIds: ['account'],
+    })).resolves.toEqual({ accepted: true })
+    expect(forwarded).toMatchObject({ file: realpathSync(file), workId: selection!.id })
+    writeFileSync(file, 'changed-video-content')
+    await expect(second.supervisor.request('submissions.create', {
+      contentType: 'video', localVideoId: selection!.id, title: '片段', mode: 'draft', accountIds: ['account'],
+    })).rejects.toMatchObject({ code: 'video-file-changed' })
+    await second.supervisor.shutdown()
   })
 
   it('treats a cancelled picker as no change and refuses non-MP4 files', async () => {

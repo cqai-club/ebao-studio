@@ -64,15 +64,24 @@ export interface PublisherAsset {
   bytes: number
 }
 
+/** A video draft remembers only a managed work ID or an opaque native selection ID. */
+export type PublisherVideoSource =
+  | { kind: 'work'; workId: string }
+  | { kind: 'local'; localVideoId: string; fileName: string; bytes: number }
+
 export interface PublisherContent {
   id: string
-  contentType: 'article' | 'image-note'
+  contentType: PublisherContentType
   revision: number
   createdAt: string
   updatedAt: string
   title: string
   body: string
   summary: string
+  /** Video-only fields; article and image-note continue to use body/summary. */
+  description?: string
+  shortTitle?: string
+  videoSource?: PublisherVideoSource
   tags: string[]
   creativeStatement: CreativeStatement
   assets: PublisherAsset[]
@@ -99,7 +108,7 @@ export interface Work {
   bytes: number
 }
 
-/** A native file chooser selection; the absolute path remains in Electron main. */
+/** A native file chooser selection; the absolute path stays in Electron main's private registry. */
 export interface PublisherLocalVideo {
   id: string
   fileName: string
@@ -130,7 +139,7 @@ export type CreateVideoSubmissionRequest = {
 } & ({ workId: string; localVideoId?: never } | { localVideoId: string; workId?: never })
 
 export interface CreateContentSubmissionRequest {
-  contentType: 'article' | 'image-note'
+  contentType: PublisherContentType
   contentId: string
   revision: number
   mode: PublisherMode

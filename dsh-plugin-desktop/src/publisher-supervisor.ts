@@ -2,8 +2,8 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, realpathSync, statSync } from 'node:fs'
-import { basename, extname, join, resolve } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { DesktopLogger } from './desktop-logger.ts'
 import { maskSecrets } from './mask-secrets.ts'
@@ -26,6 +26,7 @@ const MAX_AUTOMATIC_RESTARTS = 3
 const LOCAL_VIDEO_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 // MP4 is the common upload format across the enabled video adapters.
 const LOCAL_VIDEO_EXTENSIONS = new Set(['.mp4'])
+const MAX_SELECTION_BYTES = 16 * 1024
 
 interface SelectedVideo {
   file: string
@@ -122,6 +123,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
   private readonly importTimeoutMs: number
   private readonly submissionTimeoutMs: number
   private readonly pickLocalVideo: () => Promise<string | undefined>
+  private readonly localVideosRoot: string
   private readonly localVideos = new Map<string, SelectedVideo>()
   private child: ChildProcessWithoutNullStreams | undefined
   private startTask: Promise<void> | undefined
@@ -137,6 +139,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     this.platform = options.platform
     this.executable = resolvePublisherWorker(options)
     this.dataRoot = join(options.userDataPath, 'publisher')
+    this.localVideosRoot = join(this.dataRoot, 'local-videos')
     this.env = options.env ?? process.env
     this.launch = options.launch ?? ((executable, args, spawnOptions) =>
       spawn(executable, [...args], spawnOptions) as ChildProcessWithoutNullStreams)
@@ -168,8 +171,48 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     catch { throw new PublisherWorkerError('invalid-video-file', '本地视频文件无法读取，请重新选择') }
     if (!stat.isFile() || stat.size < 1) throw new PublisherWorkerError('invalid-video-file', '本地视频文件无效或为空')
     const id = randomUUID()
-    this.localVideos.set(id, { file, size: stat.size, mtimeMs: stat.mtimeMs, dev: stat.dev, ino: stat.ino })
+    const selected = { file, size: stat.size, mtimeMs: stat.mtimeMs, dev: stat.dev, ino: stat.ino }
+    this.persistLocalVideo(id, selected)
+    this.localVideos.set(id, selected)
     return { id, fileName, title: fileName.slice(0, -extname(fileName).length).slice(0, 120), bytes: stat.size }
+  }
+
+  private persistLocalVideo(id: string, selected: SelectedVideo): void {
+    let temporary: string | undefined
+    try {
+      mkdirSync(this.localVideosRoot, { recursive: true, mode: 0o700 })
+      temporary = join(this.localVideosRoot, `.${randomUUID()}.tmp`)
+      writeFileSync(temporary, JSON.stringify(selected), { flag: 'wx', mode: 0o600 })
+      renameSync(temporary, join(this.localVideosRoot, `${id}.json`))
+    } catch {
+      throw new PublisherWorkerError('video-selection-save-failed', '无法保存本地视频选择，请检查 e宝工坊数据目录')
+    } finally {
+      if (temporary) {
+        try { rmSync(temporary, { force: true }) } catch { /* preserve the original error */ }
+      }
+    }
+  }
+
+  private loadLocalVideo(id: string): SelectedVideo | undefined {
+    const cached = this.localVideos.get(id)
+    if (cached) return cached
+    const file = join(this.localVideosRoot, `${id}.json`)
+    try {
+      const stat = lstatSync(file)
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_SELECTION_BYTES) return undefined
+      const value: unknown = JSON.parse(readFileSync(file, 'utf8'))
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+      const selected = value as Record<string, unknown>
+      if (typeof selected.file !== 'string' || !isAbsolute(selected.file)
+        || extname(selected.file).toLowerCase() !== '.mp4'
+        || typeof selected.size !== 'number' || !Number.isSafeInteger(selected.size) || selected.size < 1
+        || typeof selected.mtimeMs !== 'number' || !Number.isFinite(selected.mtimeMs)
+        || typeof selected.dev !== 'number' || !Number.isSafeInteger(selected.dev)
+        || typeof selected.ino !== 'number' || !Number.isSafeInteger(selected.ino)) return undefined
+      const result = selected as unknown as SelectedVideo
+      this.localVideos.set(id, result)
+      return result
+    } catch { return undefined }
   }
 
   private resolveLocalVideoSubmission(params: unknown): unknown {
@@ -179,7 +222,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     if (typeof id !== 'string' || !LOCAL_VIDEO_ID.test(id) || 'file' in input || 'workId' in input) {
       throw new PublisherWorkerError('invalid-video-selection', '本地视频选择无效，请重新选择')
     }
-    const selected = this.localVideos.get(id)
+    const selected = this.loadLocalVideo(id)
     if (!selected) throw new PublisherWorkerError('video-selection-expired', '本地视频选择已失效，请重新选择文件')
     let stat: ReturnType<typeof statSync>
     try { stat = statSync(selected.file) }

@@ -3,10 +3,10 @@
 易宝工坊的一个 React 主面板，内部包含“发布 / 发布历史 / 平台账号管理”。发布页可切换文章、图文、视频：
 
 - **平台账号管理**：添加、改名、登录/重新登录、手动检查、打开账号专属后台、删除和导入旧 MatrixMedia 账号。
-- **视频**：选择 e剪宝成片或直接选择本地 MP4 文件，为每个平台指定一个账号，立即发布或转存草稿。
+- **视频**：与文章、图文共用“选择本地草稿 / 新建 / 复制 / 删除”工具栏，支持多份自动保存的视频草稿；每份可选择 e剪宝成片或本地 MP4 文件，为每个平台指定一个账号，立即发布或转存平台草稿。
 - **文章和图文**：本地草稿库、Markdown 编辑和预览、文件导入、图片素材；平台通过真实验收后由 Worker 能力矩阵开放提交。
 
-页面通过 DSH Web Route 调用 Electron 主进程的 `PublisherSupervisor`，再由 Supervisor 使用 stdin/stdout NDJSON 驱动独立的 MatrixMedia Publisher Worker。浏览器不能直连 Worker，不接收 Cookie、session partition 或任意本地文件路径。选择 e剪宝成片时，视频提交只传 `workId`，Host 固定解析 `<DSH home>/ejianbao/jobs/<workId>/final_video.mp4`；选择本地 MP4 时，由 Electron 原生文件对话框选取，浏览器只获得一次进程内有效的 `localVideoId` 和文件名/大小，Supervisor 在提交时重新校验文件并将真实路径交给 Worker。文章和图文提交只传内容 ID 与修订号，Host 解析 `<DSH home>/publisher/contents/<id>/`，Worker 接受前复制不可变内容快照。本地视频不复制到草稿库；提交后需保留原文件直到在平台后台确认。
+页面通过 DSH Web Route 调用 Electron 主进程的 `PublisherSupervisor`，再由 Supervisor 使用 stdin/stdout NDJSON 驱动独立的 MatrixMedia Publisher Worker。浏览器不能直连 Worker，不接收 Cookie、session partition 或任意本地文件路径。视频草稿与文章、图文草稿均保存在 `<DSH home>/publisher/contents/<id>/`，支持约 800ms 防抖自动保存。选择 e剪宝成片时，草稿只保存 `workId`，Host 固定解析 `<DSH home>/ejianbao/jobs/<workId>/final_video.mp4`；选择本地 MP4 时，由 Electron 原生文件对话框选取，草稿只保存不含路径的 `localVideoId`、文件名和大小，真实路径由 Electron main 私有目录 `<userData>/publisher/local-videos/` 保存，重启后仍可解析。视频提交只传内容 ID 与修订号，Host 解析草稿并转成现有 Worker 视频请求；Supervisor 在提交时重新校验本地视频并将真实路径交给 Worker。文章和图文由 Worker 接受前复制不可变内容快照。本地视频本体不复制到草稿库；编辑及提交后需保留原文件，移动、删除或修改后需要重新选择。删除视频草稿不会自动删除文件，也不影响已接受的提交。
 
 ## 产品语义
 

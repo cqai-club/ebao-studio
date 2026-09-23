@@ -17,6 +17,7 @@ import {
   type PublisherContent,
   type PublisherLocalVideo,
   type PublisherPlatformCapability,
+  type PublisherVideoSource,
 } from './protocol.ts'
 import {
   MAX_ASSET_BYTES, MAX_BODY_BYTES as MAX_CONTENT_BODY_BYTES, addAsset, createContent, deleteContent, duplicateContent,
@@ -114,7 +115,8 @@ function accountIds(value: unknown): string[] {
 
 function submissionBody(value: unknown): CreateSubmissionRequest {
   const raw = object(value)
-  if (raw.contentType === 'article' || raw.contentType === 'image-note') {
+  if (raw.contentType === 'article' || raw.contentType === 'image-note'
+    || raw.contentType === 'video' && ('contentId' in raw || 'revision' in raw)) {
     const body = exact(value, ['contentType', 'contentId', 'revision', 'mode', 'accountIds'])
     if (body.mode !== 'publish' && body.mode !== 'draft') throw new Error('发布方式无效')
     if (!Number.isSafeInteger(body.revision) || (body.revision as number) < 1) throw new Error('草稿修订号无效')
@@ -160,6 +162,23 @@ function submissionBody(value: unknown): CreateSubmissionRequest {
   }
 }
 
+function videoSource(value: unknown): PublisherVideoSource | undefined {
+  if (value === undefined) return undefined
+  const raw = object(value)
+  if (raw.kind === 'work') {
+    const source = exact(value, ['kind', 'workId'])
+    return { kind: 'work', workId: uuid(source.workId, '作品 ID') }
+  }
+  if (raw.kind === 'local') {
+    const source = exact(value, ['kind', 'localVideoId', 'fileName', 'bytes'])
+    const fileName = text(source.fileName, '视频名称', 255)
+    if (/[/\\]/u.test(fileName) || !fileName.toLowerCase().endsWith('.mp4')) throw new Error('视频名称无效')
+    if (!Number.isSafeInteger(source.bytes) || (source.bytes as number) < 1) throw new Error('视频大小无效')
+    return { kind: 'local', localVideoId: uuid(source.localVideoId, '本地视频 ID'), fileName, bytes: source.bytes as number }
+  }
+  throw new Error('视频来源无效')
+}
+
 async function readBytes(req: IncomingMessage, limit: number): Promise<Buffer> {
   const declared = Number(req.headers['content-length'] ?? 0)
   if (Number.isFinite(declared) && declared > limit) throw new Error('请求过大')
@@ -185,7 +204,7 @@ async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<u
 function contentSaveBody(value: unknown): { id: string; input: SaveContentInput } {
   const body = exact(value, [
     'id', 'revision', 'title', 'body', 'summary', 'tags', 'creativeStatement',
-    'coverAssetId', 'assetOrder', 'platformFields',
+    'coverAssetId', 'assetOrder', 'platformFields', 'description', 'shortTitle', 'videoSource',
   ])
   if (!Number.isSafeInteger(body.revision) || (body.revision as number) < 1) throw new Error('草稿修订号无效')
   if (typeof body.title !== 'string' || typeof body.body !== 'string' || typeof body.summary !== 'string') throw new Error('草稿字段无效')
@@ -202,6 +221,9 @@ function contentSaveBody(value: unknown): { id: string; input: SaveContentInput 
       ...(body.coverAssetId ? { coverAssetId: body.coverAssetId as string } : {}),
       ...(body.assetOrder ? { assetOrder: body.assetOrder as string[] } : {}),
       ...(body.platformFields ? { platformFields: body.platformFields as PublisherContent['platformFields'] } : {}),
+      ...(body.description !== undefined ? { description: body.description as string } : {}),
+      ...(body.shortTitle !== undefined ? { shortTitle: body.shortTitle as string } : {}),
+      ...(body.videoSource !== undefined ? { videoSource: videoSource(body.videoSource) } : {}),
     },
   }
 }
@@ -238,7 +260,7 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
   const body = await readJson(req, action === 'content-save' ? 2 * MAX_CONTENT_BODY_BYTES : MAX_BODY_BYTES)
   if (action === 'contents') {
     const value = exact(body, ['contentType'])
-    if (value.contentType !== 'article' && value.contentType !== 'image-note') throw new Error('内容类型无效')
+    if (value.contentType !== 'article' && value.contentType !== 'image-note' && value.contentType !== 'video') throw new Error('内容类型无效')
     return { code: 201, data: createContent(value.contentType) }
   }
   if (action === 'content-save') {
@@ -289,9 +311,24 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
         throw new Error(`${account!.displayName}暂不支持此内容类型和提交方式`)
       }
     }
-    if (input.contentType === 'article' || input.contentType === 'image-note') {
+    if ('contentId' in input) {
       const { content, directory } = resolveContent(input.contentId, input.revision)
       if (content.contentType !== input.contentType) throw new Error('草稿内容类型不匹配')
+      if (content.contentType === 'video') {
+        if (!content.videoSource || !content.title.trim()) throw new Error('请先选择视频素材并填写标题')
+        const video = {
+          contentType: 'video' as const, title: content.title, description: content.description ?? '',
+          shortTitle: content.shortTitle ?? '', tags: content.tags,
+          creativeStatement: content.creativeStatement, mode: input.mode, accountIds: input.accountIds,
+        }
+        if (content.videoSource.kind === 'local') return { code: 202, data: await runtime.request('submissions.create', {
+          ...video, localVideoId: content.videoSource.localVideoId,
+        }) }
+        const work = resolveWork(content.videoSource.workId)
+        return { code: 202, data: await runtime.request('submissions.create', {
+          ...video, workId: content.videoSource.workId, file: work.file,
+        }) }
+      }
       if (!content.title || !content.body.trim() && content.contentType === 'article') throw new Error('请填写标题和正文')
       if (content.contentType === 'image-note' && content.assets.length === 0) throw new Error('图文至少需要一张图片')
       return { code: 202, data: await runtime.request('submissions.create', {

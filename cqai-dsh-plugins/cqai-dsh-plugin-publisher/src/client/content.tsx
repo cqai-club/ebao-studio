@@ -5,7 +5,7 @@ import {
   type PublisherContent, type PublisherPlatformCapability,
 } from '../protocol.ts'
 import {
-  api, ConfirmDialog, errorMessage, PlatformAccountSelect, STATEMENT_LABELS, uploadAsset,
+  api, ConfirmDialog, DraftToolbar, errorMessage, PlatformAccountSelect, STATEMENT_LABELS, uploadAsset,
 } from './shared.tsx'
 import { usePublisherTips } from './tips.tsx'
 
@@ -264,16 +264,8 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   })
 
   return <div>
-    <div className="pub-drafts">
-      <select className="pub-input" aria-label="选择本地草稿" value={draft?.id ?? ''} onChange={event => selectDraft(event.target.value)}>
-        <option value="">选择本地草稿</option>
-        {contents.map(item => <option key={item.id} value={item.id}>{item.title || '未命名草稿'} · {new Date(item.updatedAt).toLocaleString()}</option>)}
-      </select>
-      <button className="pub-secondary" disabled={busy} onClick={create}>新建</button>
-      <button className="pub-secondary" disabled={busy || !draft} onClick={duplicate}>复制</button>
-      <button className="pub-danger" disabled={busy || !draft} onClick={remove}>删除</button>
-      <span className={saveError ? 'pub-warn' : 'pub-muted'}>{saveError ? '自动保存失败，请继续编辑以重试' : dirtyRef.current ? '自动保存中…' : '本地草稿自动保存'}</span>
-    </div>
+    <DraftToolbar contents={contents} draft={draft} busy={busy} dirty={dirtyRef.current} saveError={saveError}
+      onSelect={selectDraft} onCreate={create} onCopy={duplicate} onDelete={remove}/>
     {!draft ? <div className="pub-empty">点击“新建”开始编辑{contentType === 'article' ? '文章' : '图文'}。</div> : <div className="pub-grid">
       <div>
         <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>

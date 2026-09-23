@@ -161,6 +161,44 @@ describe('the Host publisher route', () => {
       expect(localCreate).not.toHaveProperty('file')
       expect(localCreate).not.toHaveProperty('workId')
 
+      const videoDraft = await (await send('contents', { contentType: 'video' })).json() as { id: string; revision: number }
+      const savedVideo = await (await send('content-save', {
+        id: videoDraft.id, revision: videoDraft.revision, title: '第二条视频', body: '', summary: '',
+        description: '第二条简介', shortTitle: '短标题', tags: ['AI'], creativeStatement: 'none',
+        videoSource: { kind: 'work', workId: WORK_ID },
+      })).json() as { revision: number }
+      const draftAccepted = await send('submissions', {
+        contentType: 'video', contentId: videoDraft.id, revision: savedVideo.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(draftAccepted.status).toBe(202)
+      expect(calls.filter(call => call.method === 'submissions.create').at(-1)?.params).toMatchObject({
+        workId: WORK_ID, file: realpathSync(join(directory, 'final_video.mp4')),
+        title: '第二条视频', description: '第二条简介', shortTitle: '短标题',
+      })
+      const duplicate = await (await send('content-copy', { id: videoDraft.id })).json() as { id: string; videoSource: unknown }
+      expect(duplicate.id).not.toBe(videoDraft.id)
+      expect(duplicate.videoSource).toEqual({ kind: 'work', workId: WORK_ID })
+      expect((await send('submissions', {
+        contentType: 'video', contentId: videoDraft.id, revision: videoDraft.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })).status).toBe(400)
+
+      const localDraft = await (await send('contents', { contentType: 'video' })).json() as { id: string; revision: number }
+      const savedLocal = await (await send('content-save', {
+        id: localDraft.id, revision: localDraft.revision, title: '本地第二条', body: '', summary: '',
+        description: '', shortTitle: '', tags: [], creativeStatement: 'none',
+        videoSource: { kind: 'local', localVideoId: LOCAL_VIDEO_ID, fileName: '本地视频.mp4', bytes: 123 },
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'video', contentId: localDraft.id, revision: savedLocal.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })).status).toBe(202)
+      const localDraftCreate = calls.filter(call => call.method === 'submissions.create').at(-1)?.params as Record<string, unknown>
+      expect(localDraftCreate).toMatchObject({ localVideoId: LOCAL_VIDEO_ID, title: '本地第二条' })
+      expect(localDraftCreate).not.toHaveProperty('file')
+      expect(localDraftCreate).not.toHaveProperty('contentDirectory')
+
       const beforeRejected = calls.filter(call => call.method === 'submissions.create').length
       const rejected = await send('submissions', {
         workId: WORK_ID, file: '/tmp/attacker.mp4', title: '标题', mode: 'publish', accountIds: [ACCOUNT_ID],
@@ -174,6 +212,12 @@ describe('the Host publisher route', () => {
         title: '标题', mode: 'draft', accountIds: [ACCOUNT_ID],
       })).status).toBe(400)
       expect((await send('local-video-select', { file: '/tmp/attacker.mp4' })).status).toBe(400)
+      expect((await send('content-save', {
+        id: localDraft.id, revision: savedLocal.revision, title: '伪造路径', body: '', summary: '',
+        description: '', shortTitle: '', tags: [], creativeStatement: 'none',
+        videoSource: { kind: 'local', localVideoId: LOCAL_VIDEO_ID, fileName: '本地视频.mp4', bytes: 123,
+          file: '/tmp/attacker.mp4' },
+      })).status).toBe(400)
       expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(beforeRejected)
 
       expect((await send('jobs')).status).toBe(404)

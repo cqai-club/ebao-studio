@@ -6,8 +6,8 @@ import { randomUUID } from 'node:crypto'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
-  CREATIVE_STATEMENTS, MAX_TAGS, PLATFORMS, TITLE_MAX,
-  type Platform, type PublisherAsset, type PublisherContent,
+  CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORMS, TITLE_MAX,
+  type Platform, type PublisherAsset, type PublisherContent, type PublisherContentType, type PublisherVideoSource,
 } from './protocol.ts'
 
 export const CONTENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
@@ -27,6 +27,17 @@ function inside(parent: string, child: string): boolean {
 
 function requireId(id: string): void {
   if (!CONTENT_ID.test(id)) throw new Error('草稿 ID 无效')
+}
+
+function validVideoSource(value: unknown): value is PublisherVideoSource {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const source = value as Record<string, unknown>
+  if (source.kind === 'work') return Object.keys(source).length === 2 && typeof source.workId === 'string' && CONTENT_ID.test(source.workId)
+  return source.kind === 'local' && Object.keys(source).length === 4
+    && typeof source.localVideoId === 'string' && CONTENT_ID.test(source.localVideoId)
+    && typeof source.fileName === 'string' && source.fileName.length > 0 && source.fileName.length <= 255
+    && basename(source.fileName) === source.fileName && !source.fileName.includes('\\') && source.fileName.toLowerCase().endsWith('.mp4')
+    && typeof source.bytes === 'number' && Number.isSafeInteger(source.bytes) && source.bytes > 0
 }
 
 function directoryFor(id: string, env: NodeJS.ProcessEnv = process.env): string {
@@ -50,7 +61,7 @@ function readManifest(directory: string): PublisherContent {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('草稿数据无效')
   const content = value as PublisherContent
   if (!CONTENT_ID.test(content.id) || content.id !== basename(directory)
-    || !['article', 'image-note'].includes(content.contentType)
+    || !['article', 'image-note', 'video'].includes(content.contentType)
     || !Number.isSafeInteger(content.revision) || content.revision < 1
     || typeof content.createdAt !== 'string' || typeof content.updatedAt !== 'string'
     || typeof content.title !== 'string' || content.title.length > TITLE_MAX
@@ -65,7 +76,15 @@ function readManifest(directory: string): PublisherContent {
       || asset.bytes < 1 || asset.bytes > MAX_ASSET_BYTES
       || !['image/jpeg', 'image/png', 'image/webp'].includes(asset.mime))
     || !content.platformFields || typeof content.platformFields !== 'object' || Array.isArray(content.platformFields)
-    || (content.coverAssetId !== undefined && !content.assets.some(asset => asset.id === content.coverAssetId))) {
+    || (content.coverAssetId !== undefined && !content.assets.some(asset => asset.id === content.coverAssetId))
+    || (content.contentType === 'video' && (content.body !== '' || content.summary !== ''
+      || content.assets.length !== 0 || content.coverAssetId !== undefined
+      || Object.keys(content.platformFields).length !== 0
+      || typeof content.description !== 'string' || content.description.length > DESCRIPTION_MAX
+      || typeof content.shortTitle !== 'string' || content.shortTitle.length > 32
+      || (content.videoSource !== undefined && !validVideoSource(content.videoSource))))
+    || (content.contentType !== 'video' && (content.videoSource !== undefined
+      || content.description !== undefined || content.shortTitle !== undefined))) {
     throw new Error('草稿数据无效')
   }
   return content
@@ -94,8 +113,8 @@ export function listContents(env: NodeJS.ProcessEnv = process.env): PublisherCon
   }).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 }
 
-export function createContent(contentType: 'article' | 'image-note', env: NodeJS.ProcessEnv = process.env): PublisherContent {
-  if (contentType !== 'article' && contentType !== 'image-note') throw new Error('内容类型无效')
+export function createContent(contentType: PublisherContentType, env: NodeJS.ProcessEnv = process.env): PublisherContent {
+  if (!['article', 'image-note', 'video'].includes(contentType)) throw new Error('内容类型无效')
   const root = contentsRoot(env)
   mkdirSync(root, { recursive: true, mode: 0o700 })
   const id = randomUUID()
@@ -107,6 +126,7 @@ export function createContent(contentType: 'article' | 'image-note', env: NodeJS
     id, contentType, revision: 1, createdAt: now, updatedAt: now,
     title: '', body: '', summary: '', tags: [], creativeStatement: 'none',
     assets: [], platformFields: {},
+    ...(contentType === 'video' ? { description: '', shortTitle: '' } : {}),
   }
   writeManifest(directory, content)
   return content
@@ -122,6 +142,9 @@ export interface SaveContentInput {
   coverAssetId?: string
   assetOrder?: string[]
   platformFields?: PublisherContent['platformFields']
+  description?: string
+  shortTitle?: string
+  videoSource?: PublisherVideoSource
 }
 
 function cleanFields(value: PublisherContent['platformFields'] | undefined): PublisherContent['platformFields'] {
@@ -153,6 +176,16 @@ export function saveContent(id: string, input: SaveContentInput, env: NodeJS.Pro
   if (!Array.isArray(input.tags) || input.tags.length > MAX_TAGS
     || input.tags.some(tag => typeof tag !== 'string' || !tag.trim() || tag.length > 100)) throw new Error('标签无效')
   if (!(CREATIVE_STATEMENTS as readonly string[]).includes(input.creativeStatement)) throw new Error('内容声明无效')
+  if (current.contentType === 'video') {
+    if (input.body !== '' || input.summary !== '' || input.coverAssetId !== undefined
+      || (input.platformFields !== undefined && (!input.platformFields || typeof input.platformFields !== 'object'
+        || Array.isArray(input.platformFields) || Object.keys(input.platformFields).length !== 0))
+      || typeof input.description !== 'string' || input.description.length > DESCRIPTION_MAX
+      || typeof input.shortTitle !== 'string' || input.shortTitle.length > 32
+      || (input.videoSource !== undefined && !validVideoSource(input.videoSource))) throw new Error('视频草稿字段无效')
+  } else if (input.description !== undefined || input.shortTitle !== undefined || input.videoSource !== undefined) {
+    throw new Error('草稿内容类型不匹配')
+  }
   const ids = current.assets.map(asset => asset.id)
   const assetOrder = input.assetOrder ?? ids
   if (!Array.isArray(assetOrder) || assetOrder.length !== ids.length
@@ -170,7 +203,12 @@ export function saveContent(id: string, input: SaveContentInput, env: NodeJS.Pro
     creativeStatement: input.creativeStatement,
     assets: assetOrder.map(assetId => byId.get(assetId)!),
     platformFields: cleanFields(input.platformFields),
+    ...(current.contentType === 'video' ? {
+      description: input.description!.trim(), shortTitle: input.shortTitle!.trim(),
+      ...(input.videoSource ? { videoSource: input.videoSource } : {}),
+    } : {}),
   }
+  if (current.contentType === 'video' && !input.videoSource) delete next.videoSource
   if (input.coverAssetId) next.coverAssetId = input.coverAssetId
   else delete next.coverAssetId
   writeManifest(directory, next)
@@ -221,6 +259,7 @@ function safeAssetPath(directory: string, id: string): string {
 export function addAsset(id: string, name: string, data: Buffer, env: NodeJS.ProcessEnv = process.env): PublisherContent {
   const directory = directoryFor(id, env)
   const content = readManifest(directory)
+  if (content.contentType === 'video') throw new Error('视频草稿不支持图片素材')
   if (content.assets.length >= MAX_ASSETS) throw new Error(`每份内容最多 ${MAX_ASSETS} 个素材`)
   if (data.length < 1 || data.length > MAX_ASSET_BYTES) throw new Error('单张图片不能超过 20MB')
   const mime = imageType(data)

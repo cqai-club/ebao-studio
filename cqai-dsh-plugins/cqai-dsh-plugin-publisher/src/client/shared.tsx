@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import {
   API, type CreativeStatement, type Platform, PLATFORM_LABELS,
-  type PublisherAccount, type PublisherCapability, type PublisherContentType,
+  type PublisherAccount, type PublisherCapability, type PublisherContent, type PublisherContentType,
 } from '../protocol.ts'
 
 export const STATEMENT_LABELS: Record<CreativeStatement, string> = {
@@ -90,6 +90,29 @@ export function ConfirmDialog({
 
 export function Card({ title, children }: { title: string; children: ReactNode }) {
   return <div className="pub-card"><h2>{title}</h2>{children}</div>
+}
+
+export function DraftToolbar({ contents, draft, busy, dirty, saveError, onSelect, onCreate, onCopy, onDelete }: {
+  contents: PublisherContent[]
+  draft: PublisherContent | undefined
+  busy: boolean
+  dirty: boolean
+  saveError: string
+  onSelect(id: string): void
+  onCreate(): void
+  onCopy(): void
+  onDelete(): void
+}) {
+  return <div className="pub-drafts">
+    <select className="pub-input" aria-label="选择本地草稿" value={draft?.id ?? ''} onChange={event => { if (event.target.value) onSelect(event.target.value) }}>
+      <option value="">选择本地草稿</option>
+      {contents.map(item => <option key={item.id} value={item.id}>{item.title || '未命名草稿'} · {new Date(item.updatedAt).toLocaleString()}</option>)}
+    </select>
+    <button className="pub-secondary" disabled={busy} onClick={onCreate}>新建</button>
+    <button className="pub-secondary" disabled={busy || !draft} onClick={onCopy}>复制</button>
+    <button className="pub-danger" disabled={busy || !draft} onClick={onDelete}>删除</button>
+    <span className={saveError ? 'pub-warn' : 'pub-muted'}>{saveError ? '自动保存失败，请继续编辑以重试' : dirty ? '自动保存中…' : '本地草稿自动保存'}</span>
+  </div>
 }
 
 export function PlatformAccountSelect({
