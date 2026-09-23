@@ -22,6 +22,8 @@ export function contentSubmissionError(
   if (content.contentType === 'article' && content.assets.length > 0 && !content.coverAssetId) return '请为文章选择封面图片'
   if (content.contentType === 'article' && accounts.some(account => account.platform === 'juejin' || account.platform === 'blbl')
     && content.body.includes('ebao-asset://')) return '掘金和B站专栏暂不支持正文插图，请分开提交'
+  if (content.contentType === 'article' && content.tags.length > 0
+    && accounts.some(account => account.platform === 'tt' || account.platform === 'bjh')) return '头条、百家号文章标签写入尚未验收，请先清空标签'
   if (content.contentType === 'article' && accounts.some(account => account.platform === 'tt' || account.platform === 'bjh')) {
     try { articleAssetIds(content) } catch (cause) { return cause instanceof Error ? cause.message : '正文图片引用无效' }
   }
