@@ -97,6 +97,14 @@ export interface PublisherContent {
   platformFields: Partial<Record<Platform, Record<string, string>>>
 }
 
+/** The single article or image-note draft associated with one Agent conversation. */
+export interface PublisherSessionContent {
+  sessionId: string
+  contentId: string | null
+  revision: number | null
+  content: PublisherContent | null
+}
+
 /** Side-effect-free desktop capability answer. */
 export interface PublisherCapability {
   supported: boolean

@@ -25,6 +25,8 @@ import {
   type SaveContentInput,
 } from './contents.ts'
 import { contentSubmissionError } from './submission-validation.ts'
+import { registerAgentDraftTools } from './agent-draft-tools.ts'
+import { readSessionContent } from './session-contents.ts'
 import { listWorks, resolveWork } from './works.ts'
 
 export const name = 'cqai-publisher'
@@ -246,6 +248,13 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     if (action === 'capability') return { code: 200, data: runtime.status() }
     if (action === 'platform-capabilities') return { code: 200, data: await runtime.request('system.capabilities') }
     if (action === 'contents') return { code: 200, data: listContents() }
+    if (action.startsWith('session-content/')) {
+      const encoded = action.slice('session-content/'.length)
+      if (encoded === '' || encoded.includes('/')) throw new Error('会话 ID 无效')
+      let sessionId: string
+      try { sessionId = decodeURIComponent(encoded) } catch { throw new Error('会话 ID 无效') }
+      return { code: 200, data: readSessionContent(sessionId) }
+    }
     if (action.startsWith('content/')) return { code: 200, data: readContent(uuid(action.slice('content/'.length), '草稿 ID')) }
     if (action === 'works') return { code: 200, data: listWorks() }
     if (action === 'accounts') return { code: 200, data: await runtime.request('accounts.list') }
@@ -368,6 +377,7 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
 
 export function apply(ctx: Context): void {
   const runtime = (ctx as PublisherContext).desktopRuntime.publisher
+  ctx.inject(['tools', 'attachments', 'systemPrompt'], (agentCtx) => registerAgentDraftTools(agentCtx))
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: API,

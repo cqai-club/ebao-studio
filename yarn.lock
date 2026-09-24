@@ -9773,13 +9773,27 @@ __metadata:
   resolution: "cqai-dsh-plugin-publisher@workspace:cqai-dsh-plugins/cqai-dsh-plugin-publisher"
   dependencies:
     "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-agent": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-attachment": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-brand": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-conversation": "npm:^0.1.5-rc.1"
     "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.5-rc.1"
     "@deepseek-ai/dsh-client-ui-primitives": "npm:0.1.5-rc.1"
     "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-session": "npm:^0.1.5-rc.1"
     "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "npm:^0.1.5-rc.1"
     "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-code-runtime": "npm:^0.1.5-rc.1"
     "@deepseek-ai/dsh-home-paths": "npm:^0.1.5-rc.1"
     "@deepseek-ai/dsh-host-webserver": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-invariants": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-llm": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-scope": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-session": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-system-prompt": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-tools": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-user-approval": "npm:^0.1.5-rc.1"
     "@types/markdown-it": "npm:14.1.2"
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:~18.3.1"
@@ -9790,13 +9804,27 @@ __metadata:
     vitest: "npm:4.1.8"
   peerDependencies:
     "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-agent": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-attachment": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-brand": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-conversation": ^0.1.5-rc.1
     "@deepseek-ai/dsh-client-ui-layout": ^0.1.5-rc.1
     "@deepseek-ai/dsh-client-ui-primitives": 0.1.5-rc.1
     "@deepseek-ai/dsh-client-ui-renderer": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-session": ^0.1.5-rc.1
     "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-sidebar-right": ^0.1.5-rc.1
     "@deepseek-ai/dsh-client-ui-slots": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-code-runtime": ^0.1.5-rc.1
     "@deepseek-ai/dsh-home-paths": ^0.1.5-rc.1
     "@deepseek-ai/dsh-host-webserver": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-llm": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-scope": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-session": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-system-prompt": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-tools": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-user-approval": ^0.1.5-rc.1
     react: ^18.3.1
   languageName: unknown
   linkType: soft

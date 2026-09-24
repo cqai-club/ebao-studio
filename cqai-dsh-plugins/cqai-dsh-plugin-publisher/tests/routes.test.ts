@@ -9,6 +9,7 @@ import * as plugin from '../src/index.ts'
 import { permitted } from '../src/index.ts'
 import { API, type PublisherAccount } from '../src/protocol.ts'
 import { listWorks, resolveWork, worksRoot } from '../src/works.ts'
+import { saveSessionDraft } from '../src/session-contents.ts'
 
 const WORK_ID = '11111111-1111-4111-8111-111111111111'
 const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222'
@@ -130,6 +131,18 @@ describe('the Host publisher route', () => {
       })
 
       expect(await (await send('capability')).json()).toEqual({ supported: true, running: false })
+      expect(await (await send('session-content/session-1')).json()).toEqual({
+        sessionId: 'session-1', contentId: null, revision: null, content: null,
+      })
+      const sessionDraft = saveSessionDraft('session-1', { contentType: 'article', title: '对话定稿', body: '正文' })
+      expect(await (await send('session-content/session-1')).json()).toMatchObject({
+        sessionId: 'session-1', contentId: sessionDraft.contentId, revision: sessionDraft.revision,
+        content: { title: '对话定稿', body: '正文' },
+      })
+      const encodedDraft = saveSessionDraft('conversation/with space', { contentType: 'image-note', title: '图文' })
+      expect(await (await send(`session-content/${encodeURIComponent('conversation/with space')}`)).json()).toMatchObject({
+        sessionId: 'conversation/with space', contentId: encodedDraft.contentId,
+      })
       const publicWorks = await (await send('works')).json() as unknown[]
       expect(publicWorks).toHaveLength(1)
       expect(publicWorks[0]).not.toHaveProperty('file')

@@ -257,9 +257,15 @@ function safeAssetPath(directory: string, id: string): string {
   return resolved
 }
 
-export function addAsset(id: string, name: string, data: Buffer, env: NodeJS.ProcessEnv = process.env): PublisherContent {
+export function addAsset(
+  id: string, name: string, data: Buffer, env: NodeJS.ProcessEnv = process.env,
+  options: { expectedRevision?: number; setAsCover?: boolean } = {},
+): PublisherContent {
   const directory = directoryFor(id, env)
   const content = readManifest(directory)
+  if (options.expectedRevision !== undefined && options.expectedRevision !== content.revision) {
+    throw new Error('草稿已在其他页面更新，请重新加载后再添加图片')
+  }
   if (content.contentType === 'video') throw new Error('视频草稿不支持图片素材')
   if (content.assets.length >= MAX_ASSETS) throw new Error(`每份内容最多 ${MAX_ASSETS} 个素材`)
   if (data.length < 1 || data.length > MAX_ASSET_BYTES) throw new Error('单张图片不能超过 20MB')
@@ -273,7 +279,7 @@ export function addAsset(id: string, name: string, data: Buffer, env: NodeJS.Pro
   try {
     const next: PublisherContent = {
       ...content, revision: content.revision + 1, updatedAt: new Date().toISOString(), assets: [...content.assets, asset],
-      ...(content.contentType === 'article' && !content.coverAssetId ? { coverAssetId: asset.id } : {}),
+      ...(options.setAsCover || content.contentType === 'article' && !content.coverAssetId ? { coverAssetId: asset.id } : {}),
     }
     writeManifest(directory, next)
     return next
@@ -283,12 +289,25 @@ export function addAsset(id: string, name: string, data: Buffer, env: NodeJS.Pro
   }
 }
 
-export function removeAsset(id: string, assetId: string, env: NodeJS.ProcessEnv = process.env): PublisherContent {
+export function removeAsset(
+  id: string, assetId: string, env: NodeJS.ProcessEnv = process.env,
+  options: { expectedRevision?: number } = {},
+): PublisherContent {
   const directory = directoryFor(id, env)
   const content = readManifest(directory)
+  if (options.expectedRevision !== undefined && options.expectedRevision !== content.revision) {
+    throw new Error('草稿已在其他页面更新，请重新加载后再删除图片')
+  }
   if (!content.assets.some(asset => asset.id === assetId)) throw new Error('素材不存在')
   const file = safeAssetPath(directory, assetId)
-  const next = { ...content, revision: content.revision + 1, updatedAt: new Date().toISOString(), assets: content.assets.filter(asset => asset.id !== assetId) }
+  // Remove the managed Markdown image in the same manifest revision as the asset.
+  // Both the editor and Agent create this exact ![label](ebao-asset://id) form.
+  const reference = new RegExp(`!\\[[^\\r\\n\\]]*\\]\\(ebao-asset:\\/\\/${assetId}\\)`, 'giu')
+  const next = {
+    ...content, revision: content.revision + 1, updatedAt: new Date().toISOString(),
+    body: content.body.replace(reference, ''),
+    assets: content.assets.filter(asset => asset.id !== assetId),
+  }
   if (next.coverAssetId === assetId) {
     delete next.coverAssetId
     if (content.contentType === 'article' && next.assets.length > 0) next.coverAssetId = next.assets[0]!.id

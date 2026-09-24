@@ -14,6 +14,20 @@ import { contentSubmissionError } from '../submission-validation.ts'
 import { usePublisherTips } from './tips.tsx'
 import { articleUploadFile } from './article-image.ts'
 
+function AssetPreviewImage({ src, alt, className = '', thumbnail = false }: {
+  src: string
+  alt: string
+  className?: string
+  thumbnail?: boolean
+}) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [src])
+  return failed
+    ? <div className={`pub-error ${className}`} role="img" aria-label={`${alt} 加载失败`}
+      style={{ minHeight: thumbnail ? 95 : 120, width: '100%', display: 'grid', placeItems: 'center' }}>图片加载失败：{alt}</div>
+    : <img className={className} src={src} alt={alt} onError={() => setFailed(true)}/>
+}
+
 function MarkdownPreview({ value, content }: { value: string; content: PublisherContent }) {
   const inline = (line: string) => {
     const nodes: React.ReactNode[] = []
@@ -43,7 +57,7 @@ function MarkdownPreview({ value, content }: { value: string; content: Publisher
     if (code) { code.push(line); continue }
     const image = /^!\[([^\]]*)\]\(ebao-asset:\/\/([0-9a-f-]{36})\)$/iu.exec(line.trim())
     if (image && content.assets.some(asset => asset.id === image[2])) {
-      blocks.push(<figure key={index}><img src={`${API}/content-asset/${content.id}/${image[2]}`} alt={image[1]}/><figcaption>{image[1]}</figcaption></figure>)
+      blocks.push(<figure key={index}><AssetPreviewImage src={`${API}/content-asset/${content.id}/${image[2]}`} alt={image[1]}/><figcaption>{image[1]}</figcaption></figure>)
       continue
     }
     const heading = /^(#{1,3})\s+(.+)$/u.exec(line)
@@ -63,11 +77,35 @@ function MarkdownPreview({ value, content }: { value: string; content: Publisher
   return <div className="pub-preview" aria-label="Markdown 预览">{blocks}</div>
 }
 
+function ContentPreview({ content }: { content: PublisherContent }) {
+  const assetUrl = (id: string) => `${API}/content-asset/${content.id}/${id}`
+  const embeddedAssets = new Set([...content.body.matchAll(/ebao-asset:\/\/([0-9a-f-]{36})/giu)].map(match => match[1]))
+  const cover = content.assets.find(asset => asset.id === content.coverAssetId)
+  const remainingAssets = content.assets.filter(asset => asset.id !== cover?.id && !embeddedAssets.has(asset.id))
+  const imageNote = content.contentType === 'image-note'
+  return <div className="pub-content-preview-shell" aria-label={`${imageNote ? '图文' : '文章'}内容预览`}>
+    {imageNote && content.assets.length > 0 && <div className="pub-content-preview-note-images">{content.assets.map(asset =>
+      <AssetPreviewImage className="pub-content-preview-image" src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>}
+    <h2 className="pub-content-preview-title">{content.title || '未填写标题'}</h2>
+    {!imageNote && cover && !embeddedAssets.has(cover.id) && <AssetPreviewImage className="pub-content-preview-cover" src={assetUrl(cover.id)} alt={cover.name}/>}
+    {imageNote ? <p className="pub-content-preview-text">{content.body || '暂无正文'}</p>
+      : <MarkdownPreview value={content.body || '暂无正文'} content={content}/>}
+    {!imageNote && remainingAssets.length > 0 && <div className="pub-content-preview-note-images" aria-label="尚未插入正文的图片素材">{remainingAssets.map(asset =>
+      <AssetPreviewImage className="pub-content-preview-image" src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>}
+    {content.tags.length > 0 && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
+  </div>
+}
+
 type EditorType = 'article' | 'image-note'
 type Mode = 'publish' | 'draft'
 const FIELD_LABELS: Record<string, string> = { category: '分类', topic: '话题', original: '原创声明' }
 
-export function ContentEditor({ contentType, active }: { contentType: EditorType; active: boolean }) {
+export function ContentEditor({ contentType, active, selectedContentId, onSelectedContentChange }: {
+  contentType: EditorType
+  active: boolean
+  selectedContentId?: string
+  onSelectedContentChange?: (id?: string) => void
+}) {
   const { showError, showSuccess, clearTip } = usePublisherTips()
   const [contents, setContents] = useState<PublisherContent[]>([])
   const [draft, setDraft] = useState<PublisherContent>()
@@ -87,14 +125,19 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   const [capabilitiesError, setCapabilitiesError] = useState('')
   const [selection, setSelection] = useState<Partial<Record<Platform, string>>>({})
   const [mode, setMode] = useState<Mode>('publish')
-  const [preview, setPreview] = useState(false)
+  const [preview, setPreview] = useState(true)
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
-  const [confirm, setConfirm] = useState<PublisherConfirmation>()
+  const [confirm, setConfirm] = useState<PublisherConfirmation & { revision: number }>()
   const [deleteDraftId, setDeleteDraftId] = useState<string>()
   const [saveError, setSaveError] = useState('')
+  const [handoffError, setHandoffError] = useState('')
+  const [handoffRetry, setHandoffRetry] = useState(0)
   const [draggedAssetId, setDraggedAssetId] = useState<string>()
   const [runtimeCapability, setRuntimeCapability] = useState<PublisherCapability>()
+
+  useEffect(() => { setConfirm(undefined) }, [selectedContentId, active])
+  useEffect(() => { setHandoffError(''); if (selectedContentId) setPreview(true) }, [selectedContentId])
 
   const refreshContents = async (): Promise<PublisherContent[]> => {
     const rows = await api<PublisherContent[]>('contents')
@@ -106,26 +149,46 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     draftRef.current = value
     dirtyRef.current = false
     setSaveError('')
+    setHandoffError('')
     setDraft(value)
     setTagsInput(value?.tags.join(' ') ?? '')
   }
   useEffect(() => {
-    if (!active) return
+    // Finish a local image/draft operation before replacing its result with a handoff.
+    if (!active || busy) return
     let live = true
     const selectedAtStart = draftRef.current?.id
-    void api<PublisherContent[]>('contents').then(rows => {
+    void (async () => {
+      if (selectedContentId && selectedContentId !== selectedAtStart && (dirtyRef.current || saveTask.current)) await flush()
+      const rows = await api<PublisherContent[]>('contents')
+      if (!live || draftRef.current?.id !== selectedAtStart) return
+      if (selectedContentId && selectedContentId !== selectedAtStart && dirtyRef.current) await flush()
       if (!live || draftRef.current?.id !== selectedAtStart) return
       const matches = rows.filter(item => item.contentType === contentType)
       setContents(matches)
-      if (!draftRef.current) setServerDraft(matches[0])
+      if (selectedContentId) {
+        const requested = matches.find(item => item.id === selectedContentId)
+        if (!requested) {
+          if (!dirtyRef.current) setServerDraft(undefined)
+          setHandoffError('指定草稿不存在或内容类型已变更，请选择其他草稿。')
+          return
+        }
+        setHandoffError('')
+        if (draftRef.current?.id !== requested.id || !dirtyRef.current && !saveTask.current && requested.revision > draftRef.current.revision) setServerDraft(requested)
+      } else if (!draftRef.current) setServerDraft(matches[0])
       else {
         const persisted = matches.find(item => item.id === draftRef.current?.id)
         if (!persisted) setServerDraft(matches[0])
         else if (!dirtyRef.current && !saveTask.current && persisted.revision > draftRef.current.revision) setServerDraft(persisted)
       }
-    }).catch(cause => { if (live) showError(errorMessage(cause)) })
+    })().catch(cause => {
+      if (!live) return
+      const message = errorMessage(cause)
+      if (selectedContentId) setHandoffError(`无法打开指定草稿：${message}`)
+      showError(message)
+    })
     return () => { live = false }
-  }, [contentType, active])
+  }, [contentType, active, selectedContentId, busy, handoffRetry])
   useEffect(() => {
     if (!active) return
     let live = true
@@ -194,6 +257,10 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     const timer = setTimeout(() => { void flush().catch(cause => showError(errorMessage(cause))) }, 800)
     return () => clearTimeout(timer)
   }, [editVersion])
+  useEffect(() => () => {
+    // A main-panel switch unmounts the editor; do not abandon the debounce window.
+    if (dirtyRef.current) void flush().catch(() => { /* The server keeps its previous revision on failure. */ })
+  }, [])
 
   const act = async (task: () => Promise<void>) => {
     if (busyRef.current) return
@@ -208,11 +275,13 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     const selected = await api<PublisherContent>(`content/${id}`)
     if (selected.contentType !== contentType) throw new Error('草稿内容类型不匹配')
     setServerDraft(selected)
+    onSelectedContentChange?.(selected.id)
   })
   const create = () => void act(async () => {
     await flush()
     const created = await api<PublisherContent>('contents', { contentType })
     setServerDraft(created)
+    onSelectedContentChange?.(created.id)
     await refreshContents()
   })
   const duplicate = () => void act(async () => {
@@ -220,6 +289,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     if (!current) return
     const copy = await api<PublisherContent>('content-copy', { id: current.id })
     setServerDraft(copy)
+    onSelectedContentChange?.(copy.id)
     await refreshContents()
   })
   const remove = () => {
@@ -240,6 +310,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
       setServerDraft(undefined)
       const remaining = await refreshContents()
       setServerDraft(remaining[0])
+      onSelectedContentChange?.(remaining[0]?.id)
     })
   }
   const importText = (file: File | undefined) => void act(async () => {
@@ -249,6 +320,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     if (!draftRef.current) {
       const created = await api<PublisherContent>('contents', { contentType })
       setServerDraft(created)
+      onSelectedContentChange?.(created.id)
       await refreshContents()
     }
     update({ body: text, title: draftRef.current!.title || file.name.replace(/\.(md|txt)$/iu, '').slice(0, TITLE_MAX) })
@@ -269,6 +341,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
       if (!current) {
         current = await api<PublisherContent>('contents', { contentType })
         setServerDraft(current)
+        onSelectedContentChange?.(current.id)
         await refreshContents()
       }
       let uploaded = 0
@@ -331,12 +404,26 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     if (index >= 0) moveAsset(assetId, index + delta)
   }
 
+  const reloadAfterConflict = () => void act(async () => {
+    const id = draftRef.current?.id
+    if (!id) return
+    try { if (saveTask.current) await saveTask.current } catch { /* User chose to discard the failed local version. */ }
+    const latest = await api<PublisherContent>(`content/${id}`)
+    if (latest.contentType !== contentType) throw new Error('草稿内容类型不匹配')
+    setServerDraft(latest)
+    await refreshContents()
+    if (selectedContentId && latest.id !== selectedContentId) setHandoffRetry(value => value + 1)
+    showSuccess('已加载最新草稿。')
+  })
+
   const accountPlatforms = CONTENT_ACCOUNT_PLATFORMS[contentType]
   const selectedAccounts = selectedContentAccounts(contentType, accounts, selection)
   const unavailableTargets = selectedAccounts.filter(account =>
     !contentModeAvailable(account.platform, contentType, mode, capabilities))
+  const exactMismatch = Boolean(selectedContentId && draft?.id !== selectedContentId)
+  const editorLocked = busy || exactMismatch
   const submitReady = runtimeCapability?.supported === true && !accountsPending && !capabilitiesPending
-    && selectedAccounts.length > 0 && unavailableTargets.length === 0
+    && selectedAccounts.length > 0 && unavailableTargets.length === 0 && !exactMismatch && !handoffError
   const titleLimit = Math.min(TITLE_MAX, ...selectedAccounts.map(account =>
     capabilities.find(item => item.platform === account.platform)?.maxTitleLength?.[contentType] ?? TITLE_MAX))
   const assetLimit = Math.min(20, ...selectedAccounts.map(account =>
@@ -350,14 +437,26 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   const requestConfirm = () => void act(async () => {
     const current = await flush()
     if (!current) throw new Error('请先创建草稿')
+    if ((selectedContentId && current.id !== selectedContentId) || handoffError) throw new Error('指定草稿尚未打开，请先确认当前草稿')
     const error = contentSubmissionError(current, selectedAccounts, capabilities, mode)
     if (error) throw new Error(error)
-    setConfirm({ contentId: current.id, title: current.title, mode, accounts: selectedAccounts })
+    setConfirm({ contentId: current.id, revision: current.revision, title: current.title, mode, accounts: selectedAccounts })
   })
   const submit = () => void act(async () => {
     if (!confirm) return
     const current = await flush()
-    if (!current || current.id !== confirm.contentId) throw new Error('草稿已切换，请重新检查后提交')
+    if (!current || current.id !== confirm.contentId || (selectedContentId && current.id !== selectedContentId)) {
+      setConfirm(undefined)
+      throw new Error('草稿已切换，请重新检查后提交')
+    }
+    if (handoffError) {
+      setConfirm(undefined)
+      throw new Error('无法确认最新草稿，请重新加载后提交')
+    }
+    if (current.revision !== confirm.revision) {
+      setConfirm(undefined)
+      throw new Error('草稿已更新，请重新检查后提交')
+    }
     await api<CreateSubmissionResult>('submissions', {
       contentType, contentId: current.id, revision: current.revision,
       mode: confirm.mode, accountIds: confirm.accounts.map(account => account.id),
@@ -366,24 +465,38 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     showSuccess('已提交，请稍后到平台后台确认。')
   })
 
-  return <div>
+  return <div onBlurCapture={() => { if (dirtyRef.current) void flush().catch(cause => showError(errorMessage(cause))) }}>
     {runtimeCapability && !runtimeCapability.supported && <div className="pub-error">{capabilityMessage(runtimeCapability)}。本地草稿仍可编辑。</div>}
-    <DraftToolbar contents={contents} draft={draft} busy={busy} dirty={dirtyRef.current} saveError={saveError}
-      onSelect={selectDraft} onCreate={create} onCopy={duplicate} onDelete={remove}/>
-    {!draft ? <div className="pub-empty">点击“新建”开始编辑{contentType === 'article' ? '文章' : '图文'}。</div> : <div className="pub-grid">
+    <fieldset disabled={busy || exactMismatch && !handoffError} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+      <DraftToolbar contents={contents} draft={draft} busy={busy} dirty={dirtyRef.current} saveError={saveError}
+        onSelect={selectDraft} onCreate={create} onCopy={duplicate} onDelete={remove}/>
+    </fieldset>
+    {handoffError && <div className="pub-error" role="status">{handoffError}
+      <div className="pub-actions"><Button variant="outline" disabled={busy} onClick={() => { setHandoffError(''); setHandoffRetry(value => value + 1) }}>重试读取草稿</Button></div>
+    </div>}
+    {saveError.includes('已在其他页面更新') && <div className="pub-error" role="status">
+      草稿已在其他页面更新。请重新加载后继续编辑；当前未保存的修改会丢失。
+      <div className="pub-actions"><Button variant="outline" disabled={busy} onClick={reloadAfterConflict}>重新加载草稿</Button></div>
+    </div>}
+    {exactMismatch ? <div className="pub-empty" role="status">
+      {handoffError ? '指定草稿未能打开。可以重选草稿，或返回先前正在编辑的内容。' : '正在打开指定草稿…'}
+      {handoffError && draft && <div className="pub-actions"><Button variant="outline" onClick={() => onSelectedContentChange?.(draft.id)}>返回先前草稿</Button></div>}
+    </div> : !draft ? <div className="pub-empty">点击“新建”开始编辑{contentType === 'article' ? '文章' : '图文'}。</div> : <fieldset disabled={editorLocked} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}><div className="pub-grid">
       <div>
+        <div className="pub-card pub-content-view-tabs"><div className="pub-actions">
+          <Button variant={preview ? 'primary' : 'outline'} size="sm" aria-pressed={preview} onClick={() => setPreview(true)}>预览模式</Button>
+          <Button variant={!preview ? 'primary' : 'outline'} size="sm" aria-pressed={!preview} onClick={() => setPreview(false)}>编辑模式</Button>
+        </div></div>
+        {preview ? <div className="pub-card"><ContentPreview content={draft}/><p className="pub-muted">这里展示通用排版；实际平台页面可能不同，请在提交前到对应平台复核。</p></div> : <>
         <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>
           <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={draft.title.length > titleLimit ? 'pub-warn' : 'pub-muted'}>（{draft.title.length}/{titleLimit} 字）</span></label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={draft.title} onChange={event => update({ title: event.target.value })}/></div>
           {contentType === 'article' && <div className="pub-actions" style={{ marginBottom: 12 }}>
-            <Button variant={!preview ? 'primary' : 'outline'} size="sm" aria-pressed={!preview} onClick={() => setPreview(false)}>Markdown 编辑</Button>
-            <Button variant={preview ? 'primary' : 'outline'} size="sm" aria-pressed={preview} onClick={() => setPreview(true)}>简易预览</Button>
             <Button variant="outline" size="sm" disabled={busy} onClick={() => importInputRef.current?.click()}>导入 .md/.txt</Button>
             <input ref={importInputRef} type="file" accept=".md,.txt,text/markdown,text/plain" style={{ display: 'none' }} onChange={event => { importText(event.target.files?.[0]); event.target.value = '' }}/>
           </div>}
           <div className="pub-field"><label htmlFor={`pub-${contentType}-body`}>{contentType === 'article' ? '正文' : '正文 / 话题'}</label>
-            {preview && contentType === 'article' ? <MarkdownPreview value={draft.body} content={draft}/> : <textarea ref={bodyInputRef} className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={draft.body} onChange={event => update({ body: event.target.value })}/>}
+            <textarea ref={bodyInputRef} className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={draft.body} onChange={event => update({ body: event.target.value })}/>
           </div>
-          {contentType === 'article' && preview && <p className="pub-muted">这里只预览基础 Markdown 排版；实际平台编辑器呈现可能不同，原始正文不会被预览修改。</p>}
           {contentType === 'article' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={draft.summary} onChange={event => update({ summary: event.target.value })}/>{selectedAccounts.some(account => account.platform === 'tt') && <p className="pub-muted">头条当前不能写入独立摘要；若要转存头条草稿，请先清空此栏。需要其他平台保留摘要时请分开提交。</p>}</div>}
           <div className="pub-field"><label htmlFor={`pub-${contentType}-tags`}>标签（{draft.tags.length}/{MAX_TAGS} 个，用空格或逗号分隔）</label><Input className="pub-text-input" id={`pub-${contentType}-tags`} value={tagsInput} onChange={event => { setTagsInput(event.target.value); update({ tags: [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS) }) }}/></div>
           {draft.tags.length > 0 && skippedArticleTagTargets.length > 0 && <p className="pub-muted">{skippedArticleTagTargets.map(account => PLATFORM_LABELS[account.platform]).join('、')}文章暂不写入标签，本次提交会跳过；草稿标签仍保留供其他平台使用。</p>}
@@ -396,16 +509,17 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
           <p className="pub-muted">{draft.assets.length}/{assetLimit} 张 · 仅支持 JPEG / PNG / WebP，每张不超过 20MB。{contentType === 'image-note' ? '可拖动排序，也可使用 ↑ ↓ 按钮。' : ''}</p>
           {contentType === 'article' && <p className="pub-muted">WebP 文章图片上传时自动转为 JPEG，可作为微信公众号封面；透明区域会变成白色。头条、百家号素材可插入正文，也可单独设为封面；掘金、B站专栏暂只支持单张封面。导入 Markdown 时不会读取相对路径图片，请先上传素材再插入。</p>}
           <div className="pub-assets">{draft.assets.map((asset, index) => <div className={`pub-asset${draggedAssetId === asset.id ? ' pub-asset-dragging' : ''}`} key={asset.id}
-            draggable={contentType === 'image-note' && !busy}
-            onDragStart={event => { if (contentType === 'image-note') { event.dataTransfer.effectAllowed = 'move'; setDraggedAssetId(asset.id) } }}
-            onDragOver={event => { if (contentType === 'image-note' && draggedAssetId) event.preventDefault() }}
-            onDrop={event => { event.preventDefault(); if (draggedAssetId && draggedAssetId !== asset.id) moveAsset(draggedAssetId, index); setDraggedAssetId(undefined) }}
+            draggable={contentType === 'image-note' && !editorLocked}
+            onDragStart={event => { if (contentType === 'image-note' && !editorLocked) { event.dataTransfer.effectAllowed = 'move'; setDraggedAssetId(asset.id) } }}
+            onDragOver={event => { if (contentType === 'image-note' && !editorLocked && draggedAssetId) event.preventDefault() }}
+            onDrop={event => { event.preventDefault(); if (!editorLocked && draggedAssetId && draggedAssetId !== asset.id) moveAsset(draggedAssetId, index); setDraggedAssetId(undefined) }}
             onDragEnd={() => setDraggedAssetId(undefined)}>
-            <img src={`${API}/content-asset/${draft.id}/${asset.id}`} alt={asset.name}/><small>{String(index + 1).padStart(2, '0')} · {asset.name}</small>
+            <AssetPreviewImage src={`${API}/content-asset/${draft.id}/${asset.id}`} alt={asset.name} thumbnail/><small>{String(index + 1).padStart(2, '0')} · {asset.name}</small>
             {contentType === 'article' && <label><input type="radio" name={`cover-${draft.id}`} checked={draft.coverAssetId === asset.id} onChange={() => update({ coverAssetId: asset.id })}/>封面</label>}
             <div className="pub-actions">{contentType === 'article' && <Button variant="outline" size="sm" disabled={busy} onClick={() => insertImage(asset.id, asset.name)}>插入正文</Button>}<Button variant="outline" size="sm" aria-label="上移图片" disabled={index === 0 || busy} onClick={() => reorder(asset.id, -1)}>↑</Button><Button variant="outline" size="sm" aria-label="下移图片" disabled={index === draft.assets.length - 1 || busy} onClick={() => reorder(asset.id, 1)}>↓</Button><Button variant="outline" size="sm" className="pub-danger-action" disabled={busy} onClick={() => removeImage(asset.id)}>删除</Button></div>
           </div>)}</div>
         </div>
+        </>}
       </div>
       <div>
         <div className="pub-card"><h2>选择平台账号</h2>
@@ -435,7 +549,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
           : validationError && <p className="pub-warn" role="status">提交前请处理：{validationError}</p>}
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </div>
-    </div>}
+    </div></fieldset>}
     {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} busy={busy} onCancel={() => setConfirm(undefined)} onConfirm={submit}/>}
     <PublisherModal open={deleteDraftId !== undefined} title="删除本地草稿" closeLabel="关闭删除草稿确认" description="删除这份本地草稿？已经提交的内容快照不受影响。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/>
   </div>
