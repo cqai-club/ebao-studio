@@ -85,7 +85,7 @@ function ContentPreview({ content, platform }: { content: PublisherContent; plat
       <div className="pub-content-preview-note-images" aria-label="尚未插入正文的图片素材">{remainingAssets.map(asset =>
         <AssetPreviewImage className="pub-content-preview-image" src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>
     </details>}
-    {content.tags.length > 0 && (!platform || !['wxmp', 'tt', 'bjh'].includes(platform)) && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
+    {content.tags.length > 0 && (imageNote || !platform || !['wxmp', 'tt', 'bjh'].includes(platform)) && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
   </div>
 }
 
@@ -400,9 +400,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
         if (file.type && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('仅支持 JPEG、PNG、WebP 图片')
       }
       let current = await flush()
-      const limit = contentType === 'image-note'
-        ? Math.min(20, capabilities.find(item => item.platform === 'xhs')?.maxAssets?.['image-note'] ?? 20)
-        : 20
+      const limit = 20
       if ((current?.assets.length ?? 0) + selected.length > limit) throw new Error(`当前最多支持 ${limit} 张图片`)
       if (!current) {
         current = await api<PublisherContent>('contents', { contentType })
@@ -590,10 +588,13 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
           {contentType === 'article' && visibleDraft!.summary && contentView !== 'blbl' && contentView !== 'wxmp' && contentView !== 'tt' && <p className="pub-preview-summary"><strong>独立摘要字段：</strong>{visibleDraft!.summary}</p>}
           <p className="pub-muted">{contentView === 'wxmp' ? '公众号正文按所选主题预览；封面和摘要是独立字段。平台后台的最终呈现请以实际草稿为准。'
             : contentView === 'master' ? '主稿展示阅读排版；公众号会采用所选主题，其他平台的实际样式仍需在后台草稿核对。'
-              : contentView === 'tt' ? '头条文章不录入独立摘要；这里展示标题、正文和图片，平台后台的最终呈现仍需核对。'
+              : contentView === 'tt' && contentType === 'article' ? '头条文章不录入独立摘要；这里展示标题、正文和图片，平台后台的最终呈现仍需核对。'
+              : contentView === 'tt' && contentType === 'image-note' ? '头条微头条没有独立标题字段，提交时会把标题放在正文首行；图片和草稿状态请在头条后台核对。'
+              : contentView === 'ks' && contentType === 'image-note' ? '快手图文没有独立标题字段，适配器会把标题放在作品描述首段；草稿状态仍需在快手后台核对。'
               : '这里展示当前平台版本的内容结构和图片顺序；实际样式由平台编辑器决定，请在后台草稿核对。'}</p></div> : <>
         <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>
           <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={visibleDraft!.title.length > titleLimit ? 'pub-warn' : 'pub-muted'}>（{visibleDraft!.title.length}/{titleLimit} 字）</span>{hasOverride('title') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={visibleDraft!.title} onChange={event => updateTextField('title', event.target.value)}/>{hasOverride('title') && <Button variant="outline" size="sm" onClick={() => resetVariantField('title')}>标题恢复主稿</Button>}</div>
+          {contentType === 'image-note' && (contentView === 'tt' || contentView === 'ks') && <p className="pub-muted">{PLATFORM_LABELS[contentView]}图文没有独立标题框，标题将放入正文第一段。</p>}
           {contentType === 'article' && <div className="pub-actions" style={{ marginBottom: 12 }}>
             <Button variant="outline" size="sm" disabled={busy} onClick={() => importInputRef.current?.click()}>导入 .md/.txt 到主稿</Button>
             <input ref={importInputRef} type="file" accept=".md,.txt,text/markdown,text/plain" style={{ display: 'none' }} onChange={event => { importText(event.target.files?.[0]); event.target.value = '' }}/>
@@ -637,7 +638,8 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
         <div className="pub-card"><h2>选择平台账号</h2>
           {accountPlatforms.map(platform => <div key={platform}>
             <PlatformAccountSelect idPrefix={contentType} platform={platform} accounts={accounts} value={selection[platform] ?? ''} onChange={id => setSelection(current => ({ ...current, [platform]: id || undefined }))}/>
-            {!capabilitiesPending && !capabilitiesError && !contentModeAvailable(platform, contentType, mode, capabilities) && <p className="pub-muted">当前发布引擎未提供{PLATFORM_LABELS[platform]}{mode === 'publish' ? '立即发布' : '转存草稿'}能力；请完全退出应用并使用最新 Helper 重启。</p>}
+            {contentType === 'image-note' && platform === 'tt' && <p className="pub-muted">头条微头条图文为 Beta 试用，仅支持转存草稿；提交后请到头条草稿箱核对，平台窗口会保留供检查。</p>}
+            {!capabilitiesPending && !capabilitiesError && !contentModeAvailable(platform, contentType, mode, capabilities) && <p className="pub-muted">当前发布引擎尚未开放{PLATFORM_LABELS[platform]}{mode === 'publish' ? '立即发布' : '转存草稿'}能力；可继续准备本地草稿。</p>}
           </div>)}
           {accountsPending && <p className="pub-muted">正在加载平台账号…</p>}
           {accountsError ? <p className="pub-warn" role="status">账号加载失败：{accountsError}</p>
@@ -661,7 +663,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
           <label><input type="radio" name={`pub-mode-${contentType}`} checked={mode === 'draft'} onChange={() => setMode('draft')}/>转存草稿</label>
         </div></div>
         <Button variant="primary" className="pub-submit" disabled={busy || !submitReady} onClick={requestConfirm}>检查并提交</Button>
-        {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">当前发布引擎缺少所选平台的提交能力，请更新 Helper 并完全重启应用；本地草稿仍会保存。</p>
+        {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">当前发布引擎尚未开放所选平台的提交方式；本地草稿仍会保存。若刚更新 Helper，请完全退出并重启应用后重试。</p>
           : validationError && <p className="pub-warn" role="status">提交前请处理：{validationError}</p>}
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </div>

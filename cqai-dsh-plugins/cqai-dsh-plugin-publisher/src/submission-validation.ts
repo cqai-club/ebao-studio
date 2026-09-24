@@ -84,6 +84,10 @@ export function contentSubmissionError(
       && !XHS_IMAGE_STATEMENTS.has(selected.creativeStatement)) {
       return '小红书图文暂不支持所选内容声明'
     }
+    if (selected.contentType === 'image-note' && account.platform === 'tt'
+      && selected.creativeStatement !== 'none') {
+      return '头条微头条图文的内容声明尚未适配，请先选择“无声明”'
+    }
   }
   return undefined
 }

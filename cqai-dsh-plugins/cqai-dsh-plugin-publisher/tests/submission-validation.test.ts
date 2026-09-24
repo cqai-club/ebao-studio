@@ -110,6 +110,13 @@ describe('article and image-note preflight', () => {
     expect(contentSubmissionError(draft, targets, capabilities, 'publish')).toContain('暂不支持')
     expect(contentSubmissionError({ ...draft, creativeStatement: 'repost' }, targets, capabilities, 'draft')).toContain('内容声明')
     expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
+    const tt = [account('tt')]
+    const ttCapabilities: PublisherPlatformCapability[] = [{
+      platform: 'tt', contentTypes: ['image-note'], modes: { 'image-note': ['draft'] },
+      requiredFields: {}, maxAssets: { 'image-note': 9 },
+    }]
+    expect(contentSubmissionError(draft, tt, ttCapabilities, 'draft')).toBeUndefined()
+    expect(contentSubmissionError({ ...draft, creativeStatement: 'ai_generated' }, tt, ttCapabilities, 'draft')).toContain('内容声明')
   })
 
   it('validates the exact platform version that will be submitted', () => {
