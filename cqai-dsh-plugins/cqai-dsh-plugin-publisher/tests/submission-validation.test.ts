@@ -28,7 +28,7 @@ describe('article and image-note preflight', () => {
     expect(contentSubmissionError({ ...draft, assets: [{ ...draft.assets[0]!, mime: 'image/webp' }] }, targets, capabilities, 'draft')).toContain('重新上传')
   })
 
-  it('requires a theme-aware Worker for editorial WeChat output but keeps classic drafts compatible', () => {
+  it('requires the corresponding Worker theme version for WeChat output', () => {
     const draft = content('article')
     draft.assets = [{ id: '33333333-3333-4333-8333-333333333333', name: '封面.png', mime: 'image/png', bytes: 12 }]
     draft.coverAssetId = draft.assets[0]!.id
@@ -39,6 +39,16 @@ describe('article and image-note preflight', () => {
     draft.articleTheme = 'editorial'
     expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toContain('更新 Worker')
     capabilities[0]!.articleThemeVersion = 1
+    expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()
+    for (const theme of ['orangeheart', 'lapis', 'purple'] as const) {
+      draft.articleTheme = theme
+      expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toContain('更新 Worker')
+      capabilities[0]!.articleThemeVersion = 2
+      expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()
+      capabilities[0]!.articleThemeVersion = 1
+    }
+    capabilities[0]!.articleThemeVersion = 2
+    draft.articleTheme = 'editorial'
     expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()
   })
 

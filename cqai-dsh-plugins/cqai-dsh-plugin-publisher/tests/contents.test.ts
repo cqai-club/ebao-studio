@@ -40,6 +40,19 @@ describe('publisher local content library', () => {
     expect(readContent(article.id, env).revision).toBe(edited.revision)
   })
 
+  it('persists each Wenyan-inspired article theme as a revisioned draft choice', () => {
+    const env = fixture()
+    let draft = createContent('article', env)
+    for (const theme of ['orangeheart', 'lapis', 'purple'] as const) {
+      draft = saveContent(draft.id, {
+        revision: draft.revision, title: '主题文章', body: '正文', summary: '', tags: [],
+        creativeStatement: 'none', articleTheme: theme,
+      }, env)
+      expect(readContent(draft.id, env).articleTheme).toBe(theme)
+      expect(duplicateContent(draft.id, env).articleTheme).toBe(theme)
+    }
+  })
+
   it('treats old article manifests without a theme as classic and rejects themes on other content types', () => {
     const env = fixture()
     const article = createContent('article', env)

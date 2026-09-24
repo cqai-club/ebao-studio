@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  API, CREATIVE_STATEMENTS, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX,
+  API, ARTICLE_THEMES, ARTICLE_THEME_LABELS, CREATIVE_STATEMENTS, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX,
   type CreateSubmissionResult, type Platform, type PublisherAccount,
   type PublisherCapability, type PublisherContent, type PublisherPlatformCapability,
   type PublisherPlatformVariant, projectContentForPlatform, resolveArticleTheme,
@@ -48,7 +48,7 @@ function ContentPreview({ content, platform }: { content: PublisherContent; plat
   const imageNote = content.contentType === 'image-note'
   const articleTheme = resolveArticleTheme(content)
   if (platform === 'wxmp' && !imageNote) {
-    return <div className="pub-content-preview-shell pub-content-preview-wechat" aria-label="微信公众号文章内容预览">
+    return <div className="pub-content-preview-shell pub-content-preview-wechat" data-theme={articleTheme} aria-label="微信公众号文章内容预览">
       <div className="pub-wechat-preview-bar"><span className="pub-wechat-preview-mark" aria-hidden="true"/>微信公众号 · 移动端排版预览</div>
       <article className="pub-wechat-preview-article">
         <h2 className="pub-wechat-preview-title">{content.title || '未填写标题'}</h2>
@@ -576,10 +576,9 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
           {contentType === 'article' && (contentView === 'master' || contentView === 'wxmp') && <div className="pub-article-theme-control">
             <label htmlFor={`pub-article-theme-${draft.id}`}>公众号排版主题</label>
             <select className="pub-input" id={`pub-article-theme-${draft.id}`} value={resolveArticleTheme(draft)} onChange={event => update({ articleTheme: event.target.value as PublisherContent['articleTheme'] })}>
-              <option value="editorial">清新杂志</option>
-              <option value="classic">基础排版</option>
+              {ARTICLE_THEMES.map(theme => <option key={theme} value={theme}>{ARTICLE_THEME_LABELS[theme]}</option>)}
             </select>
-            <p className="pub-muted">主稿预览可比较排版；主题实际用于公众号正文。其他平台会按各自编辑器处理。</p>
+            <p className="pub-muted">主稿预览可比较排版；所选主题用于公众号正文，文颜灵感主题是适配版本，最终以公众号草稿为准。其他平台按各自编辑器处理。</p>
           </div>}
           {contentView !== 'master' && selectedVariant && <Button variant="outline" size="sm" onClick={resetPlatformVariant}>此平台全部恢复主稿</Button>}
         </div>

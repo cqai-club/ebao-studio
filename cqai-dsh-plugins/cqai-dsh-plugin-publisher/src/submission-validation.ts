@@ -1,5 +1,5 @@
 import {
-  PLATFORM_LABELS, projectContentForPlatform, resolveArticleTheme, type PublisherAccount, type PublisherContent,
+  ARTICLE_THEME_LABELS, PLATFORM_LABELS, projectContentForPlatform, resolveArticleTheme, type PublisherAccount, type PublisherContent,
   type PublisherMode, type PublisherPlatformCapability,
 } from './protocol.ts'
 import { articleAssetIds } from './article-assets.ts'
@@ -63,9 +63,12 @@ export function contentSubmissionError(
     if (!capability?.modes[selected.contentType]?.includes(mode)) {
       return `${PLATFORM_LABELS[account.platform]}暂不支持此内容类型和提交方式`
     }
-    if (selected.contentType === 'article' && account.platform === 'wxmp'
-      && resolveArticleTheme(selected) === 'editorial' && capability.articleThemeVersion !== 1) {
-      return '当前 Publisher Worker 不支持公众号新版排版主题，请更新 Worker 并重启应用；也可切换为基础主题后提交'
+    if (selected.contentType === 'article' && account.platform === 'wxmp') {
+      const theme = resolveArticleTheme(selected)
+      const requiredVersion = theme === 'classic' ? 0 : theme === 'editorial' ? 1 : 2
+      if ((capability.articleThemeVersion ?? 0) < requiredVersion) {
+        return `当前 Publisher Worker 不支持“${ARTICLE_THEME_LABELS[theme]}”公众号排版，请更新 Worker 并重启应用；也可切换为基础主题后提交`
+      }
     }
     const titleLimit = capability.maxTitleLength?.[selected.contentType]
     if (titleLimit !== undefined && selected.title.length > titleLimit) {

@@ -23,8 +23,15 @@ export const CREATIVE_STATEMENTS = [
 export type CreativeStatement = typeof CREATIVE_STATEMENTS[number]
 
 /** Article layout selection; old manifests without a selection use the classic layout. */
-export const ARTICLE_THEMES = ['classic', 'editorial'] as const
+export const ARTICLE_THEMES = ['classic', 'editorial', 'orangeheart', 'lapis', 'purple'] as const
 export type ArticleTheme = typeof ARTICLE_THEMES[number]
+export const ARTICLE_THEME_LABELS: Record<ArticleTheme, string> = {
+  classic: '基础排版',
+  editorial: '清新杂志',
+  orangeheart: '文颜灵感 · 橙心',
+  lapis: '文颜灵感 · 青金石',
+  purple: '文颜灵感 · 紫韵',
+}
 
 /** Public account snapshot. Cookie values and session partition names never cross this API. */
 export interface PublisherAccount {
