@@ -21,7 +21,13 @@ export default [
     dts: false,
     clean: false,
     deps: {
-      neverBundle: ['react', 'react/jsx-runtime', '@deepseek-ai/cordis', '@deepseek-ai/dsh-client-ui-slots'],
+      neverBundle: [
+        'react',
+        'react/jsx-runtime',
+        '@deepseek-ai/cordis',
+        '@deepseek-ai/dsh-client-ui-primitives',
+        '@deepseek-ai/dsh-client-ui-slots',
+      ],
       // DSH's browser module table only provides platform packages. Its loader
       // cannot resolve markdown-it (or its transitive dependencies) at runtime.
       alwaysBundle: ['markdown-it'],

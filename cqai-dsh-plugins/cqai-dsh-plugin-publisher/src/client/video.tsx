@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX, VIDEO_PLATFORMS,
   type CreateSubmissionResult, type Platform, type PublisherAccount, type PublisherCapability,
   type PublisherContent, type PublisherLocalVideo, type Work,
 } from '../protocol.ts'
-import { api, capabilityMessage, ConfirmDialog, DraftToolbar, errorMessage, STATEMENT_LABELS } from './shared.tsx'
+import { api, capabilityMessage, ConfirmDialog, DraftToolbar, errorMessage, PublisherModal, STATEMENT_LABELS, type PublisherConfirmation } from './shared.tsx'
 import { usePublisherTips } from './tips.tsx'
 
 export function VideoPage({ active }: { active: boolean }) {
@@ -24,7 +25,8 @@ export function VideoPage({ active }: { active: boolean }) {
   const [selection, setSelection] = useState<Partial<Record<Platform, string>>>({})
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
-  const [confirm, setConfirm] = useState(false)
+  const [confirm, setConfirm] = useState<PublisherConfirmation>()
+  const [deleteDraftId, setDeleteDraftId] = useState<string>()
 
   const grouped = useMemo(() => Object.fromEntries(VIDEO_PLATFORMS.map(platform => [platform, accounts.filter(account => account.platform === platform)])) as Record<Platform, PublisherAccount[]>, [accounts])
   const selectedAccounts = VIDEO_PLATFORMS.flatMap(platform => {
@@ -140,13 +142,18 @@ export function VideoPage({ active }: { active: boolean }) {
   })
   const remove = () => {
     const id = draftRef.current?.id
-    if (!id || !window.confirm('删除这份本地视频草稿？已经提交的记录不受影响。')) return
+    if (id) setDeleteDraftId(id)
+  }
+  const confirmRemove = () => {
+    const id = deleteDraftId
+    if (!id) return
     void act(async () => {
       try { if (saveTask.current) await saveTask.current } catch { /* discard failed save */ }
       const wasDirty = dirtyRef.current
       dirtyRef.current = false
       try { await api('content-delete', { id }) }
       catch (cause) { dirtyRef.current = wasDirty; throw cause }
+      setDeleteDraftId(undefined)
       setServerDraft(undefined)
       const remaining = await refreshContents()
       setServerDraft(remaining[0])
@@ -173,16 +180,20 @@ export function VideoPage({ active }: { active: boolean }) {
     if (!current?.videoSource) throw new Error('请先选择一条 e剪宝成片或一个本地视频')
     if (!current.title.trim()) throw new Error('请填写标题')
     if (selectedAccounts.length === 0) throw new Error('请至少选择一个发布账号')
-    setConfirm(true)
+    const videoSource = current.videoSource
+    setConfirm({ contentId: current.id, title: current.title, mode, accounts: selectedAccounts,
+      sourceName: videoSource.kind === 'local' ? videoSource.fileName
+        : works.find(work => work.id === videoSource.workId)?.title })
   })
   const submit = () => void act(async () => {
+    if (!confirm) return
     const current = await flush()
-    if (!current) throw new Error('请先新建视频草稿')
+    if (!current || current.id !== confirm.contentId) throw new Error('草稿已切换，请重新检查后提交')
     await api<CreateSubmissionResult>('submissions', {
       contentType: 'video', contentId: current.id, revision: current.revision,
-      mode, accountIds: selectedAccounts.map(account => account.id),
+      mode: confirm.mode, accountIds: confirm.accounts.map(account => account.id),
     })
-    setConfirm(false)
+    setConfirm(undefined)
     showSuccess('已提交，请稍后到平台后台确认。')
   })
 
@@ -197,22 +208,23 @@ export function VideoPage({ active }: { active: boolean }) {
       {works.length === 0 ? <p className="pub-muted">暂无 e剪宝成片，也可以直接选择本地视频。</p> : works.map(work => <button className="pub-work" aria-pressed={source?.kind === 'work' && source.workId === work.id} key={work.id} onClick={() => chooseWork(work)}><strong>{work.title}</strong><small>{new Date(work.createdAt).toLocaleString()} · {(work.bytes / 1048576).toFixed(1)} MB</small></button>)}
       {source?.kind === 'work' && !works.some(work => work.id === source.workId) && <p className="pub-warn">原 e剪宝成片已不可用，请重新选择。</p>}
       <h3>本地视频</h3>
-      <button className="pub-secondary" disabled={busy || capability?.supported !== true} onClick={chooseLocalVideo}>选择本地文件…</button>
+      <Button variant="outline" disabled={busy || capability?.supported !== true} onClick={chooseLocalVideo}>选择本地文件…</Button>
       {source?.kind === 'local' && <div className="pub-work" aria-label="已选择的本地视频"><strong>{source.fileName}</strong><small>{(source.bytes / 1048576).toFixed(1)} MB · 已选择</small></div>}
       <p className="pub-muted">目前支持 MP4；本地草稿只保存文件引用，不复制视频。提交后请保留原文件，直到平台后台确认。</p>
     </div><div className="pub-card"><h2><span className="pub-count">02</span>发布内容</h2>
-      <div className="pub-field"><label htmlFor="pub-title">标题</label><input id="pub-title" className="pub-input" maxLength={TITLE_MAX} value={draft.title} onChange={event => update({ title: event.target.value })}/></div>
+      <div className="pub-field"><label htmlFor="pub-title">标题</label><Input id="pub-title" className="pub-text-input" maxLength={TITLE_MAX} value={draft.title} onChange={event => update({ title: event.target.value })}/></div>
       <div className="pub-field"><label htmlFor="pub-description">简介</label><textarea id="pub-description" className="pub-input" maxLength={DESCRIPTION_MAX} value={draft.description ?? ''} onChange={event => update({ description: event.target.value })}/></div>
-      <div className="pub-field"><label htmlFor="pub-tags">话题（最多 {MAX_TAGS} 个）</label><input id="pub-tags" className="pub-input" value={tagsInput} onChange={event => { setTagsInput(event.target.value); update({ tags: [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS) }) }} placeholder="用空格或逗号分隔"/></div>
-      <div className="pub-field"><label htmlFor="pub-short-title">视频号短标题</label><input id="pub-short-title" className="pub-input" maxLength={32} value={draft.shortTitle ?? ''} onChange={event => update({ shortTitle: event.target.value })}/></div>
+      <div className="pub-field"><label htmlFor="pub-tags">话题（最多 {MAX_TAGS} 个）</label><Input id="pub-tags" className="pub-text-input" value={tagsInput} onChange={event => { setTagsInput(event.target.value); update({ tags: [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS) }) }} placeholder="用空格或逗号分隔"/></div>
+      <div className="pub-field"><label htmlFor="pub-short-title">视频号短标题</label><Input id="pub-short-title" className="pub-text-input" maxLength={32} value={draft.shortTitle ?? ''} onChange={event => update({ shortTitle: event.target.value })}/></div>
       <div className="pub-field"><label htmlFor="pub-statement">内容声明</label><select id="pub-statement" className="pub-input" value={draft.creativeStatement} onChange={event => update({ creativeStatement: event.target.value as PublisherContent['creativeStatement'] })}>{CREATIVE_STATEMENTS.map(value => <option value={value} key={value}>{STATEMENT_LABELS[value]}</option>)}</select></div>
       <p className="pub-muted">一期不会自动上传视频封面。</p>
     </div></div><div><div className="pub-card"><h2><span className="pub-count">03</span>选择平台账号</h2>
       {VIDEO_PLATFORMS.map(platform => <div className="pub-platform" key={platform}><label htmlFor={`pub-target-${platform}`}>{PLATFORM_LABELS[platform]}</label><select id={`pub-target-${platform}`} className="pub-input" value={selection[platform] ?? ''} onChange={event => setSelection(current => ({ ...current, [platform]: event.target.value || undefined }))}><option value="">不发布</option>{grouped[platform].map(account => <option key={account.id} value={account.id}>{account.displayName}{account.loginState === 'logged-in' ? '' : '（需检查登录）'}</option>)}</select></div>)}
       {accounts.length === 0 && <p className="pub-muted">请先到“平台账号管理”添加并登录账号。</p>}
     </div><div className="pub-card"><h2><span className="pub-count">04</span>发布方式</h2><div className="pub-mode"><label><input type="radio" name="pub-mode" checked={mode === 'publish'} onChange={() => setMode('publish')}/>立即发布</label><label><input type="radio" name="pub-mode" checked={mode === 'draft'} onChange={() => setMode('draft')}/>转存草稿</label></div><p className="pub-muted">提交前会同步检查全部账号登录状态；任一目标无效则整单拒绝。</p></div>
-      <button className="pub-primary pub-submit" disabled={busy || capability?.supported !== true} onClick={requestConfirm}>检查并提交</button>
+      <Button variant="primary" className="pub-submit" disabled={busy || capability?.supported !== true} onClick={requestConfirm}>检查并提交</Button>
       <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。</p>
     </div></div>}
-    {confirm && draft && <ConfirmDialog contentType="video" title={draft.title} sourceName={source?.kind === 'local' ? source.fileName : source?.kind === 'work' ? works.find(work => work.id === source.workId)?.title : undefined} mode={mode} accounts={selectedAccounts} busy={busy} onCancel={() => setConfirm(false)} onConfirm={submit}/>}</div>
+    {confirm && <ConfirmDialog contentType="video" title={confirm.title} sourceName={confirm.sourceName} mode={confirm.mode} accounts={confirm.accounts} busy={busy} onCancel={() => setConfirm(undefined)} onConfirm={submit}/>}
+    <PublisherModal open={deleteDraftId !== undefined} title="删除本地视频草稿" closeLabel="关闭删除视频草稿确认" description="删除这份本地视频草稿？已经提交的记录不受影响。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/></div>
 }

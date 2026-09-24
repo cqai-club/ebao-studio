@@ -254,11 +254,14 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
       }
     }
     if (this.executable === '' || !existsSync(this.executable)) {
+      const hasWorkerOverride = String(this.env.EBAO_PUBLISHER_WORKER ?? '').trim() !== ''
       return {
         supported: false,
         running: false,
         reason: 'publisher-worker-missing',
-        message: '未找到内置 Publisher Worker，请重新安装 e宝工坊',
+        message: hasWorkerOverride
+          ? '指定的 Publisher Worker 不存在，请检查 EBAO_PUBLISHER_WORKER 并重启 e宝工坊'
+          : '未找到内置 Publisher Worker，请重新安装 e宝工坊',
       }
     }
     return { supported: true, running: this.child !== undefined }

@@ -108,6 +108,20 @@ describe('PublisherSupervisor', () => {
     expect(resolvePublisherWorker({ platform: 'darwin', resourcesPath: root })).toBe(executable)
   })
 
+  it('identifies a missing Worker override instead of suggesting a reinstall', () => {
+    const supervisor = new PublisherSupervisor({
+      platform: 'darwin',
+      resourcesPath: '/nonexistent',
+      userDataPath: '/tmp',
+      env: { EBAO_PUBLISHER_WORKER: '/nonexistent/worker' },
+    })
+    expect(supervisor.status()).toMatchObject({
+      supported: false,
+      reason: 'publisher-worker-missing',
+      message: '指定的 Publisher Worker 不存在，请检查 EBAO_PUBLISHER_WORKER 并重启 e宝工坊',
+    })
+  })
+
   it('frames split NDJSON responses and redacts Worker stderr', async () => {
     const logs: string[] = []
     const { supervisor, workers } = fixture((frame, worker) => {

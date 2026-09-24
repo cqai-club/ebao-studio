@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import type { PublisherContentType } from '../protocol.ts'
 import { AccountsPage } from './accounts.tsx'
 import { ContentEditor } from './content.tsx'
@@ -21,6 +21,21 @@ function PublishIcon({ size = 20 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 3 10 14"/><path d="m21 3-7 18-4-7-7-4z"/></svg>
 }
 
+function handleTabKeyDown(event: KeyboardEvent<HTMLElement>) {
+  const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+  const current = tabs.indexOf(event.target as HTMLButtonElement)
+  if (current < 0) return
+  const next = event.key === 'Home' ? 0
+    : event.key === 'End' ? tabs.length - 1
+      : event.key === 'ArrowRight' ? (current + 1) % tabs.length
+        : event.key === 'ArrowLeft' ? (current - 1 + tabs.length) % tabs.length
+          : -1
+  if (next < 0) return
+  event.preventDefault()
+  tabs[next]?.focus()
+  tabs[next]?.click()
+}
+
 function PublisherPage() {
   const [tab, setTab] = useState<PublisherTab>('publish')
   const [contentType, setContentType] = useState<PublisherContentType>(() => {
@@ -35,25 +50,25 @@ function PublisherPage() {
   }
   return <PublisherTipsProvider><section className="pub"><style>{css}</style><div className="pub-wrap">
     <header className="pub-head"><div><h1>多平台发布</h1><div className="pub-muted">在 e宝工坊中编辑内容、选择账号并提交到本机发布队列。</div></div></header>
-    <nav className="pub-tabs" role="tablist" aria-label="多平台发布导航">
+    <nav className="pub-tabs" role="tablist" aria-label="多平台发布导航" onKeyDown={handleTabKeyDown}>
       {([
         ['publish', '发布'], ['history', '发布历史'], ['accounts', '平台账号管理'],
-      ] as const).map(([value, label]) => <button key={value} className="pub-tab" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
+      ] as const).map(([value, label]) => <button key={value} id={`pub-tab-${value}`} className="pub-tab" role="tab" aria-controls={`pub-panel-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)}>{label}</button>)}
     </nav>
-    <div hidden={tab !== 'publish'}><div className="pub-layout">
-      <nav className="pub-type-nav" aria-label="内容类型">
+    <div id="pub-panel-publish" role="tabpanel" aria-labelledby="pub-tab-publish" hidden={tab !== 'publish'}><div className="pub-layout">
+      <nav className="pub-type-nav" role="tablist" aria-label="内容类型" onKeyDown={handleTabKeyDown}>
         {([
           ['article', '文章'], ['image-note', '图文'], ['video', '视频'],
-        ] as const).map(([value, label]) => <button className="pub-type" key={value} aria-current={contentType === value} onClick={() => chooseContentType(value)}>{label}</button>)}
+        ] as const).map(([value, label]) => <button className="pub-type" key={value} id={`pub-type-${value}`} role="tab" aria-controls={`pub-content-${value}`} aria-selected={contentType === value} tabIndex={contentType === value ? 0 : -1} onClick={() => chooseContentType(value)}>{label}</button>)}
       </nav>
-      <div>
-        <div hidden={contentType !== 'article'}><ContentEditor contentType="article" active={tab === 'publish' && contentType === 'article'}/></div>
-        <div hidden={contentType !== 'image-note'}><ContentEditor contentType="image-note" active={tab === 'publish' && contentType === 'image-note'}/></div>
-        <div hidden={contentType !== 'video'}><VideoPage active={tab === 'publish' && contentType === 'video'}/></div>
+      <div className="pub-content-panels">
+        <div id="pub-content-article" role="tabpanel" aria-labelledby="pub-type-article" hidden={contentType !== 'article'}><ContentEditor contentType="article" active={tab === 'publish' && contentType === 'article'}/></div>
+        <div id="pub-content-image-note" role="tabpanel" aria-labelledby="pub-type-image-note" hidden={contentType !== 'image-note'}><ContentEditor contentType="image-note" active={tab === 'publish' && contentType === 'image-note'}/></div>
+        <div id="pub-content-video" role="tabpanel" aria-labelledby="pub-type-video" hidden={contentType !== 'video'}><VideoPage active={tab === 'publish' && contentType === 'video'}/></div>
       </div>
     </div></div>
-    <div hidden={tab !== 'history'}><SubmissionHistory active={tab === 'history'}/></div>
-    <div hidden={tab !== 'accounts'}><AccountsPage active={tab === 'accounts'}/></div>
+    <div id="pub-panel-history" role="tabpanel" aria-labelledby="pub-tab-history" hidden={tab !== 'history'}><SubmissionHistory active={tab === 'history'}/></div>
+    <div id="pub-panel-accounts" role="tabpanel" aria-labelledby="pub-tab-accounts" hidden={tab !== 'accounts'}><AccountsPage active={tab === 'accounts'}/></div>
   </div></section></PublisherTipsProvider>
 }
 

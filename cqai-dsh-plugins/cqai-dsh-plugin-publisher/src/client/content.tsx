@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   API, CREATIVE_STATEMENTS, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX,
   type CreateSubmissionResult, type Platform, type PublisherAccount,
@@ -6,10 +7,12 @@ import {
 } from '../protocol.ts'
 import { CONTENT_ACCOUNT_PLATFORMS, contentModeAvailable, selectedContentAccounts } from '../content-targets.ts'
 import {
-  api, capabilityMessage, ConfirmDialog, DraftToolbar, errorMessage, PlatformAccountSelect, STATEMENT_LABELS, uploadAsset,
+  api, capabilityMessage, ConfirmDialog, DraftToolbar, errorMessage, PlatformAccountSelect, PublisherModal, STATEMENT_LABELS, uploadAsset,
+  type PublisherConfirmation,
 } from './shared.tsx'
 import { contentSubmissionError } from '../submission-validation.ts'
 import { usePublisherTips } from './tips.tsx'
+import { articleUploadFile } from './article-image.ts'
 
 function MarkdownPreview({ value, content }: { value: string; content: PublisherContent }) {
   const inline = (line: string) => {
@@ -70,6 +73,8 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   const [draft, setDraft] = useState<PublisherContent>()
   const draftRef = useRef<PublisherContent>()
   const bodyInputRef = useRef<HTMLTextAreaElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const dirtyRef = useRef(false)
   const saveTask = useRef<Promise<void>>()
   const [editVersion, setEditVersion] = useState(0)
@@ -85,7 +90,8 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   const [preview, setPreview] = useState(false)
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
-  const [confirm, setConfirm] = useState(false)
+  const [confirm, setConfirm] = useState<PublisherConfirmation>()
+  const [deleteDraftId, setDeleteDraftId] = useState<string>()
   const [saveError, setSaveError] = useState('')
   const [draggedAssetId, setDraggedAssetId] = useState<string>()
   const [runtimeCapability, setRuntimeCapability] = useState<PublisherCapability>()
@@ -218,7 +224,11 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   })
   const remove = () => {
     const id = draftRef.current?.id
-    if (!id || !window.confirm('删除这份本地草稿？已经提交的内容快照不受影响。')) return
+    if (id) setDeleteDraftId(id)
+  }
+  const confirmRemove = () => {
+    const id = deleteDraftId
+    if (!id) return
     void act(async () => {
       // Explicit deletion discards unsaved edits, even when a previous autosave failed.
       try { if (saveTask.current) await saveTask.current } catch { /* discard failed save */ }
@@ -226,6 +236,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
       dirtyRef.current = false
       try { await api('content-delete', { id }) }
       catch (cause) { dirtyRef.current = wasDirty; throw cause }
+      setDeleteDraftId(undefined)
       setServerDraft(undefined)
       const remaining = await refreshContents()
       setServerDraft(remaining[0])
@@ -263,7 +274,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
       let uploaded = 0
       try {
         for (const file of selected) {
-          current = await uploadAsset(current.id, file)
+          current = await uploadAsset(current.id, contentType === 'article' ? await articleUploadFile(file) : file)
           setServerDraft(current)
           uploaded += 1
         }
@@ -331,6 +342,9 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
   const assetLimit = Math.min(20, ...selectedAccounts.map(account =>
     capabilities.find(item => item.platform === account.platform)?.maxAssets?.[contentType] ?? 20))
   const enteredTags = [...new Set(tagsInput.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))]
+  const skippedArticleTagTargets = contentType === 'article'
+    ? selectedAccounts.filter(account => account.platform === 'wxmp' || account.platform === 'tt' || account.platform === 'bjh')
+    : []
   const validationError = draft && selectedAccounts.length > 0 && !capabilitiesPending && !capabilitiesError
     ? contentSubmissionError(draft, selectedAccounts, capabilities, mode) : undefined
   const requestConfirm = () => void act(async () => {
@@ -338,16 +352,17 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     if (!current) throw new Error('请先创建草稿')
     const error = contentSubmissionError(current, selectedAccounts, capabilities, mode)
     if (error) throw new Error(error)
-    setConfirm(true)
+    setConfirm({ contentId: current.id, title: current.title, mode, accounts: selectedAccounts })
   })
   const submit = () => void act(async () => {
+    if (!confirm) return
     const current = await flush()
-    if (!current) throw new Error('请先创建草稿')
+    if (!current || current.id !== confirm.contentId) throw new Error('草稿已切换，请重新检查后提交')
     await api<CreateSubmissionResult>('submissions', {
       contentType, contentId: current.id, revision: current.revision,
-      mode, accountIds: selectedAccounts.map(account => account.id),
+      mode: confirm.mode, accountIds: confirm.accounts.map(account => account.id),
     })
-    setConfirm(false)
+    setConfirm(undefined)
     showSuccess('已提交，请稍后到平台后台确认。')
   })
 
@@ -358,25 +373,28 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
     {!draft ? <div className="pub-empty">点击“新建”开始编辑{contentType === 'article' ? '文章' : '图文'}。</div> : <div className="pub-grid">
       <div>
         <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>
-          <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={draft.title.length > titleLimit ? 'pub-warn' : 'pub-muted'}>（{draft.title.length}/{titleLimit} 字）</span></label><input className="pub-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={draft.title} onChange={event => update({ title: event.target.value })}/></div>
+          <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={draft.title.length > titleLimit ? 'pub-warn' : 'pub-muted'}>（{draft.title.length}/{titleLimit} 字）</span></label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={draft.title} onChange={event => update({ title: event.target.value })}/></div>
           {contentType === 'article' && <div className="pub-actions" style={{ marginBottom: 12 }}>
-            <button className="pub-secondary" aria-pressed={!preview} onClick={() => setPreview(false)}>Markdown 编辑</button>
-            <button className="pub-secondary" aria-pressed={preview} onClick={() => setPreview(true)}>简易预览</button>
-            <label className="pub-secondary">导入 .md/.txt<input type="file" accept=".md,.txt,text/markdown,text/plain" style={{ display: 'none' }} onChange={event => { importText(event.target.files?.[0]); event.target.value = '' }}/></label>
+            <Button variant={!preview ? 'primary' : 'outline'} size="sm" aria-pressed={!preview} onClick={() => setPreview(false)}>Markdown 编辑</Button>
+            <Button variant={preview ? 'primary' : 'outline'} size="sm" aria-pressed={preview} onClick={() => setPreview(true)}>简易预览</Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => importInputRef.current?.click()}>导入 .md/.txt</Button>
+            <input ref={importInputRef} type="file" accept=".md,.txt,text/markdown,text/plain" style={{ display: 'none' }} onChange={event => { importText(event.target.files?.[0]); event.target.value = '' }}/>
           </div>}
           <div className="pub-field"><label htmlFor={`pub-${contentType}-body`}>{contentType === 'article' ? '正文' : '正文 / 话题'}</label>
             {preview && contentType === 'article' ? <MarkdownPreview value={draft.body} content={draft}/> : <textarea ref={bodyInputRef} className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={draft.body} onChange={event => update({ body: event.target.value })}/>}
           </div>
           {contentType === 'article' && preview && <p className="pub-muted">这里只预览基础 Markdown 排版；实际平台编辑器呈现可能不同，原始正文不会被预览修改。</p>}
           {contentType === 'article' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={draft.summary} onChange={event => update({ summary: event.target.value })}/>{selectedAccounts.some(account => account.platform === 'tt') && <p className="pub-muted">头条当前不能写入独立摘要；若要转存头条草稿，请先清空此栏。需要其他平台保留摘要时请分开提交。</p>}</div>}
-          <div className="pub-field"><label htmlFor={`pub-${contentType}-tags`}>标签（{draft.tags.length}/{MAX_TAGS} 个，用空格或逗号分隔）</label><input className="pub-input" id={`pub-${contentType}-tags`} value={tagsInput} onChange={event => { setTagsInput(event.target.value); update({ tags: [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS) }) }}/></div>
+          <div className="pub-field"><label htmlFor={`pub-${contentType}-tags`}>标签（{draft.tags.length}/{MAX_TAGS} 个，用空格或逗号分隔）</label><Input className="pub-text-input" id={`pub-${contentType}-tags`} value={tagsInput} onChange={event => { setTagsInput(event.target.value); update({ tags: [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS) }) }}/></div>
+          {draft.tags.length > 0 && skippedArticleTagTargets.length > 0 && <p className="pub-muted">{skippedArticleTagTargets.map(account => PLATFORM_LABELS[account.platform]).join('、')}文章暂不写入标签，本次提交会跳过；草稿标签仍保留供其他平台使用。</p>}
           {enteredTags.length > MAX_TAGS && <p className="pub-warn">超过 {MAX_TAGS} 个标签，超出的标签不会保存。</p>}
           <div className="pub-field"><label htmlFor={`pub-${contentType}-statement`}>AI 内容声明</label><select className="pub-input" id={`pub-${contentType}-statement`} value={draft.creativeStatement} onChange={event => update({ creativeStatement: event.target.value as PublisherContent['creativeStatement'] })}>{CREATIVE_STATEMENTS.map(value => <option key={value} value={value}>{STATEMENT_LABELS[value]}</option>)}</select></div>
         </div>
         <div className="pub-card"><h2>{contentType === 'article' ? '封面图片' : '图片素材与排序'}</h2>
-          <label className="pub-secondary">添加图片<input type="file" accept="image/jpeg,image/png,image/webp" multiple style={{ display: 'none' }} onChange={event => { addImages(event.target.files); event.target.value = '' }}/></label>
+          <Button variant="outline" disabled={busy} onClick={() => imageInputRef.current?.click()}>添加图片</Button>
+          <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple style={{ display: 'none' }} onChange={event => { addImages(event.target.files); event.target.value = '' }}/>
           <p className="pub-muted">{draft.assets.length}/{assetLimit} 张 · 仅支持 JPEG / PNG / WebP，每张不超过 20MB。{contentType === 'image-note' ? '可拖动排序，也可使用 ↑ ↓ 按钮。' : ''}</p>
-          {contentType === 'article' && <p className="pub-muted">头条、百家号素材可插入正文，也可单独设为封面；掘金、B站专栏暂只支持单张封面。导入 Markdown 时不会读取相对路径图片，请先上传素材再插入。</p>}
+          {contentType === 'article' && <p className="pub-muted">WebP 文章图片上传时自动转为 JPEG，可作为微信公众号封面；透明区域会变成白色。头条、百家号素材可插入正文，也可单独设为封面；掘金、B站专栏暂只支持单张封面。导入 Markdown 时不会读取相对路径图片，请先上传素材再插入。</p>}
           <div className="pub-assets">{draft.assets.map((asset, index) => <div className={`pub-asset${draggedAssetId === asset.id ? ' pub-asset-dragging' : ''}`} key={asset.id}
             draggable={contentType === 'image-note' && !busy}
             onDragStart={event => { if (contentType === 'image-note') { event.dataTransfer.effectAllowed = 'move'; setDraggedAssetId(asset.id) } }}
@@ -385,7 +403,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
             onDragEnd={() => setDraggedAssetId(undefined)}>
             <img src={`${API}/content-asset/${draft.id}/${asset.id}`} alt={asset.name}/><small>{String(index + 1).padStart(2, '0')} · {asset.name}</small>
             {contentType === 'article' && <label><input type="radio" name={`cover-${draft.id}`} checked={draft.coverAssetId === asset.id} onChange={() => update({ coverAssetId: asset.id })}/>封面</label>}
-            <div className="pub-actions">{contentType === 'article' && <button className="pub-secondary" disabled={busy} onClick={() => insertImage(asset.id, asset.name)}>插入正文</button>}<button className="pub-secondary" disabled={index === 0 || busy} onClick={() => reorder(asset.id, -1)}>↑</button><button className="pub-secondary" disabled={index === draft.assets.length - 1 || busy} onClick={() => reorder(asset.id, 1)}>↓</button><button className="pub-danger" disabled={busy} onClick={() => removeImage(asset.id)}>删除</button></div>
+            <div className="pub-actions">{contentType === 'article' && <Button variant="outline" size="sm" disabled={busy} onClick={() => insertImage(asset.id, asset.name)}>插入正文</Button>}<Button variant="outline" size="sm" aria-label="上移图片" disabled={index === 0 || busy} onClick={() => reorder(asset.id, -1)}>↑</Button><Button variant="outline" size="sm" aria-label="下移图片" disabled={index === draft.assets.length - 1 || busy} onClick={() => reorder(asset.id, 1)}>↓</Button><Button variant="outline" size="sm" className="pub-danger-action" disabled={busy} onClick={() => removeImage(asset.id)}>删除</Button></div>
           </div>)}</div>
         </div>
       </div>
@@ -404,7 +422,7 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
             const fields = capabilities.find(item => item.platform === account.platform)?.requiredFields[contentType] ?? []
             return fields.map(field => <div className="pub-field" key={`${account.platform}:${field}`}>
               <label htmlFor={`pub-field-${account.platform}-${field}`}>{PLATFORM_LABELS[account.platform]} · {FIELD_LABELS[field] || field}</label>
-              <input className="pub-input" id={`pub-field-${account.platform}-${field}`} value={draft.platformFields[account.platform]?.[field] ?? ''} onChange={event => update({ platformFields: { ...draft.platformFields, [account.platform]: { ...draft.platformFields[account.platform], [field]: event.target.value } } })}/>
+              <Input className="pub-text-input" id={`pub-field-${account.platform}-${field}`} value={draft.platformFields[account.platform]?.[field] ?? ''} onChange={event => update({ platformFields: { ...draft.platformFields, [account.platform]: { ...draft.platformFields[account.platform], [field]: event.target.value } } })}/>
             </div>)
           })}
         </div>
@@ -412,12 +430,13 @@ export function ContentEditor({ contentType, active }: { contentType: EditorType
           <label><input type="radio" name={`pub-mode-${contentType}`} checked={mode === 'publish'} onChange={() => setMode('publish')}/>立即发布</label>
           <label><input type="radio" name={`pub-mode-${contentType}`} checked={mode === 'draft'} onChange={() => setMode('draft')}/>转存草稿</label>
         </div></div>
-        <button className="pub-primary pub-submit" disabled={busy || !submitReady} onClick={requestConfirm}>检查并提交</button>
+        <Button variant="primary" className="pub-submit" disabled={busy || !submitReady} onClick={requestConfirm}>检查并提交</Button>
         {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">当前发布引擎缺少所选平台的提交能力，请更新 Helper 并完全重启应用；本地草稿仍会保存。</p>
           : validationError && <p className="pub-warn" role="status">提交前请处理：{validationError}</p>}
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </div>
     </div>}
-    {confirm && draft && <ConfirmDialog contentType={contentType} title={draft.title} mode={mode} accounts={selectedAccounts} busy={busy} onCancel={() => setConfirm(false)} onConfirm={submit}/>}
+    {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} busy={busy} onCancel={() => setConfirm(undefined)} onConfirm={submit}/>}
+    <PublisherModal open={deleteDraftId !== undefined} title="删除本地草稿" closeLabel="关闭删除草稿确认" description="删除这份本地草稿？已经提交的内容快照不受影响。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/>
   </div>
 }

@@ -17,16 +17,27 @@ export function contentSubmissionError(
   if (content.contentType === 'video') return '草稿内容类型不匹配'
   if (!content.title.trim()) return '请填写标题'
   if (content.contentType === 'article' && !content.body.trim()) return '请填写正文'
+  if (content.contentType === 'article' && accounts.some(account => account.platform === 'wxmp') && !content.coverAssetId) return '微信公众号文章必须选择封面图片'
+  if (content.contentType === 'article' && accounts.some(account => account.platform === 'wxmp')
+    && content.assets.some(asset => asset.mime === 'image/webp')) return '已有 WebP 素材请重新上传，上传时会自动转为 JPEG；再删除旧素材并重新选择封面或插入正文'
+  if (content.contentType === 'article' && accounts.some(account => account.platform === 'wxmp')) {
+    if (content.title.length > 64) return '微信公众号文章标题不能超过 64 字'
+    if (content.summary.length > 120) return '微信公众号文章摘要不能超过 120 字'
+    const cover = content.assets.find(asset => asset.id === content.coverAssetId)
+    if (cover && cover.bytes >= 10 * 1024 * 1024) return '微信公众号封面不能超过 10MB'
+    try {
+      const used = new Set(articleAssetIds(content))
+      if (content.assets.some(asset => used.has(asset.id) && asset.bytes >= 1024 * 1024)) return '微信公众号正文图片必须小于 1MB'
+    } catch (cause) { return cause instanceof Error ? cause.message : '正文图片引用无效' }
+  }
   if (content.contentType === 'image-note' && content.assets.length === 0) return '图文至少添加一张图片'
   if (accounts.length === 0) return '请选择支持此类型的发布账号'
   if (content.contentType === 'article' && content.assets.length > 0 && !content.coverAssetId) return '请为文章选择封面图片'
   if (content.contentType === 'article' && accounts.some(account => account.platform === 'juejin' || account.platform === 'blbl')
     && content.body.includes('ebao-asset://')) return '掘金和B站专栏暂不支持正文插图，请分开提交'
-  if (content.contentType === 'article' && content.tags.length > 0
-    && accounts.some(account => account.platform === 'tt' || account.platform === 'bjh')) return '头条、百家号文章标签写入尚未验收，请先清空标签'
   if (content.contentType === 'article' && content.summary.trim()
     && accounts.some(account => account.platform === 'tt')) return '头条当前文章编辑页没有可写的独立摘要，请清空摘要后再提交'
-  if (content.contentType === 'article' && accounts.some(account => account.platform === 'tt' || account.platform === 'bjh')) {
+  if (content.contentType === 'article' && accounts.some(account => account.platform === 'tt' || account.platform === 'bjh' || account.platform === 'wxmp')) {
     try { articleAssetIds(content) } catch (cause) { return cause instanceof Error ? cause.message : '正文图片引用无效' }
   }
 

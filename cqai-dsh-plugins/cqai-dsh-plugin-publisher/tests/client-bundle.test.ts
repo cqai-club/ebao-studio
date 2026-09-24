@@ -21,6 +21,9 @@ describe('publisher browser bundle', () => {
     const platformModules: Record<string, unknown> = {
       react: await import('react'),
       'react/jsx-runtime': await import('react/jsx-runtime'),
+      '@deepseek-ai/dsh-client-ui-primitives': {
+        Button: () => null, Input: () => null, Modal: () => null, Tag: () => null,
+      },
     }
     const exports = handoff?.factory((specifier) => {
       required.push(specifier)
@@ -28,7 +31,7 @@ describe('publisher browser bundle', () => {
       return platformModules[specifier]
     })
 
-    expect(required.sort()).toEqual(['react', 'react/jsx-runtime'])
+    expect(required.sort()).toEqual(['@deepseek-ai/dsh-client-ui-primitives', 'react', 'react/jsx-runtime'])
     expect(exports?.apply).toBeTypeOf('function')
   })
 })

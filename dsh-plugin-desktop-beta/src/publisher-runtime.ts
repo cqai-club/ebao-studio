@@ -15,6 +15,7 @@ export const PUBLISHER_WORKER_METHODS = [
   'accounts.importApply',
   'submissions.create',
   'submissions.list',
+  'submissions.delete',
 ] as const
 
 /** One method exposed across Electron main -> DSH Host. */

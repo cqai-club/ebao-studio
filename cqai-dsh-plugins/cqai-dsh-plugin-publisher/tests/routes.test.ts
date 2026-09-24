@@ -12,6 +12,7 @@ import { listWorks, resolveWork, worksRoot } from '../src/works.ts'
 
 const WORK_ID = '11111111-1111-4111-8111-111111111111'
 const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222'
+const SUBMISSION_ID = '33333333-3333-4333-8333-333333333333'
 const LOCAL_VIDEO_ID = '44444444-4444-4444-8444-444444444444'
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -108,7 +109,7 @@ describe('the Host publisher route', () => {
         if (method === 'submissions.create') return {
           accepted: true,
           submission: {
-            id: '33333333-3333-4333-8333-333333333333', createdAt: '2026-09-22T03:00:00.000Z',
+            id: SUBMISSION_ID, createdAt: '2026-09-22T03:00:00.000Z',
             contentId: WORK_ID, contentType: 'video', workId: WORK_ID, title: '发布标题', mode: 'draft',
             targets: [{ accountId: ACCOUNT_ID, platform: 'dy', accountName: '品牌主账号' }],
           },
@@ -139,6 +140,25 @@ describe('the Host publisher route', () => {
         accounts: [{ displayName: '旧账号', platform: 'dy', platformName: '抖音' }],
       })
 
+      const wechatAccount = await send('accounts', {
+        displayName: '公众号', platform: 'wxmp', appId: 'wxd678efh567hg6787', appSecret: 'Z'.repeat(32),
+      })
+      expect(wechatAccount.status).toBe(201)
+      expect(calls.find(call => call.method === 'accounts.create')?.params).toMatchObject({
+        platform: 'wxmp', appId: 'wxd678efh567hg6787', appSecret: 'Z'.repeat(32),
+      })
+      const unnamedAccount = await send('accounts', { displayName: '', platform: 'dy' })
+      expect(unnamedAccount.status).toBe(201)
+      expect(calls.filter(call => call.method === 'accounts.create').at(-1)?.params).toMatchObject({
+        displayName: '', platform: 'dy',
+      })
+      expect((await send('accounts', {
+        displayName: '', platform: 'wxmp', appId: 'wxd678efh567hg6787', appSecret: 'Z'.repeat(32),
+      })).status).toBe(400)
+      const accountCalls = calls.filter(call => call.method === 'accounts.create').length
+      expect((await send('accounts', { displayName: '公众号', platform: 'wxmp', appId: 'bad', appSecret: 'Z'.repeat(32) })).status).toBe(400)
+      expect(calls.filter(call => call.method === 'accounts.create')).toHaveLength(accountCalls)
+
       const accepted = await send('submissions', {
         workId: WORK_ID, title: '发布标题', description: '简介', tags: ['AI'],
         creativeStatement: 'ai_generated', mode: 'draft', accountIds: [ACCOUNT_ID],
@@ -148,6 +168,22 @@ describe('the Host publisher route', () => {
       expect(create?.params).toMatchObject({
         workId: WORK_ID, file: realpathSync(join(directory, 'final_video.mp4')), mode: 'draft', accountIds: [ACCOUNT_ID],
       })
+      const beforeDelete = calls.filter(call => call.method === 'submissions.delete').length
+      expect((await send('submission-delete', { id: 'invalid' })).status).toBe(400)
+      expect((await send('submission-delete', { id: SUBMISSION_ID, file: '/tmp/unsafe' })).status).toBe(400)
+      expect((await send('submission-delete', { id: SUBMISSION_ID, acknowledgeUnknown: 'true' })).status).toBe(400)
+      expect((await send('submission-delete', { id: SUBMISSION_ID, acknowledgeUnknown: null })).status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.delete')).toHaveLength(beforeDelete)
+      const deleted = await send('submission-delete', { id: SUBMISSION_ID })
+      expect(deleted.status).toBe(200)
+      expect(await deleted.json()).toEqual({ ok: true })
+      expect((await send('submission-delete', { id: SUBMISSION_ID, acknowledgeUnknown: false })).status).toBe(200)
+      expect((await send('submission-delete', { id: SUBMISSION_ID, acknowledgeUnknown: true })).status).toBe(200)
+      expect(calls.filter(call => call.method === 'submissions.delete')).toEqual([
+        { method: 'submissions.delete', params: { id: SUBMISSION_ID } },
+        { method: 'submissions.delete', params: { id: SUBMISSION_ID, acknowledgeUnknown: false } },
+        { method: 'submissions.delete', params: { id: SUBMISSION_ID, acknowledgeUnknown: true } },
+      ])
 
       const chosen = await send('local-video-select', {})
       expect(chosen.status).toBe(200)

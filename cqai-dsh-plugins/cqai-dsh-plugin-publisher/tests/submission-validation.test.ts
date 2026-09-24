@@ -12,6 +12,22 @@ const content = (contentType: PublisherContent['contentType']): PublisherContent
 })
 
 describe('article and image-note preflight', () => {
+  it('requires a WeChat cover and accepts only supported article assets', () => {
+    const draft = content('article')
+    const targets = [account('wxmp')]
+    const capabilities: PublisherPlatformCapability[] = [{
+      platform: 'wxmp', contentTypes: ['article'], modes: { article: ['draft', 'publish'] },
+      requiredFields: {}, maxTitleLength: { article: 64 }, maxAssets: { article: 20 },
+    }]
+    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toContain('必须选择封面')
+    draft.assets = [{ id: '33333333-3333-4333-8333-333333333333', name: '封面.png', mime: 'image/png', bytes: 12 }]
+    draft.coverAssetId = draft.assets[0]!.id
+    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
+    expect(contentSubmissionError({ ...draft, tags: ['标签'] }, targets, capabilities, 'draft')).toBeUndefined()
+    expect(contentSubmissionError({ ...draft, summary: '摘要'.repeat(61) }, targets, capabilities, 'draft')).toContain('120 字')
+    expect(contentSubmissionError({ ...draft, assets: [{ ...draft.assets[0]!, mime: 'image/webp' }] }, targets, capabilities, 'draft')).toContain('重新上传')
+  })
+
   it('rejects Toutiao article summary before acceptance without blocking other article platforms', () => {
     const draft = { ...content('article'), summary: '摘要内容' }
     const capabilities: PublisherPlatformCapability[] = [{
@@ -22,6 +38,18 @@ describe('article and image-note preflight', () => {
     expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toContain('请清空摘要')
     expect(contentSubmissionError(draft, [account('juejin')], capabilities, 'draft')).toBeUndefined()
     expect(contentSubmissionError({ ...draft, summary: '' }, [account('tt')], capabilities, 'draft')).toBeUndefined()
+  })
+
+  it('keeps draft tags while allowing article targets that skip tag upload', () => {
+    const tagged = { ...content('article'), tags: ['AI'] }
+    tagged.assets = [{ id: '33333333-3333-4333-8333-333333333333', name: '封面.png', mime: 'image/png', bytes: 12 }]
+    tagged.coverAssetId = tagged.assets[0]!.id
+    const targets = [account('wxmp'), account('tt'), account('bjh'), account('juejin')]
+    const capabilities: PublisherPlatformCapability[] = targets.map(target => ({
+      platform: target.platform, contentTypes: ['article'], modes: { article: ['draft'] }, requiredFields: {},
+    }))
+    expect(contentSubmissionError(tagged, targets, capabilities, 'draft')).toBeUndefined()
+    expect(tagged.tags).toEqual(['AI'])
   })
 
   it('requires article text, the selected platform fields, and a single designated cover', () => {

@@ -3,14 +3,14 @@ export const API = '/api/cqai-publisher'
 
 /** Video platforms supported by the embedded MatrixMedia Worker. */
 export const VIDEO_PLATFORMS = ['dy', 'sph', 'xhs', 'blbl', 'ks', 'tt', 'bjh', 'fqsp'] as const
-export const PLATFORMS = [...VIDEO_PLATFORMS, 'juejin'] as const
+export const PLATFORMS = [...VIDEO_PLATFORMS, 'juejin', 'wxmp'] as const
 export type Platform = typeof PLATFORMS[number]
 export type PublisherContentType = 'video' | 'article' | 'image-note'
 export type PublisherMode = 'publish' | 'draft'
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
   dy: '抖音', sph: '视频号', xhs: '小红书', blbl: '哔哩哔哩',
-  ks: '快手', tt: '头条', bjh: '百家号', fqsp: '番茄视频', juejin: '掘金',
+  ks: '快手', tt: '头条', bjh: '百家号', fqsp: '番茄视频', juejin: '掘金', wxmp: '微信公众号',
 }
 
 export const MAX_TAGS = 8
@@ -28,10 +28,12 @@ export interface PublisherAccount {
   displayName: string
   platform: Platform
   loginState: 'logged-in' | 'logged-out' | 'unknown'
+  /** Sanitized Worker diagnostic from the last API credential check. */
+  loginError?: string
   expiresAt?: number
 }
 
-/** Immutable accepted-submission snapshot. It intentionally contains no execution state. */
+/** Accepted submission details with the Worker's latest local execution state. */
 export interface PublisherSubmission {
   id: string
   createdAt: string
@@ -41,6 +43,10 @@ export interface PublisherSubmission {
   workId?: string
   title: string
   mode: PublisherMode
+  /** Absent only when connected to an older Worker. */
+  state?: 'queued' | 'running' | 'unknown' | 'completed' | 'failed'
+  /** A short local explanation when a result needs attention. */
+  message?: string
   targets: Array<{
     accountId: string
     platform: Platform

@@ -1,30 +1,154 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Button, Input, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   PLATFORM_LABELS, type PublisherContentType, type PublisherSubmission,
 } from '../protocol.ts'
-import { api, CONTENT_LABELS, errorMessage } from './shared.tsx'
+import { api, CONTENT_LABELS, errorMessage, PublisherModal } from './shared.tsx'
 import { usePublisherTips } from './tips.tsx'
 
+const PAGE_SIZE = 10
+const STATE_LABELS = {
+  queued: '等待执行', running: '执行中', unknown: '结果待确认',
+  completed: '已完成', failed: '执行失败',
+} as const
+const STATE_TONES = {
+  queued: 'neutral', running: 'info', unknown: 'warning',
+  completed: 'success', failed: 'danger',
+} as const
+
 export function SubmissionHistory({ active }: { active: boolean }) {
-  const { showError } = usePublisherTips()
+  const { showError, showSuccess, clearTip } = usePublisherTips()
   const [rows, setRows] = useState<PublisherSubmission[]>([])
   const [filter, setFilter] = useState<'all' | PublisherContentType>('all')
-  const refresh = () => void api<PublisherSubmission[]>('submissions').then(setRows).catch(cause => showError(errorMessage(cause)))
-  useEffect(() => { if (active) refresh() }, [active])
-  const visible = rows.filter(item => filter === 'all' || (item.contentType ?? 'video') === filter)
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [refreshing, setRefreshing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<PublisherSubmission>()
+  const [acknowledgedUnknown, setAcknowledgedUnknown] = useState(false)
+  const busyRef = useRef(false)
+  const requestSequence = useRef(0)
+  const focusAfterDelete = useRef(false)
+
+  const refresh = async () => {
+    const sequence = ++requestSequence.current
+    setRefreshing(true)
+    try {
+      const submissions = await api<PublisherSubmission[]>('submissions')
+      if (sequence === requestSequence.current) setRows(submissions)
+    } catch (cause) {
+      if (sequence === requestSequence.current) showError(errorMessage(cause))
+    } finally {
+      if (sequence === requestSequence.current) setRefreshing(false)
+    }
+  }
+
+  useEffect(() => { if (active) void refresh() }, [active])
+  useEffect(() => {
+    if (!deleteTarget && focusAfterDelete.current) {
+      focusAfterDelete.current = false
+      document.getElementById('pub-history-search')?.focus()
+    }
+  }, [deleteTarget, rows])
+
+  const search = query.trim().toLocaleLowerCase()
+  const filtered = rows.filter(item => {
+    if (filter !== 'all' && (item.contentType ?? 'video') !== filter) return false
+    if (!search) return true
+    const terms = [item.title, CONTENT_LABELS[item.contentType ?? 'video'],
+      item.mode === 'publish' ? '立即发布' : '转存草稿',
+      item.state ? STATE_LABELS[item.state] : '',
+      ...item.targets.flatMap(target => [PLATFORM_LABELS[target.platform], target.accountName])]
+    return terms.some(term => term.toLocaleLowerCase().includes(search))
+  })
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  useEffect(() => { if (page > pageCount) setPage(pageCount) }, [page, pageCount])
+
+  const closeDelete = () => {
+    if (busyRef.current) return
+    setDeleteTarget(undefined)
+    setAcknowledgedUnknown(false)
+  }
+  const confirmDelete = async () => {
+    if (!deleteTarget || busyRef.current || (deleteTarget.state === 'unknown' && !acknowledgedUnknown)) return
+    busyRef.current = true
+    setDeleting(true)
+    clearTip()
+    try {
+      await api('submission-delete', {
+        id: deleteTarget.id,
+        ...(deleteTarget.state === 'unknown' ? { acknowledgeUnknown: true } : {}),
+      })
+      ++requestSequence.current
+      setRefreshing(false)
+      setRows(current => current.filter(item => item.id !== deleteTarget.id))
+      focusAfterDelete.current = true
+      setDeleteTarget(undefined)
+      setAcknowledgedUnknown(false)
+      showSuccess('本机历史记录已删除')
+    } catch (cause) {
+      showError(errorMessage(cause))
+    } finally {
+      busyRef.current = false
+      setDeleting(false)
+    }
+  }
+
   return <div>
-    <div className="pub-head"><div><h2>发布历史</h2><p className="pub-muted">这里只记录已经被本机队列接受的提交，不代表平台最终发布成功。</p></div>
-      <div className="pub-actions"><select className="pub-input" aria-label="筛选内容类型" value={filter} onChange={event => setFilter(event.target.value as typeof filter)}>
-        <option value="all">全部类型</option><option value="article">文章</option><option value="image-note">图文</option><option value="video">视频</option>
-      </select><button className="pub-secondary" onClick={refresh}>刷新记录</button></div>
+    <div className="pub-head pub-history-head"><div><h2>发布历史</h2><p className="pub-muted">这里只记录已经被本机队列接受的提交，不代表平台最终发布成功。</p></div>
+      <div className="pub-actions pub-history-tools">
+        <Input id="pub-history-search" className="pub-input-wrap pub-history-search" type="search" aria-label="搜索发布历史" placeholder="搜索标题、平台或账号" value={query} onChange={event => { setQuery(event.target.value); setPage(1) }}/>
+        <select className="pub-input" aria-label="筛选内容类型" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); setPage(1) }}>
+          <option value="all">全部类型</option><option value="article">文章</option><option value="image-note">图文</option><option value="video">视频</option>
+        </select>
+        <Button variant="outline" disabled={refreshing || deleting} onClick={() => void refresh()}>{refreshing ? '刷新中…' : '刷新记录'}</Button>
+      </div>
     </div>
-    <div className="pub-card">{visible.length === 0 ? <div className="pub-empty">暂无提交记录</div> : visible.map(item => <div className="pub-submission" key={item.id}>
-      <strong>{CONTENT_LABELS[item.contentType ?? 'video']} · {item.title}</strong>
-      <small className="pub-muted">{new Date(item.createdAt).toLocaleString()} · {item.mode === 'publish' ? '立即发布' : '转存草稿'}</small>
-      <div className="pub-targets">{item.targets.map(target => <button className="pub-target" key={`${item.id}:${target.accountId}`}
-        onClick={() => void api('account-open-dashboard', { id: target.accountId }).catch(cause => showError(errorMessage(cause)))}>
-        {PLATFORM_LABELS[target.platform]} · {target.accountName} · 打开后台
-      </button>)}</div>
-    </div>)}</div>
+    <div className="pub-card">{filtered.length === 0
+      ? <div className="pub-empty">{rows.length === 0 ? refreshing ? '正在加载记录…' : '暂无提交记录' : <>
+          <div>没有符合条件的记录</div>
+          <Button variant="outline" size="sm" onClick={() => { setQuery(''); setFilter('all'); setPage(1); document.getElementById('pub-history-search')?.focus() }}>清空筛选</Button>
+        </>}</div>
+      : visible.map(item => <div className="pub-submission" key={item.id}>
+          <div className="pub-submission-head"><div>
+            <strong>{CONTENT_LABELS[item.contentType ?? 'video']} · {item.title}</strong>
+            <small className="pub-muted">{new Date(item.createdAt).toLocaleString()}</small>
+          </div><Button variant="outline" size="sm" className="pub-danger-action"
+            disabled={deleting || item.state === 'queued' || item.state === 'running'}
+            title={item.state === 'queued' || item.state === 'running' ? '提交仍在队列中，不能删除' : undefined}
+            aria-label={`删除记录：${item.title}，${new Date(item.createdAt).toLocaleString()}`}
+            onClick={() => { setAcknowledgedUnknown(false); setDeleteTarget(item) }}>删除</Button></div>
+          <div className="pub-tags">
+            <Tag tone={item.mode === 'publish' ? 'info' : 'neutral'}>{item.mode === 'publish' ? '立即发布' : '转存草稿'}</Tag>
+            {item.state && <Tag tone={STATE_TONES[item.state]}>{STATE_LABELS[item.state]}</Tag>}
+          </div>
+          {item.message && <p className="pub-history-result pub-muted">{item.message}</p>}
+          <div className="pub-targets">{item.targets.map(target => <Button variant="outline" size="sm" key={`${item.id}:${target.accountId}`}
+            onClick={() => void api('account-open-dashboard', { id: target.accountId }).catch(cause => showError(errorMessage(cause)))}>
+            {PLATFORM_LABELS[target.platform]} · {target.accountName} · 打开后台
+          </Button>)}</div>
+        </div>)}</div>
+    {filtered.length > 0 && <nav className="pub-history-pagination" aria-label="发布历史分页">
+      <span className="pub-muted" aria-live="polite">共 {filtered.length} 条 · 第 {currentPage} / {pageCount} 页 · 每页 {PAGE_SIZE} 条</span>
+      {pageCount > 1 && <div className="pub-history-page-actions">
+        <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一页</Button>
+        <Button variant="outline" size="sm" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>下一页</Button>
+      </div>}
+    </nav>}
+    <PublisherModal open={deleteTarget !== undefined} title="删除发布历史" closeLabel="关闭删除历史确认"
+      description={deleteTarget ? `删除“${deleteTarget.title}”这条本机历史记录？` : ''}
+      className="pub-modal" onClose={closeDelete}
+      footer={<>
+        <Button variant="outline" data-pub-initial-focus disabled={deleting} onClick={closeDelete}>取消</Button>
+        <Button variant="outline" className="pub-danger-action" disabled={deleting || (deleteTarget?.state === 'unknown' && !acknowledgedUnknown)} onClick={() => void confirmDelete()}>{deleting ? '正在删除…' : '确认删除'}</Button>
+      </>}>
+      {deleteTarget?.state === 'unknown' && <>
+        <p className="pub-modal-copy">这条提交的结果尚未确认。{deleteTarget.message && <>原因：{deleteTarget.message}<br /></>}删除前请到对应平台后台核对。</p>
+        <label className="pub-history-acknowledge"><input type="checkbox" checked={acknowledgedUnknown} onChange={event => setAcknowledgedUnknown(event.target.checked)} />我已核对平台状态，了解删除不会撤回平台内容</label>
+      </>}
+      <p className="pub-modal-copy">删除仅移除本机记录{deleteTarget?.state === 'unknown' ? '；这条待确认记录的内容快照会暂时保留' : '，并尝试清理对应快照'}；不会撤回平台内容，也不会删除原草稿或成片。待执行或执行中的任务不能删除。</p>
+    </PublisherModal>
   </div>
 }

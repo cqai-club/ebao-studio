@@ -9774,6 +9774,7 @@ __metadata:
   dependencies:
     "@deepseek-ai/cordis": "npm:^4.0.2"
     "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.5-rc.1"
+    "@deepseek-ai/dsh-client-ui-primitives": "npm:0.1.5-rc.1"
     "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.5-rc.1"
     "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.5-rc.1"
     "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.5-rc.1"
@@ -9790,6 +9791,7 @@ __metadata:
   peerDependencies:
     "@deepseek-ai/cordis": ^4.0.2
     "@deepseek-ai/dsh-client-ui-layout": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-primitives": 0.1.5-rc.1
     "@deepseek-ai/dsh-client-ui-renderer": ^0.1.5-rc.1
     "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.5-rc.1
     "@deepseek-ai/dsh-client-ui-slots": ^0.1.5-rc.1

@@ -37,7 +37,7 @@ type WorkerMethod =
   | 'accounts.list' | 'accounts.create' | 'accounts.update' | 'accounts.delete'
   | 'accounts.openLogin' | 'accounts.checkLogin' | 'accounts.openDashboard'
   | 'accounts.importPreview' | 'accounts.importApply'
-  | 'submissions.create' | 'submissions.list' | 'system.capabilities'
+  | 'submissions.create' | 'submissions.list' | 'submissions.delete' | 'system.capabilities'
 
 interface PublisherRuntime {
   status(): PublisherCapability
@@ -102,9 +102,21 @@ function platform(value: unknown): Platform {
   return value as Platform
 }
 
-function idBody(value: unknown): { id: string } {
+function idBody(value: unknown, label = '账号 ID'): { id: string } {
   const body = exact(value, ['id'])
-  return { id: uuid(body.id, '账号 ID') }
+  return { id: uuid(body.id, label) }
+}
+
+function submissionDeleteBody(value: unknown): { id: string; acknowledgeUnknown?: boolean } {
+  const body = exact(value, ['id', 'acknowledgeUnknown'])
+  const hasAcknowledgement = Object.prototype.hasOwnProperty.call(body, 'acknowledgeUnknown')
+  if (hasAcknowledgement && typeof body.acknowledgeUnknown !== 'boolean') {
+    throw new Error('待确认结果标记无效')
+  }
+  return {
+    id: uuid(body.id, '提交 ID'),
+    ...(hasAcknowledgement ? { acknowledgeUnknown: body.acknowledgeUnknown as boolean } : {}),
+  }
 }
 
 function accountIds(value: unknown): string[] {
@@ -275,9 +287,17 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     return { code: 200, data: removeAsset(uuid(value.id, '草稿 ID'), uuid(value.assetId, '素材 ID')) }
   }
   if (action === 'accounts') {
-    const value = exact(body, ['displayName', 'platform'])
+    const value = exact(body, ['displayName', 'platform', 'appId', 'appSecret'])
+    const target = platform(value.platform)
+    if (target === 'wxmp') {
+      if (typeof value.appId !== 'string' || !/^wx[a-z0-9]{16}$/iu.test(value.appId.trim())) throw new Error('公众号 AppID 格式无效')
+      if (typeof value.appSecret !== 'string' || !/^[a-z0-9]{32}$/iu.test(value.appSecret.trim())) throw new Error('公众号 AppSecret 格式无效')
+    } else if (value.appId !== undefined || value.appSecret !== undefined) throw new Error('此平台不接受公众号密钥')
     return { code: 201, data: await runtime.request('accounts.create', {
-      displayName: text(value.displayName, '账号名称', 100), platform: platform(value.platform),
+      displayName: target === 'wxmp'
+        ? text(value.displayName, '账号名称', 100)
+        : optionalText(value.displayName, '账号名称', 100), platform: target,
+      ...(target === 'wxmp' ? { appId: (value.appId as string).trim(), appSecret: (value.appSecret as string).trim() } : {}),
     }) }
   }
   if (action === 'account-update') {
@@ -298,6 +318,7 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     exact(body, [])
     return { code: 200, data: await runtime.selectLocalVideo() }
   }
+  if (action === 'submission-delete') return { code: 200, data: await runtime.request('submissions.delete', submissionDeleteBody(body)) }
   if (action === 'submissions') {
     const input = submissionBody(body)
     const accounts = await runtime.request<PublisherAccount[]>('accounts.list')

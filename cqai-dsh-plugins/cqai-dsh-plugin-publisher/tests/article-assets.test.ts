@@ -22,7 +22,7 @@ describe('article managed image preflight', () => {
   it('accepts only assets owned by this draft and keeps the cover independent', () => {
     expect(articleAssetIds(content)).toEqual([imageId])
     expect(contentSubmissionError(content, [tt], [capability], 'draft')).toBeUndefined()
-    expect(contentSubmissionError({ ...content, tags: ['AI'] }, [tt], [capability], 'draft')).toContain('清空标签')
+    expect(contentSubmissionError({ ...content, tags: ['AI'] }, [tt], [capability], 'draft')).toBeUndefined()
     expect(contentSubmissionError({ ...content, coverAssetId: undefined }, [tt], [capability], 'draft')).toContain('封面')
     expect(contentSubmissionError(content, [tt], [capability], 'publish')).toContain('暂不支持')
   })
