@@ -4,6 +4,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { API, type PublisherAsset, type PublisherContent, type PublisherSessionContent } from '../protocol.ts'
+import { ImageNoteCarousel, imageNoteCarouselCss } from './image-note-carousel.tsx'
 
 export const PREVIEW_KIND = 'cqai-publisher-preview'
 export const PREVIEW_ID = 'cqai-dsh-plugin-publisher/preview'
@@ -127,11 +128,8 @@ const styles = `
 .pub-conv-page pre { overflow-x: auto; padding: 10px; background: var(--dsw-alias-bg-module-platform, #f5f6f7); }
 .pub-conv-page blockquote { border-left: 3px solid var(--dsw-alias-border-l2, #e4e6e9); margin-left: 0; padding-left: 10px; }
 .pub-conv-page figure { margin: 16px 0; }
-.pub-conv-page figure img, .pub-conv-gallery img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+.pub-conv-page figure img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
 .pub-conv-page figcaption { color: var(--dsw-alias-label-tertiary, #777d85); font-size: 12px; }
-.pub-conv-gallery { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 18px; }
-.pub-conv-page[data-device=pc] .pub-conv-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.pub-conv-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; }
 .pub-conv-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; color: var(--dsw-alias-state-business-primary, #4176e6); }
 .pub-conv-assets { margin-top: 18px; }
 .pub-conv-assets h2 { font-size: 13px; }
@@ -142,6 +140,7 @@ const styles = `
 .pub-conv-error { color: var(--dsw-alias-state-error-primary, #dc2626); }
 .pub-conv-footer { display: flex; justify-content: flex-end; margin-top: 14px; }
 .pub-conv-footer button { background: var(--dsw-alias-state-business-primary, #4176e6); color: #fff; border-color: transparent; padding: 7px 18px; }
+${imageNoteCarouselCss}
 `
 
 export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsRuntime<'sidebar.right.pane.tab'> & {
@@ -191,7 +190,7 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
     {content && <>
       <div className="pub-conv-device-scroll" aria-label={device === 'mobile' ? '移动端内容预览' : 'PC 内容预览'}>
         <article className="pub-conv-page" data-device={device}>
-          {content.contentType === 'image-note' && content.assets.length > 0 && <div className="pub-conv-gallery" aria-label="图文图片">{content.assets.map(asset => <AssetImage key={asset.id} content={content} asset={asset}/>)}</div>}
+          {content.contentType === 'image-note' && <ImageNoteCarousel contentId={content.id} assets={content.assets} renderImage={asset => <AssetImage content={content} asset={asset}/>}/>}
           <h1>{content.title || '未命名草稿'}</h1>
           {content.contentType === 'article' && content.coverAssetId && !content.body.includes(`ebao-asset://${content.coverAssetId}`) && (() => {
             const cover = content.assets.find(asset => asset.id === content.coverAssetId)

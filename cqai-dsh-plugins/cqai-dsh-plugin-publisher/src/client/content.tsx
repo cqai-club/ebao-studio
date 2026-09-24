@@ -13,6 +13,7 @@ import {
 import { contentSubmissionError } from '../submission-validation.ts'
 import { usePublisherTips } from './tips.tsx'
 import { articleUploadFile } from './article-image.ts'
+import { ImageNoteCarousel } from './image-note-carousel.tsx'
 
 function AssetPreviewImage({ src, alt, className = '', thumbnail = false }: {
   src: string
@@ -84,8 +85,8 @@ function ContentPreview({ content }: { content: PublisherContent }) {
   const remainingAssets = content.assets.filter(asset => asset.id !== cover?.id && !embeddedAssets.has(asset.id))
   const imageNote = content.contentType === 'image-note'
   return <div className="pub-content-preview-shell" aria-label={`${imageNote ? '图文' : '文章'}内容预览`}>
-    {imageNote && content.assets.length > 0 && <div className="pub-content-preview-note-images">{content.assets.map(asset =>
-      <AssetPreviewImage className="pub-content-preview-image" src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>}
+    {imageNote && <ImageNoteCarousel contentId={content.id} assets={content.assets} renderImage={asset =>
+      <AssetPreviewImage src={assetUrl(asset.id)} alt={asset.name}/>}/>}
     <h2 className="pub-content-preview-title">{content.title || '未填写标题'}</h2>
     {!imageNote && cover && !embeddedAssets.has(cover.id) && <AssetPreviewImage className="pub-content-preview-cover" src={assetUrl(cover.id)} alt={cover.name}/>}
     {imageNote ? <p className="pub-content-preview-text">{content.body || '暂无正文'}</p>

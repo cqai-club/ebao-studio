@@ -4,6 +4,7 @@ import {
   API, type CreativeStatement, type Platform, PLATFORM_LABELS,
   type PublisherAccount, type PublisherCapability, type PublisherContent, type PublisherContentType,
 } from '../protocol.ts'
+import { imageNoteCarouselCss } from './image-note-carousel.tsx'
 
 export const STATEMENT_LABELS: Record<CreativeStatement, string> = {
   none: '不声明',
@@ -321,6 +322,7 @@ export const css = `
 .pub-content-preview-text { white-space: pre-wrap; line-height: 1.7; }
 .pub-content-view-tabs .pub-actions { margin-top: 0; }
 .pub-content-preview-shell .pub-preview { min-height: 0; padding: 0; border: 0; border-radius: 0; }
+${imageNoteCarouselCss}
 .pub-preview { min-height: 340px; padding: 14px; border: 1px solid var(--pub-border); border-radius: 9px; background: var(--pub-surface); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pub-preview h1, .pub-preview h2, .pub-preview h3 { margin: 14px 0 8px; }
 .pub-preview p { margin: 0 0 12px; }
