@@ -7,7 +7,7 @@ import {
   addAsset, createContent, deleteContent, readContent, removeAsset, saveContent,
   type SaveContentInput,
 } from './contents.ts'
-import { PLATFORMS, type Platform, type PublisherContent, type PublisherPlatformVariant, type PublisherSessionContent } from './protocol.ts'
+import { ARTICLE_THEMES, PLATFORMS, type Platform, type PublisherContent, type PublisherPlatformVariant, type PublisherSessionContent } from './protocol.ts'
 
 const CONTENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 // Keep ordinary sentence punctuation while excluding markup, hashtags, emoji and controls.
@@ -22,6 +22,7 @@ export interface SessionDraftPatch {
   summary?: string
   tags?: string[]
   creativeStatement?: PublisherContent['creativeStatement']
+  articleTheme?: PublisherContent['articleTheme']
   coverAssetId?: string
   clearCover?: boolean
   assetOrder?: string[]
@@ -102,6 +103,8 @@ export function saveSessionDraft(sessionId: string, patch: SessionDraftPatch, en
     throw new Error('会话主草稿内容类型不可更改')
   }
   if (current === undefined && patch.contentType === undefined) throw new Error('首次保存需选择文章或图文类型')
+  if (patch.articleTheme !== undefined && ((current?.contentType ?? patch.contentType) !== 'article'
+    || !(ARTICLE_THEMES as readonly string[]).includes(patch.articleTheme))) throw new Error('文章排版主题无效')
   if (patch.clearCover === true && patch.coverAssetId !== undefined) throw new Error('不能同时设置和清空封面')
   if (patch.platformVariant !== undefined && patch.resetPlatformVariant !== undefined
     && patch.platformVariant.platform === patch.resetPlatformVariant) throw new Error('不能同时修改和重置同一平台版本')
@@ -133,6 +136,7 @@ export function saveSessionDraft(sessionId: string, patch: SessionDraftPatch, en
     summary: patch.summary ?? source.summary,
     tags: patch.tags ?? source.tags,
     creativeStatement: patch.creativeStatement ?? source.creativeStatement,
+    articleTheme: patch.articleTheme === undefined ? source.articleTheme : patch.articleTheme,
     coverAssetId: patch.clearCover === true ? undefined : patch.coverAssetId ?? source.coverAssetId,
     assetOrder: patch.assetOrder ?? source.assets.map(asset => asset.id),
     platformFields: source.platformFields,

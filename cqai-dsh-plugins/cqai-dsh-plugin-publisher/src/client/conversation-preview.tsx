@@ -3,8 +3,10 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import { API, type PublisherAsset, type PublisherContent, type PublisherSessionContent } from '../protocol.ts'
+import { API, resolveArticleTheme, type PublisherAsset, type PublisherContent, type PublisherSessionContent } from '../protocol.ts'
 import { ImageNoteCarousel, imageNoteCarouselCss } from './image-note-carousel.tsx'
+import { ArticleMarkdownPreview } from './wechat-preview-html.tsx'
+import { articlePreviewCss } from './article-preview-style.ts'
 
 export const PREVIEW_KIND = 'cqai-publisher-preview'
 export const PREVIEW_ID = 'cqai-dsh-plugin-publisher/preview'
@@ -115,56 +117,6 @@ function AssetImage({ content, asset, className = '' }: {
     : <img className={className} src={contentAssetUrl(content.id, asset.id)} alt={asset.name} loading="lazy" onError={() => setFailed(true)}/>
 }
 
-/** A small, safe Markdown preview. Only draft-owned image references become images. */
-function ArticleBody({ content }: { content: PublisherContent }): ReactNode {
-  const inline = (line: string): ReactNode[] => {
-    const nodes: ReactNode[] = []
-    const tokens = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/gu
-    let offset = 0
-    for (const match of line.matchAll(tokens)) {
-      const index = match.index ?? 0
-      if (index > offset) nodes.push(line.slice(offset, index))
-      const token = match[0]
-      if (token.startsWith('`')) nodes.push(<code key={index}>{token.slice(1, -1)}</code>)
-      else if (token.startsWith('**')) nodes.push(<strong key={index}>{token.slice(2, -2)}</strong>)
-      else nodes.push(<em key={index}>{token.slice(1, -1)}</em>)
-      offset = index + token.length
-    }
-    if (offset < line.length) nodes.push(line.slice(offset))
-    return nodes
-  }
-  const blocks: ReactNode[] = []
-  let fenced: string[] | undefined
-  for (const [index, line] of content.body.split(/\r?\n/u).entries()) {
-    if (line.startsWith('```')) {
-      if (fenced) { blocks.push(<pre key={index}><code>{fenced.join('\n')}</code></pre>); fenced = undefined }
-      else fenced = []
-      continue
-    }
-    if (fenced) { fenced.push(line); continue }
-    const image = /^!\[([^\]]*)\]\(ebao-asset:\/\/([0-9a-f-]{36})\)$/iu.exec(line.trim())
-    if (image) {
-      const asset = content.assets.find(item => item.id === image[2])
-      blocks.push(asset
-        ? <figure key={index}><AssetImage content={content} asset={asset}/>{image[1] && <figcaption>{image[1]}</figcaption>}</figure>
-        : <p key={index} className="pub-conv-missing-image">正文引用的图片已不存在</p>)
-      continue
-    }
-    const heading = /^(#{1,3})\s+(.+)$/u.exec(line)
-    if (heading) {
-      blocks.push(heading[1].length === 1 ? <h2 key={index}>{inline(heading[2])}</h2> : <h3 key={index}>{inline(heading[2])}</h3>)
-      continue
-    }
-    if (/^[-*]\s+/u.test(line)) { blocks.push(<p key={index}>• {inline(line.slice(2))}</p>); continue }
-    if (/^\d+\.\s+/u.test(line)) { blocks.push(<p key={index}>{inline(line)}</p>); continue }
-    if (/^>\s?/u.test(line)) { blocks.push(<blockquote key={index}>{inline(line.replace(/^>\s?/u, ''))}</blockquote>); continue }
-    if (/^---+\s*$/u.test(line)) { blocks.push(<hr key={index}/>); continue }
-    blocks.push(<p key={index}>{line ? inline(line) : '\u00a0'}</p>)
-  }
-  if (fenced) blocks.push(<pre key="last"><code>{fenced.join('\n')}</code></pre>)
-  return <div className="pub-conv-body">{blocks}</div>
-}
-
 const styles = `
 .pub-conv-preview { height: 100%; min-height: 0; overflow: auto; padding: 14px; box-sizing: border-box; color: var(--dsw-alias-label-primary, #111318); background: var(--dsw-alias-bg-base, #fff); font: 14px/1.6 var(--dsw-font-family, inherit); }
 .pub-conv-preview * { box-sizing: border-box; }
@@ -179,6 +131,7 @@ const styles = `
 .pub-conv-page { width: min(100%, 390px); min-height: 480px; margin: 0 auto; padding: 18px; border: 1px solid var(--dsw-alias-border-l2, #e4e6e9); border-radius: 18px; background: var(--dsw-alias-bg-layer-1, #fff); box-shadow: 0 4px 18px #0000000a; }
 .pub-conv-page[data-device=pc] { width: 720px; min-width: 720px; border-radius: 8px; }
 .pub-conv-page h1 { margin: 0 0 14px; font-size: 21px; line-height: 1.4; overflow-wrap: anywhere; }
+.pub-conv-page.ebao-article-reader[data-theme=editorial] > h1 { color: #214d42; padding-bottom: 16px; border-bottom: 1px solid #c9ddd2; }
 .pub-conv-page h2 { font-size: 18px; }
 .pub-conv-page h3 { font-size: 16px; }
 .pub-conv-page p, .pub-conv-page blockquote { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -198,6 +151,7 @@ const styles = `
 .pub-conv-footer { display: flex; justify-content: flex-end; margin-top: 14px; }
 .pub-conv-footer button { background: var(--dsw-alias-state-business-primary, #4176e6); color: #fff; border-color: transparent; padding: 7px 18px; }
 ${imageNoteCarouselCss}
+${articlePreviewCss}
 `
 
 export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsRuntime<'sidebar.right.pane.tab'> & {
@@ -248,14 +202,16 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
     {currentSnapshot && !content && <p className="pub-conv-note">在对话中和 Agent 讨论内容。形成标题、正文或图片后，草稿会显示在这里。</p>}
     {content && <>
       <div className="pub-conv-device-scroll" aria-label={device === 'mobile' ? '移动端内容预览' : 'PC 内容预览'}>
-        <article className="pub-conv-page" data-device={device}>
+        <article className={`pub-conv-page${content.contentType === 'article' ? ' ebao-article-reader' : ''}`} data-device={device} data-theme={content.contentType === 'article' ? resolveArticleTheme(content) : undefined}>
           {content.contentType === 'image-note' && <ImageNoteCarousel contentId={content.id} assets={content.assets} renderImage={asset => <AssetImage content={content} asset={asset}/>}/>}
           <h1>{content.title || '未命名草稿'}</h1>
           {content.contentType === 'article' && content.coverAssetId && !content.body.includes(`ebao-asset://${content.coverAssetId}`) && (() => {
             const cover = content.assets.find(asset => asset.id === content.coverAssetId)
             return cover ? <figure><AssetImage content={content} asset={cover}/><figcaption>封面</figcaption></figure> : null
           })()}
-          {content.contentType === 'article' ? <ArticleBody content={content}/> : <p>{content.body || '正文待完善'}</p>}
+          {content.contentType === 'article'
+            ? <ArticleMarkdownPreview body={content.body || '正文待完善'} content={content} assetUrl={id => contentAssetUrl(content.id, id)}/>
+            : <p>{content.body || '正文待完善'}</p>}
           {content.tags.length > 0 && <div className="pub-conv-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</div>}
         </article>
       </div>

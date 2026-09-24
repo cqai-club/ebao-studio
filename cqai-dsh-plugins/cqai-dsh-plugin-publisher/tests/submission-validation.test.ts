@@ -28,6 +28,20 @@ describe('article and image-note preflight', () => {
     expect(contentSubmissionError({ ...draft, assets: [{ ...draft.assets[0]!, mime: 'image/webp' }] }, targets, capabilities, 'draft')).toContain('重新上传')
   })
 
+  it('requires a theme-aware Worker for editorial WeChat output but keeps classic drafts compatible', () => {
+    const draft = content('article')
+    draft.assets = [{ id: '33333333-3333-4333-8333-333333333333', name: '封面.png', mime: 'image/png', bytes: 12 }]
+    draft.coverAssetId = draft.assets[0]!.id
+    const capabilities: PublisherPlatformCapability[] = [{
+      platform: 'wxmp', contentTypes: ['article'], modes: { article: ['draft'] }, requiredFields: {},
+    }]
+    expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()
+    draft.articleTheme = 'editorial'
+    expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toContain('更新 Worker')
+    capabilities[0]!.articleThemeVersion = 1
+    expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()
+  })
+
   it('rejects Toutiao article summary before acceptance without blocking other article platforms', () => {
     const draft = { ...content('article'), summary: '摘要内容' }
     const capabilities: PublisherPlatformCapability[] = [{

@@ -118,12 +118,14 @@ function renderTokens(tokens: MarkdownToken[], content: PublisherContent, assetU
   return root.children
 }
 
-export function WechatMarkdownPreview({ body, content, assetUrl }: {
+export function ArticleMarkdownPreview({ body, content, assetUrl }: {
   body: string
   content: PublisherContent
   assetUrl: (id: string) => string
 }) {
-  return <div className="pub-preview pub-wechat-markdown" aria-label="公众号 Markdown 正文预览">
+  return <div className="pub-preview pub-wechat-markdown" aria-label="文章正文预览">
     {renderTokens(markdown.parse(body, {}), content, assetUrl)}
   </div>
 }
+
+export const WechatMarkdownPreview = ArticleMarkdownPreview

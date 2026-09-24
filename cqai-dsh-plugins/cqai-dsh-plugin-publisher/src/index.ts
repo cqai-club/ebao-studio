@@ -3,6 +3,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   API,
+  ARTICLE_THEMES,
   CREATIVE_STATEMENTS,
   DESCRIPTION_MAX,
   MAX_TAGS,
@@ -219,12 +220,13 @@ async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<u
 function contentSaveBody(value: unknown): { id: string; input: SaveContentInput } {
   const body = exact(value, [
     'id', 'revision', 'title', 'body', 'summary', 'tags', 'creativeStatement',
-    'coverAssetId', 'assetOrder', 'platformFields', 'platformVariants', 'description', 'shortTitle', 'videoSource',
+    'articleTheme', 'coverAssetId', 'assetOrder', 'platformFields', 'platformVariants', 'description', 'shortTitle', 'videoSource',
   ])
   if (!Number.isSafeInteger(body.revision) || (body.revision as number) < 1) throw new Error('草稿修订号无效')
   if (typeof body.title !== 'string' || typeof body.body !== 'string' || typeof body.summary !== 'string') throw new Error('草稿字段无效')
   if (!Array.isArray(body.tags) || body.tags.some(item => typeof item !== 'string')) throw new Error('标签格式无效')
   if (typeof body.creativeStatement !== 'string' || !(CREATIVE_STATEMENTS as readonly string[]).includes(body.creativeStatement)) throw new Error('内容声明无效')
+  if (body.articleTheme !== undefined && !(ARTICLE_THEMES as readonly string[]).includes(body.articleTheme as string)) throw new Error('文章排版主题无效')
   if (body.coverAssetId !== undefined) uuid(body.coverAssetId, '封面 ID')
   if (body.assetOrder !== undefined && (!Array.isArray(body.assetOrder) || body.assetOrder.some(item => typeof item !== 'string'))) throw new Error('素材顺序无效')
   return {
@@ -233,6 +235,7 @@ function contentSaveBody(value: unknown): { id: string; input: SaveContentInput 
       revision: body.revision as number, title: body.title, body: body.body,
       summary: body.summary, tags: body.tags as string[],
       creativeStatement: body.creativeStatement as PublisherContent['creativeStatement'],
+      ...(body.articleTheme === undefined ? {} : { articleTheme: body.articleTheme as PublisherContent['articleTheme'] }),
       ...(body.coverAssetId ? { coverAssetId: body.coverAssetId as string } : {}),
       ...(body.assetOrder ? { assetOrder: body.assetOrder as string[] } : {}),
       ...(body.platformFields ? { platformFields: body.platformFields as PublisherContent['platformFields'] } : {}),

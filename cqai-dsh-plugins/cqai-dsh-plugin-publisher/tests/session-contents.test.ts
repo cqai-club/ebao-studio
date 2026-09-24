@@ -20,6 +20,24 @@ const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3])
 const webp = Buffer.from('RIFF1234WEBPxxxx', 'ascii')
 
 describe('Agent conversation drafts', () => {
+  it('sets an article theme through revision-checked session saves without changing image notes', () => {
+    const env = fixture()
+    const first = saveSessionDraft('theme-article', { contentType: 'article', title: '主题文章' }, env)
+    expect(first.content?.articleTheme).toBe('editorial')
+    const classic = saveSessionDraft('theme-article', { expectedRevision: first.revision!, articleTheme: 'classic' }, env)
+    expect(classic.content?.articleTheme).toBe('classic')
+    expect(() => saveSessionDraft('theme-article', {
+      expectedRevision: first.revision!, articleTheme: 'editorial',
+    }, env)).toThrow('重新读取')
+    const revised = saveSessionDraft('theme-article', { expectedRevision: classic.revision!, body: '更新正文' }, env)
+    expect(revised.content?.articleTheme).toBe('classic')
+    expect(readSessionContent('theme-article', env).content?.articleTheme).toBe('classic')
+    expect(() => saveSessionDraft('theme-note', {
+      contentType: 'image-note', title: '图文', articleTheme: 'editorial',
+    }, env)).toThrow('文章排版主题无效')
+    expect(readSessionContent('theme-note', env).contentId).toBeNull()
+  })
+
   it('allows ordinary title punctuation but rejects markup, emoji and line breaks', () => {
     const env = fixture()
     for (const [index, title] of ['标题#话题', '标题✨', '标题\n说明', '标题_说明', '标题<script>'].entries()) {
@@ -243,9 +261,10 @@ describe('Agent conversation drafts', () => {
       expect([...definitions.keys()]).toEqual(['publisher_get_draft', 'publisher_save_draft', 'publisher_add_image', 'publisher_remove_image'])
       expect(prompt).toBe(AGENT_PUBLISHER_GUIDANCE)
       const first = await definitions.get('publisher_save_draft')!.execute({
-        content_type: 'article', title: '对话标题', body: '对话正文',
+        content_type: 'article', title: '对话标题', body: '对话正文', article_theme: 'classic',
       }, exec) as { contentId: string; revision: number }
       expect(first.revision).toBe(2)
+      expect(readContent(first.contentId, env).articleTheme).toBe('classic')
       await expect(definitions.get('publisher_save_draft')!.execute({
         expected_revision: first.revision, title: '对话标题#话题',
       }, exec)).rejects.toThrow('重新拟题')

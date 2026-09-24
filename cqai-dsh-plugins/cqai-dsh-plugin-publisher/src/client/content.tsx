@@ -4,7 +4,7 @@ import {
   API, CREATIVE_STATEMENTS, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX,
   type CreateSubmissionResult, type Platform, type PublisherAccount,
   type PublisherCapability, type PublisherContent, type PublisherPlatformCapability,
-  type PublisherPlatformVariant, projectContentForPlatform,
+  type PublisherPlatformVariant, projectContentForPlatform, resolveArticleTheme,
 } from '../protocol.ts'
 import { CONTENT_ACCOUNT_PLATFORMS, contentModeAvailable, selectedContentAccounts } from '../content-targets.ts'
 import {
@@ -15,7 +15,7 @@ import { contentSubmissionError } from '../submission-validation.ts'
 import { usePublisherTips } from './tips.tsx'
 import { articleUploadFile } from './article-image.ts'
 import { ImageNoteCarousel } from './image-note-carousel.tsx'
-import { WechatMarkdownPreview, wechatBodyImageIds } from './wechat-preview-html.tsx'
+import { ArticleMarkdownPreview, wechatBodyImageIds } from './wechat-preview-html.tsx'
 
 function AssetPreviewImage({ src, alt, className = '', thumbnail = false }: {
   src: string
@@ -29,55 +29,6 @@ function AssetPreviewImage({ src, alt, className = '', thumbnail = false }: {
     ? <div className={`pub-error ${className}`} role="img" aria-label={`${alt} 加载失败`}
       style={{ minHeight: thumbnail ? 95 : 120, width: '100%', display: 'grid', placeItems: 'center' }}>图片加载失败：{alt}</div>
     : <img className={className} src={src} alt={alt} onError={() => setFailed(true)}/>
-}
-
-function MarkdownPreview({ value, content }: { value: string; content: PublisherContent }) {
-  const inline = (line: string) => {
-    const nodes: React.ReactNode[] = []
-    const tokens = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/gu
-    let offset = 0
-    for (const match of line.matchAll(tokens)) {
-      const index = match.index ?? 0
-      if (index > offset) nodes.push(line.slice(offset, index))
-      const token = match[0]
-      if (token.startsWith('`')) nodes.push(<code key={index}>{token.slice(1, -1)}</code>)
-      else if (token.startsWith('**')) nodes.push(<strong key={index}>{token.slice(2, -2)}</strong>)
-      else nodes.push(<em key={index}>{token.slice(1, -1)}</em>)
-      offset = index + token.length
-    }
-    if (offset < line.length) nodes.push(line.slice(offset))
-    return nodes
-  }
-  const lines = value.split(/\r?\n/u)
-  const blocks: React.ReactNode[] = []
-  let code: string[] | undefined
-  for (const [index, line] of lines.entries()) {
-    if (line.startsWith('```')) {
-      if (code) { blocks.push(<pre key={index}><code>{code.join('\n')}</code></pre>); code = undefined }
-      else code = []
-      continue
-    }
-    if (code) { code.push(line); continue }
-    const image = /^!\[([^\]]*)\]\(ebao-asset:\/\/([0-9a-f-]{36})\)$/iu.exec(line.trim())
-    if (image && content.assets.some(asset => asset.id === image[2])) {
-      blocks.push(<figure key={index}><AssetPreviewImage src={`${API}/content-asset/${content.id}/${image[2]}`} alt={image[1]}/><figcaption>{image[1]}</figcaption></figure>)
-      continue
-    }
-    const heading = /^(#{1,3})\s+(.+)$/u.exec(line)
-    if (heading) {
-      const text = inline(heading[2])
-      blocks.push(heading[1].length === 1 ? <h1 key={index}>{text}</h1> : heading[1].length === 2 ? <h2 key={index}>{text}</h2> : <h3 key={index}>{text}</h3>)
-      continue
-    }
-    if (/^[-*]\s+/u.test(line)) { blocks.push(<p key={index}>• {inline(line.slice(2))}</p>); continue }
-    const ordered = /^\d+\.\s+(.+)$/u.exec(line)
-    if (ordered) { blocks.push(<p key={index}>{inline(line)}</p>); continue }
-    if (/^>\s?/u.test(line)) { blocks.push(<blockquote key={index}>{inline(line.replace(/^>\s?/u, ''))}</blockquote>); continue }
-    if (/^---+\s*$/u.test(line)) { blocks.push(<hr key={index}/>); continue }
-    blocks.push(<p key={index}>{line ? inline(line) : '\u00a0'}</p>)
-  }
-  if (code) blocks.push(<pre key="last"><code>{code.join('\n')}</code></pre>)
-  return <div className="pub-preview" aria-label="Markdown 预览">{blocks}</div>
 }
 
 const ARTICLE_DISCLOSURES: Partial<Record<PublisherContent['creativeStatement'], string>> = {
@@ -95,13 +46,14 @@ function ContentPreview({ content, platform }: { content: PublisherContent; plat
   const cover = content.assets.find(asset => asset.id === content.coverAssetId)
   const remainingAssets = content.assets.filter(asset => asset.id !== cover?.id && !embeddedAssets.has(asset.id))
   const imageNote = content.contentType === 'image-note'
+  const articleTheme = resolveArticleTheme(content)
   if (platform === 'wxmp' && !imageNote) {
     return <div className="pub-content-preview-shell pub-content-preview-wechat" aria-label="微信公众号文章内容预览">
       <div className="pub-wechat-preview-bar"><span className="pub-wechat-preview-mark" aria-hidden="true"/>微信公众号 · 移动端排版预览</div>
       <article className="pub-wechat-preview-article">
         <h2 className="pub-wechat-preview-title">{content.title || '未填写标题'}</h2>
-        <div className="pub-wechat-preview-body" aria-label="公众号正文预览">
-          <WechatMarkdownPreview body={renderedBody || '暂无正文'} content={content} assetUrl={assetUrl}/>
+        <div className="pub-wechat-preview-body ebao-article-reader" data-theme={articleTheme} aria-label="公众号正文预览">
+          <ArticleMarkdownPreview body={renderedBody || '暂无正文'} content={content} assetUrl={assetUrl}/>
         </div>
       </article>
       <section className="pub-wechat-preview-metadata" aria-label="公众号草稿独立字段">
@@ -120,15 +72,19 @@ function ContentPreview({ content, platform }: { content: PublisherContent; plat
       </section>
     </div>
   }
-  return <div className={`pub-content-preview-shell${platform === 'wxmp' ? ' pub-content-preview-wechat' : ''}`} aria-label={`${imageNote ? '图文' : '文章'}内容预览`}>
+  return <div className={`pub-content-preview-shell${imageNote ? '' : ' ebao-article-reader'}`} data-theme={imageNote ? undefined : platform ? 'native' : articleTheme} aria-label={`${imageNote ? '图文' : '文章'}内容预览`}>
     {imageNote && <ImageNoteCarousel contentId={content.id} assets={content.assets} renderImage={asset =>
       <AssetPreviewImage src={assetUrl(asset.id)} alt={asset.name}/>}/>}
+    {!imageNote && <div className="pub-content-preview-kicker">{platform ? `${PLATFORM_LABELS[platform]} · 内容结构预览` : '主稿 · 阅读排版预览'}</div>}
     <h2 className="pub-content-preview-title">{content.title || '未填写标题'}</h2>
     {!imageNote && cover && !embeddedAssets.has(cover.id) && <AssetPreviewImage className="pub-content-preview-cover" src={assetUrl(cover.id)} alt={cover.name}/>}
     {imageNote ? <p className="pub-content-preview-text">{content.body || '暂无正文'}</p>
-      : <MarkdownPreview value={renderedBody || '暂无正文'} content={content}/>}
-    {!imageNote && remainingAssets.length > 0 && <div className="pub-content-preview-note-images" aria-label="尚未插入正文的图片素材">{remainingAssets.map(asset =>
-      <AssetPreviewImage className="pub-content-preview-image" src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>}
+      : <ArticleMarkdownPreview body={renderedBody || '暂无正文'} content={content} assetUrl={assetUrl}/>}
+    {!imageNote && remainingAssets.length > 0 && <details className="pub-content-preview-unused">
+      <summary>{remainingAssets.length} 张素材未插入正文，不会显示在文章正文里</summary>
+      <div className="pub-content-preview-note-images" aria-label="尚未插入正文的图片素材">{remainingAssets.map(asset =>
+        <AssetPreviewImage className="pub-content-preview-image" src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>
+    </details>}
     {content.tags.length > 0 && (!platform || !['wxmp', 'tt', 'bjh'].includes(platform)) && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
   </div>
 }
@@ -337,6 +293,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
         const saved = await api<PublisherContent>('content-save', {
           id: current.id, revision: current.revision, title: current.title, body: current.body,
           summary: current.summary, tags: current.tags, creativeStatement: current.creativeStatement,
+          articleTheme: current.articleTheme,
           coverAssetId: current.coverAssetId, assetOrder: current.assets.map(asset => asset.id),
           platformFields: current.platformFields, platformVariants: current.platformVariants,
         })
@@ -509,6 +466,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
     setServerDraft(await api<PublisherContent>('content-save', {
       id: current.id, revision: current.revision, title: current.title, body: current.body,
       summary: current.summary, tags: current.tags, creativeStatement: current.creativeStatement,
+      articleTheme: current.articleTheme,
       coverAssetId: current.coverAssetId, assetOrder: order, platformFields: current.platformFields,
       platformVariants: current.platformVariants,
     }))
@@ -615,6 +573,14 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
           </div>
           <p className="pub-muted">{contentView === 'master' ? 'Agent 对话和这里编辑的是同一份主稿。平台版本默认继承主稿；对某个平台单独修改后，该字段将保留自己的内容。'
             : `${PLATFORM_LABELS[contentView]}版本：未单独修改的字段会跟随主稿更新。请在提交前切到每个目标平台检查。`}</p>
+          {contentType === 'article' && (contentView === 'master' || contentView === 'wxmp') && <div className="pub-article-theme-control">
+            <label htmlFor={`pub-article-theme-${draft.id}`}>公众号排版主题</label>
+            <select className="pub-input" id={`pub-article-theme-${draft.id}`} value={resolveArticleTheme(draft)} onChange={event => update({ articleTheme: event.target.value as PublisherContent['articleTheme'] })}>
+              <option value="editorial">清新杂志</option>
+              <option value="classic">基础排版</option>
+            </select>
+            <p className="pub-muted">主稿预览可比较排版；主题实际用于公众号正文。其他平台会按各自编辑器处理。</p>
+          </div>}
           {contentView !== 'master' && selectedVariant && <Button variant="outline" size="sm" onClick={resetPlatformVariant}>此平台全部恢复主稿</Button>}
         </div>
         <div className="pub-card pub-content-view-tabs"><div className="pub-actions">
@@ -623,8 +589,9 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
         </div></div>
         {preview ? <div className="pub-card"><ContentPreview content={visibleDraft!} platform={contentView === 'master' ? undefined : contentView}/>
           {contentType === 'article' && visibleDraft!.summary && contentView !== 'blbl' && contentView !== 'wxmp' && <p className="pub-preview-summary"><strong>独立摘要字段：</strong>{visibleDraft!.summary}</p>}
-          <p className="pub-muted">{contentView === 'wxmp' ? '公众号正文按提交时的 Markdown 规则预览；封面和摘要是独立字段。平台后台的最终呈现请以实际草稿为准。'
-            : '这里展示当前版本的内容与图片顺序；平台后台的最终呈现请以实际草稿为准。'}</p></div> : <>
+          <p className="pub-muted">{contentView === 'wxmp' ? '公众号正文按所选主题预览；封面和摘要是独立字段。平台后台的最终呈现请以实际草稿为准。'
+            : contentView === 'master' ? '主稿展示阅读排版；公众号会采用所选主题，其他平台的实际样式仍需在后台草稿核对。'
+              : '这里展示当前平台版本的内容结构和图片顺序；实际样式由平台编辑器决定，请在后台草稿核对。'}</p></div> : <>
         <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>
           <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={visibleDraft!.title.length > titleLimit ? 'pub-warn' : 'pub-muted'}>（{visibleDraft!.title.length}/{titleLimit} 字）</span>{hasOverride('title') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={visibleDraft!.title} onChange={event => updateTextField('title', event.target.value)}/>{hasOverride('title') && <Button variant="outline" size="sm" onClick={() => resetVariantField('title')}>标题恢复主稿</Button>}</div>
           {contentType === 'article' && <div className="pub-actions" style={{ marginBottom: 12 }}>

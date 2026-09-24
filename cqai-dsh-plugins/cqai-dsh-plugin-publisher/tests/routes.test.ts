@@ -325,14 +325,24 @@ describe('the Host publisher route', () => {
         method: 'POST', headers: { 'x-ejianbao': '1', 'content-type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const created = await (await send('contents', { contentType: 'article' })).json() as { id: string; revision: number }
+      const created = await (await send('contents', { contentType: 'article' })).json() as { id: string; revision: number; articleTheme: string }
+      expect(created.articleTheme).toBe('editorial')
       const saved = await (await send('content-save', {
         id: created.id, revision: created.revision, title: '文章', body: '# 正文',
-        summary: '', tags: ['AI'], creativeStatement: 'none',
+        summary: '', tags: ['AI'], creativeStatement: 'none', articleTheme: 'classic',
         platformFields: { juejin: { category: '前端' } },
         platformVariants: { juejin: { title: '掘金专用标题', body: '掘金专用正文' } },
-      })).json() as { revision: number; platformVariants: { juejin: { title: string; body: string } } }
+      })).json() as { revision: number; articleTheme: string; platformVariants: { juejin: { title: string; body: string } } }
       expect(saved.revision).toBe(2)
+      expect(saved.articleTheme).toBe('classic')
+      expect((await send('content-save', {
+        id: created.id, revision: saved.revision, title: '文章', body: '# 正文',
+        summary: '', tags: ['AI'], creativeStatement: 'none', articleTheme: 'unknown',
+      })).status).toBe(400)
+      expect((await send('content-save', {
+        id: created.id, revision: saved.revision, title: '文章', body: '# 正文',
+        summary: '', tags: ['AI'], creativeStatement: 'none', articleTheme: 'classic', unlisted: true,
+      })).status).toBe(400)
       expect(saved.platformVariants.juejin).toEqual({ title: '掘金专用标题', body: '掘金专用正文' })
       expect((await (await fetch(`${base}/content/${created.id}`)).json() as { platformVariants: unknown }).platformVariants)
         .toEqual(saved.platformVariants)

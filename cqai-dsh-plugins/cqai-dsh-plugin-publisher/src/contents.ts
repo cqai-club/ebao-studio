@@ -6,7 +6,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
-  CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORMS, TITLE_MAX,
+  ARTICLE_THEMES, CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORMS, TITLE_MAX,
   type Platform, type PublisherAsset, type PublisherContent, type PublisherContentType,
   type PublisherPlatformVariant, type PublisherVideoSource,
 } from './protocol.ts'
@@ -68,6 +68,8 @@ function readManifest(directory: string): PublisherContent {
     || typeof content.title !== 'string' || content.title.length > TITLE_MAX
     || typeof content.body !== 'string' || Buffer.byteLength(content.body, 'utf8') > MAX_BODY_BYTES
     || typeof content.summary !== 'string' || content.summary.length > 2000
+    || (content.articleTheme !== undefined && (content.contentType !== 'article'
+      || !(ARTICLE_THEMES as readonly string[]).includes(content.articleTheme)))
     || !Array.isArray(content.tags) || content.tags.length > MAX_TAGS
     || content.tags.some(tag => typeof tag !== 'string' || tag.length > 100)
     || !(CREATIVE_STATEMENTS as readonly string[]).includes(content.creativeStatement)
@@ -136,6 +138,7 @@ export function createContent(contentType: PublisherContentType, env: NodeJS.Pro
   const content: PublisherContent = {
     id, contentType, revision: 1, createdAt: now, updatedAt: now,
     title: '', body: '', summary: '', tags: [], creativeStatement: 'none',
+    ...(contentType === 'article' ? { articleTheme: 'editorial' as const } : {}),
     assets: [], platformFields: {}, platformVariants: {},
     ...(contentType === 'video' ? { description: '', shortTitle: '' } : {}),
   }
@@ -150,6 +153,7 @@ export interface SaveContentInput {
   summary: string
   tags: string[]
   creativeStatement: PublisherContent['creativeStatement']
+  articleTheme?: PublisherContent['articleTheme']
   coverAssetId?: string
   assetOrder?: string[]
   platformFields?: PublisherContent['platformFields']
@@ -231,6 +235,8 @@ export function saveContent(id: string, input: SaveContentInput, env: NodeJS.Pro
   if (!Array.isArray(input.tags) || input.tags.length > MAX_TAGS
     || input.tags.some(tag => typeof tag !== 'string' || !tag.trim() || tag.length > 100)) throw new Error('标签无效')
   if (!(CREATIVE_STATEMENTS as readonly string[]).includes(input.creativeStatement)) throw new Error('内容声明无效')
+  if (input.articleTheme !== undefined && (current.contentType !== 'article'
+    || !(ARTICLE_THEMES as readonly string[]).includes(input.articleTheme))) throw new Error('文章排版主题无效')
   if (current.contentType === 'video') {
     if (input.body !== '' || input.summary !== '' || input.coverAssetId !== undefined
       || (input.platformVariants !== undefined && (!input.platformVariants
@@ -259,6 +265,7 @@ export function saveContent(id: string, input: SaveContentInput, env: NodeJS.Pro
     summary: input.summary.trim(),
     tags: [...new Set(input.tags.map(tag => tag.replace(/^#+/u, '').trim()))],
     creativeStatement: input.creativeStatement,
+    ...(input.articleTheme === undefined ? {} : { articleTheme: input.articleTheme }),
     assets: assetOrder.map(assetId => byId.get(assetId)!),
     platformFields: cleanFields(input.platformFields),
     platformVariants: cleanVariants(input.platformVariants === undefined ? current.platformVariants : input.platformVariants, ids),

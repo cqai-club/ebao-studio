@@ -22,6 +22,10 @@ export const CREATIVE_STATEMENTS = [
 ] as const
 export type CreativeStatement = typeof CREATIVE_STATEMENTS[number]
 
+/** Article layout selection; old manifests without a selection use the classic layout. */
+export const ARTICLE_THEMES = ['classic', 'editorial'] as const
+export type ArticleTheme = typeof ARTICLE_THEMES[number]
+
 /** Public account snapshot. Cookie values and session partition names never cross this API. */
 export interface PublisherAccount {
   id: string
@@ -61,6 +65,8 @@ export interface PublisherPlatformCapability {
   requiredFields: Partial<Record<PublisherContentType, string[]>>
   maxAssets?: Partial<Record<PublisherContentType, number>>
   maxTitleLength?: Partial<Record<PublisherContentType, number>>
+  /** Present only when the active WeChat Worker supports themed article HTML. */
+  articleThemeVersion?: number
 }
 
 export interface PublisherAsset {
@@ -98,6 +104,8 @@ export interface PublisherContent {
   title: string
   body: string
   summary: string
+  /** Article-only layout. Missing in old drafts, which use the classic layout. */
+  articleTheme?: ArticleTheme
   /** Video-only fields; article and image-note continue to use body/summary. */
   description?: string
   shortTitle?: string
@@ -108,6 +116,10 @@ export interface PublisherContent {
   coverAssetId?: string
   platformFields: Partial<Record<Platform, Record<string, string>>>
   platformVariants?: Partial<Record<Platform, PublisherPlatformVariant>>
+}
+
+export function resolveArticleTheme(content: Pick<PublisherContent, 'articleTheme'>): ArticleTheme {
+  return content.articleTheme ?? 'classic'
 }
 
 /** Return the content that a selected platform will receive without changing the stored draft. */

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   addAsset, contentsRoot, createContent, deleteContent, duplicateContent,
   listContents, readAsset, readContent, removeAsset, resolveContent, saveContent,
 } from '../src/contents.ts'
-import { projectContentForPlatform } from '../src/protocol.ts'
+import { projectContentForPlatform, resolveArticleTheme } from '../src/protocol.ts'
 
 const roots: string[] = []
 function fixture() {
@@ -19,6 +19,56 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3])
 
 describe('publisher local content library', () => {
+  it('defaults new articles to editorial and preserves the selected theme through revisions and copies', () => {
+    const env = fixture()
+    const article = createContent('article', env)
+    expect(article.articleTheme).toBe('editorial')
+    expect(createContent('image-note', env).articleTheme).toBeUndefined()
+    expect(createContent('video', env).articleTheme).toBeUndefined()
+    const classic = saveContent(article.id, {
+      revision: article.revision, title: '文章', body: '正文', summary: '', tags: [],
+      creativeStatement: 'none', articleTheme: 'classic',
+    }, env)
+    expect(readContent(article.id, env).articleTheme).toBe('classic')
+    expect(() => saveContent(article.id, { ...classic, revision: article.revision, articleTheme: 'editorial' }, env))
+      .toThrow('重新加载')
+    const edited = saveContent(article.id, { ...classic, title: '更新标题' }, env)
+    expect(edited.articleTheme).toBe('classic')
+    expect(duplicateContent(article.id, env).articleTheme).toBe('classic')
+    expect(() => saveContent(article.id, { ...edited, articleTheme: 'unsupported' as never }, env))
+      .toThrow('文章排版主题无效')
+    expect(readContent(article.id, env).revision).toBe(edited.revision)
+  })
+
+  it('treats old article manifests without a theme as classic and rejects themes on other content types', () => {
+    const env = fixture()
+    const article = createContent('article', env)
+    const manifest = join(contentsRoot(env), article.id, 'manifest.json')
+    const legacy = JSON.parse(readFileSync(manifest, 'utf8')) as Record<string, unknown>
+    delete legacy.articleTheme
+    writeFileSync(manifest, JSON.stringify(legacy))
+    expect(resolveArticleTheme(readContent(article.id, env))).toBe('classic')
+    const updated = saveContent(article.id, {
+      revision: article.revision, title: '旧文章', body: '正文', summary: '', tags: [], creativeStatement: 'none',
+    }, env)
+    expect(updated.articleTheme).toBeUndefined()
+    expect(resolveArticleTheme(duplicateContent(article.id, env))).toBe('classic')
+    const imageNote = createContent('image-note', env)
+    expect(() => saveContent(imageNote.id, {
+      revision: imageNote.revision, title: '图文', body: '', summary: '', tags: [], creativeStatement: 'none',
+      articleTheme: 'editorial',
+    }, env)).toThrow('文章排版主题无效')
+    const video = createContent('video', env)
+    expect(() => saveContent(video.id, {
+      revision: video.revision, title: '视频', body: '', summary: '', tags: [], creativeStatement: 'none',
+      description: '', shortTitle: '', articleTheme: 'classic',
+    }, env)).toThrow('文章排版主题无效')
+    const invalid = JSON.parse(readFileSync(manifest, 'utf8')) as Record<string, unknown>
+    invalid.articleTheme = 'unsupported'
+    writeFileSync(manifest, JSON.stringify(invalid))
+    expect(() => readContent(article.id, env)).toThrow('草稿数据无效')
+  })
+
   it('keeps independent, restart-readable video drafts with editable source and metadata', () => {
     const env = fixture()
     const first = createContent('video', env)
