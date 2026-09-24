@@ -52,16 +52,16 @@ describe('article and image-note preflight', () => {
     expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()
   })
 
-  it('rejects Toutiao article summary before acceptance without blocking other article platforms', () => {
+  it('accepts Toutiao articles with a summary that the platform editor will skip', () => {
     const draft = { ...content('article'), summary: '摘要内容' }
     const capabilities: PublisherPlatformCapability[] = [{
       platform: 'tt', contentTypes: ['article'], modes: { article: ['draft', 'publish'] }, requiredFields: {},
     }, {
       platform: 'juejin', contentTypes: ['article'], modes: { article: ['draft', 'publish'] }, requiredFields: {},
     }]
-    expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toContain('请清空摘要')
+    expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toBeUndefined()
     expect(contentSubmissionError(draft, [account('juejin')], capabilities, 'draft')).toBeUndefined()
-    expect(contentSubmissionError({ ...draft, summary: '' }, [account('tt')], capabilities, 'draft')).toBeUndefined()
+    expect(draft.summary).toBe('摘要内容')
   })
 
   it('keeps draft tags while allowing article targets that skip tag upload', () => {
@@ -121,7 +121,7 @@ describe('article and image-note preflight', () => {
     draft.coverAssetId = draft.assets[0]!.id
     draft.platformVariants = {
       wxmp: { title: '微信标题', body: '微信正文', summary: '' },
-      tt: { title: '头条标题', body: '头条正文', summary: '', coverAssetId: null, assetOrder: [] },
+      tt: { title: '头条标题', body: '头条正文', summary: '头条版本摘要', coverAssetId: null, assetOrder: [] },
       juejin: { title: '掘金标题', body: '掘金正文', coverAssetId: null, assetOrder: [] },
     }
     const capabilities: PublisherPlatformCapability[] = ['wxmp', 'tt', 'juejin'].map(platform => ({

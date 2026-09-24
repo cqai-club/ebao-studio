@@ -53,9 +53,6 @@ export function contentSubmissionError(
       && selected.assets.some(asset => asset.id !== selected.coverAssetId)) {
       return `${PLATFORM_LABELS[account.platform]}文章当前只支持单张封面，请在该平台版本中取消其他图片`
     }
-    if (selected.contentType === 'article' && account.platform === 'tt' && selected.summary.trim()) {
-      return '头条当前文章编辑页没有可写的独立摘要，请清空摘要后再提交'
-    }
     if (selected.contentType === 'article' && (account.platform === 'tt' || account.platform === 'bjh')) {
       try { articleAssetIds(selected) } catch (cause) { return cause instanceof Error ? cause.message : '正文图片引用无效' }
     }
