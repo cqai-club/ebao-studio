@@ -27,11 +27,67 @@ export function sameDraftRevision(previous: SessionContentSnapshot | undefined, 
 
 interface PreviewError { sessionId: string; message: string }
 
+function previewableContentId(snapshot: SessionContentSnapshot): string | null {
+  const content = snapshot.content
+  return content && snapshot.contentId === content.id
+    && (content.contentType === 'article' || content.contentType === 'image-note') ? content.id : null
+}
+
+export interface PreviewDiscoveryState {
+  sessionId: string
+  contentId: string | null
+  autoOpened: boolean
+}
+
+/** The first successful read is a baseline; only a later first draft may open the preview. */
+export function advancePreviewDiscovery(previous: PreviewDiscoveryState | undefined, snapshot: SessionContentSnapshot) {
+  const prior = previous?.sessionId === snapshot.sessionId ? previous : undefined
+  const contentId = previewableContentId(snapshot)
+  const autoOpen = !!prior && prior.contentId === null && contentId !== null && !prior.autoOpened
+  const closePreview = !!prior && prior.contentId !== null && contentId === null
+  return {
+    state: { sessionId: snapshot.sessionId, contentId, autoOpened: (prior?.autoOpened ?? contentId !== null) || autoOpen },
+    showAction: contentId !== null,
+    autoOpen,
+    closePreview,
+  }
+}
+
+type PreviewTabClose = { signal: AbortSignal; close(): void; closing: boolean }
+
+/** Keep a session-scoped close handle while a tab exists, including when its body is hidden. */
+export class PreviewTabRegistry {
+  private readonly bySession = new Map<string, Map<string, PreviewTabClose>>()
+
+  register(sessionId: string, tabId: string, signal: AbortSignal, close: () => void): void {
+    if (signal.aborted) return
+    let tabs = this.bySession.get(sessionId)
+    if (!tabs) { tabs = new Map(); this.bySession.set(sessionId, tabs) }
+    if (tabs.get(tabId)?.signal === signal) return
+    tabs.set(tabId, { signal, close, closing: false })
+    signal.addEventListener('abort', () => {
+      if (tabs!.get(tabId)?.signal !== signal) return
+      tabs!.delete(tabId)
+      if (tabs!.size === 0) this.bySession.delete(sessionId)
+    }, { once: true })
+  }
+
+  closeSession(sessionId: string): void {
+    for (const tab of this.bySession.get(sessionId)?.values() ?? []) {
+      if (tab.closing) continue
+      tab.closing = true
+      try { tab.close() } catch { tab.closing = false }
+    }
+  }
+}
+
+const previewTabs = new PreviewTabRegistry()
+
 /** A tab may retain state across session switches; only its current session can be shown or published. */
 export function previewForSession(snapshot: SessionContentSnapshot | undefined, error: PreviewError | undefined, sessionId: string) {
   const currentSnapshot = snapshot?.sessionId === sessionId ? snapshot : undefined
   const currentError = error?.sessionId === sessionId ? error.message : ''
-  const content = currentSnapshot?.content ?? null
+  const content = currentSnapshot && previewableContentId(currentSnapshot) ? currentSnapshot.content : null
   const canPublish = !!content && !currentError && (content.contentType === 'article' || content.contentType === 'image-note')
   return { currentSnapshot, currentError, content, canPublish }
 }
@@ -43,6 +99,7 @@ async function readSessionContent(sessionId: string, signal: AbortSignal): Promi
   }
   const result = await response.json() as SessionContentSnapshot & { error?: string }
   if (!response.ok) throw new Error(result.error || '无法读取会话草稿')
+  if (result.sessionId !== sessionId) throw new Error('会话草稿与当前对话不匹配')
   return result
 }
 
@@ -150,6 +207,7 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
   const [device, setDevice] = useState<'mobile' | 'pc'>('mobile')
   const [snapshot, setSnapshot] = useState<SessionContentSnapshot>()
   const [error, setError] = useState<PreviewError>()
+  useEffect(() => { previewTabs.register(sessionId, tab.id, tab.signal, () => tab.actions.close()) }, [sessionId, tab.id, tab.signal, tab.actions])
   useEffect(() => {
     if (!tab.visible) return undefined
     const controller = new AbortController()
@@ -162,6 +220,7 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
         if (controller.signal.aborted) return
         setSnapshot(previous => sameDraftRevision(previous, next) ? previous : next)
         setError(undefined)
+        if (!previewableContentId(next)) tab.actions.close()
       } catch (cause) {
         if (!controller.signal.aborted) setError({ sessionId, message: cause instanceof Error ? cause.message : '无法读取会话草稿' })
       } finally { pending = false }
@@ -171,7 +230,7 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
     const onVisibility = () => { if (!document.hidden) void refresh() }
     document.addEventListener('visibilitychange', onVisibility)
     return () => { controller.abort(); window.clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility) }
-  }, [sessionId, tab.visible])
+  }, [sessionId, tab.visible, tab.actions])
   const { currentSnapshot, currentError, content, canPublish } = previewForSession(snapshot, error, sessionId)
   const publish = () => {
     if (!content || !canPublish) return
@@ -209,25 +268,27 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
   </div>
 }
 
-/** Only discover the first draft in a session. Preview refresh itself runs only while visible. */
-const openedSessions = new Set<string>()
-
 export function ConversationPreviewAction({ sessionId, openPreview }: PropsRuntime<'conversation.session.header.utilities'> & {
   openPreview(): void
 }): ReactNode {
+  const [availability, setAvailability] = useState<{ sessionId: string; showAction: boolean }>()
   useEffect(() => {
-    if (openedSessions.has(sessionId)) return undefined
     const controller = new AbortController()
     let pending = false
+    let previous: PreviewDiscoveryState | undefined
     const discover = async () => {
-      if (pending || openedSessions.has(sessionId) || document.hidden) return
+      if (pending || document.hidden) return
       pending = true
       try {
         const snapshot = await readSessionContent(sessionId, controller.signal)
-        if (controller.signal.aborted || !snapshot.contentId) return
-        openPreview()
-        openedSessions.add(sessionId)
-      } catch { /* The preview button remains available; discovery retries. */ }
+        if (controller.signal.aborted) return
+        const next = advancePreviewDiscovery(previous, snapshot)
+        previous = next.state
+        setAvailability(current => current?.sessionId === sessionId && current.showAction === next.showAction
+          ? current : { sessionId, showAction: next.showAction })
+        if (next.closePreview) previewTabs.closeSession(sessionId)
+        if (next.autoOpen) openPreview()
+      } catch { /* Keep the last known visibility and retry after a read failure. */ }
       finally { pending = false }
     }
     void discover()
@@ -236,5 +297,6 @@ export function ConversationPreviewAction({ sessionId, openPreview }: PropsRunti
     document.addEventListener('visibilitychange', onVisibility)
     return () => { controller.abort(); window.clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility) }
   }, [sessionId, openPreview])
+  if (availability?.sessionId !== sessionId || !availability.showAction) return null
   return <button type="button" title="打开当前会话的内容预览" onClick={openPreview} style={{ cursor: 'pointer', border: 0, borderRadius: 8, padding: '5px 8px', background: 'transparent', color: 'inherit', font: 'inherit' }}>内容预览</button>
 }
