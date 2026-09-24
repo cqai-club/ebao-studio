@@ -15,6 +15,7 @@ import { contentSubmissionError } from '../submission-validation.ts'
 import { usePublisherTips } from './tips.tsx'
 import { articleUploadFile } from './article-image.ts'
 import { ImageNoteCarousel } from './image-note-carousel.tsx'
+import { WechatMarkdownPreview, wechatBodyImageIds } from './wechat-preview-html.tsx'
 
 function AssetPreviewImage({ src, alt, className = '', thumbnail = false }: {
   src: string
@@ -89,10 +90,36 @@ function ContentPreview({ content, platform }: { content: PublisherContent; plat
   const disclosure = platform && content.contentType === 'article' ? ARTICLE_DISCLOSURES[content.creativeStatement] : undefined
   const body = platform === 'blbl' && content.summary ? `${content.summary}\n\n${content.body}` : content.body
   const renderedBody = disclosure ? `${body.trimEnd()}\n\n> 内容声明：${disclosure}` : body
-  const embeddedAssets = new Set([...renderedBody.matchAll(/ebao-asset:\/\/([0-9a-f-]{36})/giu)].map(match => match[1]))
+  const embeddedAssets = platform === 'wxmp' ? wechatBodyImageIds(renderedBody)
+    : new Set([...renderedBody.matchAll(/ebao-asset:\/\/([0-9a-f-]{36})/giu)].map(match => match[1]))
   const cover = content.assets.find(asset => asset.id === content.coverAssetId)
   const remainingAssets = content.assets.filter(asset => asset.id !== cover?.id && !embeddedAssets.has(asset.id))
   const imageNote = content.contentType === 'image-note'
+  if (platform === 'wxmp' && !imageNote) {
+    return <div className="pub-content-preview-shell pub-content-preview-wechat" aria-label="微信公众号文章内容预览">
+      <div className="pub-wechat-preview-bar"><span className="pub-wechat-preview-mark" aria-hidden="true"/>微信公众号 · 移动端排版预览</div>
+      <article className="pub-wechat-preview-article">
+        <h2 className="pub-wechat-preview-title">{content.title || '未填写标题'}</h2>
+        <div className="pub-wechat-preview-body" aria-label="公众号正文预览">
+          <WechatMarkdownPreview body={renderedBody || '暂无正文'} content={content} assetUrl={assetUrl}/>
+        </div>
+      </article>
+      <section className="pub-wechat-preview-metadata" aria-label="公众号草稿独立字段">
+        <h3>草稿独立字段</h3>
+        <div className="pub-wechat-preview-cover-row">
+          {cover ? <AssetPreviewImage className="pub-wechat-preview-cover" src={assetUrl(cover.id)} alt={cover.name}/>
+            : <div className="pub-wechat-preview-no-cover">未选封面</div>}
+          <div><strong>封面</strong><p>单独用于草稿封面；只有在正文中插入的图片才会出现在文章里。</p></div>
+        </div>
+        {content.summary && <p className="pub-wechat-preview-summary"><strong>摘要</strong>{content.summary}</p>}
+        {remainingAssets.length > 0 && <details className="pub-wechat-preview-unused">
+          <summary>{remainingAssets.length} 张素材未插入正文，不会出现在公众号文章里</summary>
+          <div className="pub-wechat-preview-unused-grid">{remainingAssets.map(asset =>
+            <AssetPreviewImage src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>
+        </details>}
+      </section>
+    </div>
+  }
   return <div className={`pub-content-preview-shell${platform === 'wxmp' ? ' pub-content-preview-wechat' : ''}`} aria-label={`${imageNote ? '图文' : '文章'}内容预览`}>
     {imageNote && <ImageNoteCarousel contentId={content.id} assets={content.assets} renderImage={asset =>
       <AssetPreviewImage src={assetUrl(asset.id)} alt={asset.name}/>}/>}
@@ -595,8 +622,8 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
           <Button variant={!preview ? 'primary' : 'outline'} size="sm" aria-pressed={!preview} onClick={() => setPreview(false)}>编辑模式</Button>
         </div></div>
         {preview ? <div className="pub-card"><ContentPreview content={visibleDraft!} platform={contentView === 'master' ? undefined : contentView}/>
-          {contentType === 'article' && visibleDraft!.summary && contentView !== 'blbl' && <p className="pub-preview-summary"><strong>独立摘要字段：</strong>{visibleDraft!.summary}</p>}
-          <p className="pub-muted">{contentView === 'wxmp' ? '微信预览模拟了提交转换的基础样式；复杂 Markdown 和平台后台的最终呈现请以实际草稿为准。'
+          {contentType === 'article' && visibleDraft!.summary && contentView !== 'blbl' && contentView !== 'wxmp' && <p className="pub-preview-summary"><strong>独立摘要字段：</strong>{visibleDraft!.summary}</p>}
+          <p className="pub-muted">{contentView === 'wxmp' ? '公众号正文按提交时的 Markdown 规则预览；封面和摘要是独立字段。平台后台的最终呈现请以实际草稿为准。'
             : '这里展示当前版本的内容与图片顺序；平台后台的最终呈现请以实际草稿为准。'}</p></div> : <>
         <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>
           <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={visibleDraft!.title.length > titleLimit ? 'pub-warn' : 'pub-muted'}>（{visibleDraft!.title.length}/{titleLimit} 字）</span>{hasOverride('title') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={visibleDraft!.title} onChange={event => updateTextField('title', event.target.value)}/>{hasOverride('title') && <Button variant="outline" size="sm" onClick={() => resetVariantField('title')}>标题恢复主稿</Button>}</div>
