@@ -21,7 +21,7 @@ export function VideoPage({ active }: { active: boolean }) {
   const [editVersion, setEditVersion] = useState(0)
   const [tagsInput, setTagsInput] = useState('')
   const [saveError, setSaveError] = useState('')
-  const [mode, setMode] = useState<'publish' | 'draft'>('publish')
+  const [mode, setMode] = useState<'publish' | 'draft'>('draft')
   const [selection, setSelection] = useState<Partial<Record<Platform, string>>>({})
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)

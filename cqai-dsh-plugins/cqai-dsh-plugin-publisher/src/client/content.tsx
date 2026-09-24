@@ -119,7 +119,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
   const [accountsError, setAccountsError] = useState('')
   const [capabilitiesError, setCapabilitiesError] = useState('')
   const [selection, setSelection] = useState<Partial<Record<Platform, string>>>({})
-  const [mode, setMode] = useState<Mode>('publish')
+  const [mode, setMode] = useState<Mode>('draft')
   const [preview, setPreview] = useState(true)
   const [contentView, setContentView] = useState<ContentView>('master')
   const contentViewRef = useRef<ContentView>('master')
