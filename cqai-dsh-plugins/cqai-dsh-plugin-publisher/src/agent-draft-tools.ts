@@ -46,6 +46,7 @@ const imageRefSchema = {
 export const AGENT_PUBLISHER_GUIDANCE = [
   '当用户想通过对话构思文章或图文并准备多平台发布时，可用 publisher_get_draft、publisher_save_draft、publisher_add_image 和 publisher_remove_image 维护当前会话的一份主草稿。',
   '先与用户讨论内容；只有标题、正文、摘要或标签形成明确的新版本后，调用 publisher_get_draft 读取当前修订，再用 publisher_save_draft 写入。首次保存选择 article 或 image-note；后续保持此类型。不要把尚在讨论的备选文案覆盖已定稿内容。',
+  '生成文章或图文标题时只使用汉字、英文字母、数字和普通空格；不要使用标点、话题符号、Markdown 符号、表情或换行。若用户给出的已定标题含特殊字符，先提出无特殊字符的改写供用户确认，不要擅自删字。',
   '每次修改都传入刚读取或上次工具返回的 expected_revision。若提示修订冲突，重新读取草稿并与用户核对，不要未经确认覆盖发布页中的手动修改。',
   '图片由用户上传或 generate_image/edit_image 产生后，只有用户明确选定要放入草稿，才调用 publisher_add_image。首次添加图片须选择 article 或 image-note，不能自行默认为图文。可传完整 source_image 附件引用；用户明确指最新图片时可省略，工具会从当前会话寻找最近图片。多张候选图应传所选图片的完整引用，不要自行批量导入。',
   'publisher_add_image 返回 Publisher 素材 ID。文章正文要插图时，在 body 的指定位置写 Markdown 图片 `![说明](ebao-asset://素材ID)`；封面使用 cover_asset_id，图文图片顺序使用 asset_order。先导入图片取得素材 ID，再带最新 expected_revision 保存正文或顺序。',
@@ -195,7 +196,7 @@ export function registerAgentDraftTools(ctx: Context): () => void {
       parameters: {
         content_type: { type: 'string', enum: ['article', 'image-note'], description: 'Required on first save; existing conversation draft type cannot change.' },
         expected_revision: { type: 'integer', description: 'Last revision returned by publisher_get_draft or a previous Publisher tool call; required after the first save.' },
-        title: { type: 'string', description: 'Agreed title. Omit to preserve the existing title.' },
+        title: { type: 'string', description: 'Agreed title with only Han characters, ASCII letters, digits and regular spaces. No punctuation, symbols, emoji or line breaks. Omit to preserve the existing title.' },
         body: { type: 'string', description: 'Agreed complete Markdown article or image-note body. Omit to preserve.' },
         summary: { type: 'string', description: 'Agreed summary. Omit to preserve.' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Complete agreed tag list. Omit to preserve.' },

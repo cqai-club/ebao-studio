@@ -10,6 +10,7 @@ import {
 import type { PublisherContent, PublisherSessionContent } from './protocol.ts'
 
 const CONTENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const AGENT_TITLE_CHARACTERS = /^[\p{Script=Han}A-Za-z0-9 ]*$/u
 const MAX_ASSOCIATION_BYTES = 1024
 
 export interface SessionDraftPatch {
@@ -98,6 +99,9 @@ export function saveSessionDraft(sessionId: string, patch: SessionDraftPatch, en
   }
   if (current === undefined && patch.contentType === undefined) throw new Error('首次保存需选择文章或图文类型')
   if (patch.clearCover === true && patch.coverAssetId !== undefined) throw new Error('不能同时设置和清空封面')
+  if (patch.title !== undefined && (typeof patch.title !== 'string' || !AGENT_TITLE_CHARACTERS.test(patch.title))) {
+    throw new Error('标题只能包含中文、英文字母、数字和普通空格，请重新拟题后再保存')
+  }
 
   const created = current === undefined ? createContent(patch.contentType!, env) : undefined
   const source = current ?? created!

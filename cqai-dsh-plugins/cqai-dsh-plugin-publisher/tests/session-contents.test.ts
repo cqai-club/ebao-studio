@@ -20,6 +20,34 @@ const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3])
 const webp = Buffer.from('RIFF1234WEBPxxxx', 'ascii')
 
 describe('Agent conversation drafts', () => {
+  it('rejects special characters in Agent titles without changing a draft', () => {
+    const env = fixture()
+    for (const [index, title] of ['标题#话题', '标题：说明', '标题✨', '标题\n说明', '标题_说明'].entries()) {
+      const sessionId = `invalid-title-${index}`
+      expect(() => saveSessionDraft(sessionId, { contentType: 'image-note', title }, env))
+        .toThrow('标题只能包含中文、英文字母、数字和普通空格')
+      expect(readSessionContent(sessionId, env).contentId).toBeNull()
+    }
+
+    const first = saveSessionDraft('valid-title', {
+      contentType: 'article', title: '2026 年 AI 创作', body: '正文',
+    }, env)
+    expect(first.content?.title).toBe('2026 年 AI 创作')
+    expect(() => saveSessionDraft('valid-title', {
+      expectedRevision: first.revision!, title: '标题✨',
+    }, env)).toThrow('重新拟题')
+    expect(readSessionContent('valid-title', env)).toEqual(first)
+
+    const manuallyEdited = saveContent(first.contentId!, {
+      revision: first.revision!, title: '手动：标题', body: '正文', summary: '', tags: [],
+      creativeStatement: 'none',
+    }, env)
+    const bodyOnly = saveSessionDraft('valid-title', {
+      expectedRevision: manuallyEdited.revision, body: '新正文',
+    }, env)
+    expect(bodyOnly.content?.title).toBe('手动：标题')
+  })
+
   it('persists one primary draft per opaque session and preserves manual Publisher fields', () => {
     const env = fixture()
     expect(readSessionContent('session-1', env)).toEqual({
@@ -184,6 +212,10 @@ describe('Agent conversation drafts', () => {
         content_type: 'article', title: '对话标题', body: '对话正文',
       }, exec) as { contentId: string; revision: number }
       expect(first.revision).toBe(2)
+      await expect(definitions.get('publisher_save_draft')!.execute({
+        expected_revision: first.revision, title: '对话标题#话题',
+      }, exec)).rejects.toThrow('重新拟题')
+      expect(readContent(first.contentId, env).revision).toBe(first.revision)
       const withImage = await definitions.get('publisher_add_image')!.execute({
         expected_revision: first.revision, set_as_cover: true,
         source_image: { attachment_id: id, media_type: 'image/png', bytes: png.length, width: 100, height: 100, name: '生成图.png' },
