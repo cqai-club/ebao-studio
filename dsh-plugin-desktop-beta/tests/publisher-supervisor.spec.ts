@@ -180,6 +180,40 @@ describe('PublisherSupervisor', () => {
     await supervisor.shutdown()
   })
 
+  it('rejects a request and restarts when the Worker stdin pipe reports EPIPE', async () => {
+    let disconnected = false
+    const { supervisor, workers } = fixture((frame, worker) => {
+      if (handshake(frame, worker)) return
+      if (frame.method === 'accounts.list') {
+        if (!disconnected) {
+          disconnected = true
+          worker.stdin.destroy(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+        } else worker.reply(frame.id, [{ id: 'account' }])
+      }
+      if (frame.method === 'system.shutdown') { worker.reply(frame.id, { ok: true }); worker.exit(0) }
+    })
+    await expect(supervisor.request('accounts.list')).rejects.toMatchObject({ code: 'worker-disconnected' })
+    await new Promise(resolve => setTimeout(resolve, 15))
+    expect(workers).toHaveLength(2)
+    await expect(supervisor.request('accounts.list')).resolves.toEqual([{ id: 'account' }])
+    await supervisor.shutdown()
+  })
+
+  it('does not restart when the Worker stdin pipe reports EPIPE during shutdown', async () => {
+    const { supervisor, workers } = fixture((frame, worker) => {
+      if (handshake(frame, worker)) return
+      if (frame.method === 'accounts.list') worker.reply(frame.id, [])
+      if (frame.method === 'system.shutdown') {
+        worker.stdin.destroy(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+      }
+    })
+    await supervisor.request('accounts.list')
+    await supervisor.shutdown()
+    await new Promise(resolve => setTimeout(resolve, 15))
+    expect(workers).toHaveLength(1)
+    expect(supervisor.status().running).toBe(false)
+  })
+
   it('gives profile imports a dedicated long timeout and restarts after the copy', async () => {
     let launches = 0
     const { supervisor } = fixture((frame, worker) => {

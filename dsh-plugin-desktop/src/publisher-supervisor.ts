@@ -334,6 +334,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', value => { this.receive(String(value)) })
     child.stderr.on('data', value => { this.receiveWorkerLog(String(value)) })
+    child.stdin.on('error', () => { this.handlePipeFailure(child) })
     child.once('error', error => { this.handleExit(child, error) })
     child.once('exit', (code, signal) => {
       this.handleExit(child, new PublisherWorkerError(
@@ -385,7 +386,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
         reject,
       })
       child.stdin.write(`${JSON.stringify({ id, method, params })}\n`, error => {
-        if (error !== null && error !== undefined) reject(error)
+        if (error !== null && error !== undefined) this.handlePipeFailure(child)
       })
     })
   }
@@ -435,6 +436,12 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     const error = new PublisherWorkerError('invalid-worker-protocol', message)
     this.rejectPending(error)
     this.child?.kill()
+  }
+
+  private handlePipeFailure(child: ChildProcessWithoutNullStreams): void {
+    if (this.child !== child) return
+    this.handleExit(child, new PublisherWorkerError('worker-disconnected', 'Publisher Worker 通信已中断'))
+    child.kill()
   }
 
   private handleExit(child: ChildProcessWithoutNullStreams, error: Error): void {
