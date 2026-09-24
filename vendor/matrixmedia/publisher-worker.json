@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/hanliang97/MatrixMedia.git",
   "branch": "codex/ebao-article-adapters",
-  "commit": "ec070a57717f3fe4807a81ab4d43f630507c2a37",
+  "commit": "0ccb5d1905757f8af96ca74bfc4ba4842e79b47f",
   "version": "0.11.4",
   "electronVersion": "24.8.8",
   "license": "GPL-2.0-only",
