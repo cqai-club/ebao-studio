@@ -7,10 +7,11 @@ import {
   addAsset, createContent, deleteContent, readContent, removeAsset, saveContent,
   type SaveContentInput,
 } from './contents.ts'
-import type { PublisherContent, PublisherSessionContent } from './protocol.ts'
+import { PLATFORMS, type Platform, type PublisherContent, type PublisherPlatformVariant, type PublisherSessionContent } from './protocol.ts'
 
 const CONTENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
-const AGENT_TITLE_CHARACTERS = /^[\p{Script=Han}A-Za-z0-9 ]*$/u
+// Keep ordinary sentence punctuation while excluding markup, hashtags, emoji and controls.
+const AGENT_TITLE_CHARACTERS = /^[\p{Script=Han}A-Za-z0-9 ，。！？；：、（）《》“”‘’—…·,.!?:;()'"-]*$/u
 const MAX_ASSOCIATION_BYTES = 1024
 
 export interface SessionDraftPatch {
@@ -24,6 +25,9 @@ export interface SessionDraftPatch {
   coverAssetId?: string
   clearCover?: boolean
   assetOrder?: string[]
+  /** Merge only the named platform's supplied fields, leaving its other edits intact. */
+  platformVariant?: PublisherPlatformVariant & { platform: Platform }
+  resetPlatformVariant?: Platform
 }
 
 function validSessionId(sessionId: string): void {
@@ -99,12 +103,29 @@ export function saveSessionDraft(sessionId: string, patch: SessionDraftPatch, en
   }
   if (current === undefined && patch.contentType === undefined) throw new Error('首次保存需选择文章或图文类型')
   if (patch.clearCover === true && patch.coverAssetId !== undefined) throw new Error('不能同时设置和清空封面')
-  if (patch.title !== undefined && (typeof patch.title !== 'string' || !AGENT_TITLE_CHARACTERS.test(patch.title))) {
-    throw new Error('标题只能包含中文、英文字母、数字和普通空格，请重新拟题后再保存')
+  if (patch.platformVariant !== undefined && patch.resetPlatformVariant !== undefined
+    && patch.platformVariant.platform === patch.resetPlatformVariant) throw new Error('不能同时修改和重置同一平台版本')
+  if (patch.resetPlatformVariant !== undefined && !(PLATFORMS as readonly string[]).includes(patch.resetPlatformVariant)) {
+    throw new Error('平台版本无效')
+  }
+  if (patch.platformVariant !== undefined && (!patch.platformVariant || typeof patch.platformVariant !== 'object'
+    || !(PLATFORMS as readonly string[]).includes(patch.platformVariant.platform))) {
+    throw new Error('平台版本无效')
+  }
+  if ((patch.title !== undefined && (typeof patch.title !== 'string' || !AGENT_TITLE_CHARACTERS.test(patch.title)))
+    || (patch.platformVariant?.title !== undefined
+      && (typeof patch.platformVariant.title !== 'string' || !AGENT_TITLE_CHARACTERS.test(patch.platformVariant.title)))) {
+    throw new Error('标题含有不支持的特殊字符、表情或换行，请重新拟题后再保存')
   }
 
   const created = current === undefined ? createContent(patch.contentType!, env) : undefined
   const source = current ?? created!
+  const platformVariants = { ...source.platformVariants }
+  if (patch.resetPlatformVariant !== undefined) delete platformVariants[patch.resetPlatformVariant]
+  if (patch.platformVariant !== undefined) {
+    const { platform, ...changes } = patch.platformVariant
+    platformVariants[platform] = { ...platformVariants[platform], ...changes }
+  }
   const input: SaveContentInput = {
     revision: source.revision,
     title: patch.title ?? source.title,
@@ -115,6 +136,7 @@ export function saveSessionDraft(sessionId: string, patch: SessionDraftPatch, en
     coverAssetId: patch.clearCover === true ? undefined : patch.coverAssetId ?? source.coverAssetId,
     assetOrder: patch.assetOrder ?? source.assets.map(asset => asset.id),
     platformFields: source.platformFields,
+    platformVariants,
   }
   try {
     const saved = saveContent(source.id, input, env)

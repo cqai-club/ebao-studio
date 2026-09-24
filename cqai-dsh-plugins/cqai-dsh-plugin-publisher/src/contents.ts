@@ -7,7 +7,8 @@ import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
   CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORMS, TITLE_MAX,
-  type Platform, type PublisherAsset, type PublisherContent, type PublisherContentType, type PublisherVideoSource,
+  type Platform, type PublisherAsset, type PublisherContent, type PublisherContentType,
+  type PublisherPlatformVariant, type PublisherVideoSource,
 } from './protocol.ts'
 
 export const CONTENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
@@ -81,6 +82,9 @@ function readManifest(directory: string): PublisherContent {
     || (content.contentType === 'video' && (content.body !== '' || content.summary !== ''
       || content.assets.length !== 0 || content.coverAssetId !== undefined
       || Object.keys(content.platformFields).length !== 0
+      || (content.platformVariants !== undefined && (!content.platformVariants
+        || typeof content.platformVariants !== 'object' || Array.isArray(content.platformVariants)
+        || Object.keys(content.platformVariants).length !== 0))
       || typeof content.description !== 'string' || content.description.length > DESCRIPTION_MAX
       || typeof content.shortTitle !== 'string' || content.shortTitle.length > 32
       || (content.videoSource !== undefined && !validVideoSource(content.videoSource))))
@@ -88,14 +92,20 @@ function readManifest(directory: string): PublisherContent {
       || content.description !== undefined || content.shortTitle !== undefined))) {
     throw new Error('草稿数据无效')
   }
+  if (content.platformVariants !== undefined) {
+    try { cleanVariants(content.platformVariants, content.assets.map(asset => asset.id)) }
+    catch { throw new Error('草稿数据无效') }
+  }
   return content
 }
 
 function writeManifest(directory: string, content: PublisherContent): void {
   const file = join(directory, 'manifest.json')
   const temporary = join(directory, `.${randomUUID()}.tmp`)
+  const serialized = JSON.stringify(content, null, 2)
+  if (Buffer.byteLength(serialized, 'utf8') > MAX_MANIFEST_BYTES) throw new Error('草稿及平台版本总量过大')
   try {
-    writeFileSync(temporary, JSON.stringify(content, null, 2), { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+    writeFileSync(temporary, serialized, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
     renameSync(temporary, file)
   } finally {
     if (existsSync(temporary)) rmSync(temporary)
@@ -126,7 +136,7 @@ export function createContent(contentType: PublisherContentType, env: NodeJS.Pro
   const content: PublisherContent = {
     id, contentType, revision: 1, createdAt: now, updatedAt: now,
     title: '', body: '', summary: '', tags: [], creativeStatement: 'none',
-    assets: [], platformFields: {},
+    assets: [], platformFields: {}, platformVariants: {},
     ...(contentType === 'video' ? { description: '', shortTitle: '' } : {}),
   }
   writeManifest(directory, content)
@@ -143,6 +153,7 @@ export interface SaveContentInput {
   coverAssetId?: string
   assetOrder?: string[]
   platformFields?: PublisherContent['platformFields']
+  platformVariants?: PublisherContent['platformVariants']
   description?: string
   shortTitle?: string
   videoSource?: PublisherVideoSource
@@ -167,6 +178,49 @@ function cleanFields(value: PublisherContent['platformFields'] | undefined): Pub
   return result
 }
 
+function cleanVariants(value: PublisherContent['platformVariants'], assetIds: string[]): NonNullable<PublisherContent['platformVariants']> {
+  if (value === undefined) return {}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('平台版本无效')
+  const result: NonNullable<PublisherContent['platformVariants']> = {}
+  for (const [platform, input] of Object.entries(value)) {
+    if (!(PLATFORMS as readonly string[]).includes(platform) || !input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new Error('平台版本无效')
+    }
+    const allowed = ['title', 'body', 'summary', 'tags', 'coverAssetId', 'assetOrder']
+    if (Object.keys(input).some(key => !allowed.includes(key))) throw new Error('平台版本字段无效')
+    const variant = input as PublisherPlatformVariant
+    if ((variant.title !== undefined && (typeof variant.title !== 'string' || variant.title.length > TITLE_MAX))
+      || (variant.body !== undefined && (typeof variant.body !== 'string' || Buffer.byteLength(variant.body, 'utf8') > MAX_BODY_BYTES))
+      || (variant.summary !== undefined && (typeof variant.summary !== 'string' || variant.summary.length > 2000))) {
+      throw new Error('平台版本文案无效')
+    }
+    if (variant.tags !== undefined && (!Array.isArray(variant.tags) || variant.tags.length > MAX_TAGS
+      || variant.tags.some(tag => typeof tag !== 'string' || !tag.trim() || tag.length > 100))) {
+      throw new Error('平台版本标签无效')
+    }
+    const tags = variant.tags?.map(tag => tag.replace(/^#+/u, '').trim())
+    if (tags?.some(tag => !tag)) throw new Error('平台版本标签无效')
+    if (variant.coverAssetId !== undefined && variant.coverAssetId !== null
+      && (typeof variant.coverAssetId !== 'string' || !assetIds.includes(variant.coverAssetId))) {
+      throw new Error('平台版本封面无效')
+    }
+    if (variant.assetOrder !== undefined && (!Array.isArray(variant.assetOrder)
+      || new Set(variant.assetOrder).size !== variant.assetOrder.length
+      || variant.assetOrder.some(assetId => typeof assetId !== 'string' || !assetIds.includes(assetId)))) {
+      throw new Error('平台版本素材顺序无效')
+    }
+    result[platform as Platform] = {
+      ...(variant.title === undefined ? {} : { title: variant.title.trim() }),
+      ...(variant.body === undefined ? {} : { body: variant.body }),
+      ...(variant.summary === undefined ? {} : { summary: variant.summary.trim() }),
+      ...(tags === undefined ? {} : { tags: [...new Set(tags)] }),
+      ...(variant.coverAssetId === undefined ? {} : { coverAssetId: variant.coverAssetId }),
+      ...(variant.assetOrder === undefined ? {} : { assetOrder: [...variant.assetOrder] }),
+    }
+  }
+  return result
+}
+
 export function saveContent(id: string, input: SaveContentInput, env: NodeJS.ProcessEnv = process.env): PublisherContent {
   const directory = directoryFor(id, env)
   const current = readManifest(directory)
@@ -179,6 +233,9 @@ export function saveContent(id: string, input: SaveContentInput, env: NodeJS.Pro
   if (!(CREATIVE_STATEMENTS as readonly string[]).includes(input.creativeStatement)) throw new Error('内容声明无效')
   if (current.contentType === 'video') {
     if (input.body !== '' || input.summary !== '' || input.coverAssetId !== undefined
+      || (input.platformVariants !== undefined && (!input.platformVariants
+        || typeof input.platformVariants !== 'object' || Array.isArray(input.platformVariants)
+        || Object.keys(input.platformVariants).length !== 0))
       || (input.platformFields !== undefined && (!input.platformFields || typeof input.platformFields !== 'object'
         || Array.isArray(input.platformFields) || Object.keys(input.platformFields).length !== 0))
       || typeof input.description !== 'string' || input.description.length > DESCRIPTION_MAX
@@ -204,6 +261,7 @@ export function saveContent(id: string, input: SaveContentInput, env: NodeJS.Pro
     creativeStatement: input.creativeStatement,
     assets: assetOrder.map(assetId => byId.get(assetId)!),
     platformFields: cleanFields(input.platformFields),
+    platformVariants: cleanVariants(input.platformVariants === undefined ? current.platformVariants : input.platformVariants, ids),
     ...(current.contentType === 'video' ? {
       description: input.description!.trim(), shortTitle: input.shortTitle!.trim(),
       ...(input.videoSource ? { videoSource: input.videoSource } : {}),
@@ -279,6 +337,8 @@ export function addAsset(
   try {
     const next: PublisherContent = {
       ...content, revision: content.revision + 1, updatedAt: new Date().toISOString(), assets: [...content.assets, asset],
+      // An explicit platform subset is a deliberate selection; new images remain unselected there.
+      platformVariants: content.platformVariants,
       ...(options.setAsCover || content.contentType === 'article' && !content.coverAssetId ? { coverAssetId: asset.id } : {}),
     }
     writeManifest(directory, next)
@@ -307,6 +367,13 @@ export function removeAsset(
     ...content, revision: content.revision + 1, updatedAt: new Date().toISOString(),
     body: content.body.replace(reference, ''),
     assets: content.assets.filter(asset => asset.id !== assetId),
+    platformVariants: Object.fromEntries(Object.entries(content.platformVariants ?? {}).map(([platform, variant]) => {
+      const revised = { ...variant }
+      if (revised.body !== undefined) revised.body = revised.body.replace(reference, '')
+      if (revised.assetOrder !== undefined) revised.assetOrder = revised.assetOrder.filter(id => id !== assetId)
+      if (revised.coverAssetId === assetId) delete revised.coverAssetId
+      return [platform, revised]
+    })),
   }
   if (next.coverAssetId === assetId) {
     delete next.coverAssetId

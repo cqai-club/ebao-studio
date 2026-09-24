@@ -6,6 +6,7 @@ import {
   addAsset, contentsRoot, createContent, deleteContent, duplicateContent,
   listContents, readAsset, readContent, removeAsset, resolveContent, saveContent,
 } from '../src/contents.ts'
+import { projectContentForPlatform } from '../src/protocol.ts'
 
 const roots: string[] = []
 function fixture() {
@@ -80,6 +81,77 @@ describe('publisher local content library', () => {
     expect(listContents(env)).toHaveLength(1)
     expect(resolveContent(copy.id, copy.revision, env).directory).toContain(copy.id)
     expect(() => resolveContent(copy.id, copy.revision + 1, env)).toThrow('已更新')
+  })
+
+  it('preserves isolated platform versions through main edits, asset changes and duplication', () => {
+    const env = fixture()
+    const draft = createContent('article', env)
+    const first = addAsset(draft.id, '第一张.png', png, env)
+    const second = addAsset(draft.id, '第二张.png', png, env)
+    const firstId = first.assets[0]!.id
+    const secondId = second.assets[1]!.id
+    const saved = saveContent(draft.id, {
+      revision: second.revision, title: '主标题', body: '主正文', summary: '主摘要',
+      tags: ['主标签'], creativeStatement: 'none', coverAssetId: firstId,
+      platformVariants: {
+        wxmp: {
+          title: '微信标题', body: `微信正文 ![插图](ebao-asset://${secondId})`,
+          summary: '', tags: ['微信'], coverAssetId: secondId,
+          assetOrder: [secondId, firstId],
+        },
+        tt: { summary: '' },
+        juejin: { body: '没有正文插图', coverAssetId: null, assetOrder: [] },
+      },
+    }, env)
+    expect(projectContentForPlatform(saved, 'wxmp')).toMatchObject({
+      title: '微信标题', summary: '', coverAssetId: secondId,
+      assets: [{ id: secondId }, { id: firstId }],
+    })
+    expect(projectContentForPlatform(saved, 'tt')).toMatchObject({ title: '主标题', summary: '' })
+    expect(projectContentForPlatform(saved, 'juejin').assets).toEqual([])
+    expect(projectContentForPlatform(saved, 'juejin').coverAssetId).toBeUndefined()
+    expect(saved.title).toBe('主标题')
+    const changedMaster = saveContent(draft.id, {
+      revision: saved.revision, title: '新版主标题', body: '新版主正文', summary: '新版主摘要',
+      tags: ['主标签'], creativeStatement: 'none', coverAssetId: firstId,
+    }, env)
+    expect(changedMaster.platformVariants).toEqual(saved.platformVariants)
+    expect(projectContentForPlatform(changedMaster, 'wxmp').title).toBe('微信标题')
+    expect(projectContentForPlatform(changedMaster, 'tt').title).toBe('新版主标题')
+    const third = addAsset(draft.id, '第三张.png', png, env)
+    expect(third.platformVariants?.wxmp?.assetOrder).toEqual([secondId, firstId])
+    expect(third.platformVariants?.juejin?.assetOrder).toEqual([])
+    const removed = removeAsset(draft.id, secondId, env)
+    expect(removed.platformVariants?.wxmp?.body).toBe('微信正文 ')
+    expect(removed.platformVariants?.wxmp?.coverAssetId).toBeUndefined()
+    expect(removed.platformVariants?.wxmp?.assetOrder).toEqual([firstId])
+    expect(projectContentForPlatform(removed, 'wxmp').coverAssetId).toBe(firstId)
+    const copy = duplicateContent(draft.id, env)
+    expect(copy.platformVariants).toEqual(removed.platformVariants)
+    expect(readContent(copy.id, env).platformVariants).toEqual(removed.platformVariants)
+  })
+
+  it('rejects malformed platform overrides without changing the current revision', () => {
+    const env = fixture()
+    const draft = createContent('image-note', env)
+    const withAsset = addAsset(draft.id, '第一张.png', png, env)
+    const common = {
+      revision: withAsset.revision, title: '主标题', body: '主正文', summary: '', tags: [],
+      creativeStatement: 'none' as const,
+    }
+    expect(() => saveContent(draft.id, {
+      ...common, platformVariants: { xhs: { assetOrder: ['11111111-1111-4111-8111-111111111111'] } },
+    }, env)).toThrow('平台版本素材顺序无效')
+    expect(() => saveContent(draft.id, {
+      ...common, platformVariants: { xhs: { assetOrder: [withAsset.assets[0]!.id, withAsset.assets[0]!.id] } },
+    }, env)).toThrow('平台版本素材顺序无效')
+    expect(() => saveContent(draft.id, {
+      ...common, platformVariants: { xhs: { coverAssetId: '11111111-1111-4111-8111-111111111111' } },
+    }, env)).toThrow('平台版本封面无效')
+    expect(() => saveContent(draft.id, {
+      ...common, platformVariants: { xhs: { unexpected: 'x' } } as never,
+    }, env)).toThrow('平台版本字段无效')
+    expect(readContent(draft.id, env).revision).toBe(withAsset.revision)
   })
 
   it('rejects malformed assets, escaping symlinks and invalid order', () => {

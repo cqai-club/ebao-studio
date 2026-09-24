@@ -72,6 +72,18 @@ export interface PublisherAsset {
   sha256?: string
 }
 
+/** Optional per-platform edits; an absent field follows the conversation's primary draft. */
+export interface PublisherPlatformVariant {
+  title?: string
+  body?: string
+  summary?: string
+  tags?: string[]
+  /** null explicitly clears an inherited primary-draft cover. */
+  coverAssetId?: string | null
+  /** Images selected for this platform, in order; omitted means all primary images. */
+  assetOrder?: string[]
+}
+
 /** A video draft remembers only a managed work ID or an opaque native selection ID. */
 export type PublisherVideoSource =
   | { kind: 'work'; workId: string }
@@ -95,6 +107,24 @@ export interface PublisherContent {
   assets: PublisherAsset[]
   coverAssetId?: string
   platformFields: Partial<Record<Platform, Record<string, string>>>
+  platformVariants?: Partial<Record<Platform, PublisherPlatformVariant>>
+}
+
+/** Return the content that a selected platform will receive without changing the stored draft. */
+export function projectContentForPlatform(content: PublisherContent, platform: Platform): PublisherContent {
+  const variant = content.platformVariants?.[platform]
+  const byId = new Map(content.assets.map(asset => [asset.id, asset]))
+  return {
+    ...content,
+    title: variant?.title ?? content.title,
+    body: variant?.body ?? content.body,
+    summary: variant?.summary ?? content.summary,
+    tags: [...(variant?.tags ?? content.tags)],
+    coverAssetId: variant?.coverAssetId === null ? undefined : variant?.coverAssetId ?? content.coverAssetId,
+    assets: variant?.assetOrder
+      ? variant.assetOrder.map(assetId => byId.get(assetId)!).filter(Boolean)
+      : [...content.assets],
+  }
 }
 
 /** The single article or image-note draft associated with one Agent conversation. */

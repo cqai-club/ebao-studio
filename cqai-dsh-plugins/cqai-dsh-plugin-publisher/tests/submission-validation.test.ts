@@ -68,7 +68,9 @@ describe('article and image-note preflight', () => {
     draft.coverAssetId = draft.assets[0]!.id
     expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
     draft.assets.push({ id: '44444444-4444-4444-8444-444444444444', name: '正文.png', mime: 'image/png', bytes: 12 })
-    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toContain('最多支持 1 张')
+    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toContain('只支持单张封面')
+    draft.platformVariants = { juejin: { assetOrder: [draft.assets[0]!.id] } }
+    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
   })
 
   it('enforces image-note image, title, mode and supported declaration before Worker acceptance', () => {
@@ -84,5 +86,35 @@ describe('article and image-note preflight', () => {
     expect(contentSubmissionError(draft, targets, capabilities, 'publish')).toContain('暂不支持')
     expect(contentSubmissionError({ ...draft, creativeStatement: 'repost' }, targets, capabilities, 'draft')).toContain('内容声明')
     expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
+  })
+
+  it('validates the exact platform version that will be submitted', () => {
+    const draft = content('article')
+    draft.title = '主标题'.repeat(20)
+    draft.summary = '主摘要'
+    draft.body = '主稿 ![未上传](ebao-asset://33333333-3333-4333-8333-333333333333)'
+    draft.assets = [{ id: '44444444-4444-4444-8444-444444444444', name: '封面.png', mime: 'image/png', bytes: 12 }]
+    draft.coverAssetId = draft.assets[0]!.id
+    draft.platformVariants = {
+      wxmp: { title: '微信标题', body: '微信正文', summary: '' },
+      tt: { title: '头条标题', body: '头条正文', summary: '', coverAssetId: null, assetOrder: [] },
+      juejin: { title: '掘金标题', body: '掘金正文', coverAssetId: null, assetOrder: [] },
+    }
+    const capabilities: PublisherPlatformCapability[] = ['wxmp', 'tt', 'juejin'].map(platform => ({
+      platform: platform as PublisherAccount['platform'], contentTypes: ['article'],
+      modes: { article: ['draft'] }, requiredFields: {}, maxTitleLength: { article: 64 },
+    }))
+    expect(contentSubmissionError(draft, [account('wxmp'), account('tt'), account('juejin')], capabilities, 'draft')).toBeUndefined()
+    draft.platformVariants.juejin!.coverAssetId = draft.coverAssetId
+    expect(contentSubmissionError(draft, [account('juejin')], capabilities, 'draft')).toContain('封面不在该平台已选图片中')
+    draft.platformVariants.juejin!.coverAssetId = null
+    draft.platformVariants.tt!.body = `头条正文 ![被排除的图](ebao-asset://${draft.assets[0]!.id})`
+    expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toContain('正文图片需先上传')
+    draft.platformVariants.tt!.body = '头条正文'
+    draft.platformVariants.wxmp!.body = '微信正文 ![缺图](ebao-asset://33333333-3333-4333-8333-333333333333)'
+    expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toContain('正文图片需先上传')
+    draft.platformVariants.wxmp!.body = '微信正文'
+    draft.platformVariants.wxmp!.title = ''
+    expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBe('请填写标题')
   })
 })

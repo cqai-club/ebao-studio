@@ -330,8 +330,12 @@ describe('the Host publisher route', () => {
         id: created.id, revision: created.revision, title: '文章', body: '# 正文',
         summary: '', tags: ['AI'], creativeStatement: 'none',
         platformFields: { juejin: { category: '前端' } },
-      })).json() as { revision: number }
+        platformVariants: { juejin: { title: '掘金专用标题', body: '掘金专用正文' } },
+      })).json() as { revision: number; platformVariants: { juejin: { title: string; body: string } } }
       expect(saved.revision).toBe(2)
+      expect(saved.platformVariants.juejin).toEqual({ title: '掘金专用标题', body: '掘金专用正文' })
+      expect((await (await fetch(`${base}/content/${created.id}`)).json() as { platformVariants: unknown }).platformVariants)
+        .toEqual(saved.platformVariants)
       const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1])
       const uploaded = await fetch(`${base}/content-asset-upload/${created.id}`, {
         method: 'POST', headers: {

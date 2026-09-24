@@ -4,6 +4,7 @@ import {
   API, CREATIVE_STATEMENTS, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX,
   type CreateSubmissionResult, type Platform, type PublisherAccount,
   type PublisherCapability, type PublisherContent, type PublisherPlatformCapability,
+  type PublisherPlatformVariant, projectContentForPlatform,
 } from '../protocol.ts'
 import { CONTENT_ACCOUNT_PLATFORMS, contentModeAvailable, selectedContentAccounts } from '../content-targets.ts'
 import {
@@ -78,27 +79,37 @@ function MarkdownPreview({ value, content }: { value: string; content: Publisher
   return <div className="pub-preview" aria-label="Markdown 预览">{blocks}</div>
 }
 
-function ContentPreview({ content }: { content: PublisherContent }) {
+const ARTICLE_DISCLOSURES: Partial<Record<PublisherContent['creativeStatement'], string>> = {
+  ai_generated: '本文包含 AI 生成内容', fiction: '虚构演绎，仅供娱乐', marketing: '营销推广',
+  personal_opinion: '个人观点，仅供参考', repost: '转载', self_made_no_repost: '自制，禁止转载',
+}
+
+function ContentPreview({ content, platform }: { content: PublisherContent; platform?: Platform }) {
   const assetUrl = (id: string) => `${API}/content-asset/${content.id}/${id}`
-  const embeddedAssets = new Set([...content.body.matchAll(/ebao-asset:\/\/([0-9a-f-]{36})/giu)].map(match => match[1]))
+  const disclosure = platform && content.contentType === 'article' ? ARTICLE_DISCLOSURES[content.creativeStatement] : undefined
+  const body = platform === 'blbl' && content.summary ? `${content.summary}\n\n${content.body}` : content.body
+  const renderedBody = disclosure ? `${body.trimEnd()}\n\n> 内容声明：${disclosure}` : body
+  const embeddedAssets = new Set([...renderedBody.matchAll(/ebao-asset:\/\/([0-9a-f-]{36})/giu)].map(match => match[1]))
   const cover = content.assets.find(asset => asset.id === content.coverAssetId)
   const remainingAssets = content.assets.filter(asset => asset.id !== cover?.id && !embeddedAssets.has(asset.id))
   const imageNote = content.contentType === 'image-note'
-  return <div className="pub-content-preview-shell" aria-label={`${imageNote ? '图文' : '文章'}内容预览`}>
+  return <div className={`pub-content-preview-shell${platform === 'wxmp' ? ' pub-content-preview-wechat' : ''}`} aria-label={`${imageNote ? '图文' : '文章'}内容预览`}>
     {imageNote && <ImageNoteCarousel contentId={content.id} assets={content.assets} renderImage={asset =>
       <AssetPreviewImage src={assetUrl(asset.id)} alt={asset.name}/>}/>}
     <h2 className="pub-content-preview-title">{content.title || '未填写标题'}</h2>
     {!imageNote && cover && !embeddedAssets.has(cover.id) && <AssetPreviewImage className="pub-content-preview-cover" src={assetUrl(cover.id)} alt={cover.name}/>}
     {imageNote ? <p className="pub-content-preview-text">{content.body || '暂无正文'}</p>
-      : <MarkdownPreview value={content.body || '暂无正文'} content={content}/>}
+      : <MarkdownPreview value={renderedBody || '暂无正文'} content={content}/>}
     {!imageNote && remainingAssets.length > 0 && <div className="pub-content-preview-note-images" aria-label="尚未插入正文的图片素材">{remainingAssets.map(asset =>
       <AssetPreviewImage className="pub-content-preview-image" src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>}
-    {content.tags.length > 0 && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
+    {content.tags.length > 0 && (!platform || !['wxmp', 'tt', 'bjh'].includes(platform)) && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
   </div>
 }
 
 type EditorType = 'article' | 'image-note'
 type Mode = 'publish' | 'draft'
+type ContentView = 'master' | Platform
+type VariantField = keyof PublisherPlatformVariant
 const FIELD_LABELS: Record<string, string> = { category: '分类', topic: '话题', original: '原创声明' }
 
 export function ContentEditor({ contentType, active, selectedContentId, onSelectedContentChange }: {
@@ -127,6 +138,8 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
   const [selection, setSelection] = useState<Partial<Record<Platform, string>>>({})
   const [mode, setMode] = useState<Mode>('publish')
   const [preview, setPreview] = useState(true)
+  const [contentView, setContentView] = useState<ContentView>('master')
+  const contentViewRef = useRef<ContentView>('master')
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [confirm, setConfirm] = useState<PublisherConfirmation & { revision: number }>()
@@ -138,7 +151,15 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
   const [runtimeCapability, setRuntimeCapability] = useState<PublisherCapability>()
 
   useEffect(() => { setConfirm(undefined) }, [selectedContentId, active])
-  useEffect(() => { setHandoffError(''); if (selectedContentId) setPreview(true) }, [selectedContentId])
+  useEffect(() => {
+    setHandoffError('')
+    if (selectedContentId) {
+      setPreview(true)
+      contentViewRef.current = 'master'
+      setContentView('master')
+      setTagsInput(draftRef.current?.tags.join(' ') ?? '')
+    }
+  }, [selectedContentId])
 
   const refreshContents = async (): Promise<PublisherContent[]> => {
     const rows = await api<PublisherContent[]>('contents')
@@ -152,7 +173,8 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
     setSaveError('')
     setHandoffError('')
     setDraft(value)
-    setTagsInput(value?.tags.join(' ') ?? '')
+    const view = contentViewRef.current
+    setTagsInput(value ? (view === 'master' ? value : projectContentForPlatform(value, view)).tags.join(' ') : '')
   }
   useEffect(() => {
     // Finish a local image/draft operation before replacing its result with a handoff.
@@ -220,6 +242,64 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
     setEditVersion(version => version + 1)
   }
 
+  const effectiveContent = (content: PublisherContent): PublisherContent =>
+    contentView === 'master' ? content : projectContentForPlatform(content, contentView)
+
+  const updateVariant = (patch: PublisherPlatformVariant) => {
+    const current = draftRef.current
+    if (!current || contentView === 'master') return
+    update({ platformVariants: {
+      ...current.platformVariants,
+      [contentView]: { ...current.platformVariants?.[contentView], ...patch },
+    } })
+  }
+
+  const updateTextField = (field: 'title' | 'body' | 'summary', value: string) => {
+    if (contentView === 'master') update({ [field]: value })
+    else updateVariant({ [field]: value })
+  }
+
+  const resetVariantField = (field: VariantField) => {
+    const current = draftRef.current
+    if (!current || contentView === 'master') return
+    const next = { ...current.platformVariants?.[contentView] }
+    delete next[field]
+    const variants = { ...current.platformVariants }
+    if (Object.keys(next).length) variants[contentView] = next
+    else delete variants[contentView]
+    update({ platformVariants: variants })
+    if (field === 'tags') setTagsInput(current.tags.join(' '))
+  }
+
+  const resetPlatformVariant = () => {
+    const current = draftRef.current
+    if (!current || contentView === 'master') return
+    const variants = { ...current.platformVariants }
+    delete variants[contentView]
+    update({ platformVariants: variants })
+    setTagsInput(current.tags.join(' '))
+  }
+
+  const selectContentView = (view: ContentView) => {
+    const current = draftRef.current
+    contentViewRef.current = view
+    setContentView(view)
+    setTagsInput(current ? (view === 'master' ? current : projectContentForPlatform(current, view)).tags.join(' ') : '')
+  }
+
+  const togglePlatformAsset = (assetId: string, included: boolean) => {
+    const current = draftRef.current
+    if (!current || contentView === 'master') return
+    const selected = effectiveContent(current)
+    const order = selected.assets.map(asset => asset.id)
+    const nextOrder = included ? [...order, assetId] : order.filter(id => id !== assetId)
+    const patch: PublisherPlatformVariant = { assetOrder: nextOrder }
+    if (!included && selected.coverAssetId === assetId) patch.coverAssetId = nextOrder[0] ?? null
+    if (included && current.contentType === 'article'
+      && (!selected.coverAssetId || !selected.assets.some(asset => asset.id === selected.coverAssetId))) patch.coverAssetId = assetId
+    updateVariant(patch)
+  }
+
   const flush = async (): Promise<PublisherContent | undefined> => {
     if (saveTask.current) await saveTask.current
     const current = draftRef.current
@@ -231,7 +311,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
           id: current.id, revision: current.revision, title: current.title, body: current.body,
           summary: current.summary, tags: current.tags, creativeStatement: current.creativeStatement,
           coverAssetId: current.coverAssetId, assetOrder: current.assets.map(asset => asset.id),
-          platformFields: current.platformFields,
+          platformFields: current.platformFields, platformVariants: current.platformVariants,
         })
         if (draftRef.current?.id === current.id) {
           const latest = draftRef.current
@@ -336,8 +416,9 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
         if (file.type && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('仅支持 JPEG、PNG、WebP 图片')
       }
       let current = await flush()
-      const limit = Math.min(20, ...selectedAccounts.map(account =>
-        capabilities.find(item => item.platform === account.platform)?.maxAssets?.[contentType] ?? 20))
+      const limit = contentType === 'image-note'
+        ? Math.min(20, capabilities.find(item => item.platform === 'xhs')?.maxAssets?.['image-note'] ?? 20)
+        : 20
       if ((current?.assets.length ?? 0) + selected.length > limit) throw new Error(`当前最多支持 ${limit} 张图片`)
       if (!current) {
         current = await api<PublisherContent>('contents', { contentType })
@@ -369,17 +450,18 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
   const insertImage = (assetId: string, name: string) => {
     const current = draftRef.current
     if (!current || contentType !== 'article') return
+    const visible = effectiveContent(current)
     const textarea = bodyInputRef.current
-    const start = textarea?.selectionStart ?? current.body.length
+    const start = textarea?.selectionStart ?? visible.body.length
     const end = textarea?.selectionEnd ?? start
     const label = name.replace(/[\[\]\\\r\n]/gu, ' ').trim().slice(0, 80) || '图片'
     const marker = `![${label}](ebao-asset://${assetId})`
-    const before = current.body.slice(0, start)
-    const after = current.body.slice(end)
+    const before = visible.body.slice(0, start)
+    const after = visible.body.slice(end)
     const insertion = `${before && !before.endsWith('\n') ? '\n' : ''}${marker}${after && !after.startsWith('\n') ? '\n' : ''}`
     const cursor = before.length + insertion.length
     setPreview(false)
-    update({ body: before + insertion + after })
+    updateTextField('body', before + insertion + after)
     requestAnimationFrame(() => {
       bodyInputRef.current?.focus()
       bodyInputRef.current?.setSelectionRange(cursor, cursor)
@@ -388,20 +470,25 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
   const moveAsset = (assetId: string, target: number) => void act(async () => {
     const current = await flush()
     if (!current) return
-    const order = current.assets.map(asset => asset.id)
+    const order = effectiveContent(current).assets.map(asset => asset.id)
     const index = order.indexOf(assetId)
     if (index < 0 || target < 0 || target >= order.length || index === target) return
     order.splice(index, 1)
     order.splice(target, 0, assetId)
+    if (contentView !== 'master') {
+      updateVariant({ assetOrder: order })
+      return
+    }
     setServerDraft(await api<PublisherContent>('content-save', {
       id: current.id, revision: current.revision, title: current.title, body: current.body,
       summary: current.summary, tags: current.tags, creativeStatement: current.creativeStatement,
       coverAssetId: current.coverAssetId, assetOrder: order, platformFields: current.platformFields,
+      platformVariants: current.platformVariants,
     }))
     await refreshContents()
   })
   const reorder = (assetId: string, delta: number) => {
-    const index = draftRef.current?.assets.findIndex(asset => asset.id === assetId) ?? -1
+    const index = draftRef.current ? effectiveContent(draftRef.current).assets.findIndex(asset => asset.id === assetId) : -1
     if (index >= 0) moveAsset(assetId, index + delta)
   }
 
@@ -419,20 +506,25 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
 
   const accountPlatforms = CONTENT_ACCOUNT_PLATFORMS[contentType]
   const selectedAccounts = selectedContentAccounts(contentType, accounts, selection)
+  const visibleDraft = draft && effectiveContent(draft)
+  const selectedVariant = contentView === 'master' ? undefined : draft?.platformVariants?.[contentView]
+  const selectedAssetIds = new Set(visibleDraft?.assets.map(asset => asset.id) ?? [])
+  const assetsForEditor = contentView === 'master' ? draft?.assets ?? []
+    : [...(visibleDraft?.assets ?? []), ...(draft?.assets ?? []).filter(asset => !selectedAssetIds.has(asset.id))]
+  const hasOverride = (field: VariantField) => selectedVariant !== undefined && Object.prototype.hasOwnProperty.call(selectedVariant, field)
   const unavailableTargets = selectedAccounts.filter(account =>
     !contentModeAvailable(account.platform, contentType, mode, capabilities))
   const exactMismatch = Boolean(selectedContentId && draft?.id !== selectedContentId)
   const editorLocked = busy || exactMismatch
   const submitReady = runtimeCapability?.supported === true && !accountsPending && !capabilitiesPending
     && selectedAccounts.length > 0 && unavailableTargets.length === 0 && !exactMismatch && !handoffError
-  const titleLimit = Math.min(TITLE_MAX, ...selectedAccounts.map(account =>
-    capabilities.find(item => item.platform === account.platform)?.maxTitleLength?.[contentType] ?? TITLE_MAX))
-  const assetLimit = Math.min(20, ...selectedAccounts.map(account =>
-    capabilities.find(item => item.platform === account.platform)?.maxAssets?.[contentType] ?? 20))
+  const titleLimit = contentView === 'master' ? TITLE_MAX
+    : capabilities.find(item => item.platform === contentView)?.maxTitleLength?.[contentType] ?? TITLE_MAX
+  const assetLimit = contentView === 'master' ? 20
+    : capabilities.find(item => item.platform === contentView)?.maxAssets?.[contentType] ?? 20
   const enteredTags = [...new Set(tagsInput.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))]
-  const skippedArticleTagTargets = contentType === 'article'
-    ? selectedAccounts.filter(account => account.platform === 'wxmp' || account.platform === 'tt' || account.platform === 'bjh')
-    : []
+  const skippedArticleTagTargets = contentType === 'article' && visibleDraft?.tags.length
+    ? selectedAccounts.filter(account => account.platform === 'wxmp' || account.platform === 'tt' || account.platform === 'bjh') : []
   const validationError = draft && selectedAccounts.length > 0 && !capabilitiesPending && !capabilitiesError
     ? contentSubmissionError(draft, selectedAccounts, capabilities, mode) : undefined
   const requestConfirm = () => void act(async () => {
@@ -441,7 +533,10 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
     if ((selectedContentId && current.id !== selectedContentId) || handoffError) throw new Error('指定草稿尚未打开，请先确认当前草稿')
     const error = contentSubmissionError(current, selectedAccounts, capabilities, mode)
     if (error) throw new Error(error)
-    setConfirm({ contentId: current.id, revision: current.revision, title: current.title, mode, accounts: selectedAccounts })
+    const displayTitle = current.title.trim() || projectContentForPlatform(current, selectedAccounts[0]!.platform).title
+    setConfirm({ contentId: current.id, revision: current.revision, title: displayTitle, mode, accounts: selectedAccounts,
+      targetTitles: Object.fromEntries(selectedAccounts.map(account => [account.id, projectContentForPlatform(current, account.platform).title])),
+    })
   })
   const submit = () => void act(async () => {
     if (!confirm) return
@@ -484,41 +579,62 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
       {handoffError && draft && <div className="pub-actions"><Button variant="outline" onClick={() => onSelectedContentChange?.(draft.id)}>返回先前草稿</Button></div>}
     </div> : !draft ? <div className="pub-empty">点击“新建”开始编辑{contentType === 'article' ? '文章' : '图文'}。</div> : <fieldset disabled={editorLocked} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}><div className="pub-grid">
       <div>
+        <div className="pub-card pub-version-card">
+          <div className="pub-version-tabs" role="group" aria-label="内容版本">
+            <button type="button" className="pub-version-tab" aria-pressed={contentView === 'master'} onClick={() => selectContentView('master')}>主稿</button>
+            {accountPlatforms.map(platform => <button type="button" className="pub-version-tab" aria-pressed={contentView === platform} key={platform} onClick={() => selectContentView(platform)}>
+              {PLATFORM_LABELS[platform]}{draft.platformVariants?.[platform] ? ' · 已单独修改' : ''}
+            </button>)}
+          </div>
+          <p className="pub-muted">{contentView === 'master' ? 'Agent 对话和这里编辑的是同一份主稿。平台版本默认继承主稿；对某个平台单独修改后，该字段将保留自己的内容。'
+            : `${PLATFORM_LABELS[contentView]}版本：未单独修改的字段会跟随主稿更新。请在提交前切到每个目标平台检查。`}</p>
+          {contentView !== 'master' && selectedVariant && <Button variant="outline" size="sm" onClick={resetPlatformVariant}>此平台全部恢复主稿</Button>}
+        </div>
         <div className="pub-card pub-content-view-tabs"><div className="pub-actions">
           <Button variant={preview ? 'primary' : 'outline'} size="sm" aria-pressed={preview} onClick={() => setPreview(true)}>预览模式</Button>
           <Button variant={!preview ? 'primary' : 'outline'} size="sm" aria-pressed={!preview} onClick={() => setPreview(false)}>编辑模式</Button>
         </div></div>
-        {preview ? <div className="pub-card"><ContentPreview content={draft}/><p className="pub-muted">这里展示通用排版；实际平台页面可能不同，请在提交前到对应平台复核。</p></div> : <>
+        {preview ? <div className="pub-card"><ContentPreview content={visibleDraft!} platform={contentView === 'master' ? undefined : contentView}/>
+          {contentType === 'article' && visibleDraft!.summary && contentView !== 'blbl' && <p className="pub-preview-summary"><strong>独立摘要字段：</strong>{visibleDraft!.summary}</p>}
+          <p className="pub-muted">{contentView === 'wxmp' ? '微信预览模拟了提交转换的基础样式；复杂 Markdown 和平台后台的最终呈现请以实际草稿为准。'
+            : '这里展示当前版本的内容与图片顺序；平台后台的最终呈现请以实际草稿为准。'}</p></div> : <>
         <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>
-          <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={draft.title.length > titleLimit ? 'pub-warn' : 'pub-muted'}>（{draft.title.length}/{titleLimit} 字）</span></label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={draft.title} onChange={event => update({ title: event.target.value })}/></div>
+          <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={visibleDraft!.title.length > titleLimit ? 'pub-warn' : 'pub-muted'}>（{visibleDraft!.title.length}/{titleLimit} 字）</span>{hasOverride('title') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={visibleDraft!.title} onChange={event => updateTextField('title', event.target.value)}/>{hasOverride('title') && <Button variant="outline" size="sm" onClick={() => resetVariantField('title')}>标题恢复主稿</Button>}</div>
           {contentType === 'article' && <div className="pub-actions" style={{ marginBottom: 12 }}>
-            <Button variant="outline" size="sm" disabled={busy} onClick={() => importInputRef.current?.click()}>导入 .md/.txt</Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => importInputRef.current?.click()}>导入 .md/.txt 到主稿</Button>
             <input ref={importInputRef} type="file" accept=".md,.txt,text/markdown,text/plain" style={{ display: 'none' }} onChange={event => { importText(event.target.files?.[0]); event.target.value = '' }}/>
           </div>}
-          <div className="pub-field"><label htmlFor={`pub-${contentType}-body`}>{contentType === 'article' ? '正文' : '正文 / 话题'}</label>
-            <textarea ref={bodyInputRef} className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={draft.body} onChange={event => update({ body: event.target.value })}/>
+          <div className="pub-field"><label htmlFor={`pub-${contentType}-body`}>{contentType === 'article' ? '正文' : '正文 / 话题'}{hasOverride('body') && ' · 此平台已单独修改'}</label>
+            <textarea ref={bodyInputRef} className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={visibleDraft!.body} onChange={event => updateTextField('body', event.target.value)}/>
+            {hasOverride('body') && <Button variant="outline" size="sm" onClick={() => resetVariantField('body')}>正文恢复主稿</Button>}
           </div>
-          {contentType === 'article' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={draft.summary} onChange={event => update({ summary: event.target.value })}/>{selectedAccounts.some(account => account.platform === 'tt') && <p className="pub-muted">头条当前不能写入独立摘要；若要转存头条草稿，请先清空此栏。需要其他平台保留摘要时请分开提交。</p>}</div>}
-          <div className="pub-field"><label htmlFor={`pub-${contentType}-tags`}>标签（{draft.tags.length}/{MAX_TAGS} 个，用空格或逗号分隔）</label><Input className="pub-text-input" id={`pub-${contentType}-tags`} value={tagsInput} onChange={event => { setTagsInput(event.target.value); update({ tags: [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS) }) }}/></div>
-          {draft.tags.length > 0 && skippedArticleTagTargets.length > 0 && <p className="pub-muted">{skippedArticleTagTargets.map(account => PLATFORM_LABELS[account.platform]).join('、')}文章暂不写入标签，本次提交会跳过；草稿标签仍保留供其他平台使用。</p>}
+          {contentType === 'article' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要{hasOverride('summary') && ' · 此平台已单独修改'}</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={visibleDraft!.summary} onChange={event => updateTextField('summary', event.target.value)}/>{hasOverride('summary') && <Button variant="outline" size="sm" onClick={() => resetVariantField('summary')}>摘要恢复主稿</Button>}{contentView === 'tt' && <p className="pub-muted">头条当前没有可写的独立摘要；请在头条版本清空此栏。其他版本不受影响。</p>}</div>}
+          <div className="pub-field"><label htmlFor={`pub-${contentType}-tags`}>标签（{visibleDraft!.tags.length}/{MAX_TAGS} 个，用空格或逗号分隔）{hasOverride('tags') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-tags`} value={tagsInput} onChange={event => { setTagsInput(event.target.value); const tags = [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS); if (contentView === 'master') update({ tags }); else updateVariant({ tags }) }}/>{hasOverride('tags') && <Button variant="outline" size="sm" onClick={() => resetVariantField('tags')}>标签恢复主稿</Button>}</div>
+          {visibleDraft!.tags.length > 0 && skippedArticleTagTargets.length > 0 && <p className="pub-muted">{skippedArticleTagTargets.map(account => PLATFORM_LABELS[account.platform]).join('、')}文章暂不写入标签；草稿标签仍保留供其他平台使用。</p>}
           {enteredTags.length > MAX_TAGS && <p className="pub-warn">超过 {MAX_TAGS} 个标签，超出的标签不会保存。</p>}
-          <div className="pub-field"><label htmlFor={`pub-${contentType}-statement`}>AI 内容声明</label><select className="pub-input" id={`pub-${contentType}-statement`} value={draft.creativeStatement} onChange={event => update({ creativeStatement: event.target.value as PublisherContent['creativeStatement'] })}>{CREATIVE_STATEMENTS.map(value => <option key={value} value={value}>{STATEMENT_LABELS[value]}</option>)}</select></div>
+          {contentView === 'master' ? <div className="pub-field"><label htmlFor={`pub-${contentType}-statement`}>AI 内容声明（所有平台共用）</label><select className="pub-input" id={`pub-${contentType}-statement`} value={draft.creativeStatement} onChange={event => update({ creativeStatement: event.target.value as PublisherContent['creativeStatement'] })}>{CREATIVE_STATEMENTS.map(value => <option key={value} value={value}>{STATEMENT_LABELS[value]}</option>)}</select></div>
+            : <p className="pub-muted">AI 内容声明由主稿统一设置：{STATEMENT_LABELS[draft.creativeStatement]}。</p>}
         </div>
-        <div className="pub-card"><h2>{contentType === 'article' ? '封面图片' : '图片素材与排序'}</h2>
+        <div className="pub-card"><h2>{contentView === 'master' ? contentType === 'article' ? '封面图片' : '图片素材与排序' : `${PLATFORM_LABELS[contentView]} · 封面和图片顺序`}</h2>
           <Button variant="outline" disabled={busy} onClick={() => imageInputRef.current?.click()}>添加图片</Button>
           <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple style={{ display: 'none' }} onChange={event => { addImages(event.target.files); event.target.value = '' }}/>
-          <p className="pub-muted">{draft.assets.length}/{assetLimit} 张 · 仅支持 JPEG / PNG / WebP，每张不超过 20MB。{contentType === 'image-note' ? '可拖动排序，也可使用 ↑ ↓ 按钮。' : ''}</p>
+          <p className={visibleDraft!.assets.length > assetLimit ? 'pub-warn' : 'pub-muted'}>{visibleDraft!.assets.length}/{assetLimit} 张 · 仅支持 JPEG / PNG / WebP，每张不超过 20MB。{contentType === 'image-note' ? '可拖动排序，也可使用 ↑ ↓ 按钮。' : ''}</p>
+          {contentView !== 'master' && <p className="pub-muted">图片素材由主稿统一管理。勾选此平台要使用的图片，再调整顺序和封面；新上传的素材不会自动加入已单独选图的平台版本。</p>}
           {contentType === 'article' && <p className="pub-muted">WebP 文章图片上传时自动转为 JPEG，可作为微信公众号封面；透明区域会变成白色。头条、百家号素材可插入正文，也可单独设为封面；掘金、B站专栏暂只支持单张封面。导入 Markdown 时不会读取相对路径图片，请先上传素材再插入。</p>}
-          <div className="pub-assets">{draft.assets.map((asset, index) => <div className={`pub-asset${draggedAssetId === asset.id ? ' pub-asset-dragging' : ''}`} key={asset.id}
-            draggable={contentType === 'image-note' && !editorLocked}
-            onDragStart={event => { if (contentType === 'image-note' && !editorLocked) { event.dataTransfer.effectAllowed = 'move'; setDraggedAssetId(asset.id) } }}
-            onDragOver={event => { if (contentType === 'image-note' && !editorLocked && draggedAssetId) event.preventDefault() }}
-            onDrop={event => { event.preventDefault(); if (!editorLocked && draggedAssetId && draggedAssetId !== asset.id) moveAsset(draggedAssetId, index); setDraggedAssetId(undefined) }}
+          {contentType === 'article' && contentView !== 'master' && <label className="pub-no-cover"><input type="radio" name={`cover-${draft.id}-${contentView}`} checked={!visibleDraft!.coverAssetId} onChange={() => updateVariant({ coverAssetId: null })}/>此平台不使用封面</label>}
+          <div className="pub-assets">{assetsForEditor.map((asset, index) => <div className={`pub-asset${draggedAssetId === asset.id ? ' pub-asset-dragging' : ''}`} key={asset.id}
+            draggable={contentType === 'image-note' && selectedAssetIds.has(asset.id) && !editorLocked}
+            onDragStart={event => { if (contentType === 'image-note' && selectedAssetIds.has(asset.id) && !editorLocked) { event.dataTransfer.effectAllowed = 'move'; setDraggedAssetId(asset.id) } }}
+            onDragOver={event => { if (contentType === 'image-note' && selectedAssetIds.has(asset.id) && !editorLocked && draggedAssetId) event.preventDefault() }}
+            onDrop={event => { event.preventDefault(); if (!editorLocked && selectedAssetIds.has(asset.id) && draggedAssetId && draggedAssetId !== asset.id) moveAsset(draggedAssetId, index); setDraggedAssetId(undefined) }}
             onDragEnd={() => setDraggedAssetId(undefined)}>
-            <AssetPreviewImage src={`${API}/content-asset/${draft.id}/${asset.id}`} alt={asset.name} thumbnail/><small>{String(index + 1).padStart(2, '0')} · {asset.name}</small>
-            {contentType === 'article' && <label><input type="radio" name={`cover-${draft.id}`} checked={draft.coverAssetId === asset.id} onChange={() => update({ coverAssetId: asset.id })}/>封面</label>}
-            <div className="pub-actions">{contentType === 'article' && <Button variant="outline" size="sm" disabled={busy} onClick={() => insertImage(asset.id, asset.name)}>插入正文</Button>}<Button variant="outline" size="sm" aria-label="上移图片" disabled={index === 0 || busy} onClick={() => reorder(asset.id, -1)}>↑</Button><Button variant="outline" size="sm" aria-label="下移图片" disabled={index === draft.assets.length - 1 || busy} onClick={() => reorder(asset.id, 1)}>↓</Button><Button variant="outline" size="sm" className="pub-danger-action" disabled={busy} onClick={() => removeImage(asset.id)}>删除</Button></div>
+            <AssetPreviewImage src={`${API}/content-asset/${draft.id}/${asset.id}`} alt={asset.name} thumbnail/><small>{selectedAssetIds.has(asset.id) ? String(index + 1).padStart(2, '0') : '—'} · {asset.name}</small>
+            {contentView !== 'master' && <label><input type="checkbox" aria-label={`${asset.name}用于${PLATFORM_LABELS[contentView]}`} checked={selectedAssetIds.has(asset.id)} onChange={event => togglePlatformAsset(asset.id, event.target.checked)}/>用于此平台</label>}
+            {contentType === 'article' && <label><input type="radio" name={`cover-${draft.id}-${contentView}`} aria-label={`${asset.name}设为封面`} disabled={!selectedAssetIds.has(asset.id)} checked={visibleDraft!.coverAssetId === asset.id} onChange={() => contentView === 'master' ? update({ coverAssetId: asset.id }) : updateVariant({ coverAssetId: asset.id })}/>封面</label>}
+            <div className="pub-actions">{contentType === 'article' && <Button variant="outline" size="sm" disabled={busy || !selectedAssetIds.has(asset.id)} onClick={() => insertImage(asset.id, asset.name)}>插入正文</Button>}<Button variant="outline" size="sm" aria-label="上移图片" disabled={!selectedAssetIds.has(asset.id) || index === 0 || busy} onClick={() => reorder(asset.id, -1)}>↑</Button><Button variant="outline" size="sm" aria-label="下移图片" disabled={!selectedAssetIds.has(asset.id) || index === visibleDraft!.assets.length - 1 || busy} onClick={() => reorder(asset.id, 1)}>↓</Button><Button variant="outline" size="sm" className="pub-danger-action" disabled={busy} onClick={() => removeImage(asset.id)}>删除</Button></div>
           </div>)}</div>
+          {contentView !== 'master' && hasOverride('coverAssetId') && <Button variant="outline" size="sm" onClick={() => resetVariantField('coverAssetId')}>封面恢复主稿</Button>}
+          {contentView !== 'master' && hasOverride('assetOrder') && <Button variant="outline" size="sm" onClick={() => resetVariantField('assetOrder')}>图片顺序恢复主稿</Button>}
         </div>
         </>}
       </div>
@@ -540,6 +656,10 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
               <Input className="pub-text-input" id={`pub-field-${account.platform}-${field}`} value={draft.platformFields[account.platform]?.[field] ?? ''} onChange={event => update({ platformFields: { ...draft.platformFields, [account.platform]: { ...draft.platformFields[account.platform], [field]: event.target.value } } })}/>
             </div>)
           })}
+          {!capabilitiesPending && !capabilitiesError && selectedAccounts.map(account => {
+            const error = contentSubmissionError(draft, [account], capabilities, mode)
+            return error && <p className="pub-warn" role="status" key={`validation-${account.id}`}>{PLATFORM_LABELS[account.platform]}：{error}</p>
+          })}
         </div>
         <div className="pub-card"><h2>提交方式</h2><div className="pub-mode">
           <label><input type="radio" name={`pub-mode-${contentType}`} checked={mode === 'publish'} onChange={() => setMode('publish')}/>立即发布</label>
@@ -551,7 +671,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </div>
     </div></fieldset>}
-    {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} busy={busy} onCancel={() => setConfirm(undefined)} onConfirm={submit}/>}
+    {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} targetTitles={confirm.targetTitles} busy={busy} onCancel={() => setConfirm(undefined)} onConfirm={submit}/>}
     <PublisherModal open={deleteDraftId !== undefined} title="删除本地草稿" closeLabel="关闭删除草稿确认" description="删除这份本地草稿？已经提交的内容快照不受影响。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/>
   </div>
 }

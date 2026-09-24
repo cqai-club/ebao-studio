@@ -5,7 +5,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { CREATIVE_STATEMENTS } from './protocol.ts'
+import { CREATIVE_STATEMENTS, PLATFORMS, type Platform } from './protocol.ts'
 import { addSessionImage, readSessionContent, removeSessionImage, saveSessionDraft } from './session-contents.ts'
 import type { PublisherSessionContent } from './protocol.ts'
 
@@ -46,7 +46,8 @@ const imageRefSchema = {
 export const AGENT_PUBLISHER_GUIDANCE = [
   '当用户想通过对话构思文章或图文并准备多平台发布时，可用 publisher_get_draft、publisher_save_draft、publisher_add_image 和 publisher_remove_image 维护当前会话的一份主草稿。',
   '先与用户讨论内容；只有标题、正文、摘要或标签形成明确的新版本后，调用 publisher_get_draft 读取当前修订，再用 publisher_save_draft 写入。首次保存选择 article 或 image-note；后续保持此类型。不要把尚在讨论的备选文案覆盖已定稿内容。',
-  '生成文章或图文标题时只使用汉字、英文字母、数字和普通空格；不要使用标点、话题符号、Markdown 符号、表情或换行。若用户给出的已定标题含特殊字符，先提出无特殊字符的改写供用户确认，不要擅自删字。',
+  '用户明确要为某个平台调整标题、正文、摘要、标签、封面或图片选择与顺序时，先读取最新修订，再用 publisher_save_draft 的 platform_variant 只修改该平台版本；主草稿和其他平台版本保持不变。platform_variant.asset_order 可选择主稿图片的有序子集；该平台不需要封面时用 clear_cover=true。若用户要求恢复整个版本继承主稿，使用 reset_platform_variant。',
+  '生成文章或图文标题时可使用中文、英文字母、数字、普通空格和常见中英文句读标点；不要使用话题符号、Markdown 符号、表情或换行。平台标题长度可能不同，发布前需逐个平台检查。若用户给出的已定标题含不支持的特殊字符，先提出改写供用户确认，不要擅自删字。',
   '每次修改都传入刚读取或上次工具返回的 expected_revision。若提示修订冲突，重新读取草稿并与用户核对，不要未经确认覆盖发布页中的手动修改。',
   '图片由用户上传或 generate_image/edit_image 产生后，只有用户明确选定要放入草稿，才调用 publisher_add_image。首次添加图片须选择 article 或 image-note，不能自行默认为图文。可传完整 source_image 附件引用；用户明确指最新图片时可省略，工具会从当前会话寻找最近图片。多张候选图应传所选图片的完整引用，不要自行批量导入。',
   'publisher_add_image 返回 Publisher 素材 ID。文章正文要插图时，在 body 的指定位置写 Markdown 图片 `![说明](ebao-asset://素材ID)`；封面使用 cover_asset_id，图文图片顺序使用 asset_order。先导入图片取得素材 ID，再带最新 expected_revision 保存正文或顺序。',
@@ -196,7 +197,7 @@ export function registerAgentDraftTools(ctx: Context): () => void {
       parameters: {
         content_type: { type: 'string', enum: ['article', 'image-note'], description: 'Required on first save; existing conversation draft type cannot change.' },
         expected_revision: { type: 'integer', description: 'Last revision returned by publisher_get_draft or a previous Publisher tool call; required after the first save.' },
-        title: { type: 'string', description: 'Agreed title with only Han characters, ASCII letters, digits and regular spaces. No punctuation, symbols, emoji or line breaks. Omit to preserve the existing title.' },
+        title: { type: 'string', description: 'Agreed title using Han characters, ASCII letters/digits/spaces and ordinary sentence punctuation. No hashtag, Markdown symbols, emoji or line breaks. Omit to preserve the existing title.' },
         body: { type: 'string', description: 'Agreed complete Markdown article or image-note body. Omit to preserve.' },
         summary: { type: 'string', description: 'Agreed summary. Omit to preserve.' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Complete agreed tag list. Omit to preserve.' },
@@ -204,10 +205,26 @@ export function registerAgentDraftTools(ctx: Context): () => void {
         cover_asset_id: { type: 'string', description: 'Existing Publisher image asset ID to use as cover.' },
         clear_cover: { type: 'boolean', description: 'Set true only when the user explicitly wants no cover. Cannot be combined with cover_asset_id.' },
         asset_order: { type: 'array', items: { type: 'string' }, description: 'All Publisher image asset IDs in the desired order.' },
+        platform_variant: {
+          type: 'object', additionalProperties: false,
+          description: 'Optional edits for one named platform. Supplied fields merge with that platform version; omitted fields stay unchanged.',
+          properties: {
+            platform: { type: 'string', enum: [...PLATFORMS], required: true },
+            title: { type: 'string' }, body: { type: 'string' }, summary: { type: 'string' },
+            tags: { type: 'array', items: { type: 'string' } },
+            cover_asset_id: { type: 'string' },
+            clear_cover: { type: 'boolean', description: 'Set true to remove this platform cover, including an inherited primary cover. Cannot combine with cover_asset_id.' },
+            asset_order: { type: 'array', items: { type: 'string' }, description: 'Selected Publisher image IDs in this platform order. May omit primary-draft images; empty means no images.' },
+          },
+        },
+        reset_platform_variant: { type: 'string', enum: [...PLATFORMS], description: 'Remove all edits for one platform so it inherits the main draft.' },
       },
       output: { schema: sessionResultSchema, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
       async execute(args, exec) {
         exec.signal.throwIfAborted()
+        if (args.platform_variant?.clear_cover === true && args.platform_variant.cover_asset_id !== undefined) {
+          throw new Error('不能同时设置和清空平台封面')
+        }
         return toolSnapshot(saveSessionDraft(sessionIdOf(exec.agent), {
           ...(args.content_type === undefined ? {} : { contentType: args.content_type }),
           ...(args.expected_revision === undefined ? {} : { expectedRevision: args.expected_revision }),
@@ -219,6 +236,17 @@ export function registerAgentDraftTools(ctx: Context): () => void {
           ...(args.cover_asset_id === undefined ? {} : { coverAssetId: args.cover_asset_id }),
           ...(args.clear_cover === undefined ? {} : { clearCover: args.clear_cover }),
           ...(args.asset_order === undefined ? {} : { assetOrder: args.asset_order }),
+          ...(args.platform_variant === undefined ? {} : { platformVariant: {
+            platform: args.platform_variant.platform as Platform,
+            ...(args.platform_variant.title === undefined ? {} : { title: args.platform_variant.title }),
+            ...(args.platform_variant.body === undefined ? {} : { body: args.platform_variant.body }),
+            ...(args.platform_variant.summary === undefined ? {} : { summary: args.platform_variant.summary }),
+            ...(args.platform_variant.tags === undefined ? {} : { tags: args.platform_variant.tags }),
+            ...(args.platform_variant.clear_cover === true ? { coverAssetId: null }
+              : args.platform_variant.cover_asset_id === undefined ? {} : { coverAssetId: args.platform_variant.cover_asset_id }),
+            ...(args.platform_variant.asset_order === undefined ? {} : { assetOrder: args.platform_variant.asset_order }),
+          } }),
+          ...(args.reset_platform_variant === undefined ? {} : { resetPlatformVariant: args.reset_platform_variant as Platform }),
         }))
       },
     })),

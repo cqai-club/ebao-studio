@@ -20,19 +20,19 @@ const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3])
 const webp = Buffer.from('RIFF1234WEBPxxxx', 'ascii')
 
 describe('Agent conversation drafts', () => {
-  it('rejects special characters in Agent titles without changing a draft', () => {
+  it('allows ordinary title punctuation but rejects markup, emoji and line breaks', () => {
     const env = fixture()
-    for (const [index, title] of ['标题#话题', '标题：说明', '标题✨', '标题\n说明', '标题_说明'].entries()) {
+    for (const [index, title] of ['标题#话题', '标题✨', '标题\n说明', '标题_说明', '标题<script>'].entries()) {
       const sessionId = `invalid-title-${index}`
       expect(() => saveSessionDraft(sessionId, { contentType: 'image-note', title }, env))
-        .toThrow('标题只能包含中文、英文字母、数字和普通空格')
+        .toThrow('不支持的特殊字符')
       expect(readSessionContent(sessionId, env).contentId).toBeNull()
     }
 
     const first = saveSessionDraft('valid-title', {
-      contentType: 'article', title: '2026 年 AI 创作', body: '正文',
+      contentType: 'article', title: '2026 年 AI 创作：新方向？', body: '正文',
     }, env)
-    expect(first.content?.title).toBe('2026 年 AI 创作')
+    expect(first.content?.title).toBe('2026 年 AI 创作：新方向？')
     expect(() => saveSessionDraft('valid-title', {
       expectedRevision: first.revision!, title: '标题✨',
     }, env)).toThrow('重新拟题')
@@ -46,6 +46,40 @@ describe('Agent conversation drafts', () => {
       expectedRevision: manuallyEdited.revision, body: '新正文',
     }, env)
     expect(bodyOnly.content?.title).toBe('手动：标题')
+  })
+
+  it('lets Agent adapt one platform without overwriting the master or other platform edits', () => {
+    const env = fixture()
+    const initial = saveSessionDraft('platform-session', {
+      contentType: 'article', title: '主稿标题', body: '主稿正文', summary: '主稿摘要',
+    }, env)
+    const wxmp = saveSessionDraft('platform-session', {
+      expectedRevision: initial.revision!,
+      platformVariant: { platform: 'wxmp', title: '微信标题：完整说明', body: '微信正文' },
+    }, env)
+    expect(wxmp.content).toMatchObject({
+      title: '主稿标题', body: '主稿正文',
+      platformVariants: { wxmp: { title: '微信标题：完整说明', body: '微信正文' } },
+    })
+    const tt = saveSessionDraft('platform-session', {
+      expectedRevision: wxmp.revision!,
+      platformVariant: { platform: 'tt', summary: '' },
+    }, env)
+    expect(tt.content?.platformVariants).toEqual({
+      wxmp: { title: '微信标题：完整说明', body: '微信正文' }, tt: { summary: '' },
+    })
+    expect(() => saveSessionDraft('platform-session', {
+      expectedRevision: wxmp.revision!, platformVariant: { platform: 'wxmp', title: '旧版本' },
+    }, env)).toThrow('重新读取')
+    const master = saveSessionDraft('platform-session', { expectedRevision: tt.revision!, body: '新版主稿' }, env)
+    expect(master.content?.platformVariants).toEqual(tt.content?.platformVariants)
+    expect(() => saveSessionDraft('platform-session', {
+      expectedRevision: master.revision!, platformVariant: { platform: 'wxmp', title: '标题#标签' },
+    }, env)).toThrow('重新拟题')
+    const reset = saveSessionDraft('platform-session', {
+      expectedRevision: master.revision!, resetPlatformVariant: 'wxmp',
+    }, env)
+    expect(reset.content?.platformVariants).toEqual({ tt: { summary: '' } })
   })
 
   it('persists one primary draft per opaque session and preserves manual Publisher fields', () => {
@@ -224,25 +258,33 @@ describe('Agent conversation drafts', () => {
       expect(withImage.contentId).toBe(first.contentId)
       expect(withImage.revision).toBe(3)
       expect(readContent(first.contentId, env).assets).toHaveLength(1)
-      await expect(definitions.get('publisher_add_image')!.execute({
+      const platformOnly = await definitions.get('publisher_save_draft')!.execute({
         expected_revision: withImage.revision,
+        platform_variant: { platform: 'juejin', body: '掘金纯文字正文', asset_order: [], clear_cover: true },
+      }, exec) as { revision: number }
+      expect(platformOnly.revision).toBe(4)
+      expect(readContent(first.contentId, env).platformVariants?.juejin).toEqual({
+        body: '掘金纯文字正文', assetOrder: [], coverAssetId: null,
+      })
+      await expect(definitions.get('publisher_add_image')!.execute({
+        expected_revision: platformOnly.revision,
         source_image: { attachment_id: `sha256:${'c'.repeat(64)}`, media_type: 'image/png', bytes: png.length, width: 100, height: 100 },
       }, exec)).rejects.toThrow('不在当前会话')
       expect(reads).toHaveLength(1)
-      expect(readContent(first.contentId, env).revision).toBe(3)
+      expect(readContent(first.contentId, env).revision).toBe(4)
       const cleared = await definitions.get('publisher_save_draft')!.execute({
-        expected_revision: withImage.revision, clear_cover: true,
+        expected_revision: platformOnly.revision, clear_cover: true,
       }, exec) as { revision: number }
-      expect(cleared.revision).toBe(4)
+      expect(cleared.revision).toBe(5)
       expect(readContent(first.contentId, env).coverAssetId).toBeUndefined()
       const assetId = readContent(first.contentId, env).assets[0]!.id
       const removed = await definitions.get('publisher_remove_image')!.execute({
         expected_revision: cleared.revision, asset_id: assetId,
       }, exec) as { revision: number }
-      expect(removed.revision).toBe(5)
+      expect(removed.revision).toBe(6)
       expect(readContent(first.contentId, env).assets).toEqual([])
       expect(await definitions.get('publisher_get_draft')!.execute({}, exec)).toMatchObject({
-        contentId: first.contentId, revision: 5,
+        contentId: first.contentId, revision: 6,
       })
     } finally {
       dispose()

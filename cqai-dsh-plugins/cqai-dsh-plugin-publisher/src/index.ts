@@ -219,7 +219,7 @@ async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<u
 function contentSaveBody(value: unknown): { id: string; input: SaveContentInput } {
   const body = exact(value, [
     'id', 'revision', 'title', 'body', 'summary', 'tags', 'creativeStatement',
-    'coverAssetId', 'assetOrder', 'platformFields', 'description', 'shortTitle', 'videoSource',
+    'coverAssetId', 'assetOrder', 'platformFields', 'platformVariants', 'description', 'shortTitle', 'videoSource',
   ])
   if (!Number.isSafeInteger(body.revision) || (body.revision as number) < 1) throw new Error('草稿修订号无效')
   if (typeof body.title !== 'string' || typeof body.body !== 'string' || typeof body.summary !== 'string') throw new Error('草稿字段无效')
@@ -236,6 +236,7 @@ function contentSaveBody(value: unknown): { id: string; input: SaveContentInput 
       ...(body.coverAssetId ? { coverAssetId: body.coverAssetId as string } : {}),
       ...(body.assetOrder ? { assetOrder: body.assetOrder as string[] } : {}),
       ...(body.platformFields ? { platformFields: body.platformFields as PublisherContent['platformFields'] } : {}),
+      ...(body.platformVariants === undefined ? {} : { platformVariants: body.platformVariants as PublisherContent['platformVariants'] }),
       ...(body.description !== undefined ? { description: body.description as string } : {}),
       ...(body.shortTitle !== undefined ? { shortTitle: body.shortTitle as string } : {}),
       ...(body.videoSource !== undefined ? { videoSource: videoSource(body.videoSource) } : {}),

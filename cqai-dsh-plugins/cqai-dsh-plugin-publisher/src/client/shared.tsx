@@ -61,13 +61,14 @@ export function errorMessage(cause: unknown): string {
 }
 
 export function ConfirmDialog({
-  contentType, title, sourceName, mode, accounts, onCancel, onConfirm, busy,
+  contentType, title, sourceName, mode, accounts, targetTitles, onCancel, onConfirm, busy,
 }: {
   contentType: PublisherContentType
   title: string
   sourceName?: string
   mode: 'publish' | 'draft'
   accounts: PublisherAccount[]
+  targetTitles?: Record<string, string>
   onCancel(): void
   onConfirm(): void
   busy: boolean
@@ -92,7 +93,7 @@ export function ConfirmDialog({
       <div><dt>提交方式</dt><dd>{mode === 'publish' ? '立即发布' : '转存草稿'}</dd></div>
     </dl>
     <div className="pub-modal-target-title">目标账号</div>
-    <ul className="pub-modal-accounts">{accounts.map(account => <li key={account.id}><Tag tone="neutral">{PLATFORM_LABELS[account.platform]}</Tag><span>{account.displayName}</span></li>)}</ul>
+    <ul className="pub-modal-accounts">{accounts.map(account => <li key={account.id}><Tag tone="neutral">{PLATFORM_LABELS[account.platform]}</Tag><span>{account.displayName}{targetTitles?.[account.id] && targetTitles[account.id] !== title ? ` · ${targetTitles[account.id]}` : ''}</span></li>)}</ul>
     <p className="pub-modal-copy">提交后请自行前往各平台后台确认结果。</p>
   </PublisherModal>
 }
@@ -102,6 +103,7 @@ export interface PublisherConfirmation {
   title: string
   mode: 'publish' | 'draft'
   accounts: PublisherAccount[]
+  targetTitles?: Record<string, string>
   sourceName?: string
 }
 
@@ -312,6 +314,13 @@ export const css = `
 .pub-drafts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .pub-drafts select { max-width: 280px; }
 .pub-editor { min-height: 340px !important; font-family: var(--ds-font-family-code, monospace) !important; }
+.pub-version-card { padding-bottom: 14px; }
+.pub-version-card .pub-muted { margin: 10px 0 0; }
+.pub-version-card > button { margin-top: 10px; }
+.pub-version-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; }
+.pub-version-tab { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--pub-border); border-radius: 8px; background: var(--pub-surface); color: var(--pub-secondary-text); font-size: 13px; cursor: pointer; }
+.pub-version-tab[aria-pressed=true] { border-color: var(--dsw-alias-state-business-primary, #4176e6); background: var(--dsw-alias-state-business-tertiary, #edf3fe); color: var(--pub-text); font-weight: 600; }
+.pub-version-tab:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
 .pub-content-view-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .pub-content-preview-shell { width: 100%; max-width: 460px; min-height: 500px; margin: 0 auto; padding: 26px 22px; border: 1px solid var(--pub-border); border-radius: 20px; background: var(--pub-surface); box-shadow: 0 12px 34px #0000000d; overflow-wrap: anywhere; }
 .pub-content-preview-title { margin: 0 0 18px; color: var(--pub-text); font-size: 22px; line-height: 1.4; font-weight: 700; }
@@ -320,6 +329,16 @@ export const css = `
 .pub-content-preview-image { display: block; width: 100%; max-height: 560px; border-radius: 12px; object-fit: contain; background: var(--pub-soft); }
 .pub-content-preview-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; color: var(--dsw-alias-state-business-primary, #4176e6); font-size: 13px; }
 .pub-content-preview-text { white-space: pre-wrap; line-height: 1.7; }
+.pub-preview-summary { margin: 15px auto 0; max-width: 460px; padding: 12px; border-radius: 8px; background: var(--pub-soft); color: var(--pub-secondary-text); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.pub-preview-summary strong { color: var(--pub-text); }
+.pub-content-preview-wechat { color: #252b32; font-size: 16px; line-height: 1.8; word-break: break-word; }
+.pub-content-preview-wechat .pub-preview { line-height: 1.8; }
+.pub-content-preview-wechat .pub-preview h1 { margin: 24px 0 14px; color: #1f2937; font-size: 24px; line-height: 1.4; font-weight: 700; }
+.pub-content-preview-wechat .pub-preview h2 { margin: 22px 0 12px; color: #1f2937; font-size: 20px; line-height: 1.4; font-weight: 700; }
+.pub-content-preview-wechat .pub-preview h3 { margin: 20px 0 10px; color: #1f2937; font-size: 18px; line-height: 1.4; font-weight: 700; }
+.pub-content-preview-wechat .pub-preview p { margin: 0 0 16px; }
+.pub-content-preview-wechat .pub-preview blockquote { margin: 16px 0; padding: 8px 12px; border-left: 3px solid #2c78e4; background: #f5f8fc; color: #5b6472; }
+.pub-content-preview-wechat .pub-preview img { display: block; width: 100%; max-width: 100%; height: auto; margin: 16px auto; }
 .pub-content-view-tabs .pub-actions { margin-top: 0; }
 .pub-content-preview-shell .pub-preview { min-height: 0; padding: 0; border: 0; border-radius: 0; }
 ${imageNoteCarouselCss}
@@ -332,6 +351,7 @@ ${imageNoteCarouselCss}
 .pub-preview blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid var(--pub-border); color: var(--pub-secondary-text); }
 .pub-preview hr { margin: 18px 0; border: 0; border-top: 1px solid var(--pub-border); }
 .pub-assets { display: flex; gap: 8px; flex-wrap: wrap; }
+.pub-no-cover { display: inline-flex; align-items: center; gap: 5px; margin: 0 0 12px; color: var(--pub-secondary-text); font-size: 13px; }
 .pub-asset { width: 130px; padding: 8px; border: 1px solid var(--pub-border); border-radius: 9px; }
 .pub-asset[draggable=true] { cursor: grab; }
 .pub-asset-dragging { opacity: .5; }
