@@ -54,7 +54,7 @@ export type Catalog = {
   signedIn: boolean
   text: { id: string; name: string }[]
   image: { id: string; name: string }[]
-  video: { id: string; name: string; callable: boolean }[]
+  video?: { id: string; name: string; callable: boolean }[]
   warning?: string
   defaultText?: string
   defaultImage?: string
