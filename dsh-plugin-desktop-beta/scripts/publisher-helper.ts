@@ -1,7 +1,7 @@
 /** Validate the separately built MatrixMedia Universal Helper before packaging. */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 export const PUBLISHER_HELPER_RELATIVE_PATH = join(
@@ -13,6 +13,17 @@ export const PUBLISHER_HELPER_RELATIVE_PATH = join(
 export const PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH = join(
   'Contents', 'Resources', 'publisher', 'MatrixMedia Publisher Worker.app',
 )
+
+/** Windows dir target produced by the separately built Electron 24 Worker. */
+export const WINDOWS_PUBLISHER_HELPER_RELATIVE_PATH = join(
+  'matrixmedia-publisher', 'build', 'publisher-worker', 'win-unpacked',
+)
+
+/** Electron Builder copies the complete Windows Helper directory into resources. */
+export const PACKAGED_WINDOWS_PUBLISHER_HELPER_RELATIVE_PATH = join('resources', 'publisher')
+
+export const WINDOWS_PUBLISHER_EXECUTABLE = 'MatrixMedia Publisher Worker.exe'
+export const WINDOWS_PUBLISHER_ASAR_RELATIVE_PATH = join('resources', 'app.asar')
 
 /** Mach-O files whose two slices prove the nested Electron app is Universal. */
 export const PUBLISHER_HELPER_UNIVERSAL_ENTRIES = [
@@ -69,4 +80,58 @@ export function verifyPublisherHelper(
     }
   }
   return app
+}
+
+function latestSourceMtime(path: string): number {
+  if (!existsSync(path)) return 0
+  const stat = statSync(path)
+  if (!stat.isDirectory()) return stat.mtimeMs
+  return readdirSync(path).reduce((latest, entry) =>
+    Math.max(latest, latestSourceMtime(join(path, entry))), 0)
+}
+
+/** Verify the native Windows Helper before the outer Desktop build starts. */
+export function verifyWindowsPublisherHelper(workspaceRoot: string): string {
+  const helper = resolve(workspaceRoot, WINDOWS_PUBLISHER_HELPER_RELATIVE_PATH)
+  const executable = join(helper, WINDOWS_PUBLISHER_EXECUTABLE)
+  const archive = join(helper, WINDOWS_PUBLISHER_ASAR_RELATIVE_PATH)
+  if (!existsSync(executable) || !existsSync(archive)) {
+    throw new Error(
+      `Windows Publisher Worker is missing at ${helper}; build matrixmedia-publisher with Node 20 before packaging`,
+    )
+  }
+  if (!statSync(executable).isFile() || !statSync(archive).isFile() || statSync(archive).size === 0) {
+    throw new Error(`Windows Publisher Worker at ${helper} has an incomplete Electron runtime`)
+  }
+  const descriptor = openSync(executable, 'r')
+  const dosHeader = Buffer.alloc(64)
+  const signature = Buffer.alloc(4)
+  try {
+    if (readSync(descriptor, dosHeader, 0, dosHeader.length, 0) !== dosHeader.length
+      || dosHeader.subarray(0, 2).toString('ascii') !== 'MZ') {
+      throw new Error(`Windows Publisher Worker at ${executable} is not a Windows executable`)
+    }
+    const peOffset = dosHeader.readUInt32LE(0x3c)
+    if (peOffset > statSync(executable).size - signature.length
+      || readSync(descriptor, signature, 0, signature.length, peOffset) !== signature.length
+      || !signature.equals(Buffer.from('PE\0\0'))) {
+      throw new Error(`Windows Publisher Worker at ${executable} is not a Windows executable`)
+    }
+  } finally {
+    closeSync(descriptor)
+  }
+  const sourceRoot = join(workspaceRoot, 'matrixmedia-publisher')
+  const sourceMtime = Math.max(
+    latestSourceMtime(join(sourceRoot, 'src')),
+    latestSourceMtime(join(sourceRoot, '.electron-vue')),
+    latestSourceMtime(join(sourceRoot, 'lib', 'icons')),
+    latestSourceMtime(join(sourceRoot, 'scripts', 'gen-telemetry-secret.js')),
+    latestSourceMtime(join(sourceRoot, 'package.json')),
+    latestSourceMtime(join(sourceRoot, 'yarn.lock')),
+    latestSourceMtime(join(sourceRoot, 'electron-builder.publisher.yml')),
+  )
+  if (sourceMtime > statSync(archive).mtimeMs) {
+    throw new Error(`Windows Publisher Worker at ${helper} is older than MatrixMedia source; rebuild it with Node 20`)
+  }
+  return helper
 }

@@ -30,6 +30,7 @@ function options(calls: CommandCall[], logs: string[] = []): WindowsPackageOptio
     commandShell: 'C:\\Windows\\System32\\cmd.exe',
     builderCli: 'C:\\repo\\node_modules\\electron-builder\\cli.js',
     prepareRuntime: () => undefined,
+    verifyPublisherWorker: () => undefined,
     verifier: 'C:\\repo\\dsh-plugin-desktop\\scripts\\verify-win-installer.ts',
     nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
     run: (command, args, cwd, env) => {
@@ -117,6 +118,16 @@ describe('Windows x64 installer packaging', () => {
     expect(logs).toEqual([
       'Building an unsigned Windows x64 portable archive; Authenticode is a separate release step.',
     ])
+  })
+
+  it('rejects a missing Publisher Worker before the Desktop build or packaging command', () => {
+    const calls: CommandCall[] = []
+    const value = {
+      ...options(calls),
+      verifyPublisherWorker: () => { throw new Error('Windows Publisher Worker is missing') },
+    }
+    expect(() => packageWindowsInstaller(value)).toThrow('Windows Publisher Worker is missing')
+    expect(calls).toEqual([])
   })
 
   it('reuses a completed CI package gate when explicitly requested', () => {

@@ -5,13 +5,23 @@ import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { registerAgentSourceTools, AGENT_SOURCE_GUIDANCE } from '../src/agent-source-tools.ts'
+import { registerAgentSourceTools, AGENT_SOURCE_GUIDANCE, isAgentWorkspacePath } from '../src/agent-source-tools.ts'
 import { listContents } from '../src/contents.ts'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('Agent Markdown source tools', () => {
+  it('accepts drive and UNC workspace paths on Windows, but rejects relative paths', () => {
+    expect(isAgentWorkspacePath('C:\\Users\\writer\\project', 'win32')).toBe(true)
+    expect(isAgentWorkspacePath('\\\\server\\share\\project', 'win32')).toBe(true)
+    expect(isAgentWorkspacePath('\\project', 'win32')).toBe(false)
+    expect(isAgentWorkspacePath('/project', 'win32')).toBe(false)
+    expect(isAgentWorkspacePath('C:project', 'win32')).toBe(false)
+    expect(isAgentWorkspacePath('project', 'win32')).toBe(false)
+    expect(isAgentWorkspacePath('/Users/writer/project', 'darwin')).toBe(true)
+  })
+
   it('prepares an image-reference preview without creating a publication record', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ebao-agent-source-'))
     roots.push(root)

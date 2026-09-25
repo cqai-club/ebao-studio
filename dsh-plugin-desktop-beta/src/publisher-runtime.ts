@@ -24,10 +24,12 @@ export type PublisherWorkerMethod = typeof PUBLISHER_WORKER_METHODS[number]
 
 /** Capability answer rendered by the publisher pages without starting a process. */
 export interface PublisherRuntimeStatus {
-  /** Only macOS packages containing the Universal helper are supported in v1. */
+  /** macOS and Windows packages containing their platform helper are supported. */
   supported: boolean
   /** Whether the helper process is currently alive. */
   running: boolean
+  /** Legacy MatrixMedia account import is verified only on macOS. */
+  legacyAccountImportSupported?: boolean
   /** Stable machine-readable reason when unsupported. */
   reason?: 'publisher-not-supported' | 'publisher-worker-missing'
   /** Human-readable diagnostic safe to expose to the local web client. */

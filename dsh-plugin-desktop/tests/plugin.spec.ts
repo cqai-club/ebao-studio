@@ -496,6 +496,31 @@ describe('desktop Host plugin', () => {
     expect(JSON.parse(body)).toEqual({ path: 'C:\\Work' })
   })
 
+  it('serves the macOS native picker without registering Windows volume validation', async () => {
+    const harness = createHarness('darwin')
+    harness.pickDirectory.mockResolvedValue('/Users/example/Projects')
+    apply(harness.ctx, config)
+    expect(harness.route(DESKTOP_DIRECTORY_VALIDATOR_PATH)).toBeUndefined()
+    const route = harness.route(DESKTOP_DIRECTORY_PICKER_PATH)
+    expect(route).toEqual(expect.objectContaining({ kind: 'exact' }))
+    const req = {
+      method: 'POST',
+      headers: { origin: 'http://127.0.0.1:43120' },
+    } as unknown as IncomingMessage
+    let body = ''
+    const res = {
+      statusCode: 200,
+      setHeader: vi.fn(),
+      end: vi.fn((value?: string) => { body = value ?? '' }),
+    } as unknown as ServerResponse
+
+    await route?.handler(req, res)
+
+    expect(harness.pickDirectory).toHaveBeenCalledOnce()
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(body)).toEqual({ path: '/Users/example/Projects' })
+  })
+
   it('validates a Windows workspace through a same-origin desktop route', async () => {
     const harness = createHarness('win32')
     harness.validateDirectory.mockResolvedValue(false)

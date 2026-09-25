@@ -5,6 +5,7 @@ import {
   type PublisherAccount, type PublisherCapability, type PublisherContent, type PublisherContentType,
 } from '../protocol.ts'
 import { contentPreviewCss } from './content-preview-style.ts'
+import { draftGalleryCss } from './draft-gallery-style.ts'
 
 export const STATEMENT_LABELS: Record<CreativeStatement, string> = {
   none: '不声明',
@@ -84,8 +85,8 @@ export function ConfirmDialog({
   }
   return <PublisherModal open title="确认提交" closeLabel="关闭" onClose={close} className="pub-modal" contentClassName="pub-modal-content"
     footer={<>
-      <Button variant="outline" data-pub-initial-focus disabled={busy} onClick={close}>返回修改</Button>
-      <Button variant="primary" disabled={busy} onClick={submit}>{busy ? '正在校验并提交…' : '确认提交'}</Button>
+      <Button variant="outline" size="sm" data-pub-initial-focus disabled={busy} onClick={close}>返回修改</Button>
+      <Button variant="primary" size="sm" disabled={busy} onClick={submit}>{busy ? '正在校验并提交…' : '确认提交'}</Button>
     </>}>
     <dl className="pub-modal-summary">
       <div><dt>内容类型</dt><dd>{CONTENT_LABELS[contentType]}</dd></div>
@@ -151,41 +152,19 @@ export function PublisherModal(props: ComponentProps<typeof Modal>) {
   return <Modal {...props} className={`${props.className ?? ''} ${marker}`}/>
 }
 
-export function DraftToolbar({ contents, draft, busy, dirty, saveError, onSelect, onCreate, onCopy, onDelete }: {
-  contents: PublisherContent[]
-  draft: PublisherContent | undefined
-  busy: boolean
-  dirty: boolean
-  saveError: string
-  onSelect(id: string): void
-  onCreate(): void
-  onCopy(): void
-  onDelete(): void
-}) {
-  return <div className="pub-drafts">
-    <select className="pub-input" aria-label="选择本地草稿" value={draft?.id ?? ''} onChange={event => { if (event.target.value) onSelect(event.target.value) }}>
-      <option value="">选择本地草稿</option>
-      {contents.map(item => <option key={item.id} value={item.id}>{item.title || '未命名草稿'} · {new Date(item.updatedAt).toLocaleString()}</option>)}
-    </select>
-    <Button variant="outline" disabled={busy} onClick={onCreate}>新建</Button>
-    <Button variant="outline" disabled={busy || !draft} onClick={onCopy}>复制</Button>
-    <Button variant="outline" className="pub-danger-action" disabled={busy || !draft} onClick={onDelete}>删除</Button>
-    <span className={saveError ? 'pub-warn' : 'pub-muted'} role="status" aria-live="polite">{saveError ? '自动保存失败，请继续编辑以重试' : dirty ? '自动保存中…' : '本地草稿自动保存'}</span>
-  </div>
-}
-
 export function PlatformAccountSelect({
-  idPrefix, platform, accounts, value, onChange,
+  idPrefix, platform, accounts, value, onChange, initialFocus,
 }: {
   idPrefix: string
   platform: Platform
   accounts: PublisherAccount[]
   value: string
   onChange(id: string): void
+  initialFocus?: boolean
 }) {
   const id = `pub-target-${idPrefix}-${platform}`
   return <div className="pub-platform"><label htmlFor={id}>{PLATFORM_LABELS[platform]}</label>
-    <select className="pub-input" id={id} value={value} onChange={event => onChange(event.target.value)}>
+    <select className="pub-input" id={id} data-pub-initial-focus={initialFocus ? '' : undefined} value={value} onChange={event => onChange(event.target.value)}>
       <option value="">不发布</option>
       {accounts.filter(account => account.platform === platform).map(account =>
         <option key={account.id} value={account.id}>{account.displayName}{account.loginState === 'logged-in' ? '' : '（需检查登录）'}</option>)}
@@ -207,7 +186,8 @@ export const css = `
   font-size: 14px; line-height: 1.55;
 }
 .pub * { box-sizing: border-box; }
-.pub :is(.pub-page-link, .pub-type, .pub-work, .pub-input) { font: inherit; }
+.pub :is(.pub-page-link, .pub-type, .pub-work) { font-family: inherit; }
+.pub .pub-input { font: inherit; }
 .pub :is(.pub-page-link, .pub-type, .pub-work) { cursor: pointer; }
 .pub :is(.pub-page-link, .pub-type, .pub-work):disabled { opacity: .4; cursor: not-allowed; }
 .pub :is(button, input, textarea, select):focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
@@ -222,17 +202,18 @@ export const css = `
 .pub-history-search { flex: 0 1 320px; min-width: 180px; }
 .pub-muted { color: var(--pub-tertiary-text); font-size: 13px; line-height: 1.65; }
 .pub-page-nav { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; margin-left: auto; }
-.pub-page-link { flex: 0 0 auto; min-height: 36px; padding: 7px 14px; border: 0; border-radius: 18px; background: transparent; color: var(--pub-secondary-text); font-weight: 500; white-space: nowrap; }
+.pub-page-link { flex: 0 0 auto; min-height: 32px; padding: 5px 10px; border: 0; border-radius: 16px; background: transparent; color: var(--pub-secondary-text); font-size: 13px; font-weight: 500; white-space: nowrap; }
 .pub-page-link:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f5); color: var(--pub-text); }
 .pub-page-link[aria-current=page] { background: var(--dsw-specific-sidebar-nav-item-active, #edf0f3); color: var(--pub-text); font-weight: 600; }
 .pub-layout { display: block; min-width: 0; }
 .pub-content-panels { min-width: 0; }
-.pub-type-nav { display: flex; align-items: center; gap: 4px; width: max-content; max-width: 100%; margin-bottom: 18px; }
-.pub-type { flex: 0 0 auto; min-height: 36px; padding: 7px 14px; text-align: center; white-space: nowrap; border: 0; border-radius: 18px; background: transparent; color: var(--pub-secondary-text); font-weight: 500; }
-.pub-type:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f5); color: var(--pub-text); }
-.pub-type[aria-selected=true] { background: var(--dsw-specific-sidebar-nav-item-active, #edf0f3); color: var(--pub-text); font-weight: 600; }
+.pub-type-nav { display: flex; align-items: stretch; gap: 28px; width: 100%; margin-bottom: 18px; border-bottom: 1px solid var(--pub-border); }
+.pub-type { flex: 0 0 auto; min-height: 34px; padding: 0 0 6px; text-align: center; white-space: nowrap; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--pub-secondary-text); font-size: 13px; font-weight: 500; }
+.pub-type:hover { color: var(--pub-text); }
+.pub-type[aria-selected=true] { border-bottom-color: var(--dsw-alias-state-business-primary, #4176e6); color: var(--dsw-alias-state-business-primary, #4176e6); font-weight: 600; }
 .pub-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .85fr); gap: 18px; }
 .pub-grid > div { min-width: 0; }
+.pub-video-editor-main { width: 100%; max-width: 840px; }
 .pub-card { min-width: 0; padding: 20px; margin-bottom: 18px; border: 1px solid var(--pub-border); border-radius: 16px; background: var(--pub-surface); }
 .pub-card h2 { margin: 0 0 16px; font-size: 15px; line-height: 22px; font-weight: 600; }
 .pub-card h3 { margin: 18px 0 10px; color: var(--pub-secondary-text); font-size: 13px; font-weight: 600; }
@@ -270,7 +251,7 @@ export const css = `
 .pub-warn { color: var(--dsw-alias-state-warn-label, #b7790a); }
 .pub-platform { display: grid; grid-template-columns: 95px minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 12px; }
 .pub-platform label { color: var(--pub-secondary-text); font-size: 13px; }
-.pub-work { display: block; width: 100%; padding: 13px; margin-bottom: 9px; border: 1px solid var(--pub-border); border-radius: 10px; background: var(--pub-surface); color: var(--pub-text); text-align: left; }
+.pub-work { display: block; width: 100%; padding: 10px; margin-bottom: 9px; border: 1px solid var(--pub-border); border-radius: 10px; background: var(--pub-surface); color: var(--pub-text); font-size: 13px; text-align: left; }
 .pub-work:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f5); }
 .pub-work[aria-pressed=true] { border-color: var(--dsw-alias-state-business-primary, #4176e6); background: var(--dsw-alias-state-business-tertiary, #edf3fe); }
 .pub-work strong, .pub-work small { display: block; }
@@ -280,7 +261,7 @@ export const css = `
 .pub-mode label { flex: 1; padding: 12px; border: 1px solid var(--pub-border); border-radius: 10px; font-size: 13px; cursor: pointer; }
 .pub-mode label:has(input:checked) { border-color: var(--dsw-alias-state-business-primary, #4176e6); background: var(--dsw-alias-state-business-tertiary, #edf3fe); }
 .pub-mode input { margin-right: 7px; accent-color: var(--dsw-alias-state-business-primary, #4176e6); }
-.pub-submit { width: 100%; min-height: 42px; }
+.pub-submit { width: 100%; min-height: 36px; }
 .pub-submission { padding: 14px 0; border-bottom: 1px solid var(--pub-border); }
 .pub-submission:last-child { border-bottom: 0; }
 .pub-submission-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }
@@ -297,6 +278,10 @@ export const css = `
 .pub-import { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--pub-border); }
 .pub-count { margin-right: 8px; color: var(--dsw-alias-state-business-primary, #4176e6); font: 12px var(--ds-font-family-code, monospace); letter-spacing: .04em; }
 .pub-modal, .pub-modal-account { width: min(480px, 100%); max-height: min(90vh, 640px); color: var(--dsw-alias-label-primary); }
+.pub-publish-modal { width: min(560px, 100%); max-height: min(90vh, 720px); }
+.pub-publish-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.pub-publish-fields h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+.pub-publish-fields h3:not(:first-child) { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--pub-border); }
 .pub-modal-content { min-height: 0; overflow-y: auto; }
 .pub-modal-summary { display: grid; gap: 10px; margin: 0 0 18px; }
 .pub-modal-summary > div { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 10px; }
@@ -312,8 +297,13 @@ export const css = `
 .pub-danger-action { color: var(--dsw-alias-state-error-primary) !important; }
 .pub-danger-action:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-danger) !important; }
 .pub-modal :is(button, input):focus-visible, .pub-modal-account :is(button, input):focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
-.pub-drafts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-.pub-drafts select { max-width: 280px; }
+.pub-editor-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.pub-editor-status { color: var(--pub-tertiary-text); font-size: 12px; }
+.pub-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.pub-editor-view-switch { display: inline-flex; align-items: center; padding: 2px; border: 1px solid var(--pub-border); border-radius: 9px; background: var(--pub-soft); }
+.pub-editor-view-switch button { min-height: 28px; padding: 4px 11px; border: 0; border-radius: 6px; background: transparent; color: var(--pub-secondary-text); font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; }
+.pub-editor-view-switch button[aria-pressed=true] { background: var(--pub-surface); color: var(--pub-text); box-shadow: 0 1px 3px #0002; font-weight: 600; }
+.pub-editor-view-switch button:disabled { opacity: .4; cursor: not-allowed; }
 .pub-editor { min-height: 340px !important; font-family: var(--ds-font-family-code, monospace) !important; }
 .pub-version-card { padding-bottom: 14px; }
 .pub-version-card .pub-muted { margin: 10px 0 0; }
@@ -322,12 +312,11 @@ export const css = `
 .pub-article-theme-control label { color: var(--pub-secondary-text); font-size: 13px; font-weight: 600; }
 .pub-article-theme-control .pub-muted { grid-column: 1 / -1; margin: 0; }
 .pub-version-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; }
-.pub-version-tab { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--pub-border); border-radius: 8px; background: var(--pub-surface); color: var(--pub-secondary-text); font-size: 13px; cursor: pointer; }
+.pub-version-tab { flex: 0 0 auto; padding: 6px 10px; border: 1px solid var(--pub-border); border-radius: 8px; background: var(--pub-surface); color: var(--pub-secondary-text); font-size: 12px; cursor: pointer; }
 .pub-version-tab[aria-pressed=true] { border-color: var(--dsw-alias-state-business-primary, #4176e6); background: var(--dsw-alias-state-business-tertiary, #edf3fe); color: var(--pub-text); font-weight: 600; }
 .pub-version-tab:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
-.pub-content-view-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-.pub-content-view-tabs .pub-actions { margin-top: 0; }
 ${contentPreviewCss}
+${draftGalleryCss}
 .pub-assets { display: flex; gap: 8px; flex-wrap: wrap; }
 .pub-no-cover { display: inline-flex; align-items: center; gap: 5px; margin: 0 0 12px; color: var(--pub-secondary-text); font-size: 13px; }
 .pub-asset { width: 130px; padding: 8px; border: 1px solid var(--pub-border); border-radius: 9px; }
@@ -336,6 +325,7 @@ ${contentPreviewCss}
 .pub-asset img { width: 100%; height: 95px; border-radius: 5px; object-fit: cover; }
 .pub-asset small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pub-asset .pub-actions { margin-top: 5px; }
+@media (hover: none) { .pub button:not(.pub-gallery-open) { min-height: 40px; } }
 @container (max-width: 900px) { .pub-grid { grid-template-columns: 1fr; } }
 @container (max-width: 640px) {
   .pub-wrap { padding: 20px 16px 40px; }
@@ -349,5 +339,6 @@ ${contentPreviewCss}
   .pub-page-nav { width: 100%; }
   .pub-history-tools { width: 100%; }
   .pub-history-search { flex: 1 1 100%; min-width: 0; }
+  .pub-editor-status { order: 3; flex-basis: 100%; }
 }
 `

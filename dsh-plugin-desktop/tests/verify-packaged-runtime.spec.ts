@@ -34,6 +34,7 @@ import {
   REQUIRED_POSIX_FS_EXT_ENTRIES,
   REQUIRED_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
+  REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
   resolvePackagedAsarPath,
   resolvePackagedExecutablePath,
@@ -65,7 +66,7 @@ function context(
     ...(arch === undefined ? {} : { arch }),
     packager: {
       ...(executableName === undefined ? {} : { executableName }),
-      appInfo: { productFilename: '易宝工坊' },
+      appInfo: { productFilename: '易宝工坊 Beta' },
     },
   }
 }
@@ -170,12 +171,6 @@ function requiredPhysicalEntries(runtimeContext: PackagedRuntimeContext): string
   return [...desktopAssets]
 }
 
-function requiredExternalEntries(runtimeContext: PackagedRuntimeContext): string[] {
-  return runtimeContext.electronPlatformName === 'darwin'
-    ? [...REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES]
-    : []
-}
-
 interface PhysicalBundle {
   files: UnpackedRuntimeFile[]
   exists: FileProbe
@@ -213,6 +208,14 @@ function bundleFixture(
       return external !== undefined && externalPaths.includes(external)
     },
   }
+}
+
+function requiredExternalEntries(runtimeContext: PackagedRuntimeContext): string[] {
+  return runtimeContext.electronPlatformName === 'darwin'
+    ? [...REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES]
+    : runtimeContext.electronPlatformName === 'win32'
+      ? [...REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES]
+      : []
 }
 
 function physicalFixture(
@@ -323,7 +326,17 @@ describe('packaged desktop runtime verification', () => {
     },
   )
 
-  it('does not demand the Publisher Helper from a non-macOS package', () => {
+  it('requires the Windows MatrixMedia Helper and its source notices beside app.asar', () => {
+    expect(REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES).toEqual([
+      'publisher/MatrixMedia Publisher Worker.exe',
+      'publisher/resources/app.asar',
+      'publisher/icudtl.dat',
+      'publisher/v8_context_snapshot.bin',
+      'publisher/chrome_100_percent.pak',
+      'publisher/libEGL.dll',
+      'publisher/LICENSE',
+      'publisher/SOURCE.json',
+    ])
     const runtimeContext = context('/build', 'win32')
     const bundle = bundleFixture(runtimeContext)
     expect(() => verifyPackagedRuntime(
@@ -333,6 +346,20 @@ describe('packaged desktop runtime verification', () => {
       () => bundle.files,
     )).not.toThrow()
   })
+
+  it.each(REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES)(
+    'fails Windows packaging when Publisher Helper entry %s is absent',
+    (missing) => {
+      const runtimeContext = context('/build', 'win32')
+      const bundle = bundleFixture(runtimeContext, { missing })
+      expect(() => verifyPackagedRuntime(
+        runtimeContext,
+        headerReader(completeArchiveEntries(), bundle.paths),
+        bundle.exists,
+        () => bundle.files,
+      )).toThrow(`missing required extraResources entries: ${missing}`)
+    },
+  )
 
   it('recursively derives every non-map desktop runtime file from the completed build', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-runtime-list-'))
@@ -405,13 +432,13 @@ describe('packaged desktop runtime verification', () => {
   it.each([
     [
       'darwin',
-      join('/build', '易宝工坊.app', 'Contents', 'Resources', 'app.asar'),
-      join('/build', '易宝工坊.app', 'Contents', 'MacOS', '易宝工坊'),
+      join('/build', '易宝工坊 Beta.app', 'Contents', 'Resources', 'app.asar'),
+      join('/build', '易宝工坊 Beta.app', 'Contents', 'MacOS', '易宝工坊 Beta'),
     ],
     [
       'win32',
       join('/build', 'resources', 'app.asar'),
-      join('/build', '易宝工坊.exe'),
+      join('/build', '易宝工坊 Beta.exe'),
     ],
   ])('inspects the %s selective ASAR layout', (platform, expectedPath, expectedExecutable) => {
     const runtimeContext = context('/build', platform)
@@ -430,7 +457,7 @@ describe('packaged desktop runtime verification', () => {
   })
 
   it('uses LinuxPackager executableName instead of appInfo.productFilename', () => {
-    const runtimeContext = context('/build', 'linux', 1, 'dsh-plugin-desktop')
+    const runtimeContext = context('/build', 'linux', 1, 'dsh-plugin-desktop-beta')
     const expectedPath = join('/build', 'resources', 'app.asar')
     const fixture = physicalFixture(runtimeContext)
 
@@ -443,7 +470,7 @@ describe('packaged desktop runtime verification', () => {
 
     expect(resolvePackagedAsarPath(runtimeContext)).toBe(expectedPath)
     expect(resolvePackagedExecutablePath(runtimeContext))
-      .toBe(join('/build', 'dsh-plugin-desktop'))
+      .toBe(join('/build', 'dsh-plugin-desktop-beta'))
   })
 
   it('rejects an unsupported platform instead of guessing a package layout', () => {
@@ -815,7 +842,7 @@ describe('packaged desktop runtime verification', () => {
     ['linux', 3, REQUIRED_POSIX_FS_EXT_ENTRIES.linux.arm64],
   ] as const)('requires the %s architecture %s fs-ext binding', (platform, arch, missing) => {
     const runtimeContext = context('/build', platform, arch, platform === 'linux'
-      ? 'dsh-plugin-desktop'
+      ? 'dsh-plugin-desktop-beta'
       : undefined)
     const fixture = physicalFixture(runtimeContext, { missing })
     expect(() => verifyPackagedRuntime(
@@ -831,7 +858,7 @@ describe('packaged desktop runtime verification', () => {
       '/build',
       process.platform,
       process.platform === 'darwin' ? 4 : undefined,
-      process.platform === 'linux' ? 'dsh-plugin-desktop' : undefined,
+      process.platform === 'linux' ? 'dsh-plugin-desktop-beta' : undefined,
     )
     const dshVersion = JSON.parse(readFileSync(
       new URL('../node_modules/@deepseek-ai/dsh/package.json', import.meta.url),

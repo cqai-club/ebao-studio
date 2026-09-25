@@ -124,7 +124,7 @@ export function SubmissionHistory({ active }: { active: boolean }) {
         <select className="pub-input" aria-label="筛选内容类型" value={filter} onChange={event => { setFilter(event.target.value as typeof filter); setPage(1) }}>
           <option value="all">全部类型</option><option value="article">文章</option><option value="image-note">图文</option><option value="video">视频</option>
         </select>
-        <Button variant="outline" disabled={refreshing || deleting} onClick={() => void refresh()}>{refreshing ? '刷新中…' : '刷新记录'}</Button>
+        <Button size="sm" variant="outline" disabled={refreshing || deleting} onClick={() => void refresh()}>{refreshing ? '刷新中…' : '刷新记录'}</Button>
       </div>
     </div>
     <div className="pub-card">{filtered.length === 0
@@ -180,8 +180,8 @@ export function SubmissionHistory({ active }: { active: boolean }) {
       description={deleteTarget ? `删除“${deleteTarget.title}”这条本机历史记录？` : ''}
       className="pub-modal" onClose={closeDelete}
       footer={<>
-        <Button variant="outline" data-pub-initial-focus disabled={deleting} onClick={closeDelete}>取消</Button>
-        <Button variant="outline" className="pub-danger-action" disabled={deleting || (deleteTarget?.state === 'unknown' && !acknowledgedUnknown)} onClick={() => void confirmDelete()}>{deleting ? '正在删除…' : '确认删除'}</Button>
+        <Button size="sm" variant="outline" data-pub-initial-focus disabled={deleting} onClick={closeDelete}>取消</Button>
+        <Button size="sm" variant="outline" className="pub-danger-action" disabled={deleting || (deleteTarget?.state === 'unknown' && !acknowledgedUnknown)} onClick={() => void confirmDelete()}>{deleting ? '正在删除…' : '确认删除'}</Button>
       </>}>
       {deleteTarget?.state === 'unknown' && <>
         <p className="pub-modal-copy">这条提交的结果尚未确认。{deleteTarget.message && <>原因：{deleteTarget.message}<br /></>}删除前请到对应平台后台核对。</p>

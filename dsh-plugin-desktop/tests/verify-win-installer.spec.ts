@@ -26,8 +26,14 @@ function fixture(version = '2.0.0'): {
   mkdirSync(unpacked, { recursive: true })
   const installer = join(dist, `eBao-Studio-${version}-x64-Setup.exe`)
   const application = join(unpacked, '易宝工坊.exe')
+  const publisher = join(unpacked, 'resources', 'publisher')
+  mkdirSync(join(publisher, 'resources'), { recursive: true })
   writeFileSync(installer, portableExecutable())
   writeFileSync(application, portableExecutable())
+  writeFileSync(join(publisher, 'MatrixMedia Publisher Worker.exe'), portableExecutable())
+  writeFileSync(join(publisher, 'resources', 'app.asar'), 'asar')
+  writeFileSync(join(publisher, 'LICENSE'), 'license')
+  writeFileSync(join(publisher, 'SOURCE.json'), '{}')
   return { root, installer, application }
 }
 
@@ -70,5 +76,12 @@ describe('Windows installer artifact verification', () => {
 
     expect(() => verifyWindowsInstaller({ desktopRoot: value.root, version: '2.0.0' }))
       .toThrow('does not have a Windows PE signature')
+  })
+
+  it('rejects an installer staging directory without the Publisher Worker', () => {
+    const value = fixture()
+    rmSync(join(value.root, 'dist', 'win-unpacked', 'resources', 'publisher', 'MatrixMedia Publisher Worker.exe'))
+    expect(() => verifyWindowsInstaller({ desktopRoot: value.root, version: '2.0.0' }))
+      .toThrow('MatrixMedia Publisher Worker.exe')
   })
 })

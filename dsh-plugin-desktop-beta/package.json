@@ -120,9 +120,10 @@
     "verify:operations": "node --test scripts/operation-reliability.spec.mjs && node scripts/verify-operation-reliability.mjs",
     "verify:notices": "node scripts/verify-licenses.mjs --notices THIRD_PARTY_NOTICES.md",
     "verify:vendor": "node ../scripts/verify-publisher-source.mjs",
+    "verify:publisher-worker:win": "node scripts/verify-windows-publisher-helper.ts",
     "prepare:electron-native": "node scripts/prepare-fs-ext.ts",
     "check": "yarn run verify:vendor && yarn run build && yarn run typecheck && yarn run test && yarn run verify:closure && yarn run verify:cli && yarn run verify:loader && yarn run verify:profile && yarn run verify:aa && yarn run verify:licenses && yarn run verify:operations",
-    "check:win-package": "yarn workspace dsh-community-market build && yarn run build && yarn run typecheck && vitest run tests/package.spec.ts tests/package-win.spec.ts tests/desktop-installer-quit.spec.ts tests/installer-nsh.spec.ts tests/update-checker.spec.ts tests/electron-auto-updater.spec.ts tests/verify-win-installer.spec.ts tests/verify-win-portable.spec.ts tests/verify-packaged-runtime.spec.ts tests/windows-pwsh-sandbox.spec.ts tests/windows-volume-diagnostics.spec.ts tests/window-options.spec.ts tests/safe-mode.spec.ts && yarn run verify:closure",
+    "check:win-package": "yarn run verify:publisher-worker:win && yarn workspace dsh-community-market build && yarn run build && yarn run typecheck && vitest run tests/package.spec.ts tests/package-win.spec.ts tests/publisher-helper.spec.ts tests/publisher-supervisor.spec.ts tests/desktop-installer-quit.spec.ts tests/installer-nsh.spec.ts tests/update-checker.spec.ts tests/electron-auto-updater.spec.ts tests/verify-win-installer.spec.ts tests/verify-win-portable.spec.ts tests/verify-packaged-runtime.spec.ts tests/windows-pwsh-sandbox.spec.ts tests/windows-volume-diagnostics.spec.ts tests/window-options.spec.ts tests/safe-mode.spec.ts && yarn run verify:closure",
     "check:mac-package": "yarn workspace dsh-community-market build && yarn run build && yarn run typecheck && vitest run tests/package.spec.ts tests/package-mac.spec.ts tests/verify-mac-smoke.spec.ts tests/electron-auto-updater.spec.ts tests/verify-packaged-runtime.spec.ts tests/mac-universal.spec.ts && yarn run verify:closure",
     "start": "node lib/bin.js",
     "start:isolated": "DSH_DESKTOP_ISOLATED_HOST=1 node lib/bin.js",
@@ -427,6 +428,20 @@
         "build/tray-icon-white@1.5x.png",
         "build/tray-icon-white@2x.png",
         "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**"
+      ],
+      "extraResources": [
+        {
+          "from": "../matrixmedia-publisher/build/publisher-worker/win-unpacked",
+          "to": "publisher"
+        },
+        {
+          "from": "../matrixmedia-publisher/LICENSE",
+          "to": "publisher/LICENSE"
+        },
+        {
+          "from": "../vendor/matrixmedia/publisher-worker.json",
+          "to": "publisher/SOURCE.json"
+        }
       ],
       "target": [
         {

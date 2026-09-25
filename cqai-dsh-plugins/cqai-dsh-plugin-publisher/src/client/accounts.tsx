@@ -170,19 +170,20 @@ export function AccountsPage({ active }: { active: boolean }) {
           <div className="pub-field"><label htmlFor="pub-wxmp-app-secret">公众号 AppSecret</label><Input id="pub-wxmp-app-secret" className="pub-input-wrap" type="password" autoComplete="new-password" value={appSecret} onChange={event => setAppSecret(event.target.value)}/></div>
           <p className="pub-muted">使用公众号官方接口；请在微信公众平台确认草稿与发布权限，并配置本机出口 IP 白名单。密钥在本机加密保存。</p>
         </>}
-        <Button variant="primary" disabled={busy !== '' || capability?.supported !== true} onClick={() => void create()}>{busy || (platform === 'wxmp' ? '添加公众号' : '添加并打开登录页')}</Button>
-        <div className="pub-import"><h2>导入 MatrixMedia 账号</h2><p className="pub-muted">只复制 macOS 默认目录里的账号和 session；不会移动或删除原数据。导入前必须完全退出独立 MatrixMedia。</p>
-          <Button variant="outline" disabled={busy !== '' || capability?.supported !== true} onClick={() => void inspectImport()}>预览可导入账号</Button>
+        <Button size="sm" variant="primary" disabled={busy !== '' || capability?.supported !== true} onClick={() => void create()}>{busy || (platform === 'wxmp' ? '添加公众号' : '添加并打开登录页')}</Button>
+        {capability?.legacyAccountImportSupported === false && <p className="pub-muted">Windows 暂不支持导入独立 MatrixMedia 账号；请直接添加账号并登录。</p>}
+        {capability?.legacyAccountImportSupported !== false && <div className="pub-import"><h2>导入 MatrixMedia 账号</h2><p className="pub-muted">只复制 macOS 默认目录里的账号和 session；不会移动或删除原数据。导入前必须完全退出独立 MatrixMedia。</p>
+          <Button size="sm" variant="outline" disabled={busy !== '' || capability?.supported !== true} onClick={() => void inspectImport()}>预览可导入账号</Button>
           {preview && <div style={{ marginTop: 14 }}>
             {preview.accounts.length === 0
               ? <div className="pub-muted">没有发现可导入账号。</div>
               : <>
                 <div className={preview.running ? 'pub-error' : 'pub-muted'}>{preview.running ? '检测到独立 MatrixMedia 仍在运行，请先退出。' : `发现 ${String(preview.accounts.length)} 个账号：`}</div>
                 <div className="pub-tags">{preview.accounts.map((item, index) => <Tag tone="neutral" key={`${item.platform}:${item.displayName}:${String(index)}`}>{PLATFORM_LABELS[item.platform]} · {item.displayName}</Tag>)}</div>
-                <div className="pub-actions"><Button variant="primary" disabled={preview.running || busy !== ''} onClick={() => void applyImport()}>确认复制并导入</Button></div>
+                <div className="pub-actions"><Button size="sm" variant="primary" disabled={preview.running || busy !== ''} onClick={() => void applyImport()}>确认复制并导入</Button></div>
               </>}
           </div>}
-        </div>
+        </div>}
       </div></div>
     </div>
     <PublisherModal
@@ -192,8 +193,8 @@ export function AccountsPage({ active }: { active: boolean }) {
       closeLabel="关闭"
       className="pub-modal-account"
       footer={<>
-        <Button variant="outline" disabled={busy !== ''} onClick={closeDialog}>取消</Button>
-        <Button variant="primary" type="submit" form="pub-account-rename-form" disabled={busy !== '' || !nextName.trim() || nextName.trim() === dialog?.account.displayName}>{busy || '保存名称'}</Button>
+        <Button size="sm" variant="outline" disabled={busy !== ''} onClick={closeDialog}>取消</Button>
+        <Button size="sm" variant="primary" type="submit" form="pub-account-rename-form" disabled={busy !== '' || !nextName.trim() || nextName.trim() === dialog?.account.displayName}>{busy || '保存名称'}</Button>
       </>}
     >
       <form id="pub-account-rename-form" className="pub-modal-field" onSubmit={event => { event.preventDefault(); saveRename() }}>
@@ -209,8 +210,8 @@ export function AccountsPage({ active }: { active: boolean }) {
       closeLabel="关闭"
       className="pub-modal-account"
       footer={<>
-        <Button variant="outline" data-pub-initial-focus disabled={busy !== ''} onClick={closeDialog}>取消</Button>
-        <Button variant="outline" className="pub-danger-action" disabled={busy !== ''} onClick={confirmRemove}>{busy || '确认删除'}</Button>
+        <Button size="sm" variant="outline" data-pub-initial-focus disabled={busy !== ''} onClick={closeDialog}>取消</Button>
+        <Button size="sm" variant="outline" className="pub-danger-action" disabled={busy !== ''} onClick={confirmRemove}>{busy || '确认删除'}</Button>
       </>}
     >
       <p className="pub-modal-copy">历史提交记录会保留账号名称快照。</p>

@@ -137,6 +137,26 @@ jobs:
           path: ${{ steps.yarn-cache.outputs.dir }}
           key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - run: yarn install --immutable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.5
+      - run: corepack enable
+      - name: Build Windows MatrixMedia Publisher Worker
+        working-directory: matrixmedia-publisher
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          corepack yarn@1.22.22 install --frozen-lockfile
+          corepack yarn@1.22.22 test:publisher-worker
+          corepack yarn@1.22.22 build:dir
+          corepack yarn@1.22.22 electron-builder --config electron-builder.publisher.yml --win dir --x64 --publish never
+      - name: Smoke Windows Publisher Worker lifecycle
+        run: node scripts/smoke-windows-publisher-worker.mjs
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.2
+      - run: corepack enable
       - run: yarn workspace ${{ matrix.workspace }} check:win-package
       - name: Build Windows installer
         env:
@@ -178,6 +198,22 @@ jobs:
           path: ${{ steps.yarn-cache.outputs.dir }}
           key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - run: yarn install --immutable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.5
+      - run: corepack enable
+      - name: Build macOS MatrixMedia Publisher Worker
+        working-directory: matrixmedia-publisher
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          corepack yarn@1.22.22 install --frozen-lockfile
+          corepack yarn@1.22.22 test:publisher-worker
+          corepack yarn@1.22.22 build:publisher-worker:universal
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.2
+      - run: corepack enable
       - run: yarn workspace ${{ matrix.workspace }} check:mac-package
       - name: Build macOS smoke artifact
         env:

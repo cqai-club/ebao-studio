@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   API,
@@ -23,11 +24,16 @@ import {
 } from './protocol.ts'
 import {
   MAX_ASSET_BYTES, MAX_BODY_BYTES as MAX_CONTENT_BODY_BYTES, addAsset, createContent, deleteContent, duplicateContent,
-  listContents, readAsset, readContent, removeAsset, resolveContent, saveContent,
+  listContents, queryContents, readAsset, readContent, removeAsset, resolveContent, saveContent,
   type SaveContentInput,
 } from './contents.ts'
 import { contentSubmissionError } from './submission-validation.ts'
 import { registerAgentSourceTools } from './agent-source-tools.ts'
+import { AgentDraftBindings, validAgentSessionId } from './agent-draft-binding.ts'
+import { readAgentDraftSession, writeAgentDraftSession } from './agent-draft-session.ts'
+import { registerAgentDraftTools } from './agent-draft-tools.ts'
+import { ensureAgentWorkspace } from './agent-workspace.ts'
+import { ensureProjectWorkspace, readProjectSettings, saveProjectSettings } from './project-workspace.ts'
 import { readSessionContent } from './session-contents.ts'
 import { readSessionSourceDocument, readSourceImage } from './source-documents.ts'
 import { readPublicationCandidate, validPublicationCandidate } from './publication-candidates.ts'
@@ -284,6 +290,7 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
       return { code: 200, data: readSessionContent(sessionId) }
     }
     if (action.startsWith('content/')) return { code: 200, data: readContent(uuid(action.slice('content/'.length), '草稿 ID')) }
+    if (action === 'project-settings') return { code: 200, data: readProjectSettings() }
     if (action === 'works') return { code: 200, data: listWorks() }
     if (action === 'accounts') return { code: 200, data: await runtime.request('accounts.list') }
     if (action === 'submissions') return { code: 200, data: await runtime.request('submissions.list') }
@@ -308,6 +315,15 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
   }
   if (req.method !== 'POST') return { code: 405, data: { error: '请求方法不支持' } }
   const body = await readJson(req, action === 'content-save' ? 2 * MAX_CONTENT_BODY_BYTES : MAX_BODY_BYTES)
+  if (action === 'publication-open-source') {
+    const value = exact(body, ['sessionId', 'sourceRevision'])
+    const sessionId = text(value.sessionId, '会话 ID', 512)
+    const sourceRevision = text(value.sourceRevision, '内容源修订号', 64)
+    const source = readSessionSourceDocument(sessionId)
+    if (!source) throw new Error('当前会话没有原稿')
+    if (source.revision !== sourceRevision) throw new Error('内容源已更新，请重新预览后发布')
+    return { code: 201, data: openPublicationFromSource(source.id, sourceRevision, 'article') }
+  }
   if (action === 'publication-open') {
     const value = exact(body, ['sessionId', 'candidateId'])
     const sessionId = text(value.sessionId, '会话 ID', 512)
@@ -320,6 +336,25 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     const value = exact(body, ['contentType'])
     if (value.contentType !== 'article' && value.contentType !== 'image-note' && value.contentType !== 'video') throw new Error('内容类型无效')
     return { code: 201, data: createContent(value.contentType) }
+  }
+  if (action === 'contents-query') {
+    const value = exact(body, ['contentType', 'query', 'cursor'])
+    if (value.contentType !== 'article' && value.contentType !== 'image-note' && value.contentType !== 'video') throw new Error('内容类型无效')
+    if (typeof value.query !== 'string') throw new Error('搜索关键词无效')
+    if (value.cursor !== undefined && typeof value.cursor !== 'string') throw new Error('草稿查询游标无效')
+    return { code: 200, data: queryContents({
+      contentType: value.contentType, query: value.query,
+      ...(value.cursor === undefined ? {} : { cursor: value.cursor }),
+    }) }
+  }
+  if (action === 'project-settings') {
+    const value = exact(body, ['defaultRoot'])
+    if (typeof value.defaultRoot !== 'string') throw new Error('项目根目录必须是现存的绝对目录')
+    return { code: 200, data: saveProjectSettings(value.defaultRoot) }
+  }
+  if (action === 'project-workspace') {
+    const value = exact(body, ['contentId'])
+    return { code: 200, data: ensureProjectWorkspace(uuid(value.contentId, '草稿 ID')) }
   }
   if (action === 'content-save') {
     const { id, input } = contentSaveBody(body)
@@ -421,7 +456,42 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
 
 export function apply(ctx: Context): void {
   const runtime = (ctx as PublisherContext).desktopRuntime.publisher
-  ctx.inject(['tools', 'attachments', 'systemPrompt'], (agentCtx) => registerAgentSourceTools(agentCtx))
+  const draftBindings = new AgentDraftBindings()
+  let liveSession: (id: string) => boolean = () => false
+  const listedSession = async (id: string): Promise<boolean> => {
+    // The Session Store only contains activated conversations. The Session
+    // Controller list also contains persisted, cold conversations after restart.
+    const controller = ctx.get('sessionController') as {
+      list: (request: Record<string, never>, signal: AbortSignal) => Promise<{
+        items: readonly { sessionId: string; origin?: string }[]
+      }>
+    } | undefined
+    if (!controller) return liveSession(id)
+    const result = await controller.list({}, new AbortController().signal)
+    return result.items.some(item => item.sessionId === id && item.origin !== 'subagent')
+  }
+  const archivedSession = (id: string): boolean => {
+    // Workspace Registry is present in Desktop, but the Publisher may also be
+    // mounted without it by a smaller Host composition. The client checks the
+    // authoritative archive snapshot before reusing a returned association.
+    const registry = ctx.get('workspaceRegistry') as { archivedSessionIds?: readonly string[] } | undefined
+    return registry?.archivedSessionIds?.includes(id) ?? false
+  }
+  ctx.inject(['sessions'], (sessionCtx) => {
+    liveSession = id => {
+      const session = sessionCtx.sessions.get(SessionId(id))
+      return session !== undefined && session.header.origin !== 'subagent'
+    }
+    const disposeSession = sessionCtx.on('session/disposed', session => {
+      draftBindings.bind(session.id, null)
+    })
+    return () => { disposeSession(); liveSession = () => false; draftBindings.clear() }
+  })
+  ctx.inject(['tools', 'attachments', 'systemPrompt'], (agentCtx) => {
+    const disposeSource = registerAgentSourceTools(agentCtx)
+    const disposeDraft = registerAgentDraftTools(agentCtx, draftBindings)
+    return () => { disposeDraft(); disposeSource() }
+  })
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: API,
@@ -432,6 +502,42 @@ export function apply(ctx: Context): void {
         const prefix = `${API}/`
         if (!url.pathname.startsWith(prefix) || url.search !== '') { json(res, 404, { error: '接口不存在' }); return }
         const action = url.pathname.slice(prefix.length)
+        if (req.method === 'POST' && action === 'agent-workspace') {
+          const value = exact(await readJson(req), ['contentId'])
+          json(res, 200, { path: ensureAgentWorkspace(uuid(value.contentId, '草稿 ID')) })
+          return
+        }
+        if (req.method === 'GET' && action.startsWith('agent-draft-session/')) {
+          const segments = action.split('/')
+          if (segments.length !== 2) throw new Error('草稿 ID 无效')
+          const contentId = uuid(segments[1], '草稿 ID')
+          const storedSessionId = readAgentDraftSession(contentId)
+          const sessionId = storedSessionId && await listedSession(storedSessionId) && !archivedSession(storedSessionId)
+            ? storedSessionId : null
+          json(res, 200, { contentId, sessionId })
+          return
+        }
+        if (req.method === 'POST' && action === 'agent-draft-bind') {
+          const value = exact(await readJson(req), ['sessionId', 'contentId', 'bindingToken'])
+          const sessionId = validAgentSessionId(value.sessionId)
+          const contentId = value.contentId === null ? null : uuid(value.contentId, '草稿 ID')
+          if (contentId === null) {
+            draftBindings.unbind(sessionId, uuid(value.bindingToken, '绑定令牌'))
+            json(res, 200, { sessionId, contentId: null, bindingToken: null })
+            return
+          }
+          if (!await listedSession(sessionId) || archivedSession(sessionId)) throw new Error('当前 Agent 会话不存在或不可用于编辑')
+          if (value.bindingToken !== undefined) throw new Error('绑定草稿时不应提供令牌')
+          const binding = draftBindings.bind(sessionId, contentId)
+          try { writeAgentDraftSession(contentId, sessionId) }
+          catch (cause) {
+            if (binding) draftBindings.unbind(sessionId, binding.bindingToken)
+            throw cause
+          }
+          json(res, 200, { sessionId, contentId: binding?.contentId ?? null,
+            bindingToken: binding?.bindingToken ?? null })
+          return
+        }
         if (req.method === 'GET' && action.startsWith('source-image/')) {
           const segments = action.split('/')
           if (segments.length !== 3 || url.search) throw new Error('原稿图片地址无效')

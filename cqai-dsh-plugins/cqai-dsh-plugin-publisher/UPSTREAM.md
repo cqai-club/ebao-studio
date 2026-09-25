@@ -26,4 +26,15 @@ corepack yarn@1.22.22 test:publisher-worker
 corepack yarn@1.22.22 build:publisher-worker:universal
 ```
 
-发布前必须确保 `publisher-worker.json` 中的精确提交可从公开仓库获取，并完成 GPL-2.0-only 最终许可证审查。Helper、许可证全文和源码声明分别安装到 `resources/publisher/MatrixMedia Publisher Worker.app`、`resources/publisher/LICENSE`、`resources/publisher/SOURCE.json`。
+Windows x64 需在原生 Windows 主机上使用 Node.js 20 单独构建 Helper：
+
+```powershell
+corepack yarn@1.22.22 install --frozen-lockfile
+corepack yarn@1.22.22 test:publisher-worker
+corepack yarn@1.22.22 build:dir
+corepack yarn@1.22.22 electron-builder --config electron-builder.publisher.yml --win dir --x64 --publish never
+```
+
+随后切回 Node.js 22.19+ 或 24.x，运行桌面 `check:win-package` 和 `dist:win` / `dist:win-portable`。打包检查要求 `matrixmedia-publisher/build/publisher-worker/win-unpacked/` 包含 Windows 可执行文件与 Electron 资源，且构建时间晚于 MatrixMedia 源码修改时间。
+
+发布前必须确保 `publisher-worker.json` 中的精确提交可从公开仓库获取，并完成 GPL-2.0-only 最终许可证审查。macOS Helper 安装到 `resources/publisher/MatrixMedia Publisher Worker.app`；Windows Helper 的完整 Electron 目录安装到 `resources/publisher/`，入口为 `MatrixMedia Publisher Worker.exe`。两种平台的许可证全文和源码声明分别安装到 `resources/publisher/LICENSE`、`resources/publisher/SOURCE.json`。

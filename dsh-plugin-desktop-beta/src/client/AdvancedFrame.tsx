@@ -8,6 +8,14 @@ import {
   SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, RIGHTBAR_DEFAULT_RATIO,
 } from './layout-state.ts'
 
+const PUBLISHER_PANEL = 'cqai-publisher'
+const PUBLISHER_AGENT_DRAWER_EVENT = 'cqai-publisher-agent-drawer'
+
+interface PublisherAgentDrawerRequest {
+  open: boolean
+  contentId?: string
+}
+
 /** Private values assembled by one Desktop-owned shell registration. */
 export interface AdvancedFrameInjected {
   /** Desktop-owned panel state exposed through the standard layout service. */
@@ -41,6 +49,59 @@ export function DesktopOwnedFrame({
   const panels = useSyncExternalStore(subscribeLayout, readLayout, readLayout)
   const frameRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
+  const panelId = usePanelInfo(info => info.activePanelId)
+  const panelIdRef = useRef(panelId)
+  panelIdRef.current = panelId
+  const [agentDrawer, setAgentDrawer] = useState<PublisherAgentDrawerRequest>({ open: false })
+  const agentDrawerOpenRef = useRef(false)
+  const closeAgentButtonRef = useRef<HTMLButtonElement>(null)
+  const agentReturnFocusRef = useRef<HTMLElement | null>(null)
+  const agentDrawerVisible = panelId === PUBLISHER_PANEL && agentDrawer.open
+
+  const closeAgentDrawer = useCallback(() => {
+    window.dispatchEvent(new CustomEvent<PublisherAgentDrawerRequest>(PUBLISHER_AGENT_DRAWER_EVENT, {
+      detail: { open: false },
+    }))
+    if (agentReturnFocusRef.current?.isConnected) agentReturnFocusRef.current.focus()
+    agentReturnFocusRef.current = null
+  }, [])
+
+  useEffect(() => {
+    const onDrawerRequest = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail
+      if (!detail || typeof detail !== 'object' || typeof (detail as { open?: unknown }).open !== 'boolean') return
+      const request = detail as PublisherAgentDrawerRequest
+      if (request.open) {
+        if (panelIdRef.current !== PUBLISHER_PANEL) return
+        if (!agentDrawerOpenRef.current) {
+          agentReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        }
+        agentDrawerOpenRef.current = true
+        setAgentDrawer({ open: true, ...(typeof request.contentId === 'string' ? { contentId: request.contentId } : {}) })
+      } else {
+        agentDrawerOpenRef.current = false
+        setAgentDrawer({ open: false })
+      }
+    }
+    window.addEventListener(PUBLISHER_AGENT_DRAWER_EVENT, onDrawerRequest)
+    return () => { window.removeEventListener(PUBLISHER_AGENT_DRAWER_EVENT, onDrawerRequest) }
+  }, [])
+
+  useEffect(() => {
+    if (panelId !== PUBLISHER_PANEL && agentDrawer.open) closeAgentDrawer()
+  }, [panelId, agentDrawer.open, closeAgentDrawer])
+
+  useEffect(() => {
+    if (!agentDrawerVisible) return
+    closeAgentButtonRef.current?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('[aria-modal="true"]')) return
+      event.preventDefault()
+      closeAgentDrawer()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => { window.removeEventListener('keydown', onKeyDown) }
+  }, [agentDrawerVisible, closeAgentDrawer])
 
   useEffect(() => {
     const element = frameRef.current
@@ -66,16 +127,19 @@ export function DesktopOwnedFrame({
   const collapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
   const sidebarPreference = collapsed ? 0 : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
   const rightbarPreference = panels.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
+  // Global Publisher content owns the full center width. The ordinary
+  // Session rightbar keeps its preference but does not reserve an empty track.
+  const publisherPanel = panelId === PUBLISHER_PANEL
   const normal = computeDesktopColumns(
     viewport, !panels.rightbarShown && narrow ? 0 : sidebarPreference,
-    rightbarPreference, collapsedSidebarWidth(mode, platform),
+    publisherPanel ? 0 : rightbarPreference, collapsedSidebarWidth(mode, platform),
   )
   const normalRef = useRef(normal)
   normalRef.current = normal
   const columns = computeDesktopColumns(
     viewport,
     sidebarPreference,
-    panels.rightbarTrack ? rightbarPreference : 0,
+    !publisherPanel && panels.rightbarTrack ? rightbarPreference : 0,
     collapsedSidebarWidth(mode, platform),
   )
   // Enhanced macOS keeps a wider native rail around the centered upstream
@@ -111,7 +175,8 @@ export function DesktopOwnedFrame({
       data-desktop-platform={platform}
       data-sidebar-collapsed={collapsed || undefined}
       data-rightbar-collapsed={columns.rightbar === 0 || undefined}
-      data-rightbar-fullscreen={panels.rightbarFullscreen || undefined}
+      data-pub-agent-open={agentDrawerVisible || undefined}
+      data-rightbar-fullscreen={!publisherPanel && panels.rightbarFullscreen || undefined}
       data-dragging={dragging || undefined}
       style={{ gridTemplateColumns: `${columns.sidebar}px minmax(0, 1fr) ${columns.rightbar}px` }}
     >
@@ -121,7 +186,16 @@ export function DesktopOwnedFrame({
           {renderSlot('sidebar', { collapsed, width: sidebarOwnerWidth })}
         </div>
       </aside>
-      <main className="dshDesktopConversationSurface"><MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} /></main>
+      <main className="dshDesktopConversationSurface" data-pub-agent-overlay={agentDrawerVisible && columns.center < 960 || undefined}>
+        <div className="dshDesktopMainPanelSurface"><MainPanel panelId={panelId} renderSlot={renderSlot} /></div>
+        {agentDrawerVisible && <aside id="pub-agent-drawer" className="dshDesktopAgentDrawer" aria-labelledby="pub-agent-drawer-title" data-content-id={agentDrawer.contentId}>
+          <div className="dshDesktopAgentDrawerHeader">
+            <span id="pub-agent-drawer-title">Agent · 当前文章</span>
+            <button ref={closeAgentButtonRef} type="button" className="dshDesktopAgentDrawerClose" aria-label="关闭 Agent 对话" onClick={closeAgentDrawer}>×</button>
+          </div>
+          <div className="dshDesktopAgentConversation">{renderSlot('main', {}, { entryKey: 'conversation' })}</div>
+        </aside>}
+      </main>
       <aside className="dshDesktopRightbarSurface" data-rightbar-col>
         {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
       </aside>
@@ -139,7 +213,7 @@ export function DesktopOwnedFrame({
           onEnd={onDragEnd}
         />
       )}
-      {panels.rightbarShown && normal.rightbar > 0 && !panels.rightbarFullscreen && (
+      {!publisherPanel && panels.rightbarShown && normal.rightbar > 0 && !panels.rightbarFullscreen && (
         <ResizeHandle
           side="rightbar"
           left={viewport - normal.rightbar}
@@ -152,8 +226,7 @@ export function DesktopOwnedFrame({
   )
 }
 
-function MainPanel({ usePanelInfo, renderSlot }: Pick<PropsRuntime<'root'>, 'usePanelInfo'> & PropsRenderSlots<'main'>) {
-  const panelId = usePanelInfo(info => info.activePanelId)
+function MainPanel({ panelId, renderSlot }: { panelId: ReturnType<DesktopLayoutState['getPanelInfo']>['activePanelId'] } & PropsRenderSlots<'main'>) {
   return renderSlot('main', {}, { entryKey: panelId ?? 'conversation' })
 }
 

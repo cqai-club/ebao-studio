@@ -6,6 +6,7 @@ import MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { addAsset, createContent, deleteContent, readContent, saveContent } from './contents.ts'
+import { discardEmptyProjectWorkspace } from './project-workspace.ts'
 import { readSourceDocument, readSourceImage, type SourceSnapshot } from './source-documents.ts'
 import type { Platform, PublisherContent, PublisherPlatformVariant } from './protocol.ts'
 
@@ -285,6 +286,9 @@ export function openPublicationFromSource(
     }
     return current
   } catch (error) {
+    // This draft never became visible. Remove only its empty project directory;
+    // files another process placed there remain untouched.
+    try { discardEmptyProjectWorkspace(created.id, env) } catch { /* Preserve the import failure. */ }
     try { deleteContent(created.id, env) } catch { /* Preserve the import failure. */ }
     throw error
   }

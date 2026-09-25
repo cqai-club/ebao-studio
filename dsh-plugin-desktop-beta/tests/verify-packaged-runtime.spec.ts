@@ -34,6 +34,7 @@ import {
   REQUIRED_POSIX_FS_EXT_ENTRIES,
   REQUIRED_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
+  REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
   resolvePackagedAsarPath,
   resolvePackagedExecutablePath,
@@ -212,7 +213,9 @@ function bundleFixture(
 function requiredExternalEntries(runtimeContext: PackagedRuntimeContext): string[] {
   return runtimeContext.electronPlatformName === 'darwin'
     ? [...REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES]
-    : []
+    : runtimeContext.electronPlatformName === 'win32'
+      ? [...REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES]
+      : []
 }
 
 function physicalFixture(
@@ -323,7 +326,17 @@ describe('packaged desktop runtime verification', () => {
     },
   )
 
-  it('does not demand the Publisher Helper from a non-macOS package', () => {
+  it('requires the Windows MatrixMedia Helper and its source notices beside app.asar', () => {
+    expect(REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES).toEqual([
+      'publisher/MatrixMedia Publisher Worker.exe',
+      'publisher/resources/app.asar',
+      'publisher/icudtl.dat',
+      'publisher/v8_context_snapshot.bin',
+      'publisher/chrome_100_percent.pak',
+      'publisher/libEGL.dll',
+      'publisher/LICENSE',
+      'publisher/SOURCE.json',
+    ])
     const runtimeContext = context('/build', 'win32')
     const bundle = bundleFixture(runtimeContext)
     expect(() => verifyPackagedRuntime(
@@ -333,6 +346,20 @@ describe('packaged desktop runtime verification', () => {
       () => bundle.files,
     )).not.toThrow()
   })
+
+  it.each(REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES)(
+    'fails Windows packaging when Publisher Helper entry %s is absent',
+    (missing) => {
+      const runtimeContext = context('/build', 'win32')
+      const bundle = bundleFixture(runtimeContext, { missing })
+      expect(() => verifyPackagedRuntime(
+        runtimeContext,
+        headerReader(completeArchiveEntries(), bundle.paths),
+        bundle.exists,
+        () => bundle.files,
+      )).toThrow(`missing required extraResources entries: ${missing}`)
+    },
+  )
 
   it('recursively derives every non-map desktop runtime file from the completed build', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-runtime-list-'))

@@ -65,7 +65,7 @@ describe('electronPlatformStrategy', () => {
 
     expect(strategy.platform).toBe('darwin')
     expect(strategy.updateDownloadPlatform).toBe('darwin')
-    expect(strategy.canPickDirectory).toBe(false)
+    expect(strategy.canPickDirectory).toBe(true)
     expect(strategy.canToggleShellMode).toBe(true)
 
     strategy.configureApplication(icon, '易宝工坊')

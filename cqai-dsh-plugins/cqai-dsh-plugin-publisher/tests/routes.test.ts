@@ -247,6 +247,16 @@ describe('the Host publisher route', () => {
         description: '第二条简介', shortTitle: '短标题', tags: ['AI'], creativeStatement: 'none',
         videoSource: { kind: 'work', workId: WORK_ID },
       })).json() as { revision: number }
+      const cards = await send('contents-query', { contentType: 'video', query: '第二条简介' })
+      expect(cards.status).toBe(200)
+      expect(await cards.json()).toMatchObject({
+        items: [{ id: videoDraft.id, title: '第二条视频', excerpt: '第二条简介',
+          videoSource: { kind: 'work', workId: WORK_ID } }],
+        nextCursor: null,
+      })
+      expect((await send('contents-query', { contentType: 'video' })).status).toBe(400)
+      expect((await send('contents-query', { contentType: 'video', query: '', cursor: 1 })).status).toBe(400)
+      expect((await send('contents-query', { contentType: 'video', query: '', unwanted: true })).status).toBe(400)
       const draftAccepted = await send('submissions', {
         contentType: 'video', contentId: videoDraft.id, revision: savedVideo.revision,
         mode: 'draft', accountIds: [ACCOUNT_ID],
@@ -357,7 +367,7 @@ describe('the Host publisher route', () => {
         body: JSON.stringify(body),
       })
       const created = await (await send('contents', { contentType: 'article' })).json() as { id: string; revision: number; articleTheme: string }
-      expect(created.articleTheme).toBe('editorial')
+      expect(created.articleTheme).toBe('classic')
       const saved = await (await send('content-save', {
         id: created.id, revision: created.revision, title: '文章', body: '# 正文',
         summary: '', tags: ['AI'], creativeStatement: 'none', articleTheme: 'classic',

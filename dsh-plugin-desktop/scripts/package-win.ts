@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { prepareFsExtForElectron } from './prepare-fs-ext.ts'
 import { electronBuilderEnvironment } from './electron-builder-environment.ts'
+import { verifyWindowsPublisherHelper } from './publisher-helper.ts'
 
 const WINDOWS_SIGNING_KEYS = [
   'CSC_IDENTITY_AUTO_DISCOVERY',
@@ -36,6 +37,8 @@ export interface WindowsPackageOptions {
   readonly builderCli: string
   /** Prepare platform-specific native runtime dependencies before packaging. */
   readonly prepareRuntime: () => void
+  /** Validate the separately built Windows Publisher Worker before Desktop builds. */
+  readonly verifyPublisherWorker: () => void
   /** Absolute packaged-installer verification script. */
   readonly verifier: string
   /** Node executable used to run package-local scripts. */
@@ -100,6 +103,7 @@ export function createWindowsPackageOptions(verifier = './verify-win-installer.t
     prepareRuntime: () => {
       prepareFsExtForElectron({ platform: 'win32', arch: 'x64', desktopRoot })
     },
+    verifyPublisherWorker: () => { verifyWindowsPublisherHelper(workspaceRoot) },
     verifier: fileURLToPath(new URL(verifier, import.meta.url)),
     nodeExecutable: process.execPath,
     run,
@@ -132,6 +136,7 @@ export function packageWindowsArtifact(
   artifact: 'installer' | 'portable archive',
 ): void {
   assertWindowsPackageHost(options, artifact)
+  options.verifyPublisherWorker()
 
   const cleanEnvironment = withoutWindowsSigningSecrets(options.env)
   options.log(`Building an unsigned Windows x64 ${artifact}; Authenticode is a separate release step.`)

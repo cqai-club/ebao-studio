@@ -72,7 +72,8 @@ function bundledApplicationNotices() {
     '| --- | --- | --- | --- |',
     `| ${name} | ${version} | ${spdx} | ${source} |`,
     `${name} is built from the pinned \`matrixmedia-publisher/\` Git submodule and bundled at`,
-    '`resources/publisher/MatrixMedia Publisher Worker.app` as the isolated publishing Helper.',
+    '`resources/publisher/MatrixMedia Publisher Worker.app` on macOS or',
+    '`resources/publisher/MatrixMedia Publisher Worker.exe` on Windows as the isolated publishing Helper.',
     'Its complete license is installed at `resources/publisher/LICENSE`; `resources/publisher/SOURCE.json`',
     'records the public repository, branch, exact source commit, build command, and license digest.',
   ]

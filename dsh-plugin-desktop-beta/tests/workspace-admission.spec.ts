@@ -49,6 +49,21 @@ describe('Electron workspace admission', () => {
     expect(showOpenDialog).not.toHaveBeenCalled()
   })
 
+  it('uses the native picker on macOS and returns null when cancelled', async () => {
+    const showOpenDialog = vi.fn(async () => ({ canceled: true, filePaths: [] }))
+    const { admission: subject } = admission({
+      platform: 'darwin',
+      canPickDirectory: true,
+      showOpenDialog,
+    })
+
+    await expect(subject.pickDirectory()).resolves.toBeNull()
+    expect(showOpenDialog).toHaveBeenCalledWith({
+      title: 'Select Workspace Directory',
+      properties: ['openDirectory', 'dontAddToRecent'],
+    })
+  })
+
   it('allows a fixed NTFS workspace without prompting or logging', async () => {
     const { admission: subject, options } = admission()
 

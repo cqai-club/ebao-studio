@@ -769,12 +769,24 @@ export function verifySelectiveUnpackedRuntime(
   return summary
 }
 
-/** macOS-only MatrixMedia Helper copied beside app.asar as a nested application. */
+/** macOS MatrixMedia Helper copied beside app.asar as a nested application. */
 export const REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES = [
   'publisher/MatrixMedia Publisher Worker.app/Contents/Info.plist',
   'publisher/MatrixMedia Publisher Worker.app/Contents/MacOS/MatrixMedia Publisher Worker',
   'publisher/MatrixMedia Publisher Worker.app/Contents/Resources/app.asar',
   'publisher/MatrixMedia Publisher Worker.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework',
+  'publisher/LICENSE',
+  'publisher/SOURCE.json',
+] as const
+
+/** Windows MatrixMedia Helper copied as a complete Electron directory. */
+export const REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES = [
+  'publisher/MatrixMedia Publisher Worker.exe',
+  'publisher/resources/app.asar',
+  'publisher/icudtl.dat',
+  'publisher/v8_context_snapshot.bin',
+  'publisher/chrome_100_percent.pak',
+  'publisher/libEGL.dll',
   'publisher/LICENSE',
   'publisher/SOURCE.json',
 ] as const
@@ -846,9 +858,12 @@ export function verifyPackagedRuntime(
       `dsh-plugin-desktop: packaged runtime at ${unpackedRoot} is missing required physical entries: ${missing.join(', ')}`,
     )
   }
-  if (context.electronPlatformName === 'darwin') {
+  if (context.electronPlatformName === 'darwin' || context.electronPlatformName === 'win32') {
     const externalRoot = dirname(asarPath)
-    const missingExternal = REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES
+    const requiredExternal = context.electronPlatformName === 'darwin'
+      ? REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES
+      : REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES
+    const missingExternal = requiredExternal
       .filter(entry => !exists(join(externalRoot, entry)))
     if (missingExternal.length > 0) {
       throw new Error(

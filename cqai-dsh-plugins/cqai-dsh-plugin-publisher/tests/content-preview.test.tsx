@@ -43,7 +43,7 @@ describe('shared Publisher content preview', () => {
     expect(model.remainingAssets.map(item => item.id)).toEqual([unusedId])
 
     const tree = elements(PublisherContentPreview({ content: article }))
-    expect(tree[0]?.props).toMatchObject({ 'aria-label': '文章内容预览', 'data-theme': 'editorial' })
+    expect(tree[0]?.props).toMatchObject({ 'aria-label': '文章平台分享预览', 'data-theme': 'editorial' })
     expect(tree.some(node => node.props.className === 'pub-content-preview-cover')).toBe(true)
     expect(tree.some(node => node.props.className === 'pub-content-preview-tags')).toBe(true)
     const markdown = tree.find(node => node.type === ArticleMarkdownPreview)
@@ -63,7 +63,7 @@ describe('shared Publisher content preview', () => {
   it('renders image-note images in draft order through the same carousel', () => {
     const note = { ...article, contentType: 'image-note' as const, body: '图文正文', assets: [asset(unusedId), asset(coverId)] }
     const tree = elements(PublisherContentPreview({ content: note, device: 'mobile' }))
-    expect(tree[0]?.props).toMatchObject({ 'aria-label': '图文内容预览', 'data-device': 'mobile' })
+    expect(tree[0]?.props).toMatchObject({ 'aria-label': '图文平台分享预览', 'data-device': 'mobile' })
     const carousel = tree.find(node => node.type === ImageNoteCarousel)
     expect((carousel?.props.assets as { id: string }[]).map(item => item.id)).toEqual([unusedId, coverId])
     expect(tree.some(node => node.props.className === 'pub-content-preview-tags')).toBe(true)

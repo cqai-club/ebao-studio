@@ -7,17 +7,28 @@ const patch = readFileSync(new URL(
 ), 'utf8')
 
 describe('RC1 browse directory-picker client patch', () => {
-  it('publishes the Windows bridge through the compiled flow and declarations', () => {
+  it('publishes the desktop bridge through the compiled flow and declarations', () => {
     for (const marker of [
       '__DSH_DESKTOP_PICK_DIRECTORY__',
       '__DSH_DESKTOP_VALIDATE_DIRECTORY__',
       'pickNativeDirectory?: () => Promise<string | null>;',
       'validateDirectory?: (path: string) => Promise<boolean>;',
-      '"browser.nativePicker": "使用 Windows 选择文件夹"',
-      '"browser.nativePicker": "Choose with Windows"',
+      '"browser.nativePicker": "使用系统选择文件夹"',
+      '"browser.nativePicker": "Choose with system dialog"',
       'IconFolderOpen16',
     ]) {
       expect(patch).toContain(marker)
+    }
+  })
+
+  it('shows the native picker on macOS and Windows while validating Windows paths only', () => {
+    const compiled = readFileSync(new URL(
+      '../node_modules/@deepseek-ai/dsh-client-ui-directory-picker-browse/lib/client.js',
+      import.meta.url,
+    ), 'utf8')
+    for (const source of [patch, compiled]) {
+      expect(source).toContain('pickNativeDirectory: ["darwin", "win32"].includes(new URLSearchParams(window.location.search).get("dsh-desktop-platform"))')
+      expect(source).toContain('validateDirectory: new URLSearchParams(window.location.search).get("dsh-desktop-platform") === "win32"')
     }
   })
 

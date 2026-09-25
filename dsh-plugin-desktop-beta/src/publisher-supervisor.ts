@@ -82,11 +82,20 @@ function executableFromOverride(value: string): string {
   return join(target, 'Contents', 'MacOS', appName)
 }
 
-/** Locate the helper without starting it. v1 intentionally has no Windows fallback. */
+/** Locate the platform's packaged or development helper without starting it. */
 export function resolvePublisherWorker(options: Pick<PublisherSupervisorOptions, 'platform' | 'resourcesPath' | 'env' | 'developmentAppPath'>): string {
-  if (options.platform !== 'darwin') return ''
+  if (options.platform !== 'darwin' && options.platform !== 'win32') return ''
   const override = String((options.env ?? process.env).EBAO_PUBLISHER_WORKER ?? '').trim()
   if (override !== '') return executableFromOverride(override)
+  if (options.platform === 'win32') {
+    const packaged = join(options.resourcesPath, 'publisher', 'MatrixMedia Publisher Worker.exe')
+    if (existsSync(packaged)) return packaged
+    const development = options.developmentAppPath ?? fileURLToPath(new URL(
+      '../../matrixmedia-publisher/build/publisher-worker/win-unpacked/MatrixMedia Publisher Worker.exe',
+      import.meta.url,
+    ))
+    return existsSync(development) ? development : packaged
+  }
   const packaged = join(
     options.resourcesPath,
     'publisher',
@@ -245,7 +254,10 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     try {
       // A selected path is private to Electron main. Open the file itself and
       // verify its descriptor so a replaced path cannot redirect a preview.
-      handle = await open(selected.file, constants.O_RDONLY | constants.O_NOFOLLOW)
+      // Windows has no O_NOFOLLOW. The descriptor identity check below still
+      // rejects a path redirected to a different file after selection.
+      const flags = this.platform === 'win32' ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW
+      handle = await open(selected.file, flags)
       cancelled()
       const before = await handle.stat()
       if (!this.matchesLocalVideo(before, selected)) {
@@ -304,12 +316,13 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
   }
 
   status(): PublisherRuntimeStatus {
-    if (this.platform !== 'darwin') {
+    if (this.platform !== 'darwin' && this.platform !== 'win32') {
       return {
         supported: false,
         running: false,
+        legacyAccountImportSupported: false,
         reason: 'publisher-not-supported',
-        message: '多平台发布一期仅支持 macOS',
+        message: '多平台发布目前支持 macOS 和 Windows',
       }
     }
     if (this.executable === '' || !existsSync(this.executable)) {
@@ -317,17 +330,21 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
       return {
         supported: false,
         running: false,
+        legacyAccountImportSupported: this.platform === 'darwin',
         reason: 'publisher-worker-missing',
         message: hasWorkerOverride
           ? '指定的 Publisher Worker 不存在，请检查 EBAO_PUBLISHER_WORKER 并重启 e宝工坊'
           : '未找到内置 Publisher Worker，请重新安装 e宝工坊',
       }
     }
-    return { supported: true, running: this.child !== undefined }
+    return { supported: true, running: this.child !== undefined, legacyAccountImportSupported: this.platform === 'darwin' }
   }
 
   async request<T = unknown>(method: PublisherWorkerMethod, params: unknown = {}, signal?: AbortSignal): Promise<T> {
     if (!isPublisherWorkerMethod(method)) throw new PublisherWorkerError('method-not-allowed', '不允许的发布操作')
+    if (this.platform === 'win32' && (method === 'accounts.importPreview' || method === 'accounts.importApply')) {
+      throw new PublisherWorkerError('import-not-supported', 'Windows 暂不支持导入独立 MatrixMedia 账号，请直接添加账号并登录')
+    }
     if (signal?.aborted) throw new PublisherWorkerError('request-cancelled', '发布操作已取消')
     await this.ensureStarted()
     const workerParams = method === 'submissions.create' ? this.resolveLocalVideoSubmission(params) : params
