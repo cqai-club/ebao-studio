@@ -518,6 +518,10 @@ def generate_audio(
         )
         return None, None, None
 
+    if getattr(params, "audio_source", "tts") == "upload" and not custom_audio_file:
+        _mark_task_failed(task_id, "audio", "uploaded narration audio is missing")
+        return None, None, None
+
     if not custom_audio_file:
         reusable_preview = _resolve_reusable_voice_preview(
             task_id,
@@ -628,14 +632,18 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
             return ""
 
     if subtitle_provider == "whisper":
+        if subtitle.WhisperModel is None:
+            raise RuntimeError("Whisper is not installed; install the speech recognition runtime")
         subtitle.create(
             audio_file=audio_file,
             subtitle_file=subtitle_path,
             word_level=is_word_level,
         )
-        if not is_word_level:
+        if not is_word_level and getattr(params, "audio_source", "tts") == "tts":
             logger.info("\n\n## correcting subtitle")
             subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
+        if not path.isfile(subtitle_path):
+            raise RuntimeError("Whisper subtitle generation failed")
 
     subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
     if not subtitle_lines:
@@ -997,10 +1005,14 @@ def generate_final_videos(
                 warnings.append({"code": warning_code, "video_index": index})
 
         logger.info(f"\n\n## generating video: {index} => {final_video_path}")
+        indexed_subtitle = path.join(utils.task_dir(task_id), f"subtitle-{index}.srt")
+        effective_subtitle = indexed_subtitle if path.isfile(indexed_subtitle) else subtitle_path
+        if effective_subtitle and path.isfile(effective_subtitle) and not path.getsize(effective_subtitle):
+            effective_subtitle = ""
         bgm_mix_succeeded = video.generate_video(
             video_path=combined_video_path,
             audio_path=audio_file,
-            subtitle_path=subtitle_path,
+            subtitle_path=effective_subtitle,
             output_file=final_video_path,
             params=params,
             bgm_file_override=bgm_file_override,
@@ -1027,6 +1039,93 @@ def generate_final_videos(
         combined_video_paths.append(combined_video_path)
 
     return final_video_paths, combined_video_paths, warnings
+
+
+def generate_original_audio_videos(
+    task_id: str,
+    params: VideoParams,
+    material_groups: list[list[str]],
+    *,
+    stop_at: str,
+):
+    if len(material_groups) != params.video_count or any(not group for group in material_groups):
+        return _mark_task_failed(task_id, "materials", "AI video material groups are incomplete")
+    outputs = []
+    combined_outputs = []
+    durations = []
+    warnings = []
+    concat_mode = (
+        params.video_concat_mode
+        if isinstance(params.video_concat_mode, VideoConcatMode)
+        else VideoConcatMode(params.video_concat_mode)
+    )
+    for index, group in enumerate(material_groups, 1):
+        missing_audio = sum(not video.probe_video_audio(source)[1] for source in group)
+        if missing_audio:
+            warnings.append({"code": "missing_original_audio", "video_index": index,
+                             "silent_clips": missing_audio})
+        combined = path.join(utils.task_dir(task_id), f"combined-{index}.mp4")
+        video.combine_videos(
+            combined_video_path=combined,
+            video_paths=group,
+            audio_file=None,
+            target_duration=params.target_duration_seconds,
+            preserve_audio=True,
+            video_aspect=params.video_aspect,
+            video_fit_mode=params.video_fit_mode,
+            video_concat_mode=concat_mode,
+            video_transition_mode=params.video_transition_mode,
+            max_clip_duration=params.video_clip_duration,
+            threads=params.n_threads,
+            clip_speed=params.video_clip_speed,
+        )
+        if not path.isfile(combined):
+            return _mark_task_failed(task_id, "video", f"combined video {index} was not created")
+        duration, has_audio = video.probe_video_audio(combined)
+        if not has_audio:
+            return _mark_task_failed(task_id, "video", f"combined video {index} has no audio stream")
+        durations.append(duration)
+        combined_outputs.append(combined)
+        if duration + 0.05 < params.target_duration_seconds:
+            warnings.append({"code": "material_shorter_than_target", "video_index": index,
+                             "actual_duration": duration})
+        subtitle_file = path.join(utils.task_dir(task_id), f"subtitle-{index}.srt")
+        if params.subtitle_enabled and not path.isfile(subtitle_file):
+            if any(video.probe_video_audio(source)[1] for source in group):
+                if subtitle.WhisperModel is None:
+                    return _mark_task_failed(task_id, "subtitle", "Whisper is not installed")
+                subtitle.create(
+                    audio_file=combined,
+                    subtitle_file=subtitle_file,
+                    word_level=params.subtitle_display_mode == "word_by_word",
+                )
+                if not path.isfile(subtitle_file):
+                    return _mark_task_failed(task_id, "subtitle", "Whisper subtitle generation failed")
+            else:
+                with open(subtitle_file, "w", encoding="utf-8") as output:
+                    output.write("")
+        effective_subtitle = (
+            subtitle_file if params.subtitle_enabled and path.isfile(subtitle_file)
+            and subtitle.file_to_subtitles(subtitle_file) else ""
+        )
+        if stop_at == "subtitle":
+            sm.state.update_task(task_id, progress=50 + 50 * index / params.video_count)
+            continue
+        final_file = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
+        video.generate_video(
+            video_path=combined,
+            audio_path=None,
+            subtitle_path=effective_subtitle,
+            output_file=final_file,
+            params=params,
+        )
+        outputs.append(final_file)
+        sm.state.update_task(task_id, progress=50 + 50 * index / params.video_count)
+    sm.state.update_task(task_id, state=const.TASK_STATE_COMPLETE, progress=100)
+    return {
+        "videos": outputs, "combined_videos": combined_outputs,
+        "subtitleDurations": durations, "warnings": warnings,
+    }
 
 
 def _patch_cross_post_state(task_id: str, **kwargs) -> bool | None:
@@ -1383,12 +1482,13 @@ def _run_pipeline(
     voxcpm_reference_audio: bytes | None = None,
     voxcpm_prompt_audio: bytes | None = None,
     voxcpm_prompt_text: str = "",
+    prepared_material_groups: list[list[str]] | None = None,
 ):
     logger.info(f"start task: {task_id}, stop_at: {stop_at}")
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=5)
 
     if (
-        stop_at in {"materials", "video"}
+        stop_at in {"materials", "subtitle", "video"}
         and params.video_source == "volcengine_seedance"
         and not volcengine_seedance.is_enabled()
     ):
@@ -1399,7 +1499,7 @@ def _run_pipeline(
         )
 
     if (
-        stop_at in {"materials", "video"}
+        stop_at in {"materials", "subtitle", "video"}
         and params.video_source == "ofox"
         and not ofox.is_enabled()
     ):
@@ -1410,7 +1510,7 @@ def _run_pipeline(
         )
 
     if (
-        stop_at in {"materials", "video"}
+        stop_at in {"materials", "subtitle", "video"}
         and params.video_source == "metaso_minimax"
         and not metaso_minimax.is_enabled()
     ):
@@ -1421,7 +1521,7 @@ def _run_pipeline(
         )
 
     if (
-        stop_at in {"materials", "video"}
+        stop_at in {"materials", "subtitle", "video"}
         and params.video_source == "muapi"
         and not muapi.is_enabled()
     ):
@@ -1432,7 +1532,7 @@ def _run_pipeline(
         )
 
     if (
-        stop_at in {"materials", "video"}
+        stop_at in {"materials", "subtitle", "video"}
         and params.video_source == "openai_image"
         and not material.is_openai_image_enabled(
             config.snapshot_config_with_pending(config.app)
@@ -1517,7 +1617,10 @@ def _run_pipeline(
 
     # 2. Generate terms
     video_terms = ""
-    if params.video_source != "local":
+    if prepared_material_groups is None and params.video_source != "local" and (
+        stop_at in {"terms", "materials", "video"}
+        or params.audio_source == "video_original"
+    ):
         video_terms = generate_terms(task_id, params, video_script)
         if not video_terms:
             return _mark_task_failed(
@@ -1546,22 +1649,25 @@ def _run_pipeline(
     if voxcpm_prompt_audio is not None:
         generate_audio_kwargs["voxcpm_prompt_audio"] = voxcpm_prompt_audio
         generate_audio_kwargs["voxcpm_prompt_text"] = voxcpm_prompt_text
-    audio_file, audio_duration, sub_maker = generate_audio(
-        task_id,
-        params,
-        video_script,
-        **generate_audio_kwargs,
+    material_first = params.video_source == "cqai_video" and (
+        stop_at == "materials" or params.audio_source == "video_original"
     )
-    if not audio_file:
-        return _mark_task_failed(
-            task_id,
-            "audio",
-            "failed to prepare narration audio",
+    if material_first:
+        audio_file, audio_duration, sub_maker = None, params.target_duration_seconds, None
+    else:
+        audio_file, audio_duration, sub_maker = generate_audio(
+            task_id, params, video_script, **generate_audio_kwargs,
         )
+        if not audio_file:
+            return _mark_task_failed(
+                task_id, "audio", "failed to prepare narration audio",
+            )
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=30)
 
     if stop_at == "audio":
+        if not audio_file:
+            return _mark_task_failed(task_id, "audio", "video original audio is available after materials")
         sm.state.update_task(
             task_id,
             state=const.TASK_STATE_COMPLETE,
@@ -1570,7 +1676,72 @@ def _run_pipeline(
         )
         return {"audio_file": audio_file, "audio_duration": audio_duration}
 
-    # 4. Generate subtitle
+    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=40)
+
+    if stop_at == "subtitle" and not material_first:
+        subtitle_path = generate_subtitle(
+            task_id, params, video_script, sub_maker, audio_file
+        )
+        durations = [float(audio_duration)] * params.video_count
+        if subtitle_path:
+            for index in range(1, params.video_count + 1):
+                target = path.join(utils.task_dir(task_id), f"subtitle-{index}.srt")
+                if target != subtitle_path:
+                    import shutil
+                    shutil.copyfile(subtitle_path, target)
+        sm.state.update_task(task_id, state=const.TASK_STATE_COMPLETE, progress=100, subtitle_path=subtitle_path)
+        return {"subtitle_path": subtitle_path, "subtitleDurations": durations}
+
+    # 4. Get video materials before generating subtitles.
+    downloaded_videos = (
+        [file for group in prepared_material_groups for file in group]
+        if prepared_material_groups is not None
+        else get_video_materials(
+            task_id, params, video_terms, audio_duration,
+            loomloom_video_request=loomloom_video_request,
+        )
+    )
+    if not downloaded_videos:
+        return _mark_task_failed(
+            task_id,
+            "materials",
+            "failed to prepare video materials",
+        )
+
+    if stop_at == "materials":
+        if params.video_source == "cqai_video":
+            per_video = math.ceil(params.target_duration_seconds / params.video_clip_duration)
+            groups = [downloaded_videos[index:index + per_video]
+                      for index in range(0, len(downloaded_videos), per_video)]
+            if len(groups) != params.video_count or any(len(group) != per_video for group in groups):
+                return _mark_task_failed(task_id, "materials", "AI video material count is incomplete")
+            probes = [[video.probe_video_audio(file) for file in group] for group in groups]
+            audio_presence = [[item[1] for item in group] for group in probes]
+            durations = [[item[0] for item in group] for group in probes]
+            relative_groups = [[path.relpath(file, utils.task_dir(task_id)).replace("\\", "/")
+                                for file in group] for group in groups]
+            sm.state.update_task(task_id, state=const.TASK_STATE_COMPLETE, progress=100, materials=downloaded_videos)
+            return {"materials": downloaded_videos, "terms": video_terms,
+                    "materialGroups": relative_groups,
+                    "materialAudio": audio_presence, "materialDurations": durations}
+        sm.state.update_task(
+            task_id,
+            state=const.TASK_STATE_COMPLETE,
+            progress=100,
+            materials=downloaded_videos,
+        )
+        return {"materials": downloaded_videos}
+
+    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=50)
+
+    if params.audio_source == "video_original":
+        if not prepared_material_groups:
+            return _mark_task_failed(task_id, "materials", "confirmed AI video materials are required")
+        return generate_original_audio_videos(
+            task_id, params, prepared_material_groups, stop_at=stop_at,
+        )
+
+    # 5. Generate subtitle after the visual materials are ready.
     subtitle_path = generate_subtitle(
         task_id, params, video_script, sub_maker, audio_file
     )
@@ -1584,33 +1755,7 @@ def _run_pipeline(
         )
         return {"subtitle_path": subtitle_path}
 
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=40)
-
-    # 5. Get video materials
-    downloaded_videos = get_video_materials(
-        task_id,
-        params,
-        video_terms,
-        audio_duration,
-        loomloom_video_request=loomloom_video_request,
-    )
-    if not downloaded_videos:
-        return _mark_task_failed(
-            task_id,
-            "materials",
-            "failed to prepare video materials",
-        )
-
-    if stop_at == "materials":
-        sm.state.update_task(
-            task_id,
-            state=const.TASK_STATE_COMPLETE,
-            progress=100,
-            materials=downloaded_videos,
-        )
-        return {"materials": downloaded_videos}
-
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=50)
+    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=60)
 
     # 仅完整视频生成流程才需要处理视频拼接模式；
     # 这样可以避免 /subtitle 和 /audio 这类请求访问不存在的字段。
@@ -1710,6 +1855,7 @@ def start(
     voxcpm_reference_audio: bytes | None = None,
     voxcpm_prompt_audio: bytes | None = None,
     voxcpm_prompt_text: str = "",
+    prepared_material_groups: list[list[str]] | None = None,
 ):
     """
     执行任务流水线，并确保未预期异常也会转换成可查询的失败状态。
@@ -1728,6 +1874,7 @@ def start(
             voxcpm_reference_audio=voxcpm_reference_audio,
             voxcpm_prompt_audio=voxcpm_prompt_audio,
             voxcpm_prompt_text=voxcpm_prompt_text,
+            prepared_material_groups=prepared_material_groups,
         )
     except Exception as exc:
         logger.exception(

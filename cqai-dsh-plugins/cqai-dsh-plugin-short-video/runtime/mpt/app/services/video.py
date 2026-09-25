@@ -16,6 +16,7 @@ from typing import List
 from loguru import logger
 import numpy as np
 from moviepy import (
+    AudioClip,
     AudioFileClip,
     ColorClip,
     CompositeAudioClip,
@@ -595,6 +596,14 @@ def _open_video_clip_quietly(video_path: str, audio: bool = False) -> VideoFileC
     return clip
 
 
+def probe_video_audio(video_path: str) -> tuple[float, bool]:
+    clip = _open_video_clip_quietly(video_path, audio=True)
+    try:
+        return float(clip.duration), clip.audio is not None
+    finally:
+        close_clip(clip)
+
+
 def close_clip(clip):
     if clip is None:
         return
@@ -744,7 +753,7 @@ def _fit_clip_to_canvas(
 def combine_videos(
     combined_video_path: str,
     video_paths: List[str],
-    audio_file: str,
+    audio_file: str | None,
     video_aspect: VideoAspect = VideoAspect.portrait,
     video_concat_mode: VideoConcatMode = VideoConcatMode.random,
     video_transition_mode: VideoTransitionMode = None,
@@ -755,14 +764,19 @@ def combine_videos(
     source_usage: dict[str, int] | None = None,
     source_groups: dict[str, str] | None = None,
     used_video_paths: List[str] | None = None,
+    target_duration: float | None = None,
+    preserve_audio: bool = False,
 ) -> str:
-    audio_clip = AudioFileClip(audio_file)
-    try:
-        # 这里只需要读取旁白音频时长来决定素材视频拼接长度；后续不会再使用
-        # audio_clip。读取完成后立即关闭，避免早退或异常路径泄漏文件句柄。
-        audio_duration = audio_clip.duration
-    finally:
-        close_clip(audio_clip)
+    if audio_file:
+        audio_clip = AudioFileClip(audio_file)
+        try:
+            audio_duration = audio_clip.duration
+        finally:
+            close_clip(audio_clip)
+    elif target_duration and target_duration > 0:
+        audio_duration = target_duration
+    else:
+        raise ValueError("audio file or target duration is required")
     logger.info(f"audio duration: {audio_duration} seconds")
     logger.info(f"maximum clip duration: {max_clip_duration} seconds")
     required_video_duration = _get_required_video_duration(audio_duration)
@@ -794,7 +808,7 @@ def combine_videos(
     subclipped_items = []
     video_duration = 0
     for video_path in video_paths:
-        clip = _open_video_clip_quietly(video_path)
+        clip = _open_video_clip_quietly(video_path, audio=preserve_audio)
         clip_duration = clip.duration
         clip_w, clip_h = clip.size
         close_clip(clip)
@@ -845,7 +859,7 @@ def combine_videos(
         )
         
         try:
-            clip = _open_video_clip_quietly(subclipped_item.file_path).subclipped(
+            clip = _open_video_clip_quietly(subclipped_item.file_path, audio=preserve_audio).subclipped(
                 subclipped_item.start_time, subclipped_item.end_time
             )
             # 播放速度属于素材本身属性，应在转场前应用。这样 Fade/Slide 等一秒转场
@@ -902,6 +916,12 @@ def combine_videos(
 
             if clip.duration > max_clip_duration:
                 clip = clip.subclipped(0, max_clip_duration)
+            if preserve_audio and clip.audio is None:
+                clip = clip.with_audio(AudioClip(
+                    lambda t: np.zeros((len(t), 2)) if isinstance(t, np.ndarray) else np.zeros(2),
+                    duration=clip.duration,
+                    fps=44100,
+                ))
                 
             # wirte clip to temp file
             clip_file = f"{output_dir}/temp-clip-{i+1}.mp4"
@@ -911,6 +931,7 @@ def combine_videos(
                 codec=_get_configured_video_codec(),
                 logger=None,
                 fps=fps,
+                **({"audio_codec": audio_codec, "audio_fps": 44100} if preserve_audio else {}),
             )
 
             # Store clip duration before closing
@@ -932,7 +953,7 @@ def combine_videos(
             logger.error(f"failed to process clip: {str(e)}")
     
     # loop processed clips until the video duration covers the audio duration and the small safety margin.
-    if video_duration < required_video_duration:
+    if video_duration < required_video_duration and not preserve_audio:
         logger.warning(
             f"video duration ({video_duration:.2f}s) is shorter than required duration "
             f"({required_video_duration:.2f}s), looping clips to match audio length."
@@ -952,8 +973,7 @@ def combine_videos(
     # merge video clips progressively, avoid loading all videos at once to avoid memory overflow
     logger.info("starting clip merging process")
     if not processed_clips:
-        logger.warning("no clips available for merging")
-        return combined_video_path
+        raise RuntimeError("no clips available for merging")
     
     clip_files = [clip.file_path for clip in processed_clips]
     logger.info(f"concatenating {len(clip_files)} clips with ffmpeg")
@@ -1208,7 +1228,7 @@ def subtitle_font_supports_text(font_path: str, text: str) -> bool:
 
 def generate_video(
     video_path: str,
-    audio_path: str,
+    audio_path: str | None,
     subtitle_path: str,
     output_file: str,
     params: VideoParams,
@@ -1428,13 +1448,18 @@ def generate_video(
     # 视频写入失败等路径都能释放 FFmpeg 子进程，尤其避免 Windows 文件被占用。
     with ExitStack() as clip_stack:
         source_video_clip = clip_stack.enter_context(
-            _open_video_clip_quietly(video_path)
+            _open_video_clip_quietly(video_path, audio=audio_path is None)
         )
-        voice_source_clip = clip_stack.enter_context(AudioFileClip(audio_path))
         video_clip = source_video_clip
-        audio_clip = voice_source_clip.with_effects(
-            [afx.MultiplyVolume(params.voice_volume)]
-        )
+        if audio_path is None:
+            if source_video_clip.audio is None:
+                raise ValueError("combined video has no audio track")
+            audio_clip = source_video_clip.audio
+        else:
+            voice_source_clip = clip_stack.enter_context(AudioFileClip(audio_path))
+            audio_clip = voice_source_clip.with_effects(
+                [afx.MultiplyVolume(params.voice_volume)]
+            )
 
         def make_textclip(text):
             return TextClip(

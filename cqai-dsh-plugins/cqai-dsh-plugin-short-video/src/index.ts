@@ -7,14 +7,15 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { randomUUID } from 'node:crypto'
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createReadStream, createWriteStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { extname, join, resolve, sep, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { API, audioPreviewReuseIssue, defaultParams, defaultSettings, needsText, stageRequirements, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
+import { API, audioPreviewReuseIssue, defaultParams, defaultSettings, materialKeyIssue, materialPreviewReuseIssue, needsText, stageRequirements, subtitlePreviewReuseIssue, workflowIdForJob, workflowIdForNewJob, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
+import { createVideoMaterial, validateVideoMaterialRequest } from './video-provider.ts'
 export { needsText } from './protocol.ts'
 
 export const name = 'cqai-short-video'
@@ -26,7 +27,7 @@ const EXTENSIONS: Record<UploadKind, readonly string[]> = {
   audio: ['.mp3', '.m4a', '.wav', '.ogg', '.flac'],
   bgm: ['.mp3', '.m4a', '.wav', '.ogg', '.flac'],
 }
-const SOURCES = new Set(['pexels', 'pixabay', 'coverr', 'openai_image', 'local'])
+const SOURCES = new Set(['pexels', 'pixabay', 'coverr', 'openai_image', 'cqai_video', 'local'])
 const STAGES = new Set<Stage>(['script', 'terms', 'audio', 'subtitle', 'materials', 'video'])
 const PARAM_KEYS = new Set(Object.keys(defaultParams))
 const now = () => new Date().toISOString()
@@ -74,6 +75,10 @@ export function validateDraft(raw: unknown): Draft {
   if (!['random', 'sequential'].includes(String(params.video_concat_mode))) throw new Error('拼接模式无效')
   if (![null, 'Shuffle', 'FadeIn', 'FadeOut', 'SlideIn', 'SlideOut', 'ZoomIn', 'ZoomOut'].includes(params.video_transition_mode as string | null)) throw new Error('转场无效')
   if (!['none', 'random', 'custom'].includes(String(params.bgm_type))) throw new Error('配乐方式无效')
+  if (!['tts', 'upload', 'video_original'].includes(String(params.audio_source))) throw new Error('声音来源无效')
+  if (params.audio_source === 'video_original' && params.video_source !== 'cqai_video') throw new Error('只有 CQAI 视频素材可使用视频原声')
+  if (!Number.isInteger(params.target_duration_seconds) || Number(params.target_duration_seconds) < 1 || Number(params.target_duration_seconds) > 3000) throw new Error('目标时长无效')
+  if (params.video_source === 'cqai_video' && Math.ceil(Number(params.target_duration_seconds) / Number(params.video_clip_duration)) * Number(params.video_count) > 100) throw new Error('AI 视频镜头数超过 100，请缩短时长或减少成片数量')
   for (const [key, min, max] of [['video_clip_duration', 1, 30], ['video_clip_speed', .1, 4], ['video_count', 1, 5], ['paragraph_number', 1, 10], ['font_size', 12, 160], ['stroke_width', 0, 10], ['n_threads', 1, 16], ['bgm_volume', 0, 1], ['voice_rate', .5, 2], ['voice_volume', 0, 2], ['custom_position', 0, 100]] as const) {
     const value = params[key]
     if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) throw new Error(`${key} 超出范围`)
@@ -86,7 +91,8 @@ export function validateDraft(raw: unknown): Draft {
   if (!['top', 'bottom', 'center', 'custom', 'two_thirds_bottom'].includes(String(params.subtitle_position))) throw new Error('字幕位置无效')
   const textModel = asText(raw.textModel, 200)
   const imageModel = asText(raw.imageModel, 200)
-  return { textModel, imageModel, stopAt: stopAt as Stage, params }
+  const videoModel = asText(raw.videoModel ?? '', 200)
+  return { textModel, imageModel, videoModel, stopAt: stopAt as Stage, params }
 }
 export function validateContentRequest(raw: unknown): {action: ContentAction; draft: Draft} {
   if (!isRecord(raw) || !['preview', 'script', 'terms'].includes(String(raw.action))) throw new Error('文案操作无效')
@@ -129,8 +135,8 @@ function serveFile(req: IncomingMessage, res: ServerResponse, file: string, down
     if (start > end || start >= size) { res.writeHead(416, {'content-range': `bytes */${size}`}); res.end(); return }
     status = 206
   }
-  const contentType: Record<string,string> = {'.mp4':'video/mp4','.mp3':'audio/mpeg','.m4a':'audio/mp4','.wav':'audio/wav','.ogg':'audio/ogg','.flac':'audio/flac','.srt':'text/plain; charset=utf-8','.json':'application/json','.png':'image/png','.jpg':'image/jpeg'}
-  res.writeHead(status, {'content-type': contentType[extname(file).toLowerCase()] ?? 'application/octet-stream', 'content-length': String(end-start+1), 'accept-ranges':'bytes', 'x-content-type-options':'nosniff', ...(status === 206 ? {'content-range':`bytes ${start}-${end}/${size}`} : {}), ...(download ? {'content-disposition':`attachment; filename="${basename(file)}"`} : {})})
+  const contentType: Record<string,string> = {'.mp4':'video/mp4','.mov':'video/quicktime','.webm':'video/webm','.mkv':'video/x-matroska','.mp3':'audio/mpeg','.m4a':'audio/mp4','.wav':'audio/wav','.ogg':'audio/ogg','.flac':'audio/flac','.srt':'text/plain; charset=utf-8','.json':'application/json','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp'}
+  res.writeHead(status, {'content-type': contentType[extname(file).toLowerCase()] ?? 'application/octet-stream', 'content-length': String(end-start+1), 'accept-ranges':'bytes', 'x-content-type-options':'nosniff', ...(status === 206 ? {'content-range':`bytes ${start}-${end}/${size}`} : {}), ...(download ? {'content-disposition':`attachment; filename="${basename(file).replace(/[^A-Za-z0-9._-]/g,'_')}"`} : {})})
   const stream = createReadStream(file, {start,end}); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res)
 }
 function physicalRuntime(): string {
@@ -148,6 +154,58 @@ function terminate(child: ChildProcess): void {
   if (process.platform === 'win32') spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {windowsHide:true, stdio:'ignore'})
   else child.kill('SIGTERM')
 }
+function materialArtifactsFor(root:string):Artifact[]{
+  const materialDir=join(root,'cqai-materials')
+  try{
+    if(!existsSync(materialDir)||!lstatSync(materialDir).isDirectory())return []
+    const result:Artifact[]=[]
+    for(const entry of readdirSync(materialDir,{withFileTypes:true})){
+      if(!entry.isFile()||extname(entry.name).toLowerCase()!=='.mp4')continue
+      const full=safePath(materialDir,entry.name)
+      result.push({file:`cqai-materials/${entry.name}`,name:entry.name,size:statSync(full).size,kind:'material'})
+    }
+    return result
+  }catch{return []}
+}
+const subtitleProviderFor = (draft: Draft, settings: Settings): Settings['subtitle_provider'] =>
+  draft.params.audio_source === 'upload' || draft.params.audio_source === 'video_original' ? 'whisper' : settings.subtitle_provider
+const SAVED_MATERIALS='saved-materials/'
+export function storedMaterialArtifactsFor(root:string,job:Job):Artifact[]{
+  const source=String(job.params.video_source||'')
+  let files:string[]=[]
+  let directory:string
+  let scope:string
+  if(source==='local'){
+    files=Array.isArray(job.uploads?.material)?job.uploads.material:[]
+    directory=join(root,'storage','local_videos');scope='local'
+  }else if(['pexels','pixabay','coverr'].includes(source)){
+    try{
+      const manifest=JSON.parse(readFileSync(join(root,'storage','tasks',job.id,'script.json'),'utf8')) as Record<string,unknown>
+      files=Array.isArray(manifest.material_sources)?manifest.material_sources.flatMap(value=>
+        value&&typeof value==='object'&&typeof (value as Record<string,unknown>).local_file==='string'?[(value as Record<string,string>).local_file]:[]):[]
+    }catch{return []}
+    directory=join(root,'storage','cache_videos');scope='cache'
+  }else return []
+  try{if(!existsSync(directory)||!lstatSync(directory).isDirectory())return []}catch{return []}
+  const result:Artifact[]=[]
+  for(const name of new Set(files)){
+    if(typeof name!=='string'||!name||/[\\/]/.test(name)||name==='.'||name==='..'||!EXTENSIONS.material.includes(extname(name).toLowerCase()))continue
+    try{
+      const full=safePath(directory,name)
+      if(!lstatSync(full).isFile())continue
+      result.push({file:`${SAVED_MATERIALS}${scope}/${name}`,name,size:statSync(full).size,kind:'material'})
+    }catch{/* missing cache entry */}
+  }
+  return result
+}
+export function artifactPath(root:string,job:Job,file:string):string{
+  if(!job.artifacts.some(artifact=>artifact.file===file))throw new Error('文件不在任务产物中')
+  const saved=/^saved-materials\/(cache|local)\/([^\\/]+)$/.exec(file)
+  const directory=saved?join(root,'storage',saved[1]==='cache'?'cache_videos':'local_videos'):join(root,'storage','tasks',job.id)
+  const full=realpathSync(safePath(directory,saved?saved[2]:file))
+  if(!full.startsWith(realpathSync(directory)+sep))throw new Error('非法文件路径')
+  return full
+}
 export async function artifactsFor(root: string): Promise<Artifact[]> {
   if (!existsSync(root)) return []
   const files = await readdir(root, {withFileTypes:true})
@@ -160,6 +218,7 @@ export async function artifactsFor(root: string): Promise<Artifact[]> {
     const size = statSync(full).size
     result.push({file: entry.name, name: entry.name, size, kind: ext === '.mp4' ? 'video' : EXTENSIONS.audio.includes(ext) ? 'audio' : ext === '.srt' ? 'subtitle' : 'data'})
   }
+  result.push(...materialArtifactsFor(root))
   return result
 }
 export async function copyAudioPreview(storage: string, preview: Job, targetId: string, includeSubtitle: boolean): Promise<string> {
@@ -179,6 +238,10 @@ export async function copyAudioPreview(storage: string, preview: Job, targetId: 
       await copyFile(real,safePath(targetDir,target))
     }
     await copyArtifact(audio.file,storedAudio)
+    if(preview.voiceTimingAvailable){
+      await mkdir(safePath(targetDir,'.private'),{recursive:true})
+      await copyArtifact(join('.private','voice-timing.json'),join('.private','voice-timing.json'))
+    }
     if(includeSubtitle){
       const subtitle=preview.artifacts.find(a=>a.kind==='subtitle')
       if(!subtitle||extname(subtitle.file).toLowerCase()!=='.srt')throw new Error('字幕文件类型无效')
@@ -187,6 +250,28 @@ export async function copyAudioPreview(storage: string, preview: Job, targetId: 
     return storedAudio
   }catch(error){await rm(targetDir,{recursive:true,force:true});throw error}
 }
+export function validateSubtitleSrt(srt: string, duration: number): void {
+  if (typeof srt !== 'string' || srt.length > 200_000) throw new Error('字幕内容过长')
+  if (!srt.trim()) return
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error('缺少成片时长，不能保存非空字幕')
+  const parseTime = (value: string): number => {
+    const match = /^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/.exec(value)
+    if (!match) throw new Error('字幕时间格式无效')
+    const [,h,m,s,ms] = match.map(Number)
+    if (m > 59 || s > 59) throw new Error('字幕时间格式无效')
+    return h * 3600 + m * 60 + s + ms / 1000
+  }
+  let lastEnd = 0
+  for (const [index, block] of srt.trim().replace(/\r\n/g,'\n').split(/\n\s*\n/).entries()) {
+    const lines=block.split('\n')
+    if (lines.length < 3 || Number(lines[0]) !== index + 1) throw new Error('字幕序号或内容无效')
+    const times=/^(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})$/.exec(lines[1])
+    if (!times || !lines.slice(2).join('').trim()) throw new Error('字幕时间或文本无效')
+    const start=parseTime(times[1]),end=parseTime(times[2])
+    if (start < lastEnd || end <= start || end > duration + 0.5) throw new Error('字幕时间超出音频范围或发生重叠')
+    lastEnd=end
+  }
+}
 
 export function apply(ctx: Context): void {
   const root = join(resolveDshHome(), 'short-video')
@@ -194,6 +279,7 @@ export function apply(ctx: Context): void {
   const runtime = physicalRuntime()
   const jobs = new Map<string, Job>()
   const children = new Map<string, ChildProcessWithoutNullStreams>()
+  const videoAborts = new Map<string, AbortController>()
   const contentChildren = new Set<ChildProcessWithoutNullStreams>()
   let contentReserved = false
   const writes = new Map<string, Promise<void>>()
@@ -211,7 +297,18 @@ export function apply(ctx: Context): void {
       try {
         const job = JSON.parse(readFileSync(join(jobsRoot, dir, 'job.json'), 'utf8')) as Job
         if (job.id !== dir) continue
+        if (!isRecord(job.params)) continue
+        job.params={...defaultParams,...job.params}
         if (job.status === 'running') {job.status='interrupted'; job.error='应用关闭导致任务中断'; job.updatedAt=now()}
+        if (job.stopAt === 'materials' && job.params.video_source === 'cqai_video' && !Array.isArray(job.state?.terms)) {
+          try {
+            const manifest=JSON.parse(readFileSync(join(root,'storage','tasks',dir,'script.json'),'utf8')) as Record<string,unknown>
+            if (Array.isArray(manifest.search_terms) && manifest.search_terms.every(term=>typeof term==='string')) job.state={...job.state,terms:manifest.search_terms}
+          } catch { /* historical material task without a manifest */ }
+        }
+        const original=Array.isArray(job.artifacts)?job.artifacts.filter(artifact=>!artifact.file.startsWith(SAVED_MATERIALS)):[]
+        const known=new Set(original.map(artifact=>artifact.file))
+        job.artifacts=[...original,...materialArtifactsFor(join(root,'storage','tasks',dir)).filter(artifact=>!known.has(artifact.file)),...storedMaterialArtifactsFor(root,job)]
         jobs.set(dir, job)
       } catch { /* ignore corrupt job records */ }
     }
@@ -247,15 +344,18 @@ export function apply(ctx: Context): void {
       defaultImage:defaults.categories.image?.provider === 'cqaiclub' ? defaults.categories.image.model : undefined,
     }
   }
-  const verifyModels = async (draft: Draft) => {
-    const textNeeded = needsText(draft)
+  const verifyModels = async (draft: Draft, preparedMaterials = false) => {
+    const textNeeded = !draft.params.video_script || (!preparedMaterials && needsText(draft))
     const imageNeeded = stageRequirements(draft).imageModel
-    if (!textNeeded && !imageNeeded) return
+    const videoNeeded = !preparedMaterials && stageRequirements(draft).videoModel
+    if (!textNeeded && !imageNeeded && !videoNeeded) return
     const available=await catalog()
     if (textNeeded && !draft.textModel) throw new Error('请选择 CQAI Club 文本模型')
     if (textNeeded && !available.text.some(m=>m.id===draft.textModel)) throw new Error('所选文本模型不在当前 CQAI Club 账号中')
     if (imageNeeded && !draft.imageModel) throw new Error('请选择 CQAI Club 图片模型')
     if (imageNeeded && !available.image.some(m=>m.id===draft.imageModel)) throw new Error('所选图片模型不在当前 CQAI Club 账号中')
+    if (videoNeeded && !draft.videoModel) throw new Error('请选择 CQAI Club 视频模型')
+    if (videoNeeded && !available.video.some(m=>m.id===draft.videoModel)) throw new Error('所选视频模型不在当前 CQAI Club 账号中')
   }
   const llmCall = async (model: string, prompt: string): Promise<string> => {
     const available=await catalog()
@@ -340,26 +440,61 @@ export function apply(ctx: Context): void {
     if(!response.ok)throw new Error(`CQAI Club 图片生成失败 (HTTP ${response.status}): ${JSON.stringify(result).slice(0,500)}`)
     return result
   }
+  const verifyJobInputs = (job: Job) => {
+    if (job.params.audio_source === 'upload' && ['audio','subtitle','video'].includes(job.stopAt) && !job.uploads.audio) throw new Error('请先上传旁白')
+    const material = job.materialPreviewJobId ? get(job.materialPreviewJobId) : undefined
+    if (job.params.video_source === 'cqai_video' && ['subtitle','video'].includes(job.stopAt) && !material) throw new Error('请先生成 AI 视频素材')
+    if (material) {const issue=materialPreviewReuseIssue(material,job);if(issue)throw new Error(issue)}
+    if (job.subtitlePreviewJobId) {
+      const issue=subtitlePreviewReuseIssue(get(job.subtitlePreviewJobId),job,job.materialPreviewJobId,job.audioPreviewJobId)
+      if (issue) throw new Error(issue)
+    }
+    return material
+  }
   const run = async (job: Job) => {
-    await verifyModels(job)
+    const materialPreview = verifyJobInputs(job)
+    await verifyModels(job,Boolean(job.materialPreviewJobId))
     const requirements = stageRequirements(job)
     if (requirements.materialUpload && !job.uploads.material.length) throw new Error('请上传本地视频或图片素材')
     if (requirements.backgroundMusicUpload && !job.uploads.bgm) throw new Error('请上传自定义背景音乐')
     const settings = await readSettings(root)
-    if (job.audioPreviewJobId && job.params.subtitle_enabled && job.subtitleProvider !== settings.subtitle_provider) throw new Error('字幕引擎已改变，请重新生成配音和字幕')
-    job.subtitleProvider = settings.subtitle_provider
+    const keyIssue = materialKeyIssue(job, settings)
+    if (keyIssue) throw new Error(keyIssue)
+    const preview = job.audioPreviewJobId ? jobs.get(job.audioPreviewJobId) : undefined
+    if (preview) {
+      const previewIssue = audioPreviewReuseIssue(preview, job, subtitleProviderFor(job,settings))
+      if (previewIssue) throw new Error(previewIssue)
+    }
+    job.subtitleProvider = subtitleProviderFor(job,settings)
+    const subtitlePreview = job.subtitlePreviewJobId ? get(job.subtitlePreviewJobId) : undefined
+    const reuseSubtitle = Boolean(subtitlePreview || (preview && preview.stopAt === 'subtitle' && job.params.subtitle_enabled &&
+      preview.subtitleProvider === job.subtitleProvider && preview.params.subtitle_display_mode === job.params.subtitle_display_mode &&
+      preview.artifacts.some(a=>a.kind==='subtitle')))
+    const preparedMaterials = materialPreview?.materialGroups?.map(group => group.map(file => {
+      const parent = join(root,'storage','tasks',materialPreview.id)
+      const full = safePath(parent,file)
+      if (!existsSync(full) || !lstatSync(full).isFile() || extname(full).toLowerCase() !== '.mp4') throw new Error('已生成的视频素材文件丢失，请检查原任务')
+      return realpathSync(full)
+    }))
     const requestFile=join(jobDir(job.id),'request.json')
-    await writeFile(requestFile,JSON.stringify({id:job.id,params:job.params,stopAt:job.stopAt,textModel:job.textModel,imageModel:job.imageModel,uploads:job.uploads,settings,reuseSubtitle:!!job.audioPreviewJobId}), 'utf8')
+    await writeFile(requestFile,JSON.stringify({id:job.id,params:job.params,stopAt:job.stopAt,textModel:job.textModel,imageModel:job.imageModel,uploads:job.uploads,settings,reuseSubtitle,preparedMaterials}), 'utf8')
     if(job.status==='cancelled')return
     job.status='running';job.progress=0;job.error=undefined;job.logs=[];await save(job)
+    const videoAbort = new AbortController()
+    videoAborts.set(job.id, videoAbort)
     const child=spawn(pythonPath(root),[join(runtime,'bridge.py'),'run',requestFile],{windowsHide:true,cwd:runtime,env:{...process.env,MPT_DSH_DATA_ROOT:root,PYTHONUTF8:'1'},stdio:['pipe','pipe','pipe']})
     children.set(job.id,child)
     let stdout='', stderr='', gotResult=false, fatal=''
     child.stderr.on('data',(chunk:Buffer)=>{stderr+=chunk.toString();const lines=stderr.split(/\r?\n/);stderr=lines.pop()||'';for(const line of lines){if(line.trim()){job.logs.push(line.slice(0,1000));job.logs=job.logs.slice(-150)}}})
     child.stdout.on('data',(chunk:Buffer)=>{stdout+=chunk.toString();const lines=stdout.split(/\r?\n/);stdout=lines.pop()||'';for(const line of lines){if(!line.startsWith('MPT_EVENT '))continue;let event:Record<string,unknown>;try{event=JSON.parse(line.slice(10))}catch{continue}
-      if(event.type==='llm_request' || event.type==='image_request'){
+      if(event.type==='llm_request' || event.type==='image_request' || event.type==='video_request'){
         const respond=(value:unknown,error?:string)=>{if(child.stdin.writable)child.stdin.write(JSON.stringify(error?{ok:false,error}:{ok:true,value})+'\n')}
-        void (async()=>{try{if(event.type==='llm_request')respond(await llmCall(job.textModel,String(event.prompt)));else respond(await imageCall(job.imageModel,event.payload as Record<string,unknown>))}catch(e){respond(undefined,e instanceof Error?e.message:String(e))}})()
+        void (async()=>{try{
+          if(event.type==='llm_request')respond(await llmCall(job.textModel,String(event.prompt)))
+          else if(event.type==='image_request')respond(await imageCall(job.imageModel,event.payload as Record<string,unknown>))
+          else if (job.materialPreviewJobId) respond(undefined,'已复用视频素材，禁止再次提交付费镜头')
+          else respond(await createVideoMaterial({account:ctx.dsnAccount,job,storageRoot:join(root,'storage','tasks'),save,request:validateVideoMaterialRequest(event),signal:videoAbort.signal}))
+        }catch(e){respond(undefined,e instanceof Error?e.message:String(e))}})()
       }else if(event.type==='progress' && isRecord(event.state)){
         job.state=event.state;job.progress=Number(event.state.progress)||0;void save(job)
       }else if(event.type==='result' && isRecord(event.state)){
@@ -367,20 +502,44 @@ export function apply(ctx: Context): void {
         const script=typeof output.script==='string'?output.script:undefined
         const terms=Array.isArray(output.terms)&&output.terms.every(term=>typeof term==='string')?output.terms as string[]:undefined
         gotResult=true;job.state={...event.state,...(script?{script}:{}),...(terms?{terms}:{})};job.progress=Number(event.state.progress)||100
+        if(Array.isArray(output.materialGroups)){
+          job.materialGroups=output.materialGroups as string[][]
+          let clipIndex=0
+          job.materialShots=job.materialGroups.flatMap((group,videoIndex)=>group.map(file=>{
+            const index=clipIndex++
+            return {videoIndex:videoIndex+1,clipIndex:index+1,remoteTaskId:job.videoTasks?.find(item=>item.key===String(index))?.id,file}
+          }))
+        }
+        if(Array.isArray(output.materialAudio))job.materialAudio=output.materialAudio as boolean[][]
+        if(Array.isArray(output.materialDurations))job.materialDurations=output.materialDurations as number[][]
+        if(Array.isArray(output.subtitleDurations))job.subtitleDurations=output.subtitleDurations as number[]
+        if(Array.isArray(output.warnings))job.state={...job.state,warnings:output.warnings}
         if(event.state.state===1)job.status='completed';else{job.status='failed';job.error=String(event.state.error||'制作失败')}
       }else if(event.type==='fatal') fatal=String(event.error||'Python 执行失败')
     }})
     await new Promise<void>(done=>{child.once('error',error=>{fatal=error.message;done()});child.once('close',code=>{if(!gotResult && !fatal)fatal=`Python 进程退出: ${code}`;done()})})
     children.delete(job.id)
+    videoAbort.abort();videoAborts.delete(job.id)
     if ((job.status as Job['status'])==='cancelled') {await save(job);return}
     if (!gotResult || (job.status as Job['status'])!=='completed') {job.status='failed';job.error=job.error||fatal||'制作失败'}
-    job.artifacts=await artifactsFor(join(root,'storage','tasks',job.id))
+    job.artifacts=[...await artifactsFor(join(root,'storage','tasks',job.id)),...storedMaterialArtifactsFor(root,job)]
+    job.voiceTimingAvailable=existsSync(join(root,'storage','tasks',job.id,'.private','voice-timing.json'))
     await save(job)
   }
   const start = async (job: Job) => {
     if (job.status === 'running') throw new Error('任务已在运行')
     if (children.size || [...jobs.values()].some(other=>other.status==='running')) throw new Error('一次只能制作一条短视频')
-    await verifyModels(job)
+    const keyIssue = materialKeyIssue(job, await readSettings(root))
+    if (keyIssue) throw new Error(keyIssue)
+    verifyJobInputs(job)
+    if (job.audioPreviewJobId) {
+      const preview = jobs.get(job.audioPreviewJobId)
+      if (!preview) throw new Error('找不到已确认的配音任务，请重新生成配音')
+      const settings=await readSettings(root)
+      const previewIssue = audioPreviewReuseIssue(preview, job, subtitleProviderFor(job,settings))
+      if (previewIssue) throw new Error(previewIssue)
+    }
+    await verifyModels(job,Boolean(job.materialPreviewJobId))
     job.status='running';await save(job)
     void run(job).catch(async e=>{job.status='failed';job.error=e instanceof Error?e.message:String(e);job.logs.push(job.error);await save(job)})
     return job
@@ -402,24 +561,61 @@ export function apply(ctx: Context): void {
         if(req.method==='POST' && action==='setup'){if(setup.status==='running')throw new Error('正在安装运行环境');setup={status:'running',logs:[]};void setupEngine(root,runtime,(line)=>{setup.logs.push(line);setup.logs=setup.logs.slice(-30)}).then(()=>{setup.status='completed';healthCache=undefined}).catch(e=>{setup.status='failed';healthCache=undefined;setup.logs.push(e instanceof Error?e.message:String(e))});return json(res,202,setup)}
         if(req.method==='GET' && action==='jobs')return json(res,200,[...jobs.values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))
          if(req.method==='POST' && action==='jobs'){
-           const raw=await readJson(req),draft=validateDraft(raw)
-           const previewId=isRecord(raw)?raw.audioPreviewJobId:undefined
-           if(previewId!==undefined && (typeof previewId!=='string'||!previewId))throw new Error('配音试听任务 ID 无效')
-           const preview=previewId?get(previewId):undefined
-           if(preview){const issue=audioPreviewReuseIssue(preview,draft,(await readSettings(root)).subtitle_provider);if(issue)throw new Error(issue)}
-           if(preview&&['script','terms'].includes(draft.stopAt))throw new Error('当前阶段无需复用配音')
-           await verifyModels(draft)
-           const id=randomUUID(),job:Job={...draft,id,status:'draft',createdAt:now(),updatedAt:now(),progress:0,logs:[],uploads:{material:[]},artifacts:[]}
-           if(preview){
-             job.uploads.audio=await copyAudioPreview(join(root,'storage','tasks'),preview,id,Boolean(draft.params.subtitle_enabled))
-             job.audioPreviewJobId=preview.id
-             job.subtitleProvider=preview.subtitleProvider
-           }
-           jobs.set(id,job);await save(job);return json(res,201,job)
-         }
+             const raw=await readJson(req),draft=validateDraft(raw)
+             const previewId=isRecord(raw)?raw.audioPreviewJobId:undefined
+            if(previewId!==undefined && (typeof previewId!=='string'||!previewId))throw new Error('配音试听任务 ID 无效')
+            const requestedWorkflowId=isRecord(raw)?raw.workflowId:undefined
+            if(requestedWorkflowId!==undefined && (typeof requestedWorkflowId!=='string'||!/^[a-f0-9-]{36}$/.test(requestedWorkflowId)))throw new Error('制作流程 ID 无效')
+            const preview=previewId?get(previewId):undefined
+             if(preview){const settings=await readSettings(root),issue=audioPreviewReuseIssue(preview,draft,subtitleProviderFor(draft,settings));if(issue)throw new Error(issue)}
+             if(preview&&['script','terms'].includes(draft.stopAt))throw new Error('当前阶段无需复用配音')
+             const materialId=isRecord(raw)?raw.materialPreviewJobId:undefined
+             const subtitleId=isRecord(raw)?raw.subtitlePreviewJobId:undefined
+             if (materialId!==undefined && (typeof materialId!=='string'||!materialId)) throw new Error('素材任务 ID 无效')
+             if (subtitleId!==undefined && (typeof subtitleId!=='string'||!subtitleId)) throw new Error('字幕任务 ID 无效')
+             const materialPreview=materialId?get(materialId):undefined
+             const subtitlePreview=subtitleId?get(subtitleId):undefined
+             if (draft.params.video_source==='cqai_video' && draft.stopAt!=='materials' && !materialPreview) throw new Error('请先生成 AI 视频素材')
+             if (materialPreview){const issue=materialPreviewReuseIssue(materialPreview,draft);if(issue)throw new Error(issue)}
+             if (subtitlePreview){const issue=subtitlePreviewReuseIssue(subtitlePreview,draft,materialId,previewId);if(issue)throw new Error(issue)}
+             const id=randomUUID(),workflowId=workflowIdForNewJob(id,requestedWorkflowId as string|undefined,preview||materialPreview||subtitlePreview,jobs)
+             for (const source of [materialPreview,subtitlePreview]) if(source && workflowIdForJob(source,jobs)!==workflowId) throw new Error('预览任务不属于当前制作流程')
+             await verifyModels(draft,Boolean(materialPreview))
+             const job:Job={...draft,id,workflowId,status:'draft',createdAt:now(),updatedAt:now(),progress:0,logs:[],uploads:{material:[]},artifacts:[]}
+            try {
+            if(preview){
+              job.uploads.audio=await copyAudioPreview(join(root,'storage','tasks'),preview,id,
+                preview.stopAt==='subtitle' && Boolean(draft.params.subtitle_enabled) && preview.subtitleProvider===subtitleProviderFor(draft,await readSettings(root)) && preview.params.subtitle_display_mode===draft.params.subtitle_display_mode)
+              job.audioPreviewJobId=preview.id
+              job.subtitleProvider=preview.subtitleProvider
+            }
+            if(materialPreview)job.materialPreviewJobId=materialPreview.id
+            if(subtitlePreview){
+              const sourceDir=safePath(join(root,'storage','tasks'),subtitlePreview.id),targetDir=join(root,'storage','tasks',id)
+              await mkdir(targetDir,{recursive:true})
+              for(const artifact of subtitlePreview.artifacts.filter(item=>item.kind==='subtitle')){
+                if(!/^subtitle(?:-\d+)?\.srt$/.test(artifact.file))continue
+                await copyFile(safePath(sourceDir,artifact.file),safePath(targetDir,artifact.file))
+              }
+              job.subtitlePreviewJobId=subtitlePreview.id
+            }
+            }catch(error){await rm(join(root,'storage','tasks',id),{recursive:true,force:true});throw error}
+            jobs.set(id,job);await save(job);return json(res,201,job)
+          }
         if(req.method==='POST' && action==='start')return json(res,200,await start(get(id)))
-        if(req.method==='POST' && action==='cancel'){const job=get(id);if(job.status!=='running')throw new Error('任务没有运行');job.status='cancelled';job.error='用户已取消';const child=children.get(id);if(child)terminate(child);await save(job);return json(res,200,job)}
-        if(req.method==='POST' && action==='delete'){const job=get(id);if(job.status==='running')throw new Error('运行中的任务不可删除');await removeTaskDirectory(jobsRoot,id);await removeTaskDirectory(join(root,'storage','tasks'),id);for(const file of job.uploads.material){const target=safePath(join(root,'storage','local_videos'),file);await rm(target,{force:true})}if(job.uploads.bgm){const target=safePath(join(root,'storage','bgm'),job.uploads.bgm);await rm(target,{force:true})}jobs.delete(id);return json(res,200,{ok:true})}
+        if(req.method==='POST' && action==='cancel'){const job=get(id);if(job.status!=='running')throw new Error('任务没有运行');job.status='cancelled';job.error='用户已取消';videoAborts.get(id)?.abort();const child=children.get(id);if(child)terminate(child);await save(job);return json(res,200,job)}
+         if(req.method==='POST' && action==='delete'){const job=get(id);if(job.status==='running')throw new Error('运行中的任务不可删除');if([...jobs.values()].some(other=>other.id!==id&&(other.materialPreviewJobId===id||other.subtitlePreviewJobId===id||other.audioPreviewJobId===id)))throw new Error('该任务仍被后续制作引用，请先删除后续任务');await removeTaskDirectory(jobsRoot,id);await removeTaskDirectory(join(root,'storage','tasks'),id);for(const file of job.uploads.material){const target=safePath(join(root,'storage','local_videos'),file);await rm(target,{force:true})}if(job.uploads.bgm){const target=safePath(join(root,'storage','bgm'),job.uploads.bgm);await rm(target,{force:true})}jobs.delete(id);return json(res,200,{ok:true})}
+         if(req.method==='POST' && action==='subtitle'){
+           const job=get(id),raw=await readJson(req)
+           if(job.stopAt!=='subtitle'||job.status!=='completed'||!isRecord(raw))throw new Error('只能修改已完成的字幕预览')
+           const index=raw.index,srt=raw.srt
+           if(!Number.isInteger(index)||Number(index)<1||Number(index)>Number(job.params.video_count)||typeof srt!=='string')throw new Error('字幕参数无效')
+           validateSubtitleSrt(srt,job.subtitleDurations?.[Number(index)-1]||0)
+           const file=`subtitle-${index}.srt`,full=safePath(join(root,'storage','tasks',job.id),file)
+           await writeFile(full,srt.trim()?srt.replace(/\r\n/g,'\n').trim()+'\n':'','utf8')
+           job.artifacts=await artifactsFor(join(root,'storage','tasks',job.id));await save(job)
+           return json(res,200,job)
+         }
          if(req.method==='POST' && action==='upload'){
            const job=get(id);if(job.status!=='draft')throw new Error('只能给待开始任务上传素材')
            const kind=url.searchParams.get('kind') as UploadKind;const filename=url.searchParams.get('name')||'';const ext=extname(filename).toLowerCase()
@@ -433,11 +629,11 @@ export function apply(ctx: Context): void {
           if(kind==='material')job.uploads.material.push(stored);else job.uploads[kind]=stored
           await save(job);return json(res,200,job)
         }
-        if(req.method==='GET' && action==='artifact'){const job=get(id);const file=url.searchParams.get('file')||'';if(!job.artifacts.some(a=>a.file===file))throw new Error('文件不在任务产物中');const dir=join(root,'storage','tasks',id);const full=realpathSync(safePath(dir,file));if(!full.startsWith(realpathSync(dir)+sep))throw new Error('非法文件路径');serveFile(req,res,full,url.searchParams.get('download')==='1');return}
+        if(req.method==='GET' && action==='artifact'){const job=get(id);const file=url.searchParams.get('file')||'';serveFile(req,res,artifactPath(root,job,file),url.searchParams.get('download')==='1');return}
         return json(res,404,{error:'接口不存在'})
       }catch(e){if(!res.headersSent&&!res.destroyed)json(res,400,{error:e instanceof Error?e.message:'操作失败'})}
     }})
-    return async()=>{unregister();for(const child of children.values())terminate(child);for(const child of contentChildren)terminate(child)}
+    return async()=>{unregister();for(const abort of videoAborts.values())abort.abort();for(const child of children.values())terminate(child);for(const child of contentChildren)terminate(child)}
   },'短视频制作任务与本地服务')
 }
 function requireDirs(path: string): string[] {

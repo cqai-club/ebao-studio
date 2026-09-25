@@ -119,6 +119,8 @@ class VideoParams(BaseModel):
     video_materials: Optional[List[MaterialInfo]] = (
         None  # Materials used to generate the video
     )
+    audio_source: str = "tts"
+    target_duration_seconds: int = Field(default=30, ge=1, le=3000)
 
     custom_audio_file: Optional[str] = (
         None  # Custom audio file path, will ignore TTS and can still use Whisper subtitles

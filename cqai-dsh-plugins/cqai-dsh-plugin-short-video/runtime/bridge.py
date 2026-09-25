@@ -4,6 +4,7 @@ The Cordis host owns authentication, model selection, persistence and file acces
 Only this child imports MoneyPrinterTurbo; no HTTP listener or API key is exposed.
 """
 import json
+import math
 import os
 import shutil
 import sys
@@ -49,6 +50,52 @@ def system_fonts():
             if item.is_file() and item.suffix.lower() in {".ttf", ".ttc", ".otf"}:
                 fonts.append({"name": item.name, "path": str(item.resolve())})
     return sorted(fonts, key=lambda item: item["name"].lower())[:300]
+
+def voice_timing_path(task_dir):
+    return task_dir / ".private" / "voice-timing.json"
+
+
+def save_voice_timing(task_dir, sub_maker):
+    cues = getattr(sub_maker, "cues", None)
+    if not cues:
+        return
+    if len(cues) > 100000:
+        raise ValueError("voice timing has too many cues")
+    records = []
+    for cue in cues:
+        offset = round(cue.start.total_seconds() * 10000000)
+        duration = round((cue.end - cue.start).total_seconds() * 10000000)
+        records.append({"offset": offset, "duration": duration, "text": cue.content})
+    target = voice_timing_path(task_dir)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(target)
+
+
+def load_voice_timing(task_dir):
+    source = voice_timing_path(task_dir)
+    if not source.is_file():
+        return None
+    if source.stat().st_size > 8000000:
+        raise ValueError("voice timing file is too large")
+    records = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(records, list) or not 0 < len(records) <= 100000:
+        raise ValueError("invalid voice timing file")
+    from edge_tts import SubMaker
+    sub_maker = SubMaker()
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("invalid voice timing cue")
+        offset, duration, content = record.get("offset"), record.get("duration"), record.get("text")
+        if (type(offset) is not int or type(duration) is not int or
+                offset < 0 or duration <= 0 or offset + duration > 864000000000 or
+                not isinstance(content, str) or len(content) > 1000):
+            raise ValueError("invalid voice timing cue")
+        sub_maker.feed({"type": "WordBoundary", "offset": offset,
+                        "duration": duration, "text": content})
+    return sub_maker
+
 
 def main():
     data_root = Path(os.environ["MPT_DSH_DATA_ROOT"]).resolve()
@@ -167,6 +214,51 @@ def main():
     llm._generate_response = cqai_text
     material._request_openai_image = cqai_image
 
+    original_download_videos = material.download_videos
+    def download_videos(*args, **kwargs):
+        if kwargs.get("source") != "cqai_video":
+            return original_download_videos(*args, **kwargs)
+        prepared = payload.get("preparedMaterials")
+        if prepared is not None:
+            if not isinstance(prepared, list) or not prepared or any(
+                not isinstance(group, list) or not group for group in prepared
+            ):
+                raise ValueError("prepared video materials are invalid")
+            return [str(Path(file).resolve()) for group in prepared for file in group]
+
+        from app.models.schema import MaterialInfo
+        task_id = kwargs["task_id"]
+        duration = float(params.target_duration_seconds)
+        clip_seconds = int(kwargs["max_clip_duration"])
+        terms = [str(term).strip() for term in kwargs["search_terms"] if str(term).strip()]
+        if not math.isfinite(duration) or duration <= 0 or clip_seconds <= 0:
+            raise ValueError("CQAI video requires a positive finite audio and clip duration")
+        if not terms:
+            raise ValueError("CQAI video requires material keywords")
+        clip_count = math.ceil(duration / clip_seconds) * int(params.video_count)
+        if clip_count > 100:
+            raise ValueError("CQAI video would require more than 100 paid clips; shorten the narration or increase clip duration")
+
+        output_dir = (Path(utils.task_dir(task_id)) / "cqai-materials").resolve()
+        paths = []
+        sources = []
+        for index in range(clip_count):
+            term = terms[index % len(terms)]
+            result = request("video_request", index=index, prompt=term, seconds=clip_seconds)
+            term = result["prompt"]
+            expected = output_dir / f"clip-{index}.mp4"
+            path = Path(result["path"]).resolve()
+            if path != expected or not path.is_file():
+                raise ValueError("CQAI video returned a file outside this task")
+            item = MaterialInfo(provider="cqai_video", url=str(path), duration=clip_seconds,
+                                source_info={"search_term": term, "asset_id": result["taskId"]})
+            paths.append(str(path))
+            sources.append(material._material_source_record(item, str(path)))
+            material._persist_material_sources(task_id, sources)
+        return paths
+
+    material.download_videos = download_videos
+
     previous_update = state.state.update_task
     def update(task_id, *args, **kwargs):
         previous_update(task_id, *args, **kwargs)
@@ -175,6 +267,8 @@ def main():
     state.state.update_task = update
 
     params = VideoParams.model_validate(payload["params"])
+    if params.audio_source in {"upload", "video_original"}:
+        config.app["subtitle_provider"] = "whisper"
     if params.subtitle_enabled and stop_at == "video":
         fonts = system_fonts()
         chosen = params.font_name
@@ -201,21 +295,41 @@ def main():
         params.bgm_type = "custom"
         params.bgm_file = payload["uploads"]["bgm"]
 
-    if payload.get("reuseSubtitle"):
+    original_generate_audio = task.generate_audio
+
+    def generate_audio_with_timing(*args, **kwargs):
+        audio_file, audio_duration, sub_maker = original_generate_audio(*args, **kwargs)
+        task_dir = Path(utils.task_dir(task_id)).resolve()
+        if stop_at == "audio" and audio_file and sub_maker is not None:
+            save_voice_timing(task_dir, sub_maker)
+        elif (stop_at in {"subtitle", "video"} and params.subtitle_enabled and
+              config.app["subtitle_provider"] == "edge" and
+              payload.get("uploads", {}).get("audio") and not payload.get("reuseSubtitle")):
+            sub_maker = load_voice_timing(task_dir)
+            if sub_maker is None:
+                raise ValueError("confirmed audio has no Edge timing; select Whisper or regenerate the voice preview")
+        return audio_file, audio_duration, sub_maker
+
+    task.generate_audio = generate_audio_with_timing
+
+    if payload.get("reuseSubtitle") and params.audio_source != "video_original":
         if not payload.get("uploads", {}).get("audio"):
             raise ValueError("reused subtitle requires preview audio")
         cached_subtitle = (Path(utils.task_dir(task_id)) / "subtitle.srt").resolve()
+        if not cached_subtitle.is_file():
+            cached_subtitle = (Path(utils.task_dir(task_id)) / "subtitle-1.srt").resolve()
         if not cached_subtitle.is_relative_to(Path(utils.task_dir(task_id)).resolve()):
             raise ValueError("invalid reused subtitle path")
         if params.subtitle_enabled and not cached_subtitle.is_file():
             raise ValueError("reused subtitle file is missing")
 
         def use_preview_subtitle(task_id, params, video_script, sub_maker, audio_file):
-            return str(cached_subtitle) if params.subtitle_enabled else ""
+            return str(cached_subtitle) if params.subtitle_enabled and cached_subtitle.stat().st_size else ""
 
         task.generate_subtitle = use_preview_subtitle
 
-    result = task.start(task_id, params, stop_at=stop_at)
+    result = task.start(task_id, params, stop_at=stop_at,
+                        prepared_material_groups=payload.get("preparedMaterials"))
     snapshot = state.state.get_task(task_id) or {}
     send("result", result=result, state=snapshot)
 
