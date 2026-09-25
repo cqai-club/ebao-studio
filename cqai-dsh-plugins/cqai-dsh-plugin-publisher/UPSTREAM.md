@@ -3,7 +3,8 @@
 | 项 | 值 |
 | --- | --- |
 | 项目 | MatrixMedia（矩媒） |
-| 仓库 | https://github.com/hanliang97/MatrixMedia.git |
+| 上游仓库 | https://github.com/hanliang97/MatrixMedia.git |
+| e宝集成源码 | https://github.com/cqai-club/MatrixMedia.git |
 | e宝集成分支 | `codex/ebao-article-adapters`（从 `feat/ebao-publisher-worker` 固定提交派生） |
 | 精确提交 | 见 `vendor/matrixmedia/publisher-worker.json` |
 | 版本 | 0.11.4 |
