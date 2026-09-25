@@ -20,6 +20,7 @@ export function contentSubmissionError(
 
   for (const account of accounts) {
     const selected = projectContentForPlatform(content, account.platform)
+    if (selected.contentType === 'image-note' && account.platform === 'tt') return '头条暂不支持图文发布'
     if (!selected.title.trim()) return '请填写标题'
     if (selected.contentType === 'article' && !selected.body.trim()) return '请填写正文'
     if (selected.contentType === 'image-note' && selected.assets.length === 0) return '图文至少添加一张图片'
@@ -83,10 +84,6 @@ export function contentSubmissionError(
     if (selected.contentType === 'image-note' && account.platform === 'xhs'
       && !XHS_IMAGE_STATEMENTS.has(selected.creativeStatement)) {
       return '小红书图文暂不支持所选内容声明'
-    }
-    if (selected.contentType === 'image-note' && account.platform === 'tt'
-      && selected.creativeStatement !== 'none') {
-      return '头条微头条图文的内容声明尚未适配，请先选择“无声明”'
     }
   }
   return undefined

@@ -31,7 +31,7 @@ function asToolResult<T extends object>(value: T): Record<string, JsonValue> {
 export const AGENT_SOURCE_GUIDANCE = [
   '文章和图文先保存为真实的本地 Markdown (.md) 文件。原稿保留在你创建的位置；正文图片使用相对于 MD 文件的路径，或指向当前 Agent 工作目录内文件的绝对路径。用户上传或生图只提供附件引用时，用 publisher_export_image 把选中的图片保存到原稿旁，按其返回的相对路径写入 MD。写完并确认文件存在后调用 publisher_register_source，右侧通用预览将直接读取这份原稿及图片。修改原稿后再次登记。',
   '用户仅要求写作、修改或预览时，不准备平台版本，也不创建 Publisher 草稿。图片不要求来自当前会话的上传或生图事件，但必须是原稿实际引用且可读取的本地图片。',
-  '只有用户明确要求发布到社交平台或多平台时，先读取已登记原稿，整理文章或图文类型、目标平台和所需的平台文案，然后调用 publisher_prepare_preview。平台候选中的图片仍引用原稿返回的 source-image:// 图片地址，不复制素材；候选主稿与平台版本合计最多选 20 张不同图片，公众号文章选用的图片须为 JPEG 或 PNG。预览可供用户检查。',
+  '只有用户明确要求发布到社交平台或多平台时，先读取已登记原稿，整理文章或图文类型、目标平台和所需的平台文案，然后调用 publisher_prepare_preview。文章可选掘金、B站专栏、头条、百家号、微信公众号；图文可选小红书、抖音、快手，头条不提供图文。平台候选中的图片仍引用原稿返回的 source-image:// 图片地址，不复制素材；候选主稿与平台版本合计最多选 20 张不同图片，公众号文章选用的图片须为 JPEG 或 PNG。预览可供用户检查。',
   '用户点击预览中的“发布”后才进入多平台发布页面并创建可编辑的发布准备单；用户在页面修改内容、选择账号与提交方式，再点击“提交发布”交给平台。不要把准备预览描述为已提交。',
 ].join('\n')
 
@@ -110,7 +110,7 @@ export function registerAgentSourceTools(ctx: Context): () => void {
     })),
     ctx.tools.register(defineTool({
       name: 'publisher_prepare_preview',
-      description: 'Only after the user explicitly asks for social or multi-platform publishing: prepare a transient, image-reference-only platform preview from the registered Markdown source. This does not create a publication record or submit to a platform.',
+      description: 'Only after the user explicitly asks for social or multi-platform publishing: prepare a transient, image-reference-only platform preview from the registered Markdown source. Article targets: juejin, blbl, tt, bjh, wxmp. Image-note targets: xhs, dy, ks; tt image-note is unsupported. This does not create a publication record or submit to a platform.',
       parameters: {
         source_revision: { type: 'string', required: true, description: 'The exact source revision returned by publisher_get_source or publisher_register_source.' },
         content_type: { type: 'string', enum: ['article', 'image-note'], required: true },

@@ -42,6 +42,9 @@ describe('transient publication preview candidates', () => {
     expect(() => preparePublicationCandidate('session-1', {
       sourceId: source.id, sourceRevision: source.revision, contentType: 'image-note', platforms: ['wxmp'],
     }, env)).toThrow('不支持此内容类型')
+    expect(() => preparePublicationCandidate('session-1', {
+      sourceId: source.id, sourceRevision: source.revision, contentType: 'image-note', platforms: ['tt'],
+    }, env)).toThrow('不支持此内容类型')
     const candidate = preparePublicationCandidate('session-1', {
       sourceId: source.id, sourceRevision: source.revision, contentType: 'article', platforms: ['wxmp'],
     }, env)

@@ -115,8 +115,8 @@ describe('article and image-note preflight', () => {
       platform: 'tt', contentTypes: ['image-note'], modes: { 'image-note': ['draft'] },
       requiredFields: {}, maxAssets: { 'image-note': 9 },
     }]
-    expect(contentSubmissionError(draft, tt, ttCapabilities, 'draft')).toBeUndefined()
-    expect(contentSubmissionError({ ...draft, creativeStatement: 'ai_generated' }, tt, ttCapabilities, 'draft')).toContain('内容声明')
+    expect(contentSubmissionError(draft, tt, ttCapabilities, 'draft')).toBe('头条暂不支持图文发布')
+    expect(contentSubmissionError({ ...draft, creativeStatement: 'ai_generated' }, tt, ttCapabilities, 'draft')).toBe('头条暂不支持图文发布')
   })
 
   it('validates the exact platform version that will be submitted', () => {
