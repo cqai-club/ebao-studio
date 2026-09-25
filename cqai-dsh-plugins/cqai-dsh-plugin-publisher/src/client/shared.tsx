@@ -61,7 +61,7 @@ export function errorMessage(cause: unknown): string {
 }
 
 export function ConfirmDialog({
-  contentType, title, sourceName, mode, accounts, targetTitles, onCancel, onConfirm, busy,
+  contentType, title, sourceName, mode, accounts, targetTitles, warnings, onCancel, onConfirm, busy,
 }: {
   contentType: PublisherContentType
   title: string
@@ -69,6 +69,7 @@ export function ConfirmDialog({
   mode: 'publish' | 'draft'
   accounts: PublisherAccount[]
   targetTitles?: Record<string, string>
+  warnings?: string[]
   onCancel(): void
   onConfirm(): void
   busy: boolean
@@ -94,6 +95,8 @@ export function ConfirmDialog({
     </dl>
     <div className="pub-modal-target-title">目标账号</div>
     <ul className="pub-modal-accounts">{accounts.map(account => <li key={account.id}><Tag tone="neutral">{PLATFORM_LABELS[account.platform]}</Tag><span>{account.displayName}{targetTitles?.[account.id] && targetTitles[account.id] !== title ? ` · ${targetTitles[account.id]}` : ''}</span></li>)}</ul>
+    {!!warnings?.length && <><p className="pub-modal-copy">提交时会自动调整以下平台副本，并转存平台草稿供你核对；原始 MD 和本地编辑稿保留：</p>
+      <ul className="pub-modal-accounts">{warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></>}
     <p className="pub-modal-copy">提交后请自行前往各平台后台确认结果。</p>
   </PublisherModal>
 }
@@ -104,6 +107,7 @@ export interface PublisherConfirmation {
   mode: 'publish' | 'draft'
   accounts: PublisherAccount[]
   targetTitles?: Record<string, string>
+  warnings?: string[]
   sourceName?: string
 }
 

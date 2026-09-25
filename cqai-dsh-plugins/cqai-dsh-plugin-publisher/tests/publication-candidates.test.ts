@@ -76,19 +76,21 @@ describe('transient publication preview candidates', () => {
     }, env)).toThrow('最多支持 20 张图片')
   })
 
-  it('checks only the WeChat article image selection for unsupported WebP', () => {
+  it('warns about unsupported WeChat WebP without blocking the candidate preview', () => {
     const { root, env, md } = fixture()
     writeFileSync(join(root, 'picture.webp'), Buffer.from('RIFF0000WEBPxxxx'))
     writeFileSync(md, '# 原稿标题\n\n![PNG](picture.png)\n\n![WebP](picture.webp)')
     const source = registerSourceDocument('session-1', md, env)
-    expect(() => preparePublicationCandidate('session-1', {
+    const withWebp = preparePublicationCandidate('session-1', {
       sourceId: source.id, sourceRevision: source.revision, contentType: 'article', platforms: ['wxmp'],
-    }, env)).toThrow('不支持 WebP')
+    }, env)
+    expect(withWebp.warnings.wxmp).toContain('WebP 正文图片会从公众号草稿版本移除；仍需有可用的 JPEG/PNG 封面')
     const pngOnlyBody = source.body.split('\n\n')[0]!
     const candidate = preparePublicationCandidate('session-1', {
       sourceId: source.id, sourceRevision: source.revision, contentType: 'article', platforms: ['wxmp'],
       platformVariants: { wxmp: { body: pngOnlyBody } },
     }, env)
     expect(candidate.platformVariants.wxmp?.body).toBe(pngOnlyBody)
+    expect(candidate.warnings.wxmp).toBeUndefined()
   })
 })

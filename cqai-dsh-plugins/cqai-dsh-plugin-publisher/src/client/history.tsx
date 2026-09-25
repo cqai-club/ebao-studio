@@ -125,6 +125,13 @@ export function SubmissionHistory({ active }: { active: boolean }) {
             {item.state && <Tag tone={STATE_TONES[item.state]}>{STATE_LABELS[item.state]}</Tag>}
           </div>
           {item.message && <p className="pub-history-result pub-muted">{item.message}</p>}
+          {item.requestedMode === 'publish' && item.mode === 'draft' && <p className="pub-history-result pub-warn">文章已按平台要求调整，本次转存草稿供核对。</p>}
+          {!!item.adjustments?.length && <ul className="pub-history-result pub-muted">{item.adjustments.flatMap(adjustment => {
+            const target = item.targets.find(row => row.accountId === adjustment.accountId)
+            return adjustment.messages.map(message => <li key={`${adjustment.accountId}:${message}`}>
+              {target ? PLATFORM_LABELS[target.platform] : '目标平台'}：{message}
+            </li>)
+          })}</ul>}
           <div className="pub-targets">{item.targets.map(target => <Button variant="outline" size="sm" key={`${item.id}:${target.accountId}`}
             onClick={() => void api('account-open-dashboard', { id: target.accountId }).catch(cause => showError(errorMessage(cause)))}>
             {PLATFORM_LABELS[target.platform]} · {target.accountName} · 打开后台

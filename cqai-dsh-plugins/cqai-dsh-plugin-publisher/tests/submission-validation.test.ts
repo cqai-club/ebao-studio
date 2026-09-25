@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contentSubmissionError } from '../src/submission-validation.ts'
+import { articleSubmissionWarnings, contentSubmissionError } from '../src/submission-validation.ts'
 import type { PublisherAccount, PublisherContent, PublisherPlatformCapability } from '../src/protocol.ts'
 
 const account = (platform: PublisherAccount['platform']): PublisherAccount => ({
@@ -19,13 +19,18 @@ describe('article and image-note preflight', () => {
       platform: 'wxmp', contentTypes: ['article'], modes: { article: ['draft', 'publish'] },
       requiredFields: {}, maxTitleLength: { article: 64 }, maxAssets: { article: 20 },
     }]
-    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toContain('必须选择封面')
+    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toContain('JPEG/PNG 封面')
     draft.assets = [{ id: '33333333-3333-4333-8333-333333333333', name: '封面.png', mime: 'image/png', bytes: 12 }]
     draft.coverAssetId = draft.assets[0]!.id
     expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
     expect(contentSubmissionError({ ...draft, tags: ['标签'] }, targets, capabilities, 'draft')).toBeUndefined()
-    expect(contentSubmissionError({ ...draft, summary: '摘要'.repeat(61) }, targets, capabilities, 'draft')).toContain('120 字')
-    expect(contentSubmissionError({ ...draft, assets: [{ ...draft.assets[0]!, mime: 'image/webp' }] }, targets, capabilities, 'draft')).toContain('重新上传')
+    const longSummary = { ...draft, summary: '摘要'.repeat(61) }
+    expect(contentSubmissionError(longSummary, targets, capabilities, 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(longSummary, targets, capabilities)).toContain('微信公众号：摘要将截短至 120 字')
+    expect(contentSubmissionError({ ...draft, assets: [{ ...draft.assets[0]!, mime: 'image/webp' }] }, targets, capabilities, 'draft')).toContain('JPEG/PNG 封面')
+    const mixedAssets = { ...draft, assets: [...draft.assets, { ...draft.assets[0]!, id: '44444444-4444-4444-8444-444444444444', mime: 'image/webp' as const }] }
+    expect(contentSubmissionError(mixedAssets, targets, capabilities, 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(mixedAssets, targets, capabilities)).toContain('微信公众号：WebP 素材不会上传到公众号')
   })
 
   it('requires the corresponding Worker theme version for WeChat output', () => {
@@ -84,15 +89,18 @@ describe('article and image-note preflight', () => {
     }]
     const targets = [account('juejin')]
     expect(contentSubmissionError({ ...draft, body: '' }, targets, capabilities, 'draft')).toBe('请填写正文')
-    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toContain('分类')
+    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(draft, targets, capabilities)).toContain('掘金：未填写分类，将使用默认分类“前端”')
     draft.platformFields = { juejin: { category: '前端' } }
     expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
     draft.assets = [{ id: '33333333-3333-4333-8333-333333333333', name: '封面.png', mime: 'image/png', bytes: 12 }]
-    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBe('请为文章选择封面图片')
+    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(draft, targets, capabilities)).toContain('掘金：将自动选取首张图片作为封面')
     draft.coverAssetId = draft.assets[0]!.id
     expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
     draft.assets.push({ id: '44444444-4444-4444-8444-444444444444', name: '正文.png', mime: 'image/png', bytes: 12 })
-    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toContain('只支持单张封面')
+    expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(draft, targets, capabilities)).toContain('掘金：非封面图片不会提交到该平台')
     draft.platformVariants = { juejin: { assetOrder: [draft.assets[0]!.id] } }
     expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
   })
@@ -137,13 +145,16 @@ describe('article and image-note preflight', () => {
     }))
     expect(contentSubmissionError(draft, [account('wxmp'), account('tt'), account('juejin')], capabilities, 'draft')).toBeUndefined()
     draft.platformVariants.juejin!.coverAssetId = draft.coverAssetId
-    expect(contentSubmissionError(draft, [account('juejin')], capabilities, 'draft')).toContain('封面不在该平台已选图片中')
+    expect(contentSubmissionError(draft, [account('juejin')], capabilities, 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(draft, [account('juejin')], capabilities)).toContain('掘金：封面不在该平台所选图片中，提交时将忽略')
     draft.platformVariants.juejin!.coverAssetId = null
     draft.platformVariants.tt!.body = `头条正文 ![被排除的图](ebao-asset://${draft.assets[0]!.id})`
-    expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toContain('正文图片需先上传')
+    expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(draft, [account('tt')], capabilities)).toContain('头条：不符合该平台要求的正文图片将从平台版本移除')
     draft.platformVariants.tt!.body = '头条正文'
     draft.platformVariants.wxmp!.body = '微信正文 ![缺图](ebao-asset://33333333-3333-4333-8333-333333333333)'
-    expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toContain('正文图片需先上传')
+    expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(draft, [account('wxmp')], capabilities)).toContain('微信公众号：不符合该平台要求的正文图片将从平台版本移除')
     draft.platformVariants.wxmp!.body = '微信正文'
     draft.platformVariants.wxmp!.title = ''
     expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBe('请填写标题')

@@ -48,7 +48,8 @@ describe('unified publisher client contract', () => {
   })
 
   it('keeps article and image-note editing local, preflighted and safely previewed', () => {
-    expect(article).toContain('contentSubmissionError(current, selectedAccounts, capabilities, mode)')
+    expect(article).toContain('contentSubmissionError(current, selectedAccounts, capabilities, confirmedMode)')
+    expect(article).toContain('articleSubmissionWarnings(current, selectedAccounts, capabilities)')
     expect(article).toContain('accountPlatforms.map(platform =>')
     expect(article).toContain('selectedContentAccounts(contentType, accounts, selection)')
     expect(article).toContain('unavailableTargets.length === 0')

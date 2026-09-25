@@ -54,6 +54,10 @@ export interface PublisherSubmission {
   workId?: string
   title: string
   mode: PublisherMode
+  /** Present when an article requested immediate publish but was changed to a reviewable platform draft. */
+  requestedMode?: PublisherMode
+  /** Target-specific edits made to the submitted copy; the local source remains unchanged. */
+  adjustments?: Array<{ accountId: string; messages: string[] }>
   /** Absent only when connected to an older Worker. */
   state?: 'queued' | 'running' | 'unknown' | 'completed' | 'failed'
   /** A short local explanation when a result needs attention. */

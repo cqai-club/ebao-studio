@@ -39,6 +39,7 @@ export interface SessionPublicationCandidate {
   summary: string
   tags: string[]
   platformVariants: Partial<Record<Platform, { title?: string; body?: string; summary?: string; tags?: string[] }>>
+  warnings?: Partial<Record<Platform, string[]>>
 }
 
 export interface SessionPreviewSnapshot {
@@ -351,6 +352,8 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
         <div>摘要：{(variant?.summary ?? candidate.summary) || '未设置'}</div>
         <div>标签：{(variant?.tags ?? candidate.tags).length ? (variant?.tags ?? candidate.tags).map(tag => `#${tag}`).join(' ') : '未设置'}</div>
         {candidate.contentType === 'image-note' && <div>图片素材将在发布页作为图集提交；Markdown 图片语法不作为图文正文。</div>}
+        {activeView !== 'master' && (candidate.warnings?.[activeView] ?? []).map((warning, index) =>
+          <div className="pub-conv-error" role="status" key={`${activeView}-${index}`}>{warning}</div>)}
       </div>}
       {candidate ? <p className="pub-conv-note">{activeView === 'source' ? '原始 MD 内容预览。' : '发布候选预览；各平台最终呈现请以平台后台为准。'}</p>
         : !candidateStale && <p className="pub-conv-note">明确要求发布并准备目标平台后，才会出现发布候选。</p>}

@@ -26,6 +26,7 @@ export interface PublicationCandidate {
   summary: string
   tags: string[]
   platformVariants: Partial<Record<Platform, PublisherPlatformVariant>>
+  warnings: Partial<Record<Platform, string[]>>
 }
 
 export interface PrepareCandidateInput {
@@ -125,15 +126,28 @@ export function preparePublicationCandidate(
     imageSources(platformVariants[platform]?.body ?? body).length === 0)) {
     throw new Error('图文预览的每个目标平台至少需要一张原稿图片')
   }
-  if (input.contentType === 'article' && input.platforms.includes('wxmp')) {
-    const selectedForWechat = new Set(imageSources(platformVariants.wxmp?.body ?? body))
-    if (source.images.some(image => selectedForWechat.has(image.src) && image.mime === 'image/webp')) {
-      throw new Error('微信公众号文章暂不支持 WebP 图片，请将选中的图片转为 JPEG 或 PNG，更新 MD 后重新预览')
+  const warnings: PublicationCandidate['warnings'] = {}
+  if (input.contentType === 'article') {
+    for (const platform of input.platforms) {
+      const targetBody = platformVariants[platform]?.body ?? body
+      const notes: string[] = []
+      if ((platform === 'juejin' || platform === 'blbl') && imageSources(targetBody).length > 0) {
+        notes.push('该平台暂不支持正文插图；提交时会从平台草稿版本移除')
+      }
+      if (platform === 'wxmp') {
+        const selected = new Set(imageSources(targetBody))
+        if (source.images.some(image => selected.has(image.src) && image.mime === 'image/webp')) {
+          notes.push('WebP 正文图片会从公众号草稿版本移除；仍需有可用的 JPEG/PNG 封面')
+        }
+        if ((platformVariants.wxmp?.title ?? title).length > 64) notes.push('公众号标题超过 64 字，提交时会截短')
+        if ((platformVariants.wxmp?.summary ?? summary).length > 120) notes.push('公众号摘要超过 120 字，提交时会截短')
+      }
+      if (notes.length > 0) warnings[platform] = notes
     }
   }
   const candidate: PublicationCandidate = {
     id: randomUUID(), sessionId, sourceId: source.id, sourceRevision: source.revision,
-    contentType: input.contentType, platforms: [...input.platforms], title, body, summary, tags: [...tags], platformVariants,
+    contentType: input.contentType, platforms: [...input.platforms], title, body, summary, tags: [...tags], platformVariants, warnings,
   }
   candidates.delete(sessionId)
   candidates.set(sessionId, candidate)

@@ -11,7 +11,7 @@ import {
   api, capabilityMessage, ConfirmDialog, DraftToolbar, errorMessage, PlatformAccountSelect, PublisherModal, STATEMENT_LABELS, uploadAsset,
   type PublisherConfirmation,
 } from './shared.tsx'
-import { contentSubmissionError } from '../submission-validation.ts'
+import { articleSubmissionWarnings, contentSubmissionError } from '../submission-validation.ts'
 import { accountPlatformOrder } from './account-platform-order.ts'
 import { usePublisherTips } from './tips.tsx'
 import { articleUploadFile } from './article-image.ts'
@@ -429,8 +429,11 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
   const assetsForEditor = contentView === 'master' ? draft?.assets ?? []
     : [...(visibleDraft?.assets ?? []), ...(draft?.assets ?? []).filter(asset => !selectedAssetIds.has(asset.id))]
   const hasOverride = (field: VariantField) => selectedVariant !== undefined && Object.prototype.hasOwnProperty.call(selectedVariant, field)
+  const articleWarnings = draft && !capabilitiesPending && !capabilitiesError
+    ? articleSubmissionWarnings(draft, selectedAccounts, capabilities) : []
+  const submissionMode = contentType === 'article' && articleWarnings.length > 0 ? 'draft' : mode
   const unavailableTargets = selectedAccounts.filter(account =>
-    !contentModeAvailable(account.platform, contentType, mode, capabilities))
+    !contentModeAvailable(account.platform, contentType, submissionMode, capabilities))
   const exactMismatch = Boolean(selectedContentId && draft?.id !== selectedContentId)
   const editorLocked = busy || exactMismatch
   const submitReady = runtimeCapability?.supported === true && !accountsPending && !capabilitiesPending
@@ -444,7 +447,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
   const skippedArticleTagTargets = contentType === 'article' && visibleDraft?.tags.length
     ? selectedAccounts.filter(account => account.platform === 'wxmp' || account.platform === 'tt' || account.platform === 'bjh') : []
   const validationError = draft && selectedAccounts.length > 0 && !capabilitiesPending && !capabilitiesError
-    ? contentSubmissionError(draft, selectedAccounts, capabilities, mode) : undefined
+    ? contentSubmissionError(draft, selectedAccounts, capabilities, submissionMode) : undefined
   const requestConfirm = () => void act(async () => {
     const current = await flush()
     if (!current) throw new Error('请先创建草稿')
@@ -452,10 +455,13 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     if (missingRequestedPlatforms.length > 0) {
       throw new Error(`请先为本次目标平台选择账号：${missingRequestedPlatforms.map(platform => PLATFORM_LABELS[platform]).join('、')}`)
     }
-    const error = contentSubmissionError(current, selectedAccounts, capabilities, mode)
+    const warnings = articleSubmissionWarnings(current, selectedAccounts, capabilities)
+    const confirmedMode = contentType === 'article' && warnings.length > 0 ? 'draft' : mode
+    const error = contentSubmissionError(current, selectedAccounts, capabilities, confirmedMode)
     if (error) throw new Error(error)
+    if (confirmedMode !== mode) setMode(confirmedMode)
     const displayTitle = current.title.trim() || projectContentForPlatform(current, selectedAccounts[0]!.platform).title
-    setConfirm({ contentId: current.id, revision: current.revision, title: displayTitle, mode, accounts: selectedAccounts,
+    setConfirm({ contentId: current.id, revision: current.revision, title: displayTitle, mode: confirmedMode, accounts: selectedAccounts, warnings,
       targetTitles: Object.fromEntries(selectedAccounts.map(account => [account.id, projectContentForPlatform(current, account.platform).title])),
     })
   })
@@ -474,12 +480,14 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
       setConfirm(undefined)
       throw new Error('草稿已更新，请重新检查后提交')
     }
-    await api<CreateSubmissionResult>('submissions', {
+    const accepted = await api<CreateSubmissionResult>('submissions', {
       contentType, contentId: current.id, revision: current.revision,
       mode: confirm.mode, accountIds: confirm.accounts.map(account => account.id),
     })
     setConfirm(undefined)
-    showSuccess('已提交，请稍后到平台后台确认。')
+    showSuccess(accepted.submission.mode === 'draft' && ((confirm.warnings?.length ?? 0) > 0 || accepted.submission.requestedMode === 'publish')
+      ? '内容已按平台要求调整并转存草稿，请到平台后台核对。'
+      : '已提交，请稍后到平台后台确认。')
   })
 
   return <div onBlurCapture={() => { if (dirtyRef.current) void flush().catch(cause => showError(errorMessage(cause))) }}>
@@ -577,7 +585,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
           {accountPlatforms.map(platform => <div key={platform}>
             {requestedPlatforms.includes(platform) && <p className="pub-muted">本次目标 · {selectedAccounts.some(account => account.platform === platform) ? '账号已选择' : '待选择账号'}</p>}
             <PlatformAccountSelect idPrefix={contentType} platform={platform} accounts={accounts} value={selection[platform] ?? ''} onChange={id => setSelection(current => ({ ...current, [platform]: id || undefined }))}/>
-            {!capabilitiesPending && !capabilitiesError && !contentModeAvailable(platform, contentType, mode, capabilities) && <p className="pub-muted">当前发布引擎尚未开放{PLATFORM_LABELS[platform]}{mode === 'publish' ? '立即发布' : '转存草稿'}能力；可继续准备本地草稿。</p>}
+            {!capabilitiesPending && !capabilitiesError && !contentModeAvailable(platform, contentType, submissionMode, capabilities) && <p className="pub-muted">当前发布引擎尚未开放{PLATFORM_LABELS[platform]}{submissionMode === 'publish' ? '立即发布' : '转存草稿'}能力；可继续准备本地草稿。</p>}
           </div>)}
           {accountsPending && <p className="pub-muted">正在加载平台账号…</p>}
           {accountsError ? <p className="pub-warn" role="status">账号加载失败：{accountsError}</p>
@@ -592,8 +600,12 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
             </div>)
           })}
           {!capabilitiesPending && !capabilitiesError && selectedAccounts.map(account => {
-            const error = contentSubmissionError(draft, [account], capabilities, mode)
-            return error && <p className="pub-warn" role="status" key={`validation-${account.id}`}>{PLATFORM_LABELS[account.platform]}：{error}</p>
+            const error = contentSubmissionError(draft, [account], capabilities, submissionMode)
+            const warnings = articleSubmissionWarnings(draft, [account], capabilities)
+            return <div key={`validation-${account.id}`}>
+              {error && <p className="pub-warn" role="status">{PLATFORM_LABELS[account.platform]}：{error}</p>}
+              {warnings.map(warning => <p className="pub-warn" role="status" key={warning}>{warning}</p>)}
+            </div>
           })}
         </div>
         <div className="pub-card"><h2>提交方式</h2><div className="pub-mode">
@@ -604,10 +616,11 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
         {missingRequestedPlatforms.length > 0 && <p className="pub-warn" role="status">本次目标尚未选账号：{missingRequestedPlatforms.map(platform => PLATFORM_LABELS[platform]).join('、')}。选择全部目标账号后才能提交。</p>}
         {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">当前发布引擎尚未开放所选平台的提交方式；本地草稿仍会保存。若刚更新 Helper，请完全退出并重启应用后重试。</p>
           : validationError && <p className="pub-warn" role="status">提交前请处理：{validationError}</p>}
+        {articleWarnings.length > 0 && <p className="pub-muted">以上调整只影响提交给平台的文章副本，原始 MD 和本地编辑稿保留；本次将转存平台草稿供核对。</p>}
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </div>
     </div></fieldset>}
-    {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} targetTitles={confirm.targetTitles} busy={busy} onCancel={() => setConfirm(undefined)} onConfirm={submit}/>}
+    {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} targetTitles={confirm.targetTitles} warnings={confirm.warnings} busy={busy} onCancel={() => setConfirm(undefined)} onConfirm={submit}/>}
     <PublisherModal open={deleteDraftId !== undefined} title="删除本地草稿" closeLabel="关闭删除草稿确认" description="删除这份本地草稿？已经提交的内容快照不受影响。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/>
   </div>
 }

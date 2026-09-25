@@ -2,10 +2,82 @@ import {
   ARTICLE_THEME_LABELS, PLATFORM_LABELS, projectContentForPlatform, resolveArticleTheme, type PublisherAccount, type PublisherContent,
   type PublisherMode, type PublisherPlatformCapability,
 } from './protocol.ts'
-import { articleAssetIds } from './article-assets.ts'
+import { articleImageSources, hasRawArticleImage } from './article-assets.ts'
 
 const FIELD_LABELS: Record<string, string> = { category: '分类', topic: '话题', original: '原创声明' }
 const XHS_IMAGE_STATEMENTS = new Set(['none', 'ai_generated', 'fiction', 'marketing'])
+const MANAGED_IMAGE = /^ebao-asset:\/\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/iu
+const WECHAT_COVER_LIMIT = 10 * 1024 * 1024
+const WECHAT_BODY_IMAGE_LIMIT = 1024 * 1024
+
+function usableWechatCover(asset: PublisherContent['assets'][number]): boolean {
+  return (asset.mime === 'image/jpeg' || asset.mime === 'image/png') && asset.bytes < WECHAT_COVER_LIMIT
+}
+
+/** Explain changes made only to the platform submission copy; the editable draft stays intact. */
+export function articleSubmissionWarnings(
+  content: PublisherContent,
+  accounts: PublisherAccount[],
+  capabilities: PublisherPlatformCapability[],
+): string[] {
+  if (content.contentType !== 'article') return []
+  return accounts.flatMap(account => {
+    const selected = projectContentForPlatform(content, account.platform)
+    const sources = articleImageSources(selected.body)
+    const assets = new Map(selected.assets.map(asset => [asset.id, asset]))
+    const notes: string[] = []
+    if (account.platform === 'tt' && selected.summary.trim()) notes.push('独立摘要不会写入头条文章')
+    if ((account.platform === 'wxmp' || account.platform === 'tt' || account.platform === 'bjh') && selected.tags.length > 0) {
+      notes.push('文章标签暂不写入该平台')
+    }
+    if (account.platform === 'juejin' && !selected.platformFields.juejin?.category?.trim()) {
+      notes.push('未填写分类，将使用默认分类“前端”')
+    }
+    const limit = account.platform === 'wxmp' ? 64
+      : capabilities.find(item => item.platform === account.platform)?.maxTitleLength?.article
+    if (limit && selected.title.length > limit) notes.push(`标题将截短至 ${limit} 字`)
+    if (account.platform === 'wxmp' && selected.summary.length > 120) notes.push('摘要将截短至 120 字')
+    const selectedCover = selected.assets.find(asset => asset.id === selected.coverAssetId)
+    const effectiveCoverId = selectedCover?.id ?? selected.assets[0]?.id
+    if (account.platform === 'juejin' || account.platform === 'blbl') {
+      if (sources.length > 0 || hasRawArticleImage(selected.body)) notes.push('正文插图将从该平台版本移除')
+      if (selected.assets.some(asset => asset.id !== effectiveCoverId)) notes.push('非封面图片不会提交到该平台')
+    } else {
+      const unsupported = sources.some(source => {
+        const id = MANAGED_IMAGE.exec(source)?.[1]
+        const asset = id ? assets.get(id) : undefined
+        return !asset || account.platform === 'wxmp'
+          && (asset.mime === 'image/webp' || asset.bytes >= WECHAT_BODY_IMAGE_LIMIT)
+      }) || hasRawArticleImage(selected.body)
+      if (unsupported) notes.push('不符合该平台要求的正文图片将从平台版本移除')
+      if (account.platform === 'wxmp' && selected.assets.some(asset => asset.mime === 'image/webp')) {
+        notes.push('WebP 素材不会上传到公众号')
+      }
+    }
+    if (account.platform === 'wxmp') {
+      const cover = selected.assets.find(asset => asset.id === selected.coverAssetId)
+      if ((!cover || !usableWechatCover(cover)) && selected.assets.some(usableWechatCover)) {
+        notes.push('将自动选取可用的 JPEG/PNG 封面')
+      }
+      const effectiveCover = cover && usableWechatCover(cover) ? cover : selected.assets.find(usableWechatCover)
+      const usedBodyIds = new Set(sources.flatMap(source => {
+        const id = MANAGED_IMAGE.exec(source)?.[1]
+        const asset = id ? assets.get(id) : undefined
+        return asset && (asset.mime === 'image/jpeg' || asset.mime === 'image/png')
+          && asset.bytes < WECHAT_BODY_IMAGE_LIMIT ? [asset.id] : []
+      }))
+      if (selected.assets.some(asset => asset.id !== effectiveCover?.id && !usedBodyIds.has(asset.id))) {
+        notes.push('未使用或不兼容的素材不会上传到公众号')
+      }
+    } else if (!selectedCover && selected.assets.length > 0) {
+      notes.push('将自动选取首张图片作为封面')
+    }
+    if (account.platform !== 'wxmp' && selected.coverAssetId && !selectedCover && selected.assets.length === 0) {
+      notes.push('封面不在该平台所选图片中，提交时将忽略')
+    }
+    return notes.map(note => `${PLATFORM_LABELS[account.platform]}：${note}`)
+  })
+}
 
 /** Shared UI/Host preflight; the Worker still independently validates login and its own content snapshot. */
 export function contentSubmissionError(
@@ -24,38 +96,11 @@ export function contentSubmissionError(
     if (!selected.title.trim()) return '请填写标题'
     if (selected.contentType === 'article' && !selected.body.trim()) return '请填写正文'
     if (selected.contentType === 'image-note' && selected.assets.length === 0) return '图文至少添加一张图片'
-    if (selected.coverAssetId && !selected.assets.some(asset => asset.id === selected.coverAssetId)) {
+    if (selected.contentType === 'image-note' && selected.coverAssetId && !selected.assets.some(asset => asset.id === selected.coverAssetId)) {
       return `${PLATFORM_LABELS[account.platform]}封面不在该平台已选图片中`
     }
-    if (selected.contentType === 'article' && account.platform === 'wxmp' && !selected.coverAssetId) {
-      return '微信公众号文章必须选择封面图片'
-    }
-    if (selected.contentType === 'article' && selected.assets.length > 0 && !selected.coverAssetId) {
-      return '请为文章选择封面图片'
-    }
     if (selected.contentType === 'article' && account.platform === 'wxmp') {
-      if (selected.assets.some(asset => asset.mime === 'image/webp')) {
-        return '已有 WebP 素材请重新上传，上传时会自动转为 JPEG；再删除旧素材并重新选择封面或插入正文'
-      }
-      if (selected.title.length > 64) return '微信公众号文章标题不能超过 64 字'
-      if (selected.summary.length > 120) return '微信公众号文章摘要不能超过 120 字'
-      const cover = selected.assets.find(asset => asset.id === selected.coverAssetId)
-      if (cover && cover.bytes >= 10 * 1024 * 1024) return '微信公众号封面不能超过 10MB'
-      try {
-        const used = new Set(articleAssetIds(selected))
-        if (selected.assets.some(asset => used.has(asset.id) && asset.bytes >= 1024 * 1024)) {
-          return '微信公众号正文图片必须小于 1MB'
-        }
-      } catch (cause) { return cause instanceof Error ? cause.message : '正文图片引用无效' }
-    }
-    if (selected.contentType === 'article' && (account.platform === 'juejin' || account.platform === 'blbl')
-      && selected.body.includes('ebao-asset://')) return '掘金和B站专栏暂不支持正文插图，请分开提交'
-    if (selected.contentType === 'article' && (account.platform === 'juejin' || account.platform === 'blbl')
-      && selected.assets.some(asset => asset.id !== selected.coverAssetId)) {
-      return `${PLATFORM_LABELS[account.platform]}文章当前只支持单张封面，请在该平台版本中取消其他图片`
-    }
-    if (selected.contentType === 'article' && (account.platform === 'tt' || account.platform === 'bjh')) {
-      try { articleAssetIds(selected) } catch (cause) { return cause instanceof Error ? cause.message : '正文图片引用无效' }
+      if (!selected.assets.some(usableWechatCover)) return '微信公众号文章需要一张小于 10MB 的 JPEG/PNG 封面图片'
     }
     const capability = capabilities.find(item => item.platform === account.platform)
     if (!capability?.modes[selected.contentType]?.includes(mode)) {
@@ -69,15 +114,16 @@ export function contentSubmissionError(
       }
     }
     const titleLimit = capability.maxTitleLength?.[selected.contentType]
-    if (titleLimit !== undefined && selected.title.length > titleLimit) {
+    if (selected.contentType !== 'article' && titleLimit !== undefined && selected.title.length > titleLimit) {
       return `${PLATFORM_LABELS[account.platform]}标题不能超过 ${titleLimit} 字`
     }
     const assetLimit = capability.maxAssets?.[selected.contentType]
-    if (assetLimit !== undefined && selected.assets.length > assetLimit) {
+    if (selected.contentType !== 'article' && assetLimit !== undefined && selected.assets.length > assetLimit) {
       return `${PLATFORM_LABELS[account.platform]}当前最多支持 ${assetLimit} 张图片`
     }
     for (const field of capability.requiredFields[selected.contentType] ?? []) {
       if (!selected.platformFields[account.platform]?.[field]?.trim()) {
+        if (selected.contentType === 'article' && account.platform === 'juejin' && field === 'category') continue
         return `请填写${PLATFORM_LABELS[account.platform]}的${FIELD_LABELS[field] || field}`
       }
     }
