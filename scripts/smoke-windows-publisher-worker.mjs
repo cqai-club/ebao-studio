@@ -1,7 +1,7 @@
 /** Exercise the packaged MatrixMedia Worker on a native Windows host. */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,21 +29,33 @@ export async function smokeWindowsPublisherWorker() {
   const dataRoot = mkdtempSync(join(tmpdir(), 'ebao-publisher-win-smoke-'))
   const child = spawn(executable, ['--publisher-worker', '--data-dir', dataRoot], {
     cwd: dataRoot,
-    env: { ...process.env, MATRIXMEDIA_DATA_DIR: join(dataRoot, 'matrix-data') },
+    env: {
+      ...process.env,
+      MATRIXMEDIA_DATA_DIR: join(dataRoot, 'matrix-data'),
+      EBAO_PUBLISHER_WORKER_BOOT_TRACE: '1',
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   })
   const pendingRequests = new Map()
   let exitResult
+  let stderrTail = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', chunk => {
+    stderrTail = `${stderrTail}${chunk}`.slice(-8192)
+  })
   const failPending = error => {
     for (const [id, request] of pendingRequests) {
       pendingRequests.delete(id)
       request.reject(error)
     }
   }
-  const exited = new Promise(resolveExit => child.once('exit', (code, signal) => {
+  const exited = new Promise(resolveExit => child.once('close', (code, signal) => {
     exitResult = { code, signal }
-    failPending(new Error(`Windows Publisher Worker exited (${signal ?? String(code)})`))
+    const detail = stderrTail.trim()
+    const tracePath = join(dataRoot, 'boot-trace.log')
+    const trace = existsSync(tracePath) ? readFileSync(tracePath, 'utf8').slice(-4096).trim() : ''
+    failPending(new Error(`Windows Publisher Worker exited (${signal ?? String(code)})${detail ? `; stderr: ${detail}` : '; no stderr output'}; boot trace: ${trace || 'none'}`))
     resolveExit(exitResult)
   }))
   child.once('error', failPending)
@@ -77,8 +89,7 @@ export async function smokeWindowsPublisherWorker() {
       else request.resolve(response.result)
     }
   })
-  // Drain stderr so Electron logging cannot fill the pipe. Do not print account data.
-  child.stderr.resume()
+  // Drain stderr; include only this fresh-profile worker's bounded startup log on failure.
   const request = async (id, method) => {
     if (exitResult !== undefined) throw new Error('Windows Publisher Worker exited before the request')
     const response = new Promise((resolveResponse, rejectResponse) => {

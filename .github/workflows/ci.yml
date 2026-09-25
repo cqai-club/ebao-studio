@@ -166,6 +166,16 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: yarn workspace ${{ matrix.workspace }} dist:win-portable
+      - name: Upload Stable Windows test packages
+        if: github.event_name == 'pull_request' && matrix.workspace == 'dsh-plugin-desktop'
+        uses: actions/upload-artifact@v7
+        with:
+          name: stable-windows-test-${{ github.run_id }}
+          path: |
+            dsh-plugin-desktop/dist/eBao-Studio-*-x64-Setup.exe
+            dsh-plugin-desktop/dist/eBao-Studio-*-x64-Portable.zip
+          if-no-files-found: error
+          retention-days: 7
 
   # macOS-only universal packaging smoke on a real macOS runner: the signed
   # release is built manually on a credentialed machine, so an unsigned DMG
@@ -219,6 +229,16 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: yarn workspace ${{ matrix.workspace }} dist:mac-smoke
+      - name: Upload Stable macOS test packages
+        if: github.event_name == 'pull_request' && matrix.workspace == 'dsh-plugin-desktop'
+        uses: actions/upload-artifact@v7
+        with:
+          name: stable-macos-test-${{ github.run_id }}
+          path: |
+            dsh-plugin-desktop/dist/mac-smoke/eBao-Studio-*-universal.dmg
+            dsh-plugin-desktop/dist/mac-smoke/eBao-Studio-*-universal.zip
+          if-no-files-found: error
+          retention-days: 7
 
   # Upstream toolchain smoke: the portable-shell scripts must resolve the
   # pinned submodule's own Yarn/pnpm release on Windows.
