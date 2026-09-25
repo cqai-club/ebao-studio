@@ -6,7 +6,7 @@ import {
   type PublisherCapability, type PublisherContent, type PublisherPlatformCapability,
   type PublisherPlatformVariant, projectContentForPlatform, resolveArticleTheme,
 } from '../protocol.ts'
-import { CONTENT_ACCOUNT_PLATFORMS, contentModeAvailable, selectedContentAccounts } from '../content-targets.ts'
+import { contentModeAvailable, selectedContentAccounts } from '../content-targets.ts'
 import {
   api, capabilityMessage, ConfirmDialog, DraftToolbar, errorMessage, PlatformAccountSelect, PublisherModal, STATEMENT_LABELS, uploadAsset,
   type PublisherConfirmation,

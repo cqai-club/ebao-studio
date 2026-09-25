@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, type ComponentProps } from 'react'
 import { Button, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   API, type CreativeStatement, type Platform, PLATFORM_LABELS,
@@ -149,10 +149,6 @@ export function PublisherModal(props: ComponentProps<typeof Modal>) {
     }
   }, [props.open, marker])
   return <Modal {...props} className={`${props.className ?? ''} ${marker}`}/>
-}
-
-export function Card({ title, children }: { title: string; children: ReactNode }) {
-  return <div className="pub-card"><h2>{title}</h2>{children}</div>
 }
 
 export function DraftToolbar({ contents, draft, busy, dirty, saveError, onSelect, onCreate, onCopy, onDelete }: {

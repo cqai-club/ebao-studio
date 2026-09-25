@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { articleAssetIds, articleImageSources, hasRawArticleImage } from '../src/article-assets.ts'
+import { articleImageSources, hasRawArticleImage } from '../src/article-assets.ts'
 import { articleSubmissionWarnings, contentSubmissionError } from '../src/submission-validation.ts'
 import type { PublisherAccount, PublisherContent, PublisherPlatformCapability } from '../src/protocol.ts'
 
@@ -19,8 +19,7 @@ const capability: PublisherPlatformCapability = {
 }
 
 describe('article managed image preflight', () => {
-  it('accepts only assets owned by this draft and keeps the cover independent', () => {
-    expect(articleAssetIds(content)).toEqual([imageId])
+  it('keeps the cover independent of platform image adjustments', () => {
     expect(contentSubmissionError(content, [tt], [capability], 'draft')).toBeUndefined()
     expect(contentSubmissionError({ ...content, tags: ['AI'] }, [tt], [capability], 'draft')).toBeUndefined()
     expect(contentSubmissionError({ ...content, coverAssetId: undefined }, [tt], [capability], 'draft')).toBeUndefined()

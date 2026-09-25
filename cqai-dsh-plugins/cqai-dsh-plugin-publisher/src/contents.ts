@@ -1,5 +1,5 @@
 import {
-  copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
+  copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync,
   readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'

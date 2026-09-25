@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { articleAssetIds } from '../src/article-assets.ts'
+import { articleImageSources } from '../src/article-assets.ts'
 import { listContents, readAsset, readContent, saveContent } from '../src/contents.ts'
 import { openPublicationFromSource } from '../src/publication-preparation.ts'
 import { projectContentForPlatform } from '../src/protocol.ts'
@@ -37,7 +37,7 @@ describe('publication preparation from an MD source', () => {
     expect(first.assets.map(asset => asset.name)).toEqual(order.map(index => `${index}.png`))
     expect(first.coverAssetId).toBe(first.assets[0]?.id)
     expect(first.body).not.toContain('source-image://')
-    expect(articleAssetIds(first)).toEqual(first.assets.map(asset => asset.id))
+    expect(articleImageSources(first.body)).toEqual(first.assets.map(asset => `ebao-asset://${asset.id}`))
     for (const [position, index] of order.entries()) {
       expect(first.body).toContain(`![图 ${index}](ebao-asset://${first.assets[position]!.id})`)
       expect(readAsset(first.id, first.assets[position]!.id, env).data).toEqual(image(index))
@@ -128,7 +128,7 @@ describe('publication preparation from an MD source', () => {
     const assetRef = `ebao-asset://${prepared.assets[0]!.id}`
     expect(prepared.body).toContain(`\`![不要改](${ref})\``)
     expect(prepared.body).toContain(`- ![插图](<${assetRef}> "说明")`)
-    expect(articleAssetIds(prepared)).toEqual([prepared.assets[0]!.id])
+    expect(articleImageSources(prepared.body)).toEqual([assetRef])
     expect(prepared.platformVariants?.juejin?.assetOrder).toEqual([prepared.assets[0]!.id])
   })
 

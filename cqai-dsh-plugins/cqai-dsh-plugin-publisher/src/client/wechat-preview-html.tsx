@@ -127,5 +127,3 @@ export function ArticleMarkdownPreview({ body, content, assetUrl }: {
     {renderTokens(markdown.parse(body, {}), content, assetUrl)}
   </div>
 }
-
-export const WechatMarkdownPreview = ArticleMarkdownPreview

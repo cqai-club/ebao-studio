@@ -8,8 +8,6 @@ import { PublisherContentPreview } from './content-preview.tsx'
 import { contentPreviewCss } from './content-preview-style.ts'
 import { SourceDocumentPreview, type SourceDocumentSnapshot } from './source-document-preview.tsx'
 
-export { contentAssetUrl } from './content-preview.tsx'
-
 export const PREVIEW_KIND = 'cqai-publisher-preview'
 export const PREVIEW_ID = 'cqai-dsh-plugin-publisher/preview'
 
@@ -73,20 +71,6 @@ export interface PreviewDiscoveryState {
   sessionId: string
   contentId: string | null
   autoOpened: boolean
-}
-
-/** The first successful read is a baseline; only a later first draft may open the preview. */
-export function advancePreviewDiscovery(previous: PreviewDiscoveryState | undefined, snapshot: SessionContentSnapshot) {
-  const prior = previous?.sessionId === snapshot.sessionId ? previous : undefined
-  const contentId = previewableContentId(snapshot)
-  const autoOpen = !!prior && prior.contentId === null && contentId !== null && !prior.autoOpened
-  const closePreview = !!prior && prior.contentId !== null && contentId === null
-  return {
-    state: { sessionId: snapshot.sessionId, contentId, autoOpened: (prior?.autoOpened ?? contentId !== null) || autoOpen },
-    showAction: contentId !== null,
-    autoOpen,
-    closePreview,
-  }
 }
 
 /** The source document owns discovery; a legacy Publisher draft is used only when it is absent. */

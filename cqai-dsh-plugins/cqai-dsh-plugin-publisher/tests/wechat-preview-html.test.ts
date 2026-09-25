@@ -1,7 +1,7 @@
 import { isValidElement, type ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 import { API, type PublisherContent } from '../src/protocol.ts'
-import { WechatMarkdownPreview, wechatBodyImageIds } from '../src/client/wechat-preview-html.tsx'
+import { ArticleMarkdownPreview, wechatBodyImageIds } from '../src/client/wechat-preview-html.tsx'
 
 const imageId = '33333333-3333-4333-8333-333333333333'
 const missingId = '44444444-4444-4444-8444-444444444444'
@@ -22,7 +22,7 @@ function nodes(value: ReactNode): ViewedNode[] {
   return typeof value === 'string' ? [{ type: '#text', text: value }] : []
 }
 function preview(body: string, assetUrl = localUrl): ViewedNode[] {
-  return nodes(WechatMarkdownPreview({ body, content, assetUrl }))
+  return nodes(ArticleMarkdownPreview({ body, content, assetUrl }))
 }
 
 describe('WeChat article preview Markdown', () => {

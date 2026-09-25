@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  advancePreviewDiscovery, advanceSessionPreviewDiscovery, contentAssetUrl, openPublicationCandidate,
+  advanceSessionPreviewDiscovery, openPublicationCandidate,
   PreviewTabRegistry, previewForSession, sameDraftRevision, sameSessionPreview, sessionContentUrl,
   sessionPreviewUrl, sourceImageUrl, sourcePreviewForSession,
-  type SessionContentSnapshot, type SessionPreviewSnapshot,
+  type PreviewDiscoveryState, type SessionContentSnapshot, type SessionPreviewSnapshot,
 } from '../src/client/conversation-preview.tsx'
 import type { PublisherContent } from '../src/protocol.ts'
 
@@ -25,6 +25,10 @@ const candidate: NonNullable<SessionPreviewSnapshot['candidate']> = {
 }
 const sourcePreview: SessionPreviewSnapshot = { sessionId: 'session-1', source: original, candidate }
 
+function legacyDiscovery(previous: PreviewDiscoveryState | undefined, snapshot: SessionContentSnapshot) {
+  return advanceSessionPreviewDiscovery(previous, { sessionId: snapshot.sessionId, source: null, candidate: null }, snapshot)
+}
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('conversation draft preview identity', () => {
@@ -32,7 +36,6 @@ describe('conversation draft preview identity', () => {
     expect(sessionContentUrl('session/1?#')).toBe('/api/cqai-publisher/session-content/session%2F1%3F%23')
     expect(sessionPreviewUrl('session/1?#')).toBe('/api/cqai-publisher/session-preview/session%2F1%3F%23')
     expect(sourceImageUrl('source/1', 'image?#')).toBe('/api/cqai-publisher/source-image/source%2F1/image%3F%23')
-    expect(contentAssetUrl('content/1', 'asset?#')).toBe('/api/cqai-publisher/content-asset/content%2F1/asset%3F%23')
   })
 
   it('refreshes when a different session, draft or revision arrives', () => {
@@ -123,67 +126,67 @@ describe('source-first conversation preview', () => {
 
 describe('conversation preview discovery', () => {
   it('hides the action for an initial empty session and unsupported video draft', () => {
-    const initial = advancePreviewDiscovery(undefined, empty)
+    const initial = legacyDiscovery(undefined, empty)
     expect(initial.showAction).toBe(false)
     expect(initial.autoOpen).toBe(false)
     expect(initial.closePreview).toBe(false)
 
-    const videoResult = advancePreviewDiscovery(undefined, loaded('session-1', video))
+    const videoResult = legacyDiscovery(undefined, loaded('session-1', video))
     expect(videoResult.showAction).toBe(false)
     expect(videoResult.autoOpen).toBe(false)
 
-    const mismatchedDraft = advancePreviewDiscovery(undefined, { ...loaded('session-1', article), contentId: 'other-draft' })
+    const mismatchedDraft = legacyDiscovery(undefined, { ...loaded('session-1', article), contentId: 'other-draft' })
     expect(mismatchedDraft.showAction).toBe(false)
     expect(mismatchedDraft.autoOpen).toBe(false)
   })
 
   it('opens exactly once when an already-observed empty session first gains an article or image note', () => {
-    const initial = advancePreviewDiscovery(undefined, empty)
-    const created = advancePreviewDiscovery(initial.state, loaded('session-1', article))
+    const initial = legacyDiscovery(undefined, empty)
+    const created = legacyDiscovery(initial.state, loaded('session-1', article))
     expect(created.showAction).toBe(true)
     expect(created.autoOpen).toBe(true)
     expect(created.closePreview).toBe(false)
 
-    const revised = advancePreviewDiscovery(created.state, loaded('session-1', article, 2))
+    const revised = legacyDiscovery(created.state, loaded('session-1', article, 2))
     expect(revised.showAction).toBe(true)
     expect(revised.autoOpen).toBe(false)
 
-    const noteBaseline = advancePreviewDiscovery(undefined, { ...empty, sessionId: 'session-2' })
-    const noteCreated = advancePreviewDiscovery(noteBaseline.state, loaded('session-2', imageNote))
+    const noteBaseline = legacyDiscovery(undefined, { ...empty, sessionId: 'session-2' })
+    const noteCreated = legacyDiscovery(noteBaseline.state, loaded('session-2', imageNote))
     expect(noteCreated.showAction).toBe(true)
     expect(noteCreated.autoOpen).toBe(true)
   })
 
   it('shows an existing draft after session restore without automatically reopening it', () => {
-    const restored = advancePreviewDiscovery(undefined, loaded('session-1', article))
+    const restored = legacyDiscovery(undefined, loaded('session-1', article))
     expect(restored.showAction).toBe(true)
     expect(restored.autoOpen).toBe(false)
 
     // A user may close the preview tab and then reopen it from the action.
     // Polling the same or a revised draft must not steal focus.
-    expect(advancePreviewDiscovery(restored.state, loaded('session-1', article)).autoOpen).toBe(false)
-    expect(advancePreviewDiscovery(restored.state, loaded('session-1', article, 3)).autoOpen).toBe(false)
+    expect(legacyDiscovery(restored.state, loaded('session-1', article)).autoOpen).toBe(false)
+    expect(legacyDiscovery(restored.state, loaded('session-1', article, 3)).autoOpen).toBe(false)
   })
 
   it('keeps session transitions independent and closes only a deleted draft preview', () => {
-    const first = advancePreviewDiscovery(undefined, loaded('session-1', article))
-    const second = advancePreviewDiscovery(undefined, { ...empty, sessionId: 'session-2' })
+    const first = legacyDiscovery(undefined, loaded('session-1', article))
+    const second = legacyDiscovery(undefined, { ...empty, sessionId: 'session-2' })
     expect(first.showAction).toBe(true)
     expect(second.showAction).toBe(false)
-    expect(advancePreviewDiscovery(first.state, { ...empty, sessionId: 'session-2' }).showAction).toBe(false)
+    expect(legacyDiscovery(first.state, { ...empty, sessionId: 'session-2' }).showAction).toBe(false)
 
-    const deleted = advancePreviewDiscovery(first.state, empty)
+    const deleted = legacyDiscovery(first.state, empty)
     expect(deleted.showAction).toBe(false)
     expect(deleted.closePreview).toBe(true)
-    expect(advancePreviewDiscovery(deleted.state, empty).closePreview).toBe(false)
+    expect(legacyDiscovery(deleted.state, empty).closePreview).toBe(false)
 
     // A second draft in the same session does not automatically reopen the tab.
-    expect(advancePreviewDiscovery(deleted.state, loaded('session-1', article, 4)).autoOpen).toBe(false)
+    expect(legacyDiscovery(deleted.state, loaded('session-1', article, 4)).autoOpen).toBe(false)
 
-    const initiallyEmpty = advancePreviewDiscovery(undefined, empty)
-    const firstCreation = advancePreviewDiscovery(initiallyEmpty.state, loaded('session-1', article))
-    const removed = advancePreviewDiscovery(firstCreation.state, empty)
-    expect(advancePreviewDiscovery(removed.state, loaded('session-1', article, 5)).autoOpen).toBe(false)
+    const initiallyEmpty = legacyDiscovery(undefined, empty)
+    const firstCreation = legacyDiscovery(initiallyEmpty.state, loaded('session-1', article))
+    const removed = legacyDiscovery(firstCreation.state, empty)
+    expect(legacyDiscovery(removed.state, loaded('session-1', article, 5)).autoOpen).toBe(false)
   })
 
 })
