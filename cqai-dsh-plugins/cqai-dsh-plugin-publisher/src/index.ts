@@ -26,8 +26,11 @@ import {
   type SaveContentInput,
 } from './contents.ts'
 import { contentSubmissionError } from './submission-validation.ts'
-import { registerAgentDraftTools } from './agent-draft-tools.ts'
+import { registerAgentSourceTools } from './agent-source-tools.ts'
 import { readSessionContent } from './session-contents.ts'
+import { readSessionSourceDocument, readSourceImage } from './source-documents.ts'
+import { readPublicationCandidate, validPublicationCandidate } from './publication-candidates.ts'
+import { openPublicationFromSource } from './publication-preparation.ts'
 import { listWorks, resolveWork } from './works.ts'
 import { serveVideoPreview, VideoPreviewError, type LocalVideoReader } from './video-preview.ts'
 
@@ -253,6 +256,15 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     if (action === 'capability') return { code: 200, data: runtime.status() }
     if (action === 'platform-capabilities') return { code: 200, data: await runtime.request('system.capabilities') }
     if (action === 'contents') return { code: 200, data: listContents() }
+    if (action.startsWith('session-preview/')) {
+      const encoded = action.slice('session-preview/'.length)
+      if (!encoded || encoded.includes('/')) throw new Error('会话 ID 无效')
+      let sessionId: string
+      try { sessionId = decodeURIComponent(encoded) } catch { throw new Error('会话 ID 无效') }
+      const source = readSessionSourceDocument(sessionId)
+      const candidate = readPublicationCandidate(sessionId)
+      return { code: 200, data: { sessionId, source, candidate } }
+    }
     if (action.startsWith('session-content/')) {
       const encoded = action.slice('session-content/'.length)
       if (encoded === '' || encoded.includes('/')) throw new Error('会话 ID 无效')
@@ -285,6 +297,14 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
   }
   if (req.method !== 'POST') return { code: 405, data: { error: '请求方法不支持' } }
   const body = await readJson(req, action === 'content-save' ? 2 * MAX_CONTENT_BODY_BYTES : MAX_BODY_BYTES)
+  if (action === 'publication-open') {
+    const value = exact(body, ['sessionId', 'candidateId'])
+    const sessionId = text(value.sessionId, '会话 ID', 512)
+    const candidate = validPublicationCandidate(sessionId, uuid(value.candidateId, '候选预览 ID'))
+    return { code: 201, data: openPublicationFromSource(
+      candidate.sourceId, candidate.sourceRevision, candidate.contentType, process.env, candidate,
+    ) }
+  }
   if (action === 'contents') {
     const value = exact(body, ['contentType'])
     if (value.contentType !== 'article' && value.contentType !== 'image-note' && value.contentType !== 'video') throw new Error('内容类型无效')
@@ -382,7 +402,7 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
 
 export function apply(ctx: Context): void {
   const runtime = (ctx as PublisherContext).desktopRuntime.publisher
-  ctx.inject(['tools', 'attachments', 'systemPrompt'], (agentCtx) => registerAgentDraftTools(agentCtx))
+  ctx.inject(['tools', 'attachments', 'systemPrompt'], (agentCtx) => registerAgentSourceTools(agentCtx))
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: API,
@@ -393,6 +413,18 @@ export function apply(ctx: Context): void {
         const prefix = `${API}/`
         if (!url.pathname.startsWith(prefix) || url.search !== '') { json(res, 404, { error: '接口不存在' }); return }
         const action = url.pathname.slice(prefix.length)
+        if (req.method === 'GET' && action.startsWith('source-image/')) {
+          const segments = action.split('/')
+          if (segments.length !== 3 || url.search) throw new Error('原稿图片地址无效')
+          const image = readSourceImage(uuid(segments[1], '原稿 ID'), uuid(segments[2], '图片 ID'))
+          res.writeHead(200, {
+            'content-type': image.mime, 'content-length': image.data.length,
+            'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
+            'content-security-policy': "default-src 'none'; sandbox",
+          })
+          res.end(image.data)
+          return
+        }
         if (req.method === 'GET' && action.startsWith('video-preview/')) {
           const segments = action.split('/')
           if (segments.length !== 3 || (segments[1] !== 'work' && segments[1] !== 'local')) {

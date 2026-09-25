@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { afterEach, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +10,8 @@ import * as plugin from '../src/index.ts'
 import { permitted } from '../src/index.ts'
 import { API, type PublisherAccount } from '../src/protocol.ts'
 import { listWorks, resolveWork, worksRoot } from '../src/works.ts'
-import { saveSessionDraft } from '../src/session-contents.ts'
+import { sessionContentsRoot } from '../src/session-contents.ts'
+import { createContent, saveContent } from '../src/contents.ts'
 
 const WORK_ID = '11111111-1111-4111-8111-111111111111'
 const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222'
@@ -18,6 +20,19 @@ const LOCAL_VIDEO_ID = '44444444-4444-4444-8444-444444444444'
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 function temp(): string { const root = mkdtempSync(join(tmpdir(), 'ebao-publisher-')); roots.push(root); return root }
+
+function legacySessionDraft(sessionId: string, contentType: 'article' | 'image-note', title: string, body = '') {
+  const created = createContent(contentType)
+  const saved = saveContent(created.id, {
+    revision: created.revision, title, body, summary: '', tags: [], creativeStatement: 'none',
+  })
+  const root = sessionContentsRoot()
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, `${createHash('sha256').update(sessionId).digest('hex')}.json`), JSON.stringify({
+    version: 1, sessionId, contentId: saved.id,
+  }))
+  return { contentId: saved.id, revision: saved.revision }
+}
 
 function request(headers: Record<string, string>, method = 'POST'): IncomingMessage {
   return { method, headers: { host: '127.0.0.1:43120', ...headers }, socket: { remoteAddress: '127.0.0.1' } } as IncomingMessage
@@ -134,12 +149,12 @@ describe('the Host publisher route', () => {
       expect(await (await send('session-content/session-1')).json()).toEqual({
         sessionId: 'session-1', contentId: null, revision: null, content: null,
       })
-      const sessionDraft = saveSessionDraft('session-1', { contentType: 'article', title: '对话定稿', body: '正文' })
+      const sessionDraft = legacySessionDraft('session-1', 'article', '对话定稿', '正文')
       expect(await (await send('session-content/session-1')).json()).toMatchObject({
         sessionId: 'session-1', contentId: sessionDraft.contentId, revision: sessionDraft.revision,
         content: { title: '对话定稿', body: '正文' },
       })
-      const encodedDraft = saveSessionDraft('conversation/with space', { contentType: 'image-note', title: '图文' })
+      const encodedDraft = legacySessionDraft('conversation/with space', 'image-note', '图文')
       expect(await (await send(`session-content/${encodeURIComponent('conversation/with space')}`)).json()).toMatchObject({
         sessionId: 'conversation/with space', contentId: encodedDraft.contentId,
       })

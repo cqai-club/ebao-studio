@@ -50,6 +50,16 @@ describe('publisher draft handoff', () => {
     requestPublisherHandoff(imageNote)
     expect(listener).toHaveBeenCalledTimes(1)
     expect(() => requestPublisherHandoff({ contentId: 'wrong', contentType: 'article' })).toThrow('发布草稿 ID 或类型无效')
+    expect(() => requestPublisherHandoff({ ...article, platforms: ['wxmp', 'wxmp'] })).toThrow('发布草稿 ID 或类型无效')
+  })
+
+  it('retains candidate target platforms across a module reload', async () => {
+    const candidate = { ...article, platforms: ['wxmp', 'tt'] as const }
+    requestPublisherHandoff({ ...candidate, platforms: [...candidate.platforms] })
+    vi.resetModules()
+    const { readPublisherHandoff: readAfterReload } = await import('../src/client/handoff.ts')
+    expect(readAfterReload()).toEqual(candidate)
+    expect(window.sessionStorage.getItem('cqai-publisher-handoff')).toContain('"platforms":["wxmp","tt"]')
   })
 
   it('discards malformed or stale session data instead of choosing an arbitrary draft', () => {

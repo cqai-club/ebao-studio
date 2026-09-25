@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import type { PublisherContentType } from '../protocol.ts'
+import type { Platform, PublisherContentType } from '../protocol.ts'
 import { AccountsPage } from './accounts.tsx'
 import { ContentEditor } from './content.tsx'
 import { ConversationPreview, ConversationPreviewAction, PREVIEW_ID, PREVIEW_KIND } from './conversation-preview.tsx'
@@ -45,6 +45,10 @@ function PublisherPage() {
   const [tab, setTab] = useState<PublisherTab>('publish')
   const pageTitleRef = useRef<HTMLHeadingElement>(null)
   const [selectedContentId, setSelectedContentId] = useState(() => readPublisherHandoff()?.contentId)
+  const [intendedPlatforms, setIntendedPlatforms] = useState<{ contentId: string; platforms: Platform[] } | undefined>(() => {
+    const handoff = readPublisherHandoff()
+    return handoff?.platforms ? { contentId: handoff.contentId, platforms: handoff.platforms } : undefined
+  })
   const [contentType, setContentType] = useState<PublisherContentType>(() => {
     const handoff = readPublisherHandoff()
     if (handoff) return handoff.contentType
@@ -62,12 +66,14 @@ function PublisherPage() {
     contentTypeRef.current = handoff.contentType
     setContentType(handoff.contentType)
     setSelectedContentId(handoff.contentId)
+    setIntendedPlatforms(handoff.platforms ? { contentId: handoff.contentId, platforms: handoff.platforms } : undefined)
     try { localStorage.setItem('cqai-publisher-content-type', handoff.contentType) } catch { /* optional preference */ }
   }), [])
   const chooseContentType = (value: PublisherContentType) => {
     if (value !== contentTypeRef.current) {
       handoffGenerationRef.current += 1
       setSelectedContentId(undefined)
+      setIntendedPlatforms(undefined)
       clearPublisherHandoff()
     }
     contentTypeRef.current = value
@@ -78,9 +84,18 @@ function PublisherPage() {
   const selected = (type: 'article' | 'image-note', id?: string) => {
     if (type !== contentTypeRef.current || renderGeneration !== handoffGenerationRef.current) return
     setSelectedContentId(id)
-    if (id) rememberPublisherHandoff({ contentId: id, contentType: type })
-    else clearPublisherHandoff()
+    if (id) {
+      const previous = readPublisherHandoff()
+      const platforms = previous?.contentId === id && previous.contentType === type ? previous.platforms : undefined
+      setIntendedPlatforms(platforms ? { contentId: id, platforms } : undefined)
+      rememberPublisherHandoff({ contentId: id, contentType: type, ...(platforms ? { platforms } : {}) })
+    } else {
+      setIntendedPlatforms(undefined)
+      clearPublisherHandoff()
+    }
   }
+  const intendedForSelection = intendedPlatforms && intendedPlatforms.contentId === selectedContentId
+    ? intendedPlatforms.platforms : undefined
   return <PublisherTipsProvider><section className="pub"><style>{css}</style><div className="pub-wrap">
     <header className="pub-head">
       <div><h1 ref={pageTitleRef} tabIndex={-1}>多平台发布</h1><div className="pub-muted">在 e宝工坊中编辑内容、选择账号并提交到本机发布队列。</div></div>
@@ -97,8 +112,8 @@ function PublisherPage() {
         ] as const).map(([value, label]) => <button className="pub-type" key={value} id={`pub-type-${value}`} role="tab" aria-controls={`pub-content-${value}`} aria-selected={contentType === value} tabIndex={contentType === value ? 0 : -1} onClick={() => chooseContentType(value)}>{label}</button>)}
       </nav>
       <div className="pub-content-panels">
-        <div id="pub-content-article" role="tabpanel" aria-labelledby="pub-type-article" hidden={contentType !== 'article'}><ContentEditor contentType="article" active={tab === 'publish' && contentType === 'article'} selectedContentId={contentType === 'article' ? selectedContentId : undefined} onSelectedContentChange={id => selected('article', id)}/></div>
-        <div id="pub-content-image-note" role="tabpanel" aria-labelledby="pub-type-image-note" hidden={contentType !== 'image-note'}><ContentEditor contentType="image-note" active={tab === 'publish' && contentType === 'image-note'} selectedContentId={contentType === 'image-note' ? selectedContentId : undefined} onSelectedContentChange={id => selected('image-note', id)}/></div>
+        <div id="pub-content-article" role="tabpanel" aria-labelledby="pub-type-article" hidden={contentType !== 'article'}><ContentEditor contentType="article" active={tab === 'publish' && contentType === 'article'} selectedContentId={contentType === 'article' ? selectedContentId : undefined} intendedPlatforms={contentType === 'article' ? intendedForSelection : undefined} onSelectedContentChange={id => selected('article', id)}/></div>
+        <div id="pub-content-image-note" role="tabpanel" aria-labelledby="pub-type-image-note" hidden={contentType !== 'image-note'}><ContentEditor contentType="image-note" active={tab === 'publish' && contentType === 'image-note'} selectedContentId={contentType === 'image-note' ? selectedContentId : undefined} intendedPlatforms={contentType === 'image-note' ? intendedForSelection : undefined} onSelectedContentChange={id => selected('image-note', id)}/></div>
         <div id="pub-content-video" role="tabpanel" aria-labelledby="pub-type-video" hidden={contentType !== 'video'}><VideoPage active={tab === 'publish' && contentType === 'video'}/></div>
       </div>
     </div></div>
@@ -126,9 +141,10 @@ export function apply(ctx: Context): void {
   }, (props: PropsRuntime<'conversation.session.header.utilities'>) => <ConversationPreviewAction {...props} openPreview={openPreview}/>))
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab', key: PREVIEW_ID,
-  }, (props: PropsRuntime<'sidebar.right.pane.tab'>) => <ConversationPreview {...props} onPublish={content => {
-    if (content.contentType !== 'article' && content.contentType !== 'image-note') return
-    requestPublisherHandoff({ contentId: content.id, contentType: content.contentType })
+  }, (props: PropsRuntime<'sidebar.right.pane.tab'>) => <ConversationPreview {...props} onPublish={(preparation, platforms) => {
+    if (preparation.contentType !== 'article' && preparation.contentType !== 'image-note') return
+    // The source preview opens a persisted preparation before this handoff.
+    requestPublisherHandoff({ contentId: preparation.id, contentType: preparation.contentType, ...(platforms ? { platforms } : {}) })
     ctx.layout.selectPanel(PUBLISHER_PANEL)
   }}/>))
 }

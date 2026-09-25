@@ -1,7 +1,11 @@
+import { PLATFORMS, type Platform } from '../protocol.ts'
+
 /** One pending or currently selected article/image-note in the publisher panel. */
 export interface PublisherHandoff {
   contentId: string
   contentType: 'article' | 'image-note'
+  /** Platforms requested when the user opened a publication candidate. */
+  platforms?: Platform[]
 }
 
 const STORAGE_KEY = 'cqai-publisher-handoff'
@@ -14,6 +18,10 @@ function valid(value: unknown): value is PublisherHandoff {
   const candidate = value as Partial<PublisherHandoff>
   return typeof candidate.contentId === 'string' && UUID.test(candidate.contentId)
     && (candidate.contentType === 'article' || candidate.contentType === 'image-note')
+    && (candidate.platforms === undefined || (Array.isArray(candidate.platforms)
+      && candidate.platforms.length > 0
+      && candidate.platforms.every(platform => (PLATFORMS as readonly string[]).includes(platform))
+      && new Set(candidate.platforms).size === candidate.platforms.length))
 }
 
 /** Session storage also covers a handoff sent before the publisher panel mounts and page reloads. */
@@ -34,8 +42,8 @@ export function readPublisherHandoff(): PublisherHandoff | undefined {
 /** Update the remembered selection without restarting a panel handoff. */
 export function rememberPublisherHandoff(input: PublisherHandoff): void {
   if (!valid(input)) throw new Error('发布草稿 ID 或类型无效')
-  pendingHandoff = input
-  try { window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(input)) }
+  pendingHandoff = input.platforms ? { ...input, platforms: [...input.platforms] } : input
+  try { window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(pendingHandoff)) }
   catch { /* The live event still allows navigation when storage is unavailable. */ }
 }
 

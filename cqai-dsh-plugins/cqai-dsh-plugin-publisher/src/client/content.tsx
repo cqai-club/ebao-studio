@@ -12,6 +12,7 @@ import {
   type PublisherConfirmation,
 } from './shared.tsx'
 import { contentSubmissionError } from '../submission-validation.ts'
+import { accountPlatformOrder } from './account-platform-order.ts'
 import { usePublisherTips } from './tips.tsx'
 import { articleUploadFile } from './article-image.ts'
 import { AssetPreviewImage, PublisherContentPreview, contentAssetUrl } from './content-preview.tsx'
@@ -22,10 +23,11 @@ type ContentView = 'master' | Platform
 type VariantField = keyof PublisherPlatformVariant
 const FIELD_LABELS: Record<string, string> = { category: '分类', topic: '话题', original: '原创声明' }
 
-export function ContentEditor({ contentType, active, selectedContentId, onSelectedContentChange }: {
+export function ContentEditor({ contentType, active, selectedContentId, intendedPlatforms, onSelectedContentChange }: {
   contentType: EditorType
   active: boolean
   selectedContentId?: string
+  intendedPlatforms?: readonly Platform[]
   onSelectedContentChange?: (id?: string) => void
 }) {
   const { showError, showSuccess, clearTip } = usePublisherTips()
@@ -61,6 +63,8 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
   const [runtimeCapability, setRuntimeCapability] = useState<PublisherCapability>()
 
   useEffect(() => { setConfirm(undefined) }, [selectedContentId, active])
+  const intendedPlatformsKey = intendedPlatforms?.join(',')
+  useEffect(() => { setSelection({}) }, [selectedContentId, intendedPlatformsKey])
   useEffect(() => {
     setHandoffError('')
     if (selectedContentId) {
@@ -414,8 +418,11 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
     showSuccess('已加载最新草稿。')
   })
 
-  const accountPlatforms = CONTENT_ACCOUNT_PLATFORMS[contentType]
+  const accountPlatforms = accountPlatformOrder(contentType, intendedPlatforms)
+  const requestedPlatforms = intendedPlatforms?.filter(platform => accountPlatforms.includes(platform)) ?? []
   const selectedAccounts = selectedContentAccounts(contentType, accounts, selection)
+  const missingRequestedPlatforms = requestedPlatforms.filter(platform =>
+    !selectedAccounts.some(account => account.platform === platform))
   const visibleDraft = draft && effectiveContent(draft)
   const selectedVariant = contentView === 'master' ? undefined : draft?.platformVariants?.[contentView]
   const selectedAssetIds = new Set(visibleDraft?.assets.map(asset => asset.id) ?? [])
@@ -427,7 +434,8 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
   const exactMismatch = Boolean(selectedContentId && draft?.id !== selectedContentId)
   const editorLocked = busy || exactMismatch
   const submitReady = runtimeCapability?.supported === true && !accountsPending && !capabilitiesPending
-    && selectedAccounts.length > 0 && unavailableTargets.length === 0 && !exactMismatch && !handoffError
+    && selectedAccounts.length > 0 && missingRequestedPlatforms.length === 0
+    && unavailableTargets.length === 0 && !exactMismatch && !handoffError
   const titleLimit = contentView === 'master' ? TITLE_MAX
     : capabilities.find(item => item.platform === contentView)?.maxTitleLength?.[contentType] ?? TITLE_MAX
   const assetLimit = contentView === 'master' ? 20
@@ -441,6 +449,9 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
     const current = await flush()
     if (!current) throw new Error('请先创建草稿')
     if ((selectedContentId && current.id !== selectedContentId) || handoffError) throw new Error('指定草稿尚未打开，请先确认当前草稿')
+    if (missingRequestedPlatforms.length > 0) {
+      throw new Error(`请先为本次目标平台选择账号：${missingRequestedPlatforms.map(platform => PLATFORM_LABELS[platform]).join('、')}`)
+    }
     const error = contentSubmissionError(current, selectedAccounts, capabilities, mode)
     if (error) throw new Error(error)
     const displayTitle = current.title.trim() || projectContentForPlatform(current, selectedAccounts[0]!.platform).title
@@ -496,7 +507,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
               {PLATFORM_LABELS[platform]}{draft.platformVariants?.[platform] ? ' · 已单独修改' : ''}
             </button>)}
           </div>
-          <p className="pub-muted">{contentView === 'master' ? 'Agent 对话和这里编辑的是同一份主稿。平台版本默认继承主稿；对某个平台单独修改后，该字段将保留自己的内容。'
+          <p className="pub-muted">{contentView === 'master' ? '这里编辑的是本地发布主稿；从 Agent 原始 MD 生成的内容不会回写原文件。平台版本默认继承主稿；对某个平台单独修改后，该字段将保留自己的内容。'
             : `${PLATFORM_LABELS[contentView]}版本：未单独修改的字段会跟随主稿更新。请在提交前切到每个目标平台检查。`}</p>
           {contentType === 'article' && (contentView === 'master' || contentView === 'wxmp') && <div className="pub-article-theme-control">
             <label htmlFor={`pub-article-theme-${draft.id}`}>公众号排版主题</label>
@@ -563,7 +574,9 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
       </div>
       <div>
         <div className="pub-card"><h2>选择平台账号</h2>
+          {requestedPlatforms.length > 0 && <p className="pub-muted" role="status">本次目标平台：{requestedPlatforms.map(platform => PLATFORM_LABELS[platform]).join('、')}。请逐一选择账号；也可手动添加下方其他平台。如需减少目标，请在对话中重新准备预览。</p>}
           {accountPlatforms.map(platform => <div key={platform}>
+            {requestedPlatforms.includes(platform) && <p className="pub-muted">本次目标 · {selectedAccounts.some(account => account.platform === platform) ? '账号已选择' : '待选择账号'}</p>}
             <PlatformAccountSelect idPrefix={contentType} platform={platform} accounts={accounts} value={selection[platform] ?? ''} onChange={id => setSelection(current => ({ ...current, [platform]: id || undefined }))}/>
             {contentType === 'image-note' && platform === 'tt' && <p className="pub-muted">头条微头条图文为 Beta 试用，仅支持转存草稿；提交后请到头条草稿箱核对，平台窗口会保留供检查。</p>}
             {!capabilitiesPending && !capabilitiesError && !contentModeAvailable(platform, contentType, mode, capabilities) && <p className="pub-muted">当前发布引擎尚未开放{PLATFORM_LABELS[platform]}{mode === 'publish' ? '立即发布' : '转存草稿'}能力；可继续准备本地草稿。</p>}
@@ -590,6 +603,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
           <label><input type="radio" name={`pub-mode-${contentType}`} checked={mode === 'draft'} onChange={() => setMode('draft')}/>转存草稿</label>
         </div></div>
         <Button variant="primary" className="pub-submit" disabled={busy || !submitReady} onClick={requestConfirm}>检查并提交</Button>
+        {missingRequestedPlatforms.length > 0 && <p className="pub-warn" role="status">本次目标尚未选账号：{missingRequestedPlatforms.map(platform => PLATFORM_LABELS[platform]).join('、')}。选择全部目标账号后才能提交。</p>}
         {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">当前发布引擎尚未开放所选平台的提交方式；本地草稿仍会保存。若刚更新 Helper，请完全退出并重启应用后重试。</p>
           : validationError && <p className="pub-warn" role="status">提交前请处理：{validationError}</p>}
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
