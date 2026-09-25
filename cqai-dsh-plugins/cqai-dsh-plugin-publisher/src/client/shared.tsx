@@ -293,6 +293,7 @@ export const css = `
 .pub-history-acknowledge { display: flex; align-items: flex-start; gap: 8px; margin-top: 14px; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 1.5; cursor: pointer; }
 .pub-history-acknowledge input { flex: none; margin: 3px 0 0; accent-color: var(--dsw-alias-state-business-primary, #4176e6); }
 .pub-targets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.pub-target-group { display: inline-flex; flex-wrap: wrap; gap: 6px; padding: 4px; border: 1px solid var(--pub-border); border-radius: 8px; }
 .pub-import { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--pub-border); }
 .pub-count { margin-right: 8px; color: var(--dsw-alias-state-business-primary, #4176e6); font: 12px var(--ds-font-family-code, monospace); letter-spacing: .04em; }
 .pub-modal, .pub-modal-account { width: min(480px, 100%); max-height: min(90vh, 640px); color: var(--dsw-alias-label-primary); }

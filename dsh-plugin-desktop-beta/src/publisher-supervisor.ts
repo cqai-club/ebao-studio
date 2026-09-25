@@ -335,7 +335,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
       ? this.importTimeoutMs
       : method === 'submissions.create'
         ? this.submissionTimeoutMs
-      : method === 'accounts.openLogin' || method === 'accounts.openDashboard'
+      : method === 'accounts.openLogin' || method === 'accounts.openDashboard' || method === 'submissions.openTarget'
         ? Math.max(this.requestTimeoutMs, WINDOW_TIMEOUT_MS)
         : this.requestTimeoutMs
     const result = await this.call<T>(method, workerParams, signal, timeoutMs)

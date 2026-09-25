@@ -44,7 +44,15 @@ describe('unified publisher client contract', () => {
     expect(article).toContain('contentType, contentId: current.id, revision: current.revision')
     expect(video).not.toMatch(/\b(?:file|videoPath|filePath)\s*:/u)
     expect(article).not.toMatch(/\b(?:videoPath|filePath)\s*:/u)
-    expect(history).toContain("api('account-open-dashboard', { id: target.accountId })")
+    expect(history).toContain("api<PublisherOpenTargetResult>('submission-open-target', {")
+    expect(history).toContain('submissionId, accountId, ...(listOnly ? { listOnly: true } : {})')
+    expect(history).toContain('onClick={() => void openTarget(item.id, target.accountId, item.state)}')
+    expect(history).toContain('onClick={() => void openTarget(item.id, target.accountId, item.state, true)}')
+    expect(history).toContain('item.targets.map(target => <span className="pub-target-group"')
+    expect(history).toContain('disabled={deleting || openingTarget !== undefined || !canOpenTarget(item.state)}')
+    expect(history).toContain("'查看平台稿件'")
+    expect(history).toContain("'打开列表'")
+    expect(history).not.toContain("api('account-open-dashboard'")
   })
 
   it('keeps article and image-note editing local, preflighted and safely previewed', () => {

@@ -17,6 +17,7 @@ import {
   type PublisherCapability,
   type PublisherContent,
   type PublisherLocalVideo,
+  type PublisherOpenTargetResult,
   type PublisherPlatformCapability,
   type PublisherVideoSource,
 } from './protocol.ts'
@@ -44,7 +45,7 @@ type WorkerMethod =
   | 'accounts.list' | 'accounts.create' | 'accounts.update' | 'accounts.delete'
   | 'accounts.openLogin' | 'accounts.checkLogin' | 'accounts.openDashboard'
   | 'accounts.importPreview' | 'accounts.importApply'
-  | 'submissions.create' | 'submissions.list' | 'submissions.delete' | 'system.capabilities'
+  | 'submissions.create' | 'submissions.list' | 'submissions.delete' | 'submissions.openTarget' | 'system.capabilities'
 
 interface PublisherRuntime extends LocalVideoReader {
   status(): PublisherCapability
@@ -123,6 +124,16 @@ function submissionDeleteBody(value: unknown): { id: string; acknowledgeUnknown?
   return {
     id: uuid(body.id, '提交 ID'),
     ...(hasAcknowledgement ? { acknowledgeUnknown: body.acknowledgeUnknown as boolean } : {}),
+  }
+}
+
+function submissionOpenTargetBody(value: unknown): { submissionId: string; accountId: string; listOnly?: boolean } {
+  const body = exact(value, ['submissionId', 'accountId', 'listOnly'])
+  if (body.listOnly !== undefined && typeof body.listOnly !== 'boolean') throw new Error('列表打开方式无效')
+  return {
+    submissionId: uuid(body.submissionId, '提交 ID'),
+    accountId: uuid(body.accountId, '账号 ID'),
+    ...(body.listOnly === undefined ? {} : { listOnly: body.listOnly as boolean }),
   }
 }
 
@@ -353,6 +364,14 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     return { code: 200, data: await runtime.selectLocalVideo() }
   }
   if (action === 'submission-delete') return { code: 200, data: await runtime.request('submissions.delete', submissionDeleteBody(body)) }
+  if (action === 'submission-open-target') {
+    const result = object(await runtime.request('submissions.openTarget', submissionOpenTargetBody(body)))
+    const kind = result.kind
+    if (kind !== 'draft' && kind !== 'draft-list' && kind !== 'content-list' && kind !== 'backend' && kind !== 'review-window') {
+      throw new Error('平台打开结果无效')
+    }
+    return { code: 200, data: { kind } satisfies PublisherOpenTargetResult }
+  }
   if (action === 'submissions') {
     const input = submissionBody(body)
     const accounts = await runtime.request<PublisherAccount[]>('accounts.list')

@@ -69,6 +69,11 @@ export interface PublisherSubmission {
   }>
 }
 
+/** Result of opening one submission target in its own platform account session. */
+export interface PublisherOpenTargetResult {
+  kind: 'draft' | 'draft-list' | 'content-list' | 'backend' | 'review-window'
+}
+
 export interface PublisherPlatformCapability {
   platform: Platform
   contentTypes: PublisherContentType[]

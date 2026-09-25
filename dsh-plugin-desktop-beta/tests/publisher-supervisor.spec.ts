@@ -228,6 +228,18 @@ describe('PublisherSupervisor', () => {
     await supervisor.shutdown()
   })
 
+  it('allows a submission target window to load beyond the ordinary RPC timeout', async () => {
+    const { supervisor } = fixture((frame, worker) => {
+      if (handshake(frame, worker)) return
+      if (frame.method === 'submissions.openTarget') setTimeout(() => worker.reply(frame.id, { kind: 'draft-list' }), 20)
+      if (frame.method === 'system.shutdown') { worker.reply(frame.id, { ok: true }); worker.exit(0) }
+    }, { requestTimeoutMs: 5 })
+    await expect(supervisor.request('submissions.openTarget', {
+      submissionId: '33333333-3333-4333-8333-333333333333', accountId: '22222222-2222-4222-8222-222222222222',
+    })).resolves.toEqual({ kind: 'draft-list' })
+    await supervisor.shutdown()
+  })
+
   it('treats an unanswered submission as uncertain rather than safe to retry', async () => {
     const { supervisor } = fixture((frame, worker) => {
       if (handshake(frame, worker)) return

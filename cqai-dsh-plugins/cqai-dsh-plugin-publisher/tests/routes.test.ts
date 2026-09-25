@@ -122,6 +122,7 @@ describe('the Host publisher route', () => {
           accounts: [{ displayName: '旧账号', platform: 'dy', platformName: '抖音', partition: 'secret' }],
         }
         if (method === 'submissions.list') return []
+        if (method === 'submissions.openTarget') return { kind: 'backend', url: 'https://private.example/draft' }
         if (method === 'submissions.create') return {
           accepted: true,
           submission: {
@@ -196,6 +197,21 @@ describe('the Host publisher route', () => {
       expect(create?.params).toMatchObject({
         workId: WORK_ID, file: realpathSync(join(directory, 'final_video.mp4')), mode: 'draft', accountIds: [ACCOUNT_ID],
       })
+      const beforeOpen = calls.filter(call => call.method === 'submissions.openTarget').length
+      expect((await send('submission-open-target', { submissionId: 'invalid', accountId: ACCOUNT_ID })).status).toBe(400)
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: 'invalid' })).status).toBe(400)
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, url: 'https://evil.example' })).status).toBe(400)
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, listOnly: 'true' })).status).toBe(400)
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, listOnly: null })).status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.openTarget')).toHaveLength(beforeOpen)
+      const opened = await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID })
+      expect(opened.status).toBe(200)
+      expect(await opened.json()).toEqual({ kind: 'backend' })
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, listOnly: true })).status).toBe(200)
+      expect(calls.filter(call => call.method === 'submissions.openTarget')).toEqual([
+        { method: 'submissions.openTarget', params: { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID } },
+        { method: 'submissions.openTarget', params: { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, listOnly: true } },
+      ])
       const beforeDelete = calls.filter(call => call.method === 'submissions.delete').length
       expect((await send('submission-delete', { id: 'invalid' })).status).toBe(400)
       expect((await send('submission-delete', { id: SUBMISSION_ID, file: '/tmp/unsafe' })).status).toBe(400)

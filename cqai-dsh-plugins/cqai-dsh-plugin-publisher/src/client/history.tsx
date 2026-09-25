@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Input, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  PLATFORM_LABELS, type PublisherContentType, type PublisherSubmission,
+  PLATFORM_LABELS, type PublisherContentType, type PublisherOpenTargetResult, type PublisherSubmission,
 } from '../protocol.ts'
 import { api, CONTENT_LABELS, errorMessage, PublisherModal } from './shared.tsx'
+import { canOpenTarget, openTargetNotice } from './history-target.ts'
 import { usePublisherTips } from './tips.tsx'
 
 const PAGE_SIZE = 10
@@ -24,9 +25,11 @@ export function SubmissionHistory({ active }: { active: boolean }) {
   const [page, setPage] = useState(1)
   const [refreshing, setRefreshing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [openingTarget, setOpeningTarget] = useState<string>()
   const [deleteTarget, setDeleteTarget] = useState<PublisherSubmission>()
   const [acknowledgedUnknown, setAcknowledgedUnknown] = useState(false)
   const busyRef = useRef(false)
+  const openingRef = useRef(false)
   const requestSequence = useRef(0)
   const focusAfterDelete = useRef(false)
 
@@ -96,6 +99,24 @@ export function SubmissionHistory({ active }: { active: boolean }) {
     }
   }
 
+  const openTarget = async (submissionId: string, accountId: string, state: PublisherSubmission['state'], listOnly = false) => {
+    if (openingRef.current) return
+    openingRef.current = true
+    setOpeningTarget(`${submissionId}:${accountId}:${listOnly ? 'list' : 'target'}`)
+    clearTip()
+    try {
+      const result = await api<PublisherOpenTargetResult>('submission-open-target', {
+        submissionId, accountId, ...(listOnly ? { listOnly: true } : {}),
+      })
+      showSuccess(openTargetNotice(result.kind, state))
+    } catch (cause) {
+      showError(errorMessage(cause))
+    } finally {
+      openingRef.current = false
+      setOpeningTarget(undefined)
+    }
+  }
+
   return <div>
     <div className="pub-head pub-history-head"><div><h2>发布历史</h2><p className="pub-muted">这里只记录已经被本机队列接受的提交，不代表平台最终发布成功。</p></div>
       <div className="pub-actions pub-history-tools">
@@ -116,7 +137,7 @@ export function SubmissionHistory({ active }: { active: boolean }) {
             <strong>{CONTENT_LABELS[item.contentType ?? 'video']} · {item.title}</strong>
             <small className="pub-muted">{new Date(item.createdAt).toLocaleString()}</small>
           </div><Button variant="outline" size="sm" className="pub-danger-action"
-            disabled={deleting || item.state === 'queued' || item.state === 'running'}
+            disabled={deleting || openingTarget !== undefined || !canOpenTarget(item.state)}
             title={item.state === 'queued' || item.state === 'running' ? '提交仍在队列中，不能删除' : undefined}
             aria-label={`删除记录：${item.title}，${new Date(item.createdAt).toLocaleString()}`}
             onClick={() => { setAcknowledgedUnknown(false); setDeleteTarget(item) }}>删除</Button></div>
@@ -132,10 +153,21 @@ export function SubmissionHistory({ active }: { active: boolean }) {
               {target ? PLATFORM_LABELS[target.platform] : '目标平台'}：{message}
             </li>)
           })}</ul>}
-          <div className="pub-targets">{item.targets.map(target => <Button variant="outline" size="sm" key={`${item.id}:${target.accountId}`}
-            onClick={() => void api('account-open-dashboard', { id: target.accountId }).catch(cause => showError(errorMessage(cause)))}>
-            {PLATFORM_LABELS[target.platform]} · {target.accountName} · 打开后台
-          </Button>)}</div>
+          <div className="pub-targets">{item.targets.map(target => <span className="pub-target-group" key={`${item.id}:${target.accountId}`}>
+            <Button variant="outline" size="sm"
+              disabled={deleting || openingTarget !== undefined || !canOpenTarget(item.state)}
+              title={!canOpenTarget(item.state) ? '提交仍在队列中，暂不能查看平台稿件' : undefined}
+              onClick={() => void openTarget(item.id, target.accountId, item.state)}>
+              {PLATFORM_LABELS[target.platform]} · {target.accountName} · {openingTarget === `${item.id}:${target.accountId}:target` ? '正在打开…' : '查看平台稿件'}
+            </Button>
+            <Button variant="outline" size="sm"
+              aria-label={`打开${PLATFORM_LABELS[target.platform]}账号${target.accountName}的列表`}
+              disabled={deleting || openingTarget !== undefined || !canOpenTarget(item.state)}
+              title={!canOpenTarget(item.state) ? '提交仍在队列中，暂不能打开列表' : '列表不可用时打开创作后台'}
+              onClick={() => void openTarget(item.id, target.accountId, item.state, true)}>
+              {openingTarget === `${item.id}:${target.accountId}:list` ? '正在打开…' : '打开列表'}
+            </Button>
+          </span>)}</div>
         </div>)}</div>
     {filtered.length > 0 && <nav className="pub-history-pagination" aria-label="发布历史分页">
       <span className="pub-muted" aria-live="polite">共 {filtered.length} 条 · 第 {currentPage} / {pageCount} 页 · 每页 {PAGE_SIZE} 条</span>
