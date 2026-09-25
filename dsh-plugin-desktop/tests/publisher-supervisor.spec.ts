@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createConnection } from 'node:net'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -75,9 +76,19 @@ function fixture(handler: (frame: Frame, worker: FakeWorker) => void, overrides:
   const supervisor = new PublisherSupervisor({
     platform: 'darwin', resourcesPath: root, userDataPath: root,
     env: { EBAO_PUBLISHER_WORKER: executable },
-    launch: () => {
+    launch: (_executable, _args, spawnOptions) => {
       const worker = new FakeWorker(handler)
       workers.push(worker)
+      if (overrides.platform === 'win32') {
+        const pipe = String(spawnOptions?.env?.EBAO_PUBLISHER_PIPE ?? '')
+        const token = String(spawnOptions?.env?.EBAO_PUBLISHER_PIPE_TOKEN ?? '')
+        const socket = createConnection(pipe)
+        socket.once('connect', () => socket.write(`${JSON.stringify({ auth: token })}\n`))
+        socket.on('data', chunk => worker.stdin.write(chunk))
+        worker.stdout.on('data', chunk => socket.write(chunk))
+        worker.once('exit', () => socket.destroy())
+        socket.on('error', () => worker.exit(1))
+      }
       return worker as never
     },
     restartDelayMs: 1,

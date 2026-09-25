@@ -13,7 +13,7 @@
 
 MatrixMedia 不加入 e宝 Yarn workspace，保持 Node.js 20 / Yarn 1 / Electron 24 构建。e宝 Electron 43 只负责启动与监督独立 Helper，不把 MatrixMedia 代码装进 DSH utility process。
 
-Worker 专用入口不启动 Vue 主窗口、托盘、自动更新、30088 HTTP 服务或原菜单。它复用上游的 BrowserWindow 登录、UA、代理、Chromium session、Puppeteer 发布队列和失败截图，并通过私有 NDJSON 方法暴露账号与提交操作。stdout 只允许协议帧，日志进入 stderr。
+Worker 专用入口不启动 Vue 主窗口、托盘、自动更新、30088 HTTP 服务或原菜单。它复用上游的 BrowserWindow 登录、UA、代理、Chromium session、Puppeteer 发布队列和失败截图，并通过私有 NDJSON 方法暴露账号与提交操作。macOS 使用 stdin/stdout，stdout 只允许协议帧；Windows 的图形进程使用经随机令牌认证的本机命名管道。日志写入可用的 stderr。
 
 公开给 React 的账号和提交快照不含 Cookie、partition、内部队列状态或执行结果。独立 MatrixMedia 旧账号通过复制导入，源数据不移动、不删除。
 
