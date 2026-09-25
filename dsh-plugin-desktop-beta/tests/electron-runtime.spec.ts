@@ -2618,6 +2618,7 @@ describe('Electron desktop runtime', () => {
     const publisher: DesktopPublisherRuntime = {
       status: () => ({ supported: true, running: true }),
       selectLocalVideo: async () => null,
+      readLocalVideoChunk: async () => ({ ok: false, code: 'video-selection-expired', message: 'missing' }),
       request: publisherRequest as DesktopPublisherRuntime['request'],
     }
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')

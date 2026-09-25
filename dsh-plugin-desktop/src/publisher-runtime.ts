@@ -41,12 +41,19 @@ export interface PublisherLocalVideo {
   bytes: number
 }
 
+/** One bounded read of a native-picked video. `bytes` is the total file size. */
+export type PublisherLocalVideoChunk =
+  | { ok: true; bytes: number; dataBase64: string }
+  | { ok: false; code: 'invalid-video-selection' | 'video-selection-expired' | 'video-file-changed'; message: string }
+
 /** Electron-main capability projected into the isolated DSH Host. */
 export interface DesktopPublisherRuntime {
   /** Return a side-effect-free support snapshot. */
   status(): PublisherRuntimeStatus
   /** Open the native file chooser and return an opaque selection ID. */
   selectLocalVideo(): Promise<PublisherLocalVideo | null>
+  /** Inspect size or read at most 1 MiB without revealing the local path to the Host. */
+  readLocalVideoChunk(id: string, offset: number, length: number, signal?: AbortSignal): Promise<PublisherLocalVideoChunk>
   /** Forward one explicitly allowed RPC method. */
   request<T = unknown>(method: PublisherWorkerMethod, params?: unknown, signal?: AbortSignal): Promise<T>
 }

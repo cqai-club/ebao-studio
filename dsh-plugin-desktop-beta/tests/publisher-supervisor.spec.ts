@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -301,6 +301,48 @@ describe('PublisherSupervisor', () => {
       contentType: 'video', localVideoId: selection!.id, title: '片段', mode: 'draft', accountIds: ['account'],
     })).rejects.toMatchObject({ code: 'video-file-changed' })
     await second.supervisor.shutdown()
+  })
+
+  it('reads bounded preview chunks from the selected file across restarts and rejects changed files', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'publisher-preview-video-'))
+    roots.push(directory)
+    const file = join(directory, '片段.mp4')
+    writeFileSync(file, 'sample-video')
+    const first = fixture(() => { throw new Error('preview must not start the Worker') }, {
+      userDataPath: directory, pickLocalVideo: async () => file,
+    })
+    const selection = await first.supervisor.selectLocalVideo()
+    const id = selection!.id
+    expect(await first.supervisor.readLocalVideoChunk(id, 0, 0)).toEqual({ ok: true, bytes: 12, dataBase64: '' })
+    const chunk = await first.supervisor.readLocalVideoChunk(id, 4, 5)
+    expect(chunk).toEqual({ ok: true, bytes: 12, dataBase64: Buffer.from('le-vi').toString('base64') })
+    expect(chunk).not.toHaveProperty('file')
+    expect(chunk).not.toHaveProperty('path')
+    expect(first.workers).toHaveLength(0)
+
+    const second = fixture(() => { throw new Error('preview must not start the Worker') }, { userDataPath: directory })
+    expect(await second.supervisor.readLocalVideoChunk(id, 8, 4)).toEqual({
+      ok: true, bytes: 12, dataBase64: Buffer.from('ideo').toString('base64'),
+    })
+    expect(await second.supervisor.readLocalVideoChunk('not-an-id', 0, 1)).toMatchObject({ ok: false, code: 'invalid-video-selection' })
+    expect(await second.supervisor.readLocalVideoChunk(id, -1, 1)).toMatchObject({ ok: false, code: 'invalid-video-selection' })
+    expect(await second.supervisor.readLocalVideoChunk(id, 13, 1)).toMatchObject({ ok: false, code: 'invalid-video-selection' })
+    expect(await second.supervisor.readLocalVideoChunk(id, 0, 1024 * 1024 + 1)).toMatchObject({ ok: false, code: 'invalid-video-selection' })
+    expect(await second.supervisor.readLocalVideoChunk('44444444-4444-4444-8444-444444444444', 0, 0))
+      .toMatchObject({ ok: false, code: 'video-selection-expired' })
+    const abort = new AbortController()
+    abort.abort()
+    await expect(second.supervisor.readLocalVideoChunk(id, 0, 1, abort.signal))
+      .rejects.toMatchObject({ code: 'request-cancelled' })
+
+    const original = statSync(file)
+    const replacement = join(directory, 'replacement.mp4')
+    writeFileSync(replacement, 'other1-video')
+    utimesSync(replacement, original.atime, original.mtime)
+    renameSync(replacement, file)
+    expect(await second.supervisor.readLocalVideoChunk(id, 0, 4))
+      .toMatchObject({ ok: false, code: 'video-file-changed' })
+    expect(second.workers).toHaveLength(0)
   })
 
   it('treats a cancelled picker as no change and refuses non-MP4 files', async () => {

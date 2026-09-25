@@ -87,6 +87,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
     publisher: {
       status: () => snapshot.publisher,
       selectLocalVideo: () => send('publisher:selectLocalVideo'),
+      readLocalVideoChunk: (id, offset, length, signal) => send('publisher:readLocalVideoChunk', [id, offset, length], signal),
       request: (method, params, signal) => send('publisher:request', [method, params ?? {}], signal),
     },
     schedule(spec) {
@@ -233,6 +234,13 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   handle('publisher:selectLocalVideo', () => {
     if (runtime.publisher === undefined) throw new Error('Publisher Worker is unavailable')
     return runtime.publisher.selectLocalVideo()
+  })
+  handle('publisher:readLocalVideoChunk', ([id, offset, length], signal) => {
+    if (runtime.publisher === undefined) throw new Error('Publisher runtime is unavailable')
+    if (typeof id !== 'string' || !Number.isSafeInteger(offset) || !Number.isSafeInteger(length)) {
+      return { ok: false, code: 'invalid-video-selection', message: '本地视频预览请求无效，请重新选择文件' }
+    }
+    return runtime.publisher.readLocalVideoChunk(id, offset, length, signal)
   })
   return async () => {
     trays.forEach(tray => tray.dispose()); trays.clear()

@@ -26,6 +26,7 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
     publisher: {
       status: () => ({ supported: true, running: false }),
       selectLocalVideo: vi.fn(async () => ({ id: '44444444-4444-4444-8444-444444444444', fileName: '本地.mp4', title: '本地', bytes: 12 })),
+      readLocalVideoChunk: vi.fn(async () => ({ ok: true, bytes: 12, dataBase64: 'dGVzdA==' })),
     },
     updates: { isPackaged: true, canDownload: true, currentVersion: '2.0.7-beta.1', statePath: '/tmp/update',
       request: vi.fn(async () => new Response('{"version":"2.0.8-beta.1"}', { headers: { 'x-test': 'yes' } })),
@@ -43,6 +44,10 @@ it('preserves the Web URL and authentication while projecting shell and tray cal
       id: '44444444-4444-4444-8444-444444444444', fileName: '本地.mp4', title: '本地', bytes: 12,
     })
     expect(native.publisher.selectLocalVideo).toHaveBeenCalledOnce()
+    expect(await runtime.publisher.readLocalVideoChunk('44444444-4444-4444-8444-444444444444', 4, 4)).toEqual({
+      ok: true, bytes: 12, dataBase64: 'dGVzdA==',
+    })
+    expect(native.publisher.readLocalVideoChunk).toHaveBeenCalledWith('44444444-4444-4444-8444-444444444444', 4, 4, expect.any(AbortSignal))
     let language: 'zh' | undefined
     const mode = vi.fn(async () => {})
     const invoke = vi.fn(async () => {})

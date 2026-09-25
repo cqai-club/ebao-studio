@@ -3,10 +3,11 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import { API, resolveArticleTheme, type PublisherAsset, type PublisherContent, type PublisherSessionContent } from '../protocol.ts'
-import { ImageNoteCarousel, imageNoteCarouselCss } from './image-note-carousel.tsx'
-import { ArticleMarkdownPreview } from './wechat-preview-html.tsx'
-import { articlePreviewCss } from './article-preview-style.ts'
+import { API, type PublisherContent, type PublisherSessionContent } from '../protocol.ts'
+import { PublisherContentPreview } from './content-preview.tsx'
+import { contentPreviewCss } from './content-preview-style.ts'
+
+export { contentAssetUrl } from './content-preview.tsx'
 
 export const PREVIEW_KIND = 'cqai-publisher-preview'
 export const PREVIEW_ID = 'cqai-dsh-plugin-publisher/preview'
@@ -15,10 +16,6 @@ export type SessionContentSnapshot = PublisherSessionContent
 
 export function sessionContentUrl(sessionId: string): string {
   return `${API}/session-content/${encodeURIComponent(sessionId)}`
-}
-
-export function contentAssetUrl(contentId: string, assetId: string): string {
-  return `${API}/content-asset/${encodeURIComponent(contentId)}/${encodeURIComponent(assetId)}`
 }
 
 export function sameDraftRevision(previous: SessionContentSnapshot | undefined, next: SessionContentSnapshot): boolean {
@@ -105,18 +102,6 @@ async function readSessionContent(sessionId: string, signal: AbortSignal): Promi
   return result
 }
 
-function AssetImage({ content, asset, className = '' }: {
-  content: PublisherContent
-  asset: PublisherAsset
-  className?: string
-}) {
-  const [failed, setFailed] = useState(false)
-  useEffect(() => setFailed(false), [content.id, asset.id])
-  return failed
-    ? <div className={`pub-conv-image-error ${className}`} role="img" aria-label={`${asset.name} 加载失败`}>图片暂时无法显示：{asset.name}</div>
-    : <img className={className} src={contentAssetUrl(content.id, asset.id)} alt={asset.name} loading="lazy" onError={() => setFailed(true)}/>
-}
-
 const styles = `
 .pub-conv-preview { height: 100%; min-height: 0; overflow: auto; padding: 14px; box-sizing: border-box; color: var(--dsw-alias-label-primary, #111318); background: var(--dsw-alias-bg-base, #fff); font: 14px/1.6 var(--dsw-font-family, inherit); }
 .pub-conv-preview * { box-sizing: border-box; }
@@ -128,30 +113,11 @@ const styles = `
 .pub-conv-preview button:disabled { cursor: not-allowed; opacity: .5; }
 .pub-conv-preview button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
 .pub-conv-device-scroll { overflow-x: auto; }
-.pub-conv-page { width: min(100%, 390px); min-height: 480px; margin: 0 auto; padding: 18px; border: 1px solid var(--dsw-alias-border-l2, #e4e6e9); border-radius: 18px; background: var(--dsw-alias-bg-layer-1, #fff); box-shadow: 0 4px 18px #0000000a; }
-.pub-conv-page[data-device=pc] { width: 720px; min-width: 720px; border-radius: 8px; }
-.pub-conv-page h1 { margin: 0 0 14px; font-size: 21px; line-height: 1.4; overflow-wrap: anywhere; }
-.pub-conv-page.ebao-article-reader[data-theme=editorial] > h1 { color: #214d42; padding-bottom: 16px; border-bottom: 1px solid #c9ddd2; }
-.pub-conv-page h2 { font-size: 18px; }
-.pub-conv-page h3 { font-size: 16px; }
-.pub-conv-page p, .pub-conv-page blockquote { white-space: pre-wrap; overflow-wrap: anywhere; }
-.pub-conv-page pre { overflow-x: auto; padding: 10px; background: var(--dsw-alias-bg-module-platform, #f5f6f7); }
-.pub-conv-page blockquote { border-left: 3px solid var(--dsw-alias-border-l2, #e4e6e9); margin-left: 0; padding-left: 10px; }
-.pub-conv-page figure { margin: 16px 0; }
-.pub-conv-page figure img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
-.pub-conv-page figcaption { color: var(--dsw-alias-label-tertiary, #777d85); font-size: 12px; }
-.pub-conv-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; color: var(--dsw-alias-state-business-primary, #4176e6); }
-.pub-conv-assets { margin-top: 18px; }
-.pub-conv-assets h2 { font-size: 13px; }
-.pub-conv-assets-list { display: flex; gap: 8px; overflow-x: auto; }
-.pub-conv-assets-list img, .pub-conv-assets-list .pub-conv-image-error { flex: 0 0 72px; width: 72px; height: 72px; object-fit: cover; border-radius: 6px; }
-.pub-conv-image-error { display: grid; place-items: center; padding: 6px; background: var(--dsw-alias-bg-module-platform, #f5f6f7); color: var(--dsw-alias-label-secondary, #535961); font-size: 11px; }
 .pub-conv-note, .pub-conv-error, .pub-conv-muted { color: var(--dsw-alias-label-tertiary, #777d85); font-size: 12px; }
 .pub-conv-error { color: var(--dsw-alias-state-error-primary, #dc2626); }
 .pub-conv-footer { display: flex; justify-content: flex-end; margin-top: 14px; }
 .pub-conv-footer button { background: var(--dsw-alias-state-business-primary, #4176e6); color: #fff; border-color: transparent; padding: 7px 18px; }
-${imageNoteCarouselCss}
-${articlePreviewCss}
+${contentPreviewCss}
 `
 
 export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsRuntime<'sidebar.right.pane.tab'> & {
@@ -202,22 +168,8 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
     {currentSnapshot && !content && <p className="pub-conv-note">在对话中和 Agent 讨论内容。形成标题、正文或图片后，草稿会显示在这里。</p>}
     {content && <>
       <div className="pub-conv-device-scroll" aria-label={device === 'mobile' ? '移动端内容预览' : 'PC 内容预览'}>
-        <article className={`pub-conv-page${content.contentType === 'article' ? ' ebao-article-reader' : ''}`} data-device={device} data-theme={content.contentType === 'article' ? resolveArticleTheme(content) : undefined}>
-          {content.contentType === 'image-note' && <ImageNoteCarousel contentId={content.id} assets={content.assets} renderImage={asset => <AssetImage content={content} asset={asset}/>}/>}
-          <h1>{content.title || '未命名草稿'}</h1>
-          {content.contentType === 'article' && content.coverAssetId && !content.body.includes(`ebao-asset://${content.coverAssetId}`) && (() => {
-            const cover = content.assets.find(asset => asset.id === content.coverAssetId)
-            return cover ? <figure><AssetImage content={content} asset={cover}/><figcaption>封面</figcaption></figure> : null
-          })()}
-          {content.contentType === 'article'
-            ? <ArticleMarkdownPreview body={content.body || '正文待完善'} content={content} assetUrl={id => contentAssetUrl(content.id, id)}/>
-            : <p>{content.body || '正文待完善'}</p>}
-          {content.tags.length > 0 && <div className="pub-conv-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</div>}
-        </article>
+        <PublisherContentPreview content={content} device={device}/>
       </div>
-      <section className="pub-conv-assets" aria-label="发布图片素材"><h2>图片素材 · {content.assets.length} 张</h2>
-        {content.assets.length > 0 ? <div className="pub-conv-assets-list">{content.assets.map(asset => <AssetImage key={asset.id} content={content} asset={asset}/>)}</div> : <p className="pub-conv-muted">暂无图片</p>}
-      </section>
       <p className="pub-conv-note">此处为通用排版预览；各平台实际显示以发布后的页面为准。</p>
       <div className="pub-conv-footer"><button type="button" disabled={!canPublish} onClick={publish}>发布</button></div>
     </>}

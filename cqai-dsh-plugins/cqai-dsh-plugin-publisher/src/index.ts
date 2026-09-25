@@ -29,6 +29,7 @@ import { contentSubmissionError } from './submission-validation.ts'
 import { registerAgentDraftTools } from './agent-draft-tools.ts'
 import { readSessionContent } from './session-contents.ts'
 import { listWorks, resolveWork } from './works.ts'
+import { serveVideoPreview, VideoPreviewError, type LocalVideoReader } from './video-preview.ts'
 
 export const name = 'cqai-publisher'
 export const inject = ['webServer', 'desktopRuntime']
@@ -42,7 +43,7 @@ type WorkerMethod =
   | 'accounts.importPreview' | 'accounts.importApply'
   | 'submissions.create' | 'submissions.list' | 'submissions.delete' | 'system.capabilities'
 
-interface PublisherRuntime {
+interface PublisherRuntime extends LocalVideoReader {
   status(): PublisherCapability
   selectLocalVideo(): Promise<PublisherLocalVideo | null>
   request<T = unknown>(method: WorkerMethod, params?: unknown, signal?: AbortSignal): Promise<T>
@@ -392,6 +393,14 @@ export function apply(ctx: Context): void {
         const prefix = `${API}/`
         if (!url.pathname.startsWith(prefix) || url.search !== '') { json(res, 404, { error: '接口不存在' }); return }
         const action = url.pathname.slice(prefix.length)
+        if (req.method === 'GET' && action.startsWith('video-preview/')) {
+          const segments = action.split('/')
+          if (segments.length !== 3 || (segments[1] !== 'work' && segments[1] !== 'local')) {
+            throw new VideoPreviewError(404, '视频预览地址无效')
+          }
+          await serveVideoPreview(req, res, segments[1], uuid(segments[2], '视频 ID'), runtime)
+          return
+        }
         if (req.method === 'GET' && action.startsWith('content-asset/')) {
           const segments = action.split('/')
           if (segments.length !== 3 || url.search) throw new Error('素材地址无效')
@@ -421,8 +430,10 @@ export function apply(ctx: Context): void {
         if (!res.headersSent && !res.destroyed) {
           const error = cause instanceof Error ? cause : new Error('操作失败')
           const code = (error as Error & { code?: string }).code
-          json(res, code === 'publisher-not-supported' || code === 'publisher-worker-missing' ? 501 : 400, { error: error.message, code })
-        }
+          json(res, error instanceof VideoPreviewError ? error.status
+            : code === 'publisher-not-supported' || code === 'publisher-worker-missing' ? 501 : 400,
+          { error: error.message, code })
+        } else if (!res.destroyed) res.destroy()
       }
     },
   }), '多平台账号与发布路由')

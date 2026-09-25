@@ -2,7 +2,8 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { constants, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, type Stats } from 'node:fs'
+import { open } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { DesktopLogger } from './desktop-logger.ts'
@@ -11,6 +12,7 @@ import {
   isPublisherWorkerMethod,
   type DesktopPublisherRuntime,
   type PublisherLocalVideo,
+  type PublisherLocalVideoChunk,
   type PublisherRuntimeStatus,
   type PublisherWorkerMethod,
 } from './publisher-runtime.ts'
@@ -27,6 +29,7 @@ const LOCAL_VIDEO_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]
 // MP4 is the common upload format across the enabled video adapters.
 const LOCAL_VIDEO_EXTENSIONS = new Set(['.mp4'])
 const MAX_SELECTION_BYTES = 16 * 1024
+const MAX_VIDEO_CHUNK_BYTES = 1024 * 1024
 
 interface SelectedVideo {
   file: string
@@ -224,6 +227,63 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     } catch { return undefined }
   }
 
+  async readLocalVideoChunk(id: string, offset: number, length: number, signal?: AbortSignal): Promise<PublisherLocalVideoChunk> {
+    if (typeof id !== 'string' || !LOCAL_VIDEO_ID.test(id)
+      || !Number.isSafeInteger(offset) || offset < 0
+      || !Number.isSafeInteger(length) || length < 0 || length > MAX_VIDEO_CHUNK_BYTES) {
+      return { ok: false, code: 'invalid-video-selection', message: '本地视频预览请求无效，请重新选择文件' }
+    }
+    const selected = this.loadLocalVideo(id)
+    if (!selected) {
+      return { ok: false, code: 'video-selection-expired', message: '本地视频选择已失效，请重新选择文件' }
+    }
+    const cancelled = () => {
+      if (signal?.aborted) throw new PublisherWorkerError('request-cancelled', '本地视频预览已取消')
+    }
+    cancelled()
+    let handle: Awaited<ReturnType<typeof open>> | undefined
+    try {
+      // A selected path is private to Electron main. Open the file itself and
+      // verify its descriptor so a replaced path cannot redirect a preview.
+      handle = await open(selected.file, constants.O_RDONLY | constants.O_NOFOLLOW)
+      cancelled()
+      const before = await handle.stat()
+      if (!this.matchesLocalVideo(before, selected)) {
+        return { ok: false, code: 'video-file-changed', message: '本地视频已发生变化，请重新选择文件' }
+      }
+      if (offset > before.size) {
+        return { ok: false, code: 'invalid-video-selection', message: '本地视频预览请求无效，请重新选择文件' }
+      }
+      const readLength = Math.min(length, before.size - offset)
+      let dataBase64 = ''
+      if (readLength > 0) {
+        const buffer = Buffer.allocUnsafe(readLength)
+        const { bytesRead } = await handle.read(buffer, 0, readLength, offset)
+        if (bytesRead !== readLength) {
+          return { ok: false, code: 'video-file-changed', message: '本地视频已发生变化，请重新选择文件' }
+        }
+        dataBase64 = buffer.toString('base64')
+      }
+      cancelled()
+      const after = await handle.stat()
+      if (!this.matchesLocalVideo(after, selected)) {
+        return { ok: false, code: 'video-file-changed', message: '本地视频已发生变化，请重新选择文件' }
+      }
+      cancelled()
+      return { ok: true, bytes: after.size, dataBase64 }
+    } catch (cause) {
+      if (cause instanceof PublisherWorkerError) throw cause
+      return { ok: false, code: 'video-file-changed', message: '本地视频已移动或无法读取，请重新选择文件' }
+    } finally {
+      await handle?.close().catch(() => {})
+    }
+  }
+
+  private matchesLocalVideo(stat: Stats, selected: SelectedVideo): boolean {
+    return stat.isFile() && stat.size === selected.size && stat.mtimeMs === selected.mtimeMs
+      && stat.dev === selected.dev && stat.ino === selected.ino
+  }
+
   private resolveLocalVideoSubmission(params: unknown): unknown {
     if (!params || typeof params !== 'object' || Array.isArray(params) || !('localVideoId' in params)) return params
     const input = params as Record<string, unknown>
@@ -236,8 +296,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     let stat: ReturnType<typeof statSync>
     try { stat = statSync(selected.file) }
     catch { throw new PublisherWorkerError('video-file-changed', '本地视频已移动或删除，请重新选择文件') }
-    if (!stat.isFile() || stat.size !== selected.size || stat.mtimeMs !== selected.mtimeMs
-      || stat.dev !== selected.dev || stat.ino !== selected.ino) {
+    if (!this.matchesLocalVideo(stat, selected)) {
       throw new PublisherWorkerError('video-file-changed', '本地视频已发生变化，请重新选择文件')
     }
     const { localVideoId: _localVideoId, ...rest } = input

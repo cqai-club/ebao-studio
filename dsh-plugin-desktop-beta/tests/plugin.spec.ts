@@ -129,6 +129,7 @@ function createHarness(
     publisher: {
       status: () => ({ supported: false, running: false, reason: 'publisher-not-supported' }),
       selectLocalVideo: async () => null,
+      readLocalVideoChunk: async () => ({ ok: false, code: 'video-selection-expired', message: 'missing' }),
       request: async () => { throw new Error('publisher unavailable in plugin fixture') },
     },
     schedule: (spec) => {

@@ -43,6 +43,7 @@ function handleTabKeyDown(event: KeyboardEvent<HTMLElement>) {
 
 function PublisherPage() {
   const [tab, setTab] = useState<PublisherTab>('publish')
+  const pageTitleRef = useRef<HTMLHeadingElement>(null)
   const [selectedContentId, setSelectedContentId] = useState(() => readPublisherHandoff()?.contentId)
   const [contentType, setContentType] = useState<PublisherContentType>(() => {
     const handoff = readPublisherHandoff()
@@ -81,13 +82,15 @@ function PublisherPage() {
     else clearPublisherHandoff()
   }
   return <PublisherTipsProvider><section className="pub"><style>{css}</style><div className="pub-wrap">
-    <header className="pub-head"><div><h1>多平台发布</h1><div className="pub-muted">在 e宝工坊中编辑内容、选择账号并提交到本机发布队列。</div></div></header>
-    <nav className="pub-tabs" role="tablist" aria-label="多平台发布导航" onKeyDown={handleTabKeyDown}>
-      {([
-        ['publish', '发布'], ['history', '发布历史'], ['accounts', '平台账号管理'],
-      ] as const).map(([value, label]) => <button key={value} id={`pub-tab-${value}`} className="pub-tab" role="tab" aria-controls={`pub-panel-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)}>{label}</button>)}
-    </nav>
-    <div id="pub-panel-publish" role="tabpanel" aria-labelledby="pub-tab-publish" hidden={tab !== 'publish'}><div className="pub-layout">
+    <header className="pub-head">
+      <div><h1 ref={pageTitleRef} tabIndex={-1}>多平台发布</h1><div className="pub-muted">在 e宝工坊中编辑内容、选择账号并提交到本机发布队列。</div></div>
+      <nav className="pub-page-nav" aria-label="多平台发布页面导航">
+        {tab !== 'publish' && <button type="button" className="pub-page-link" aria-controls="pub-panel-publish" onClick={() => { setTab('publish'); pageTitleRef.current?.focus() }}>返回发布内容</button>}
+        <button type="button" className="pub-page-link" aria-controls="pub-panel-history" aria-current={tab === 'history' ? 'page' : undefined} onClick={() => setTab('history')}>发布历史</button>
+        <button type="button" className="pub-page-link" aria-controls="pub-panel-accounts" aria-current={tab === 'accounts' ? 'page' : undefined} onClick={() => setTab('accounts')}>平台账号管理</button>
+      </nav>
+    </header>
+    <div id="pub-panel-publish" hidden={tab !== 'publish'}><div className="pub-layout">
       <nav className="pub-type-nav" role="tablist" aria-label="内容类型" onKeyDown={handleTabKeyDown}>
         {([
           ['article', '文章'], ['image-note', '图文'], ['video', '视频'],
@@ -99,8 +102,8 @@ function PublisherPage() {
         <div id="pub-content-video" role="tabpanel" aria-labelledby="pub-type-video" hidden={contentType !== 'video'}><VideoPage active={tab === 'publish' && contentType === 'video'}/></div>
       </div>
     </div></div>
-    <div id="pub-panel-history" role="tabpanel" aria-labelledby="pub-tab-history" hidden={tab !== 'history'}><SubmissionHistory active={tab === 'history'}/></div>
-    <div id="pub-panel-accounts" role="tabpanel" aria-labelledby="pub-tab-accounts" hidden={tab !== 'accounts'}><AccountsPage active={tab === 'accounts'}/></div>
+    <div id="pub-panel-history" hidden={tab !== 'history'}><SubmissionHistory active={tab === 'history'}/></div>
+    <div id="pub-panel-accounts" hidden={tab !== 'accounts'}><AccountsPage active={tab === 'accounts'}/></div>
   </div></section></PublisherTipsProvider>
 }
 

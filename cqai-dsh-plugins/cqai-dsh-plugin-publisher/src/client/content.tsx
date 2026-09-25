@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  API, ARTICLE_THEMES, ARTICLE_THEME_LABELS, CREATIVE_STATEMENTS, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX,
+  ARTICLE_THEMES, ARTICLE_THEME_LABELS, CREATIVE_STATEMENTS, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX,
   type CreateSubmissionResult, type Platform, type PublisherAccount,
   type PublisherCapability, type PublisherContent, type PublisherPlatformCapability,
   type PublisherPlatformVariant, projectContentForPlatform, resolveArticleTheme,
@@ -14,80 +14,7 @@ import {
 import { contentSubmissionError } from '../submission-validation.ts'
 import { usePublisherTips } from './tips.tsx'
 import { articleUploadFile } from './article-image.ts'
-import { ImageNoteCarousel } from './image-note-carousel.tsx'
-import { ArticleMarkdownPreview, wechatBodyImageIds } from './wechat-preview-html.tsx'
-
-function AssetPreviewImage({ src, alt, className = '', thumbnail = false }: {
-  src: string
-  alt: string
-  className?: string
-  thumbnail?: boolean
-}) {
-  const [failed, setFailed] = useState(false)
-  useEffect(() => setFailed(false), [src])
-  return failed
-    ? <div className={`pub-error ${className}`} role="img" aria-label={`${alt} 加载失败`}
-      style={{ minHeight: thumbnail ? 95 : 120, width: '100%', display: 'grid', placeItems: 'center' }}>图片加载失败：{alt}</div>
-    : <img className={className} src={src} alt={alt} onError={() => setFailed(true)}/>
-}
-
-const ARTICLE_DISCLOSURES: Partial<Record<PublisherContent['creativeStatement'], string>> = {
-  ai_generated: '本文包含 AI 生成内容', fiction: '虚构演绎，仅供娱乐', marketing: '营销推广',
-  personal_opinion: '个人观点，仅供参考', repost: '转载', self_made_no_repost: '自制，禁止转载',
-}
-
-function ContentPreview({ content, platform }: { content: PublisherContent; platform?: Platform }) {
-  const assetUrl = (id: string) => `${API}/content-asset/${content.id}/${id}`
-  const disclosure = platform && content.contentType === 'article' ? ARTICLE_DISCLOSURES[content.creativeStatement] : undefined
-  const body = platform === 'blbl' && content.summary ? `${content.summary}\n\n${content.body}` : content.body
-  const renderedBody = disclosure ? `${body.trimEnd()}\n\n> 内容声明：${disclosure}` : body
-  const embeddedAssets = platform === 'wxmp' ? wechatBodyImageIds(renderedBody)
-    : new Set([...renderedBody.matchAll(/ebao-asset:\/\/([0-9a-f-]{36})/giu)].map(match => match[1]))
-  const cover = content.assets.find(asset => asset.id === content.coverAssetId)
-  const remainingAssets = content.assets.filter(asset => asset.id !== cover?.id && !embeddedAssets.has(asset.id))
-  const imageNote = content.contentType === 'image-note'
-  const articleTheme = resolveArticleTheme(content)
-  if (platform === 'wxmp' && !imageNote) {
-    return <div className="pub-content-preview-shell pub-content-preview-wechat" data-theme={articleTheme} aria-label="微信公众号文章内容预览">
-      <div className="pub-wechat-preview-bar"><span className="pub-wechat-preview-mark" aria-hidden="true"/>微信公众号 · 移动端排版预览</div>
-      <article className="pub-wechat-preview-article">
-        <h2 className="pub-wechat-preview-title">{content.title || '未填写标题'}</h2>
-        <div className="pub-wechat-preview-body ebao-article-reader" data-theme={articleTheme} aria-label="公众号正文预览">
-          <ArticleMarkdownPreview body={renderedBody || '暂无正文'} content={content} assetUrl={assetUrl}/>
-        </div>
-      </article>
-      <section className="pub-wechat-preview-metadata" aria-label="公众号草稿独立字段">
-        <h3>草稿独立字段</h3>
-        <div className="pub-wechat-preview-cover-row">
-          {cover ? <AssetPreviewImage className="pub-wechat-preview-cover" src={assetUrl(cover.id)} alt={cover.name}/>
-            : <div className="pub-wechat-preview-no-cover">未选封面</div>}
-          <div><strong>封面</strong><p>单独用于草稿封面；只有在正文中插入的图片才会出现在文章里。</p></div>
-        </div>
-        {content.summary && <p className="pub-wechat-preview-summary"><strong>摘要</strong>{content.summary}</p>}
-        {remainingAssets.length > 0 && <details className="pub-wechat-preview-unused">
-          <summary>{remainingAssets.length} 张素材未插入正文，不会出现在公众号文章里</summary>
-          <div className="pub-wechat-preview-unused-grid">{remainingAssets.map(asset =>
-            <AssetPreviewImage src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>
-        </details>}
-      </section>
-    </div>
-  }
-  return <div className={`pub-content-preview-shell${imageNote ? '' : ' ebao-article-reader'}`} data-theme={imageNote ? undefined : platform ? 'native' : articleTheme} aria-label={`${imageNote ? '图文' : '文章'}内容预览`}>
-    {imageNote && <ImageNoteCarousel contentId={content.id} assets={content.assets} renderImage={asset =>
-      <AssetPreviewImage src={assetUrl(asset.id)} alt={asset.name}/>}/>}
-    {!imageNote && <div className="pub-content-preview-kicker">{platform ? `${PLATFORM_LABELS[platform]} · 内容结构预览` : '主稿 · 阅读排版预览'}</div>}
-    <h2 className="pub-content-preview-title">{content.title || '未填写标题'}</h2>
-    {!imageNote && cover && !embeddedAssets.has(cover.id) && <AssetPreviewImage className="pub-content-preview-cover" src={assetUrl(cover.id)} alt={cover.name}/>}
-    {imageNote ? <p className="pub-content-preview-text">{content.body || '暂无正文'}</p>
-      : <ArticleMarkdownPreview body={renderedBody || '暂无正文'} content={content} assetUrl={assetUrl}/>}
-    {!imageNote && remainingAssets.length > 0 && <details className="pub-content-preview-unused">
-      <summary>{remainingAssets.length} 张素材未插入正文，不会显示在文章正文里</summary>
-      <div className="pub-content-preview-note-images" aria-label="尚未插入正文的图片素材">{remainingAssets.map(asset =>
-        <AssetPreviewImage className="pub-content-preview-image" src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>
-    </details>}
-    {content.tags.length > 0 && (imageNote || !platform || !['wxmp', 'tt', 'bjh'].includes(platform)) && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
-  </div>
-}
+import { AssetPreviewImage, PublisherContentPreview, contentAssetUrl } from './content-preview.tsx'
 
 type EditorType = 'article' | 'image-note'
 type Mode = 'publish' | 'draft'
@@ -584,7 +511,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
           <Button variant={preview ? 'primary' : 'outline'} size="sm" aria-pressed={preview} onClick={() => setPreview(true)}>预览模式</Button>
           <Button variant={!preview ? 'primary' : 'outline'} size="sm" aria-pressed={!preview} onClick={() => setPreview(false)}>编辑模式</Button>
         </div></div>
-        {preview ? <div className="pub-card"><ContentPreview content={visibleDraft!} platform={contentView === 'master' ? undefined : contentView}/>
+        {preview ? <div className="pub-card"><PublisherContentPreview content={visibleDraft!} platform={contentView === 'master' ? undefined : contentView}/>
           {contentType === 'article' && visibleDraft!.summary && contentView !== 'blbl' && contentView !== 'wxmp' && contentView !== 'tt' && <p className="pub-preview-summary"><strong>独立摘要字段：</strong>{visibleDraft!.summary}</p>}
           <p className="pub-muted">{contentView === 'wxmp' ? '公众号正文按所选主题预览；封面和摘要是独立字段。平台后台的最终呈现请以实际草稿为准。'
             : contentView === 'master' ? '主稿展示阅读排版；公众号会采用所选主题，其他平台的实际样式仍需在后台草稿核对。'
@@ -624,7 +551,7 @@ export function ContentEditor({ contentType, active, selectedContentId, onSelect
             onDragOver={event => { if (contentType === 'image-note' && selectedAssetIds.has(asset.id) && !editorLocked && draggedAssetId) event.preventDefault() }}
             onDrop={event => { event.preventDefault(); if (!editorLocked && selectedAssetIds.has(asset.id) && draggedAssetId && draggedAssetId !== asset.id) moveAsset(draggedAssetId, index); setDraggedAssetId(undefined) }}
             onDragEnd={() => setDraggedAssetId(undefined)}>
-            <AssetPreviewImage src={`${API}/content-asset/${draft.id}/${asset.id}`} alt={asset.name} thumbnail/><small>{selectedAssetIds.has(asset.id) ? String(index + 1).padStart(2, '0') : '—'} · {asset.name}</small>
+            <AssetPreviewImage src={contentAssetUrl(draft.id, asset.id)} alt={asset.name} thumbnail/><small>{selectedAssetIds.has(asset.id) ? String(index + 1).padStart(2, '0') : '—'} · {asset.name}</small>
             {contentView !== 'master' && <label><input type="checkbox" aria-label={`${asset.name}用于${PLATFORM_LABELS[contentView]}`} checked={selectedAssetIds.has(asset.id)} onChange={event => togglePlatformAsset(asset.id, event.target.checked)}/>用于此平台</label>}
             {contentType === 'article' && <label><input type="radio" name={`cover-${draft.id}-${contentView}`} aria-label={`${asset.name}设为封面`} disabled={!selectedAssetIds.has(asset.id)} checked={visibleDraft!.coverAssetId === asset.id} onChange={() => contentView === 'master' ? update({ coverAssetId: asset.id }) : updateVariant({ coverAssetId: asset.id })}/>封面</label>}
             <div className="pub-actions">{contentType === 'article' && <Button variant="outline" size="sm" disabled={busy || !selectedAssetIds.has(asset.id)} onClick={() => insertImage(asset.id, asset.name)}>插入正文</Button>}<Button variant="outline" size="sm" aria-label="上移图片" disabled={!selectedAssetIds.has(asset.id) || index === 0 || busy} onClick={() => reorder(asset.id, -1)}>↑</Button><Button variant="outline" size="sm" aria-label="下移图片" disabled={!selectedAssetIds.has(asset.id) || index === visibleDraft!.assets.length - 1 || busy} onClick={() => reorder(asset.id, 1)}>↓</Button><Button variant="outline" size="sm" className="pub-danger-action" disabled={busy} onClick={() => removeImage(asset.id)}>删除</Button></div>

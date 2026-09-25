@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX, VIDEO_PLATFORMS,
+  API, CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX, VIDEO_PLATFORMS,
   type CreateSubmissionResult, type Platform, type PublisherAccount, type PublisherCapability,
   type PublisherContent, type PublisherLocalVideo, type Work,
 } from '../protocol.ts'
 import { api, capabilityMessage, ConfirmDialog, DraftToolbar, errorMessage, PublisherModal, STATEMENT_LABELS, type PublisherConfirmation } from './shared.tsx'
 import { usePublisherTips } from './tips.tsx'
+import { PublisherContentPreview } from './content-preview.tsx'
 
 export function VideoPage({ active }: { active: boolean }) {
   const { showError, showSuccess, clearTip } = usePublisherTips()
@@ -198,6 +199,9 @@ export function VideoPage({ active }: { active: boolean }) {
   })
 
   const source = draft?.videoSource
+  const videoPreviewUrl = source && `${API}/video-preview/${source.kind}/${encodeURIComponent(source.kind === 'work' ? source.workId : source.localVideoId)}`
+  const videoSourceName = source?.kind === 'local' ? source.fileName
+    : source?.kind === 'work' ? works.find(work => work.id === source.workId)?.title ?? 'e剪宝成片' : undefined
   const unavailable = capabilityMessage(capability)
   return <div>
     {unavailable && <div className="pub-error">{unavailable}</div>}
@@ -211,7 +215,7 @@ export function VideoPage({ active }: { active: boolean }) {
       <Button variant="outline" disabled={busy || capability?.supported !== true} onClick={chooseLocalVideo}>选择本地文件…</Button>
       {source?.kind === 'local' && <div className="pub-work" aria-label="已选择的本地视频"><strong>{source.fileName}</strong><small>{(source.bytes / 1048576).toFixed(1)} MB · 已选择</small></div>}
       <p className="pub-muted">目前支持 MP4；本地草稿只保存文件引用，不复制视频。提交后请保留原文件，直到平台后台确认。</p>
-    </div><div className="pub-card"><h2><span className="pub-count">02</span>发布内容</h2>
+    </div><div className="pub-card"><h2>内容预览</h2><PublisherContentPreview content={draft} videoSourceName={videoSourceName} videoPreviewUrl={videoPreviewUrl}/></div><div className="pub-card"><h2><span className="pub-count">02</span>发布内容</h2>
       <div className="pub-field"><label htmlFor="pub-title">标题</label><Input id="pub-title" className="pub-text-input" maxLength={TITLE_MAX} value={draft.title} onChange={event => update({ title: event.target.value })}/></div>
       <div className="pub-field"><label htmlFor="pub-description">简介</label><textarea id="pub-description" className="pub-input" maxLength={DESCRIPTION_MAX} value={draft.description ?? ''} onChange={event => update({ description: event.target.value })}/></div>
       <div className="pub-field"><label htmlFor="pub-tags">话题（最多 {MAX_TAGS} 个）</label><Input id="pub-tags" className="pub-text-input" value={tagsInput} onChange={event => { setTagsInput(event.target.value); update({ tags: [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS) }) }} placeholder="用空格或逗号分隔"/></div>
