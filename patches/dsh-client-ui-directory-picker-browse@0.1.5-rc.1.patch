@@ -103,7 +103,7 @@ index 741dd6d..08d1ddd 100644
  					"browser.truncated": "文件夹过多，仅显示开头部分。",
 -					"browser.showHidden": "显示隐藏文件"
 +					"browser.showHidden": "显示隐藏文件",
-+					"browser.nativePicker": "使用 Windows 选择文件夹"
++					"browser.nativePicker": "使用系统选择文件夹"
  				}], ["en", {
  					"browser.title": "Select Workspace Directory",
  					"browser.home": "Home",
@@ -113,7 +113,7 @@ index 741dd6d..08d1ddd 100644
  					"browser.truncated": "Too many folders to list; only the beginning is shown.",
 -					"browser.showHidden": "Show hidden files"
 +					"browser.showHidden": "Show hidden files",
-+					"browser.nativePicker": "Choose with Windows"
++					"browser.nativePicker": "Choose with system dialog"
  				}]];
  				try {
  					for (const [locale, dict] of dictionaries) disposers.push(ctx.locale.register(LOCALE_NS, locale, dict));
@@ -121,7 +121,7 @@ index 741dd6d..08d1ddd 100644
  			const injected = () => ({
  				listDirectory: (path, signal) => ctx.uiWorkspace.listDirectory(path, signal),
  				createDirectory: (path, name) => ctx.uiWorkspace.createDirectory(path, name),
-+				pickNativeDirectory: new URLSearchParams(window.location.search).get("dsh-desktop-platform") === "win32" ? () => {
++				pickNativeDirectory: ["darwin", "win32"].includes(new URLSearchParams(window.location.search).get("dsh-desktop-platform")) ? () => {
 +					const pick = window.__DSH_DESKTOP_PICK_DIRECTORY__;
 +					if (typeof pick !== "function") throw new Error("易宝工坊 native directory picker is unavailable");
 +					return pick();

@@ -20,5 +20,6 @@ it('leaves installed builds alone and derives a portable home from the current e
     expect(setPath).toHaveBeenCalledWith(join(location, 'data/desktop'))
     expect(process.env.EJIANBAO_PYTHON).toBe(join(location, 'resources/ejianbao-runtime/python312/python.exe'))
     expect(process.env.EJIANBAO_BROWSER_EXECUTABLE).toContain(location)
+    expect(process.env.EJIANBAO_MATRIXMEDIA).toBeUndefined()
   }
 })

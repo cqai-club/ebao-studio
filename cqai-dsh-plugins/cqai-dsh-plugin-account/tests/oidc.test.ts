@@ -42,7 +42,7 @@ describe('OidcClient', () => {
 
     const request = await client.createAuthorizationRequest(
       'http://127.0.0.1:38992/callback',
-      { prompt: Prompt.Login },
+      { prompt: Prompt.LoginConsent },
     )
     const url = new URL(request.authorizationUrl)
 
@@ -53,7 +53,7 @@ describe('OidcClient', () => {
     expect(url.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:38992/callback')
     expect(url.searchParams.get('resource')).toBe(resource)
     expect(url.searchParams.get('scope')).toBe('openid offline_access ai:invoke')
-    expect(url.searchParams.get('prompt')).toBe(Prompt.Login)
+    expect(url.searchParams.get('prompt')).toBe(Prompt.LoginConsent)
     expect(url.searchParams.get('state')).toBe(request.state)
     expect(url.searchParams.get('code_challenge_method')).toBe('S256')
     expect(url.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/u)

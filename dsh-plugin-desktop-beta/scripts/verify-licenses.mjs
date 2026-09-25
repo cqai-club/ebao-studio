@@ -16,7 +16,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+const workspaceRoot = dirname(packageRoot)
 const rootManifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
+const publisherSource = JSON.parse(readFileSync(join(workspaceRoot, 'vendor/matrixmedia/publisher-worker.json'), 'utf8'))
 
 /** Licenses accepted for redistribution inside the desktop installers. */
 const ALLOWED_LICENSES = new Set([
@@ -45,6 +47,37 @@ const NOTICE_LICENSES = new Set([
   'LGPL-3.0-or-later',
   'Apache-2.0 AND LGPL-3.0-or-later',
 ])
+
+/** MatrixMedia source-built Helper bundled beside app.asar by `build.mac.extraResources`. */
+const BUNDLED_APPLICATION = {
+  name: 'MatrixMedia（矩媒）',
+  version: publisherSource.version,
+  spdx: publisherSource.license,
+  source: `${publisherSource.repository} @ ${publisherSource.commit}`,
+}
+
+/**
+ * Notice lines for the prebuilt runtimes shipped beside app.asar. They are not
+ * npm packages, so no dependency walk reaches them; the version and digest
+ * recorded here are mirrored in `vendor/matrixmedia/publisher-worker.json`.
+ * @returns Markdown lines declaring each bundled application and its obligations.
+ */
+function bundledApplicationNotices() {
+  const { name, version, spdx, source } = BUNDLED_APPLICATION
+  return [
+    '## Bundled applications',
+    'These ship as prebuilt runtimes inside the installer rather than as npm dependencies, so',
+    'they are not enumerated in the table below.',
+    '| Package | Version | License | Source |',
+    '| --- | --- | --- | --- |',
+    `| ${name} | ${version} | ${spdx} | ${source} |`,
+    `${name} is built from the pinned \`matrixmedia-publisher/\` Git submodule and bundled at`,
+    '`resources/publisher/MatrixMedia Publisher Worker.app` on macOS or',
+    '`resources/publisher/MatrixMedia Publisher Worker.exe` on Windows as the isolated publishing Helper.',
+    'Its complete license is installed at `resources/publisher/LICENSE`; `resources/publisher/SOURCE.json`',
+    'records the public repository, branch, exact source commit, build command, and license digest.',
+  ]
+}
 
 /**
  * Locate one installed package manifest by walking node_modules directories
@@ -140,11 +173,12 @@ if (noticesArg !== -1) {
   }
   const lines = [
     '# Third-Party Notices',
-    '',
     '易宝工坊 distributes the following third-party packages inside its installers.',
     'Each package ships with its own license text in the application files; this list records',
     'the package names, versions, and licenses for transparency.',
     '',
+    ...bundledApplicationNotices(),
+    '## npm dependencies',
     '| Package | Version | License |',
     '| --- | --- | --- |',
     ...manifests

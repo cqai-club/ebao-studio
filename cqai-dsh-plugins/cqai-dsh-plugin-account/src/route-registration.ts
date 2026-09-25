@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-attachment'
 
 import { safeErrorMessage } from './errors.ts'
 import { CqaiClubAdapter, CQAI_PROVIDER } from './llm-adapter.ts'
@@ -6,7 +7,9 @@ import { isChatModel, type DsnAccountService, type DsnAccountSnapshot } from './
 
 /** Keep the CQAI provider route aligned with authenticated catalog readiness. */
 export function bindCqaiModelRoute(ctx: Context, account: DsnAccountService): void {
-  const registration = ctx.llm.registerAdapter([CQAI_PROVIDER], new CqaiClubAdapter(account))
+  const registration = ctx.llm.registerAdapter([CQAI_PROVIDER], new CqaiClubAdapter(account, {
+    resolveAttachments: () => ctx.get('attachments'),
+  }))
   // An initial registration cannot be empty, so release the bootstrap route
   // immediately and expose it again only after private readiness is known.
   registration.replace([])

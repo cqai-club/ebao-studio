@@ -124,6 +124,14 @@ export const REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES = [
   'node_modules/cqai-dsh-plugin-imagegen/lib/client.js',
 ] as const
 
+/** 一稿多发 bundle surface required for the default Desktop profile to boot. */
+export const REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES = [
+  'node_modules/cqai-dsh-plugin-publisher/package.json',
+  'node_modules/cqai-dsh-plugin-publisher/cordis.patch.yml',
+  'node_modules/cqai-dsh-plugin-publisher/lib/index.js',
+  'node_modules/cqai-dsh-plugin-publisher/lib/client.js',
+] as const
+
 /** AfterPack fields consumed without importing Electron Builder's incomplete declaration graph. */
 export interface PackagedRuntimeContext {
   /** Completed platform application directory. */
@@ -154,6 +162,7 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
   ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   ...REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
+  ...REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
   'node_modules/open/index.js',
   // In-app update staging and its abort bridge must remain ASAR-integrity protected.
   'node_modules/electron-updater/out/main.js',
@@ -760,6 +769,28 @@ export function verifySelectiveUnpackedRuntime(
   return summary
 }
 
+/** macOS MatrixMedia Helper copied beside app.asar as a nested application. */
+export const REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES = [
+  'publisher/MatrixMedia Publisher Worker.app/Contents/Info.plist',
+  'publisher/MatrixMedia Publisher Worker.app/Contents/MacOS/MatrixMedia Publisher Worker',
+  'publisher/MatrixMedia Publisher Worker.app/Contents/Resources/app.asar',
+  'publisher/MatrixMedia Publisher Worker.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework',
+  'publisher/LICENSE',
+  'publisher/SOURCE.json',
+] as const
+
+/** Windows MatrixMedia Helper copied as a complete Electron directory. */
+export const REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES = [
+  'publisher/MatrixMedia Publisher Worker.exe',
+  'publisher/resources/app.asar',
+  'publisher/icudtl.dat',
+  'publisher/v8_context_snapshot.bin',
+  'publisher/chrome_100_percent.pak',
+  'publisher/libEGL.dll',
+  'publisher/LICENSE',
+  'publisher/SOURCE.json',
+] as const
+
 /**
  * Verify Electron Builder's completed application before signing begins.
  * @param context - Electron Builder's afterPack context.
@@ -786,8 +817,9 @@ export function verifyPackagedRuntime(
       { cause },
     )
   }
+  const asarPath = resolvePackagedAsarPath(context)
   const archive = verifyPackagedAsar(
-    resolvePackagedAsarPath(context),
+    asarPath,
     [...REQUIRED_PACKAGED_RUNTIME_ENTRIES, ...desktopRuntimeEntries],
     readHeader,
   )
@@ -825,6 +857,19 @@ export function verifyPackagedRuntime(
     throw new Error(
       `dsh-plugin-desktop: packaged runtime at ${unpackedRoot} is missing required physical entries: ${missing.join(', ')}`,
     )
+  }
+  if (context.electronPlatformName === 'darwin' || context.electronPlatformName === 'win32') {
+    const externalRoot = dirname(asarPath)
+    const requiredExternal = context.electronPlatformName === 'darwin'
+      ? REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES
+      : REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES
+    const missingExternal = requiredExternal
+      .filter(entry => !exists(join(externalRoot, entry)))
+    if (missingExternal.length > 0) {
+      throw new Error(
+        `dsh-plugin-desktop: packaged runtime at ${externalRoot} is missing required extraResources entries: ${missingExternal.join(', ')}`,
+      )
+    }
   }
   if (context.electronPlatformName === 'darwin' && context.arch === 4) {
     const forbidden = FORBIDDEN_MACOS_UNIVERSAL_ENTRIES

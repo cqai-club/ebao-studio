@@ -72,6 +72,8 @@ import {
   type MainWindowStateStore,
 } from './main-window-state.ts'
 import { DESKTOP_LOGIN_COMPLETION_URL } from './desktop-protocol.ts'
+import { PublisherSupervisor } from './publisher-supervisor.ts'
+import type { DesktopPublisherRuntime } from './publisher-runtime.ts'
 
 const { autoUpdater } = electronUpdater
 
@@ -106,6 +108,8 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   readonly loginCompletionUrl = DESKTOP_LOGIN_COMPLETION_URL
   private readonly platformStrategy: ElectronPlatformStrategy
   readonly updates: DesktopUpdateAdapter
+  readonly publisher: DesktopPublisherRuntime
+  private readonly publisherSupervisor: PublisherSupervisor | undefined
 
   private generation: ElectronShellGeneration | undefined
   private currentLocale: DesktopLocale = 'en'
@@ -129,10 +133,30 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     workspaceVolumeQuery: WindowsVolumeQuery | undefined = undefined,
     private readonly mainWindowState: MainWindowStateStore = new FileMainWindowStateStore(app.getPath('userData')),
     installationId?: DesktopInstallationId,
+    publisher?: DesktopPublisherRuntime,
   ) {
     this.platformStrategy = electronPlatformStrategy()
     this.platform = this.platformStrategy.platform
     this.windowsBuild = this.platform === 'win32' ? windowsBuildNumber() : undefined
+    this.publisherSupervisor = publisher === undefined
+      ? new PublisherSupervisor({
+          platform: process.platform,
+          resourcesPath: (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath ?? '',
+          userDataPath: app.getPath('userData'),
+          pickLocalVideo: async () => {
+            const options: Electron.OpenDialogOptions = {
+              title: '选择本地视频', properties: ['openFile'],
+              filters: [{ name: 'MP4 视频', extensions: ['mp4'] }],
+            }
+            const result = this.generation === undefined
+              ? await dialog.showOpenDialog(options)
+              : await this.generation.showOpenDialog(options)
+            return result.canceled ? undefined : result.filePaths[0]
+          },
+          ...(logger === undefined ? {} : { logger }),
+        })
+      : undefined
+    this.publisher = publisher ?? this.publisherSupervisor!
     const platformStrategy = this.platformStrategy
     this.workspaceAdmission = new ElectronWorkspaceAdmission({
       platform: this.platform,
@@ -163,6 +187,37 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       registerNotificationAction: (action, handler) => this.registerNotificationAction(action, handler),
       notify: notification => { this.showNotification(notification) },
     }
+  }
+
+  /** Stop the separately packaged Publisher Worker during final app teardown. */
+  async shutdownPublisher(): Promise<void> {
+    await this.publisherSupervisor?.shutdown()
+  }
+
+  /** Warn before an explicit quit can interrupt an in-flight platform upload. */
+  async confirmPublisherQuit(): Promise<boolean> {
+    if (!this.publisher.status().supported || !this.publisher.status().running) return true
+    try {
+      const health = await this.publisher.request<{ busy?: unknown }>('system.health')
+      if (health.busy !== true) return true
+    } catch {
+      // A crashed or unreachable Worker cannot have a confirmable active task.
+      return true
+    }
+    const zh = this.currentLocale === 'zh'
+    const result = await this.showDesktopMessageBox({
+      type: 'warning',
+      title: zh ? '发布任务仍在执行' : 'Publishing is still in progress',
+      message: zh ? '现在退出会中断当前平台上传' : 'Quitting now will interrupt the active platform upload.',
+      detail: zh
+        ? '中断后的任务不会自动重发，以避免重复发布。建议先返回应用并稍后到平台后台确认。'
+        : 'Interrupted work is never retried automatically. Return to the app and confirm in the platform dashboard later.',
+      buttons: zh ? ['退出并中断', '继续运行'] : ['Quit and interrupt', 'Keep running'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    })
+    return result.response === 0
   }
 
   /** Log an Electron-scope error to the sink, falling back to stderr without a logger. */

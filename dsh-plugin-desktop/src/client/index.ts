@@ -99,7 +99,7 @@ export function apply(ctx: ClientContext): void {
     () => startRendererBootReporter(ctx.loader),
     'dsh-plugin-desktop: renderer boot health report',
   )
-  if (environment.platform === 'win32') {
+  if (environment.platform === 'darwin' || environment.platform === 'win32') {
     ctx.effect(
       () => installDesktopDirectoryPickerBridge(),
       'dsh-plugin-desktop: native directory picker bridge',

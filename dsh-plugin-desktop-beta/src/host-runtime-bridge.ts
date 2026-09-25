@@ -8,16 +8,26 @@ import type {
   DesktopUpdateAdapter,
 } from './runtime.ts'
 import { HostRpc } from './host-rpc.ts'
+import { isPublisherWorkerMethod } from './publisher-runtime.ts'
 
 export type RuntimeSnapshot = Pick<DesktopRuntime, 'platform' | 'windowsBuild' | 'locale' | 'loginCompletionUrl'> & {
   updates: Omit<DesktopUpdateAdapter, 'request' | 'confirmDownload' | 'showManualCheckResult' | 'downloadAndInstall' | 'registerNotificationAction' | 'notify'>
+  publisher: ReturnType<DesktopRuntime['publisher']['status']>
 }
 export function runtimeSnapshot(runtime: DesktopRuntime): RuntimeSnapshot {
   const { isPackaged, canDownload, currentVersion, releaseChannel, statePath, installationId } = runtime.updates
-  return { platform: runtime.platform, windowsBuild: runtime.windowsBuild, locale: runtime.locale,
+  return {
+    platform: runtime.platform, windowsBuild: runtime.windowsBuild, locale: runtime.locale,
     ...(runtime.loginCompletionUrl === undefined ? {} : { loginCompletionUrl: runtime.loginCompletionUrl }),
     updates: { isPackaged, canDownload, currentVersion, statePath,
-      ...(releaseChannel ? { releaseChannel } : {}), ...(installationId ? { installationId } : {}) } }
+      ...(releaseChannel ? { releaseChannel } : {}), ...(installationId ? { installationId } : {}) },
+    publisher: runtime.publisher?.status() ?? {
+      supported: false,
+      running: false,
+      reason: 'publisher-not-supported',
+      message: '多平台发布能力未注册',
+    },
+  }
 }
 
 /** Keep functions in their owning process and send snapshots plus opaque callback IDs. */
@@ -32,7 +42,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
   const shellSpecs = new Map<string, DesktopShellSpec>()
   const send = <T = void>(method: string, args: unknown[] = [], signal?: AbortSignal): Promise<T> => {
     const interactive = ['update:confirmDownload', 'update:showManualCheckResult', 'update:downloadAndInstall',
-      'native:pickDirectory', 'native:exportDiagnostics'].includes(method)
+      'native:pickDirectory', 'native:exportDiagnostics', 'publisher:selectLocalVideo'].includes(method)
     const task = rpc.call<T>(method, args, signal, interactive ? 0 : undefined)
     calls.add(task)
     // Report fire-and-forget failures without creating an unhandled rejection.
@@ -73,6 +83,12 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
         }
       },
       notify: notification => { void send('update:notify', [notification]) },
+    },
+    publisher: {
+      status: () => snapshot.publisher,
+      selectLocalVideo: () => send('publisher:selectLocalVideo'),
+      readLocalVideoChunk: (id, offset, length, signal) => send('publisher:readLocalVideoChunk', [id, offset, length], signal),
+      request: (method, params, signal) => send('publisher:request', [method, params ?? {}], signal),
     },
     schedule(spec) {
       const callback = callbacks({ quit: spec.requestQuit, mode: spec.requestModeChange,
@@ -210,6 +226,22 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
     notificationActions.delete(action)
   })
   handle('update:notify', ([value]) => runtime.updates.notify(value))
+  handle('publisher:request', ([method, params], signal) => {
+    if (!isPublisherWorkerMethod(method)) throw new Error('Invalid Publisher Worker method')
+    if (runtime.publisher === undefined) throw new Error('Publisher Worker is unavailable')
+    return runtime.publisher.request(method, params ?? {}, signal)
+  })
+  handle('publisher:selectLocalVideo', () => {
+    if (runtime.publisher === undefined) throw new Error('Publisher Worker is unavailable')
+    return runtime.publisher.selectLocalVideo()
+  })
+  handle('publisher:readLocalVideoChunk', ([id, offset, length], signal) => {
+    if (runtime.publisher === undefined) throw new Error('Publisher runtime is unavailable')
+    if (typeof id !== 'string' || !Number.isSafeInteger(offset) || !Number.isSafeInteger(length)) {
+      return { ok: false, code: 'invalid-video-selection', message: '本地视频预览请求无效，请重新选择文件' }
+    }
+    return runtime.publisher.readLocalVideoChunk(id, offset, length, signal)
+  })
   return async () => {
     trays.forEach(tray => tray.dispose()); trays.clear()
     await Promise.all([...shells.values()].map(dispose => dispose())); shells.clear(); preferences.clear()

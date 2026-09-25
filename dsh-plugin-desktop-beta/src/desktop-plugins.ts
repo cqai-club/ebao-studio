@@ -46,6 +46,7 @@ const IMMUTABLE_BUNDLES = new Set([
   '@cqaiclub/dsn-account',
   'cqai-dsh-plugin-imagegen',
   'cqai-dsh-plugin-video',
+  'cqai-dsh-plugin-publisher',
   'cqai-dsh-plugin-market',
   'dsh-community-market',
 ])

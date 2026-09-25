@@ -1,0 +1,719 @@
+/** Electron-main supervisor for the isolated MatrixMedia Publisher Worker. */
+
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { constants, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, type Stats } from 'node:fs'
+import { open } from 'node:fs/promises'
+import { basename, extname, isAbsolute, join, resolve } from 'node:path'
+import { createServer, type Server, type Socket } from 'node:net'
+import type { Writable } from 'node:stream'
+import { fileURLToPath } from 'node:url'
+import type { DesktopLogger } from './desktop-logger.ts'
+import { maskSecrets } from './mask-secrets.ts'
+import {
+  isPublisherWorkerMethod,
+  type DesktopPublisherRuntime,
+  type PublisherLocalVideo,
+  type PublisherLocalVideoChunk,
+  type PublisherRuntimeStatus,
+  type PublisherWorkerMethod,
+} from './publisher-runtime.ts'
+
+const PROTOCOL_VERSION = 2
+const MAX_FRAME_BYTES = 1024 * 1024
+const REQUEST_TIMEOUT_MS = 30_000
+const HANDSHAKE_TIMEOUT_MS = 15_000
+const IMPORT_TIMEOUT_MS = 5 * 60_000
+const SUBMISSION_TIMEOUT_MS = 5 * 60_000
+const WINDOW_TIMEOUT_MS = 60_000
+const MAX_AUTOMATIC_RESTARTS = 3
+const LOCAL_VIDEO_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+// MP4 is the common upload format across the enabled video adapters.
+const LOCAL_VIDEO_EXTENSIONS = new Set(['.mp4'])
+const MAX_SELECTION_BYTES = 16 * 1024
+const MAX_VIDEO_CHUNK_BYTES = 1024 * 1024
+const PIPE_AUTH_FRAME_BYTES = 256
+
+interface SelectedVideo {
+  file: string
+  size: number
+  mtimeMs: number
+  dev: number
+  ino: number
+}
+
+type WorkerLauncher = (
+  executable: string,
+  args: readonly string[],
+  options: Parameters<typeof spawn>[2],
+) => ChildProcessWithoutNullStreams
+
+interface PendingRequest {
+  resolve(value: unknown): void
+  reject(error: Error): void
+  timer: ReturnType<typeof setTimeout>
+  removeAbort(): void
+}
+
+interface WorkerErrorShape {
+  code?: unknown
+  message?: unknown
+}
+
+/** Injectable process and filesystem inputs used by the supervisor and its tests. */
+export interface PublisherSupervisorOptions {
+  platform: NodeJS.Platform
+  resourcesPath: string
+  userDataPath: string
+  env?: NodeJS.ProcessEnv
+  logger?: DesktopLogger
+  launch?: WorkerLauncher
+  restartDelayMs?: number
+  requestTimeoutMs?: number
+  handshakeTimeoutMs?: number
+  importTimeoutMs?: number
+  submissionTimeoutMs?: number
+  developmentAppPath?: string
+  pickLocalVideo?: () => Promise<string | undefined>
+}
+
+/** Resolve an override that may point at either an executable or a macOS app bundle. */
+function executableFromOverride(value: string): string {
+  const target = resolve(value)
+  if (!target.endsWith('.app')) return target
+  const appName = basename(target, '.app')
+  return join(target, 'Contents', 'MacOS', appName)
+}
+
+/** Locate the platform's packaged or development helper without starting it. */
+export function resolvePublisherWorker(options: Pick<PublisherSupervisorOptions, 'platform' | 'resourcesPath' | 'env' | 'developmentAppPath'>): string {
+  if (options.platform !== 'darwin' && options.platform !== 'win32') return ''
+  const override = String((options.env ?? process.env).EBAO_PUBLISHER_WORKER ?? '').trim()
+  if (override !== '') return executableFromOverride(override)
+  if (options.platform === 'win32') {
+    const packaged = join(options.resourcesPath, 'publisher', 'MatrixMedia Publisher Worker.exe')
+    if (existsSync(packaged)) return packaged
+    const development = options.developmentAppPath ?? fileURLToPath(new URL(
+      '../../matrixmedia-publisher/build/publisher-worker/win-unpacked/MatrixMedia Publisher Worker.exe',
+      import.meta.url,
+    ))
+    return existsSync(development) ? development : packaged
+  }
+  const packaged = join(
+    options.resourcesPath,
+    'publisher',
+    'MatrixMedia Publisher Worker.app',
+    'Contents',
+    'MacOS',
+    'MatrixMedia Publisher Worker',
+  )
+  if (existsSync(packaged)) return packaged
+  const developmentApps = options.developmentAppPath === undefined ? [
+    fileURLToPath(new URL(
+      '../../matrixmedia-publisher/build/publisher-worker-open/mac-universal/MatrixMedia Publisher Worker.app',
+      import.meta.url,
+    )),
+    fileURLToPath(new URL(
+      '../../matrixmedia-publisher/build/publisher-worker/mac-universal/MatrixMedia Publisher Worker.app',
+      import.meta.url,
+    )),
+  ] : [options.developmentAppPath]
+  for (const app of developmentApps) {
+    const development = executableFromOverride(app)
+    if (existsSync(development)) return development
+  }
+  return packaged
+}
+
+/** Error retaining the Worker's stable code without leaking protocol payloads. */
+export class PublisherWorkerError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message)
+    this.name = 'PublisherWorkerError'
+  }
+}
+
+/** One long-lived helper process with bounded NDJSON requests and crash recovery. */
+export class PublisherSupervisor implements DesktopPublisherRuntime {
+  private readonly platform: NodeJS.Platform
+  private readonly executable: string
+  private readonly dataRoot: string
+  private readonly env: NodeJS.ProcessEnv
+  private readonly launch: WorkerLauncher
+  private readonly logger: DesktopLogger | undefined
+  private readonly restartDelayMs: number
+  private readonly requestTimeoutMs: number
+  private readonly handshakeTimeoutMs: number
+  private readonly importTimeoutMs: number
+  private readonly submissionTimeoutMs: number
+  private readonly pickLocalVideo: () => Promise<string | undefined>
+  private readonly useWindowsPipe: boolean
+  private readonly localVideosRoot: string
+  private readonly localVideos = new Map<string, SelectedVideo>()
+  private child: ChildProcessWithoutNullStreams | undefined
+  private transport: Writable | undefined
+  private pipeServer: Server | undefined
+  private pipeSocket: Socket | undefined
+  private rejectPipeConnection: ((error: Error) => void) | undefined
+  private startTask: Promise<void> | undefined
+  private sequence = 0
+  private pendingText = ''
+  private pendingLogText = ''
+  private readonly pending = new Map<string, PendingRequest>()
+  private stopping = false
+  private restartCount = 0
+  private restartTimer: ReturnType<typeof setTimeout> | undefined
+
+  constructor(options: PublisherSupervisorOptions) {
+    this.platform = options.platform
+    this.executable = resolvePublisherWorker(options)
+    this.dataRoot = join(options.userDataPath, 'publisher')
+    this.localVideosRoot = join(this.dataRoot, 'local-videos')
+    this.env = options.env ?? process.env
+    this.launch = options.launch ?? ((executable, args, spawnOptions) =>
+      spawn(executable, [...args], spawnOptions) as ChildProcessWithoutNullStreams)
+    this.logger = options.logger
+    this.restartDelayMs = options.restartDelayMs ?? 500
+    this.requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS
+    this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? HANDSHAKE_TIMEOUT_MS
+    this.importTimeoutMs = options.importTimeoutMs ?? IMPORT_TIMEOUT_MS
+    this.submissionTimeoutMs = options.submissionTimeoutMs ?? SUBMISSION_TIMEOUT_MS
+    this.pickLocalVideo = options.pickLocalVideo ?? (async () => undefined)
+    this.useWindowsPipe = this.platform === 'win32'
+  }
+
+  async selectLocalVideo(): Promise<PublisherLocalVideo | null> {
+    const state = this.status()
+    if (!state.supported) throw new PublisherWorkerError(state.reason ?? 'publisher-not-supported', state.message ?? '发布能力不可用')
+    let chosen: string | undefined
+    try { chosen = await this.pickLocalVideo() }
+    catch { throw new PublisherWorkerError('file-picker-failed', '无法打开本地文件选择器，请重试') }
+    if (!chosen) return null
+    let file: string
+    try { file = realpathSync(chosen) }
+    catch { throw new PublisherWorkerError('invalid-video-file', '本地视频文件无法读取，请重新选择') }
+    const fileName = basename(file)
+    if (!LOCAL_VIDEO_EXTENSIONS.has(extname(fileName).toLowerCase())) {
+      throw new PublisherWorkerError('invalid-video-file', '请选择 MP4 视频文件')
+    }
+    let stat: ReturnType<typeof statSync>
+    try { stat = statSync(file) }
+    catch { throw new PublisherWorkerError('invalid-video-file', '本地视频文件无法读取，请重新选择') }
+    if (!stat.isFile() || stat.size < 1) throw new PublisherWorkerError('invalid-video-file', '本地视频文件无效或为空')
+    const id = randomUUID()
+    const selected = { file, size: stat.size, mtimeMs: stat.mtimeMs, dev: stat.dev, ino: stat.ino }
+    this.persistLocalVideo(id, selected)
+    this.localVideos.set(id, selected)
+    return { id, fileName, title: fileName.slice(0, -extname(fileName).length).slice(0, 120), bytes: stat.size }
+  }
+
+  private persistLocalVideo(id: string, selected: SelectedVideo): void {
+    let temporary: string | undefined
+    try {
+      mkdirSync(this.localVideosRoot, { recursive: true, mode: 0o700 })
+      temporary = join(this.localVideosRoot, `.${randomUUID()}.tmp`)
+      writeFileSync(temporary, JSON.stringify(selected), { flag: 'wx', mode: 0o600 })
+      renameSync(temporary, join(this.localVideosRoot, `${id}.json`))
+    } catch {
+      throw new PublisherWorkerError('video-selection-save-failed', '无法保存本地视频选择，请检查 e宝工坊数据目录')
+    } finally {
+      if (temporary) {
+        try { rmSync(temporary, { force: true }) } catch { /* preserve the original error */ }
+      }
+    }
+  }
+
+  private loadLocalVideo(id: string): SelectedVideo | undefined {
+    const cached = this.localVideos.get(id)
+    if (cached) return cached
+    const file = join(this.localVideosRoot, `${id}.json`)
+    try {
+      const stat = lstatSync(file)
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_SELECTION_BYTES) return undefined
+      const value: unknown = JSON.parse(readFileSync(file, 'utf8'))
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+      const selected = value as Record<string, unknown>
+      if (typeof selected.file !== 'string' || !isAbsolute(selected.file)
+        || extname(selected.file).toLowerCase() !== '.mp4'
+        || typeof selected.size !== 'number' || !Number.isSafeInteger(selected.size) || selected.size < 1
+        || typeof selected.mtimeMs !== 'number' || !Number.isFinite(selected.mtimeMs)
+        || typeof selected.dev !== 'number' || !Number.isSafeInteger(selected.dev)
+        || typeof selected.ino !== 'number' || !Number.isSafeInteger(selected.ino)) return undefined
+      const result = selected as unknown as SelectedVideo
+      this.localVideos.set(id, result)
+      return result
+    } catch { return undefined }
+  }
+
+  async readLocalVideoChunk(id: string, offset: number, length: number, signal?: AbortSignal): Promise<PublisherLocalVideoChunk> {
+    if (typeof id !== 'string' || !LOCAL_VIDEO_ID.test(id)
+      || !Number.isSafeInteger(offset) || offset < 0
+      || !Number.isSafeInteger(length) || length < 0 || length > MAX_VIDEO_CHUNK_BYTES) {
+      return { ok: false, code: 'invalid-video-selection', message: '本地视频预览请求无效，请重新选择文件' }
+    }
+    const selected = this.loadLocalVideo(id)
+    if (!selected) {
+      return { ok: false, code: 'video-selection-expired', message: '本地视频选择已失效，请重新选择文件' }
+    }
+    const cancelled = () => {
+      if (signal?.aborted) throw new PublisherWorkerError('request-cancelled', '本地视频预览已取消')
+    }
+    cancelled()
+    let handle: Awaited<ReturnType<typeof open>> | undefined
+    try {
+      // A selected path is private to Electron main. Open the file itself and
+      // verify its descriptor so a replaced path cannot redirect a preview.
+      // Windows has no O_NOFOLLOW. The descriptor identity check below still
+      // rejects a path redirected to a different file after selection.
+      const flags = this.platform === 'win32' ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW
+      handle = await open(selected.file, flags)
+      cancelled()
+      const before = await handle.stat()
+      if (!this.matchesLocalVideo(before, selected)) {
+        return { ok: false, code: 'video-file-changed', message: '本地视频已发生变化，请重新选择文件' }
+      }
+      if (offset > before.size) {
+        return { ok: false, code: 'invalid-video-selection', message: '本地视频预览请求无效，请重新选择文件' }
+      }
+      const readLength = Math.min(length, before.size - offset)
+      let dataBase64 = ''
+      if (readLength > 0) {
+        const buffer = Buffer.allocUnsafe(readLength)
+        const { bytesRead } = await handle.read(buffer, 0, readLength, offset)
+        if (bytesRead !== readLength) {
+          return { ok: false, code: 'video-file-changed', message: '本地视频已发生变化，请重新选择文件' }
+        }
+        dataBase64 = buffer.toString('base64')
+      }
+      cancelled()
+      const after = await handle.stat()
+      if (!this.matchesLocalVideo(after, selected)) {
+        return { ok: false, code: 'video-file-changed', message: '本地视频已发生变化，请重新选择文件' }
+      }
+      cancelled()
+      return { ok: true, bytes: after.size, dataBase64 }
+    } catch (cause) {
+      if (cause instanceof PublisherWorkerError) throw cause
+      return { ok: false, code: 'video-file-changed', message: '本地视频已移动或无法读取，请重新选择文件' }
+    } finally {
+      await handle?.close().catch(() => {})
+    }
+  }
+
+  private matchesLocalVideo(stat: Stats, selected: SelectedVideo): boolean {
+    return stat.isFile() && stat.size === selected.size && stat.mtimeMs === selected.mtimeMs
+      && stat.dev === selected.dev && stat.ino === selected.ino
+  }
+
+  private resolveLocalVideoSubmission(params: unknown): unknown {
+    if (!params || typeof params !== 'object' || Array.isArray(params) || !('localVideoId' in params)) return params
+    const input = params as Record<string, unknown>
+    const id = input.localVideoId
+    if (typeof id !== 'string' || !LOCAL_VIDEO_ID.test(id) || 'file' in input || 'workId' in input) {
+      throw new PublisherWorkerError('invalid-video-selection', '本地视频选择无效，请重新选择')
+    }
+    const selected = this.loadLocalVideo(id)
+    if (!selected) throw new PublisherWorkerError('video-selection-expired', '本地视频选择已失效，请重新选择文件')
+    let stat: ReturnType<typeof statSync>
+    try { stat = statSync(selected.file) }
+    catch { throw new PublisherWorkerError('video-file-changed', '本地视频已移动或删除，请重新选择文件') }
+    if (!this.matchesLocalVideo(stat, selected)) {
+      throw new PublisherWorkerError('video-file-changed', '本地视频已发生变化，请重新选择文件')
+    }
+    const { localVideoId: _localVideoId, ...rest } = input
+    return { ...rest, workId: id, file: selected.file }
+  }
+
+  status(): PublisherRuntimeStatus {
+    if (this.platform !== 'darwin' && this.platform !== 'win32') {
+      return {
+        supported: false,
+        running: false,
+        legacyAccountImportSupported: false,
+        reason: 'publisher-not-supported',
+        message: '多平台发布目前支持 macOS 和 Windows',
+      }
+    }
+    if (this.executable === '' || !existsSync(this.executable)) {
+      const hasWorkerOverride = String(this.env.EBAO_PUBLISHER_WORKER ?? '').trim() !== ''
+      return {
+        supported: false,
+        running: false,
+        legacyAccountImportSupported: this.platform === 'darwin',
+        reason: 'publisher-worker-missing',
+        message: hasWorkerOverride
+          ? '指定的 Publisher Worker 不存在，请检查 EBAO_PUBLISHER_WORKER 并重启 e宝工坊'
+          : '未找到内置 Publisher Worker，请重新安装 e宝工坊',
+      }
+    }
+    return { supported: true, running: this.child !== undefined, legacyAccountImportSupported: this.platform === 'darwin' }
+  }
+
+  async request<T = unknown>(method: PublisherWorkerMethod, params: unknown = {}, signal?: AbortSignal): Promise<T> {
+    if (!isPublisherWorkerMethod(method)) throw new PublisherWorkerError('method-not-allowed', '不允许的发布操作')
+    if (this.platform === 'win32' && (method === 'accounts.importPreview' || method === 'accounts.importApply')) {
+      throw new PublisherWorkerError('import-not-supported', 'Windows 暂不支持导入独立 MatrixMedia 账号，请直接添加账号并登录')
+    }
+    if (signal?.aborted) throw new PublisherWorkerError('request-cancelled', '发布操作已取消')
+    await this.ensureStarted()
+    const workerParams = method === 'submissions.create' ? this.resolveLocalVideoSubmission(params) : params
+    const timeoutMs = method === 'accounts.importApply'
+      ? this.importTimeoutMs
+      : method === 'submissions.create'
+        ? this.submissionTimeoutMs
+      : method === 'accounts.openLogin' || method === 'accounts.openDashboard' || method === 'submissions.openTarget'
+        ? Math.max(this.requestTimeoutMs, WINDOW_TIMEOUT_MS)
+        : this.requestTimeoutMs
+    const result = await this.call<T>(method, workerParams, signal, timeoutMs)
+    this.restartCount = 0
+    // Import swaps a Chromium profile on disk. Restart before another request
+    // can acquire one of those partitions so Electron reloads the copied state.
+    if (method === 'accounts.importApply') await this.restart()
+    return result
+  }
+
+  /** Stop the helper after Host teardown; an active publish is never retried here. */
+  async shutdown(): Promise<void> {
+    this.stopping = true
+    if (this.restartTimer !== undefined) clearTimeout(this.restartTimer)
+    this.restartTimer = undefined
+    const child = this.child
+    if (child === undefined) {
+      this.closePipe(new PublisherWorkerError('worker-disconnected', 'Publisher Worker 已停止'))
+      return
+    }
+    try {
+      await this.call('system.shutdown', {}, undefined, 2_000)
+    } catch {
+      child.kill()
+    }
+    await new Promise<void>((resolveExit) => {
+      if (this.child !== child) { resolveExit(); return }
+      const timer = setTimeout(() => { child.kill(); resolveExit() }, 2_000)
+      child.once('exit', () => { clearTimeout(timer); resolveExit() })
+    })
+  }
+
+  private async ensureStarted(): Promise<void> {
+    const state = this.status()
+    if (!state.supported) throw new PublisherWorkerError(state.reason ?? 'publisher-not-supported', state.message ?? '发布能力不可用')
+    if (this.startTask !== undefined) return await this.startTask
+    if (this.child !== undefined) return
+    this.stopping = false
+    const task = this.start().finally(() => {
+      if (this.startTask === task) this.startTask = undefined
+    })
+    this.startTask = task
+    await task
+  }
+
+  private async openWindowsPipe(): Promise<{ path: string; token: string; connected: Promise<Socket> }> {
+    const name = `ebao-publisher-${randomUUID()}`
+    // A short Unix socket path lets win32 simulation tests run on macOS/Linux.
+    const path = process.platform === 'win32' ? `\\\\.\\pipe\\${name}` : join('/tmp', `${name}.sock`)
+    const token = randomBytes(32).toString('hex')
+    const expected = Buffer.from(token, 'hex')
+    const server = createServer()
+    await new Promise<void>((resolveListen, rejectListen) => {
+      const failed = (error: Error) => rejectListen(error)
+      server.once('error', failed)
+      server.listen(path, () => {
+        server.removeListener('error', failed)
+        resolveListen()
+      })
+    })
+    this.pipeServer = server
+    const connected = new Promise<Socket>((resolveSocket, rejectSocket) => {
+      let settled = false
+      const rejectConnection = (error: Error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(deadline)
+        if (this.rejectPipeConnection === rejectConnection) this.rejectPipeConnection = undefined
+        if (server.listening) server.close()
+        rejectSocket(error)
+      }
+      const deadline = setTimeout(() => rejectConnection(
+        new PublisherWorkerError('worker-unavailable', 'Publisher Worker 未建立本地通信连接'),
+      ), this.handshakeTimeoutMs)
+      this.rejectPipeConnection = rejectConnection
+      server.on('error', error => rejectConnection(error))
+      server.on('connection', socket => {
+        socket.setEncoding('utf8')
+        let text = ''
+        const authTimer = setTimeout(() => socket.destroy(), Math.min(5_000, this.handshakeTimeoutMs))
+        socket.once('close', () => clearTimeout(authTimer))
+        socket.on('error', () => { /* Reject only this unauthenticated connection. */ })
+        const authenticate = (value: string) => {
+          text += value
+          if (Buffer.byteLength(text, 'utf8') > PIPE_AUTH_FRAME_BYTES) { socket.destroy(); return }
+          const newline = text.indexOf('\n')
+          if (newline < 0) return
+          let supplied = Buffer.alloc(0)
+          try {
+            const frame: unknown = JSON.parse(text.slice(0, newline))
+            const auth = frame !== null && typeof frame === 'object' && !Array.isArray(frame)
+              ? (frame as { auth?: unknown }).auth : undefined
+            if (typeof auth === 'string' && /^[0-9a-f]{64}$/u.test(auth)) supplied = Buffer.from(auth, 'hex')
+          } catch { /* Invalid authentication is handled like a wrong token. */ }
+          if (settled || text.slice(newline + 1).trim() !== ''
+            || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+            socket.destroy()
+            return
+          }
+          settled = true
+          clearTimeout(deadline)
+          clearTimeout(authTimer)
+          this.rejectPipeConnection = undefined
+          socket.removeListener('data', authenticate)
+          socket.pause()
+          if (server.listening) server.close()
+          resolveSocket(socket)
+        }
+        socket.on('data', authenticate)
+      })
+    })
+    // A child may fail before start() awaits the connection. Keep the rejection
+    // handled while preserving it for the awaited startup path.
+    void connected.catch(() => undefined)
+    return { path, token, connected }
+  }
+
+  private closePipe(error: Error): void {
+    const reject = this.rejectPipeConnection
+    this.rejectPipeConnection = undefined
+    reject?.(error)
+    this.pipeSocket?.destroy()
+    this.pipeSocket = undefined
+    if (this.pipeServer?.listening) this.pipeServer.close()
+    this.pipeServer = undefined
+  }
+
+  private async start(): Promise<void> {
+    mkdirSync(this.dataRoot, { recursive: true })
+    this.pendingText = ''
+    this.pendingLogText = ''
+    const pipe = this.useWindowsPipe ? await this.openWindowsPipe() : undefined
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = this.launch(this.executable, ['--publisher-worker', '--data-dir', this.dataRoot], {
+        cwd: this.dataRoot,
+        env: {
+          ...this.env,
+          MATRIXMEDIA_DATA_DIR: join(this.dataRoot, 'matrix-data'),
+          ...(pipe === undefined ? {} : {
+            EBAO_PUBLISHER_PIPE: pipe.path,
+            EBAO_PUBLISHER_PIPE_TOKEN: pipe.token,
+          }),
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+    } catch (error) {
+      this.closePipe(error instanceof Error ? error : new Error(String(error)))
+      throw error
+    }
+    this.child = child
+    child.stderr.setEncoding('utf8')
+    if (pipe === undefined) {
+      this.transport = child.stdin
+      child.stdout.setEncoding('utf8')
+      child.stdout.on('data', value => { this.receive(String(value)) })
+      child.stdin.on('error', () => { this.handlePipeFailure(child) })
+    } else {
+      child.stdout.resume()
+      child.stdin.on('error', () => { /* Windows GUI stdin is not the protocol transport. */ })
+    }
+    child.stderr.on('data', value => { this.receiveWorkerLog(String(value)) })
+    child.once('error', error => { this.handleExit(child, error) })
+    child.once('exit', (code, signal) => {
+      this.handleExit(child, new PublisherWorkerError(
+        'worker-exited',
+        `Publisher Worker 已退出（${signal ?? String(code ?? 'unknown')}）`,
+      ))
+    })
+    if (pipe !== undefined) {
+      try {
+        const socket = await pipe.connected
+        if (this.child !== child) throw new PublisherWorkerError('worker-disconnected', 'Publisher Worker 启动时已退出')
+        this.pipeSocket = socket
+        this.transport = socket
+        socket.setEncoding('utf8')
+        socket.on('data', value => { this.receive(String(value)) })
+        socket.on('error', () => { this.handlePipeFailure(child) })
+        socket.on('close', () => { this.handlePipeFailure(child) })
+        socket.resume()
+      } catch (error) {
+        child.kill()
+        this.handleExit(child, error instanceof Error ? error : new Error(String(error)))
+        throw error
+      }
+    }
+    const handshake = await this.call<{
+      protocolVersion?: unknown
+      workerVersion?: unknown
+      platforms?: unknown
+      modes?: unknown
+    }>('system.handshake', {}, undefined, this.handshakeTimeoutMs)
+    if (handshake.protocolVersion !== PROTOCOL_VERSION
+      || !Array.isArray(handshake.platforms)
+      || !Array.isArray(handshake.modes)
+      || !handshake.modes.includes('publish')
+      || !handshake.modes.includes('draft')) {
+      child.kill()
+      throw new PublisherWorkerError('protocol-mismatch', 'Publisher Worker 协议版本不兼容')
+    }
+  }
+
+  private call<T = unknown>(method: string, params: unknown, signal?: AbortSignal, timeoutMs = this.requestTimeoutMs): Promise<T> {
+    const child = this.child
+    const transport = this.transport
+    if (child === undefined || transport === undefined || transport.destroyed) {
+      return Promise.reject(new PublisherWorkerError('worker-unavailable', 'Publisher Worker 尚未就绪'))
+    }
+    const id = String(++this.sequence)
+    return new Promise<T>((resolveRequest, rejectRequest) => {
+      const cleanup = () => {
+        const item = this.pending.get(id)
+        if (item !== undefined) {
+          clearTimeout(item.timer)
+          item.removeAbort()
+          this.pending.delete(id)
+        }
+      }
+      const reject = (error: Error) => { cleanup(); rejectRequest(error) }
+      const abort = () => reject(new PublisherWorkerError('request-cancelled', '发布操作已取消'))
+      const timer = setTimeout(() => reject(method === 'submissions.create'
+        ? new PublisherWorkerError('submission-uncertain', '提交响应超时，状态未确认。请先查看发布历史和平台后台，切勿立即重复提交')
+        : new PublisherWorkerError('request-cancelled', '发布操作已超时')), timeoutMs)
+      signal?.addEventListener('abort', abort, { once: true })
+      this.pending.set(id, {
+        timer,
+        removeAbort: () => signal?.removeEventListener('abort', abort),
+        resolve: value => { cleanup(); resolveRequest(value as T) },
+        reject,
+      })
+      transport.write(`${JSON.stringify({ id, method, params })}\n`, error => {
+        if (error !== null && error !== undefined) this.handlePipeFailure(child)
+      })
+    })
+  }
+
+  private receive(chunk: string): void {
+    this.pendingText += chunk
+    for (;;) {
+      const newline = this.pendingText.indexOf('\n')
+      if (newline < 0) {
+        if (Buffer.byteLength(this.pendingText, 'utf8') > MAX_FRAME_BYTES) {
+          this.protocolFailure('Publisher Worker 响应超过 1 MB')
+        }
+        return
+      }
+      const line = this.pendingText.slice(0, newline).trim()
+      this.pendingText = this.pendingText.slice(newline + 1)
+      if (line === '') continue
+      if (Buffer.byteLength(line, 'utf8') > MAX_FRAME_BYTES) {
+        this.protocolFailure('Publisher Worker 响应超过 1 MB')
+        return
+      }
+      let frame: Record<string, unknown>
+      try {
+        const value: unknown = JSON.parse(line)
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('not an object')
+        frame = value as Record<string, unknown>
+      } catch {
+        this.protocolFailure('Publisher Worker 输出了非协议内容')
+        return
+      }
+      const id = typeof frame.id === 'string' ? frame.id : ''
+      const pending = this.pending.get(id)
+      if (pending === undefined) continue
+      if (frame.error !== null && typeof frame.error === 'object') {
+        const detail = frame.error as WorkerErrorShape
+        pending.reject(new PublisherWorkerError(
+          typeof detail.code === 'string' ? detail.code : 'worker-error',
+          typeof detail.message === 'string' ? detail.message : 'Publisher Worker 操作失败',
+        ))
+      } else {
+        pending.resolve(frame.result)
+      }
+    }
+  }
+
+  private protocolFailure(message: string): void {
+    const error = new PublisherWorkerError('invalid-worker-protocol', message)
+    this.rejectPending(error)
+    this.child?.kill()
+  }
+
+  private handlePipeFailure(child: ChildProcessWithoutNullStreams): void {
+    if (this.child !== child) return
+    this.handleExit(child, new PublisherWorkerError('worker-disconnected', 'Publisher Worker 通信已中断'))
+    child.kill()
+  }
+
+  private handleExit(child: ChildProcessWithoutNullStreams, error: Error): void {
+    if (this.child !== child) return
+    this.child = undefined
+    this.closePipe(error)
+    this.transport = undefined
+    this.pendingText = ''
+    this.flushWorkerLog()
+    this.rejectPending(error)
+    if (this.stopping || this.restartTimer !== undefined || this.restartCount >= MAX_AUTOMATIC_RESTARTS) return
+    this.restartCount += 1
+    this.logger?.error(`publisher-supervisor: ${maskSecrets(error.message)}; restarting (${String(this.restartCount)}/${String(MAX_AUTOMATIC_RESTARTS)})`)
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = undefined
+      void this.ensureStarted().catch(cause => {
+        this.logger?.error(`publisher-supervisor: restart failed: ${maskSecrets(cause instanceof Error ? cause.message : String(cause))}`)
+      })
+    }, this.restartDelayMs)
+  }
+
+  private rejectPending(error: Error): void {
+    for (const item of [...this.pending.values()]) item.reject(error)
+  }
+
+  private receiveWorkerLog(value: string): void {
+    this.pendingLogText += value
+    for (;;) {
+      const newline = this.pendingLogText.indexOf('\n')
+      if (newline < 0) break
+      const line = this.pendingLogText.slice(0, newline)
+      this.pendingLogText = this.pendingLogText.slice(newline + 1)
+      this.emitWorkerLog(line)
+    }
+    if (Buffer.byteLength(this.pendingLogText, 'utf8') > MAX_FRAME_BYTES) {
+      const oversized = this.pendingLogText
+      this.pendingLogText = ''
+      this.emitWorkerLog(`${oversized.slice(0, MAX_FRAME_BYTES)} …[truncated]`)
+    }
+  }
+
+  private flushWorkerLog(): void {
+    const line = this.pendingLogText
+    this.pendingLogText = ''
+    this.emitWorkerLog(line)
+  }
+
+  private emitWorkerLog(value: string): void {
+    const line = value.trim()
+    if (line !== '') this.logger?.error(`publisher-worker: ${maskSecrets(line)}`)
+  }
+
+  private async restart(): Promise<void> {
+    const child = this.child
+    if (child !== undefined) {
+      this.stopping = true
+      try { await this.call('system.shutdown', {}, undefined, 2_000) } catch { child.kill() }
+      if (this.child === child) child.kill()
+      this.child = undefined
+      this.closePipe(new PublisherWorkerError('worker-disconnected', 'Publisher Worker 正在重启'))
+      this.transport = undefined
+    }
+    this.stopping = false
+    this.restartCount = 0
+    await this.ensureStarted()
+  }
+}

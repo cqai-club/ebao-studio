@@ -119,6 +119,26 @@ jobs:
           path: ${{ steps.yarn-cache.outputs.dir }}
           key: release-yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - run: yarn install --immutable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20.19.5
+      - run: corepack enable
+      - name: Build Windows MatrixMedia Publisher Worker
+        working-directory: matrixmedia-publisher
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          corepack yarn@1.22.22 install --frozen-lockfile
+          corepack yarn@1.22.22 test:publisher-worker
+          corepack yarn@1.22.22 build:dir
+          corepack yarn@1.22.22 electron-builder --config electron-builder.publisher.yml --win dir --x64 --publish never
+      - name: Smoke Windows Publisher Worker lifecycle
+        run: node scripts/smoke-windows-publisher-worker.mjs
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - run: corepack enable
       - name: Run Windows package gate
         run: yarn workspace dsh-plugin-desktop check:win-package
       - name: Build unsigned Windows installer
@@ -174,6 +194,22 @@ jobs:
           path: ${{ steps.yarn-cache.outputs.dir }}
           key: release-yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - run: yarn install --immutable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20.19.5
+      - run: corepack enable
+      - name: Build macOS MatrixMedia Publisher Worker
+        working-directory: matrixmedia-publisher
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          corepack yarn@1.22.22 install --frozen-lockfile
+          corepack yarn@1.22.22 test:publisher-worker
+          corepack yarn@1.22.22 build:publisher-worker:universal
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - run: corepack enable
       - name: Run macOS package gate
         run: yarn workspace dsh-plugin-desktop check:mac-package
       - name: Build signed and notarized macOS updater artifacts
@@ -278,9 +314,11 @@ jobs:
             macos_note='本次 macOS 构件是未签名测试包：仅供测试者明确下载、在 Gatekeeper 提示中手动授权打开及验证更新发现链路。它不是生产 macOS 自动更新构件；不要将其作为正式发布或静默替换的依据。后续生产 macOS 发布仍必须使用 Developer ID 签名并完成 Apple 公证。'
           fi
           cat > RELEASE_NOTES.md <<'NOTES'
-          ## 易宝工坊首个预发布版本
+          ## 本次预发布版本
 
-          本版本将 CQAI 账号能力与默认的“e图宝”生图插件集成到易宝工坊 Desktop，包含文生图、图生图、Agent 工具、任务队列、普通生图历史瀑布流、图库、模板、电商模式和无限画布。
+          本版本继续提供 CQAI 账号与“e图宝”生图能力，并加入多平台发布工作台：本地原稿与草稿、平台版本准备、账号管理、发布历史，以及文章、图文和视频内容流程。具体提交方式以各平台在应用内显示的能力为准。
+
+          macOS 与 Windows 构件均包含独立的 Publisher Worker。Windows 用户可以直接添加账号并登录；旧版独立 MatrixMedia 账号导入目前仅在 macOS 提供。
 
           ### 下载与自动更新
 

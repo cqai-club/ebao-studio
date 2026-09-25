@@ -26,6 +26,7 @@ export type AuthorizationRequest = {
 
 export const Prompt = {
   Login: 'login',
+  LoginConsent: 'login consent',
 } as const
 
 export type AuthorizationRequestOptions = {

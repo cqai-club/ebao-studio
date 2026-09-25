@@ -1,0 +1,122 @@
+{
+  "formatVersion": 1,
+  "repository": "https://github.com/hanliang97/MatrixMedia.git",
+  "tag": "v0.11.3",
+  "version": "0.11.3",
+  "platform": "win32",
+  "arch": "x64",
+  "entries": [
+    {
+      "path": "chrome_100_percent.pak",
+      "bytes": 127125,
+      "sha256": "ccbca246b9a93fa8d4f01a01345e7537511c590e4a8efd5777b1596d10923b4b"
+    },
+    {
+      "path": "chrome_200_percent.pak",
+      "bytes": 177406,
+      "sha256": "c91abf556e55c29d1ea9f560bb17cc3489cb67a5d0c7a22b58485f5f2fbcf25c"
+    },
+    {
+      "path": "d3dcompiler_47.dll",
+      "bytes": 4916712,
+      "sha256": "7353f25dc5cf84d09894e3e0461cef0e56799adbc617fce37620ca67240b547d"
+    },
+    {
+      "path": "ffmpeg.dll",
+      "bytes": 2882560,
+      "sha256": "b78f0036621ad1d5833289f2ad509963ef78f1a89a3c7df0f1370fd2d35a2804"
+    },
+    {
+      "path": "icudtl.dat",
+      "bytes": 10544880,
+      "sha256": "ee3c8883effd90edfb0ff5b758c560cbca25d1598fcb55b80ef67e990dd19d41"
+    },
+    {
+      "path": "libEGL.dll",
+      "bytes": 480768,
+      "sha256": "4a8be3b4d9fe790efdce38cff8f312a2f8276908d6703e0c6c37818e217cf1e3"
+    },
+    {
+      "path": "libGLESv2.dll",
+      "bytes": 7626240,
+      "sha256": "0bb7c6c08b569c1d2de90a40e6c142591e160a7c6cb15d21807f3404a48c4287"
+    },
+    {
+      "path": "LICENSE.electron.txt",
+      "bytes": 1096,
+      "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+    },
+    {
+      "path": "LICENSES.chromium.html",
+      "bytes": 8315859,
+      "sha256": "9c088caac76cf5be69e0397d76fe9397017585cffdba327692ff1b3a6c00d68f"
+    },
+    {
+      "path": "locales/zh-CN.pak",
+      "bytes": 354098,
+      "sha256": "58b934a09858f037f1966a495e73d44416180afcdebfaefcee1f5e3377de63f7"
+    },
+    {
+      "path": "matrixmedia.exe",
+      "bytes": 162484224,
+      "sha256": "2e7abd41e87d50714af5e974aff9548500900dfd13071782b35eafe337a4f020"
+    },
+    {
+      "path": "matrixmedia.ico",
+      "bytes": 404478,
+      "sha256": "c69071e6b95018c95f1fce60e7e763a3946c21287619cc84e94054c611d96a66"
+    },
+    {
+      "path": "resources/app-update.yml",
+      "bytes": 82,
+      "sha256": "debfcadf11ab909c21bdd04d89019e054fc4e4341b2d4a60214a5338a4289cdc"
+    },
+    {
+      "path": "resources/app.asar",
+      "bytes": 42265232,
+      "sha256": "e843c870554f874b647d53930ecdaae6e1e9db8584d603036417c625e81186c0"
+    },
+    {
+      "path": "resources/elevate.exe",
+      "bytes": 107520,
+      "sha256": "9b1fbf0c11c520ae714af8aa9af12cfd48503eedecd7398d8992ee94d1b4dc37"
+    },
+    {
+      "path": "resources.pak",
+      "bytes": 5245561,
+      "sha256": "a251019eb08f1e695e935d224544bda37c5ae092ba68a89fa1fe3bd19bde4f5c"
+    },
+    {
+      "path": "snapshot_blob.bin",
+      "bytes": 273328,
+      "sha256": "148e4b85983f0d27adecd9c6431b66379ac5538688f320e89d74ff6d48bb740b"
+    },
+    {
+      "path": "uninstallerIcon.ico",
+      "bytes": 404478,
+      "sha256": "c69071e6b95018c95f1fce60e7e763a3946c21287619cc84e94054c611d96a66"
+    },
+    {
+      "path": "v8_context_snapshot.bin",
+      "bytes": 588152,
+      "sha256": "3820e8fa1077d02606fea8e1b3a9ca4bf7f4a71d0569d9a8ea9ee7a009d0ce80"
+    },
+    {
+      "path": "vk_swiftshader_icd.json",
+      "bytes": 106,
+      "sha256": "32d83ff113fef532a9f97e0d2831f8656628ab1c99e9060f0332b1532839afd9"
+    },
+    {
+      "path": "vk_swiftshader.dll",
+      "bytes": 5334528,
+      "sha256": "a6d295dcc3afcb55aa79eac5f896bceb15ccb2b798db3bb076ceeea78073791a"
+    },
+    {
+      "path": "vulkan-1.dll",
+      "bytes": 928256,
+      "sha256": "2233fef6788711089fc5c1a008bfff6559cf2fc3e8363cd8a50196e90d1d9825"
+    }
+  ],
+  "files": 22,
+  "bytes": 253462689
+}

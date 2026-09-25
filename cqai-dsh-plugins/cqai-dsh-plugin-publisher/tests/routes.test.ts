@@ -1,0 +1,492 @@
+import { Context } from '@deepseek-ai/cordis'
+import WebServer from '@deepseek-ai/dsh-host-webserver'
+import { afterEach, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { IncomingMessage } from 'node:http'
+import * as plugin from '../src/index.ts'
+import { permitted } from '../src/index.ts'
+import { API, type PublisherAccount } from '../src/protocol.ts'
+import { listWorks, resolveWork, worksRoot } from '../src/works.ts'
+import { sessionContentsRoot } from '../src/session-contents.ts'
+import { createContent, saveContent } from '../src/contents.ts'
+
+const WORK_ID = '11111111-1111-4111-8111-111111111111'
+const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222'
+const SUBMISSION_ID = '33333333-3333-4333-8333-333333333333'
+const LOCAL_VIDEO_ID = '44444444-4444-4444-8444-444444444444'
+const roots: string[] = []
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+function temp(): string { const root = mkdtempSync(join(tmpdir(), 'ebao-publisher-')); roots.push(root); return root }
+
+function legacySessionDraft(sessionId: string, contentType: 'article' | 'image-note', title: string, body = '') {
+  const created = createContent(contentType)
+  const saved = saveContent(created.id, {
+    revision: created.revision, title, body, summary: '', tags: [], creativeStatement: 'none',
+  })
+  const root = sessionContentsRoot()
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, `${createHash('sha256').update(sessionId).digest('hex')}.json`), JSON.stringify({
+    version: 1, sessionId, contentId: saved.id,
+  }))
+  return { contentId: saved.id, revision: saved.revision }
+}
+
+function request(headers: Record<string, string>, method = 'POST'): IncomingMessage {
+  return { method, headers: { host: '127.0.0.1:43120', ...headers }, socket: { remoteAddress: '127.0.0.1' } } as IncomingMessage
+}
+
+function writeWork(home: string, id = WORK_ID): string {
+  const directory = join(worksRoot({ DSH_HOME: home }), id)
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, 'job.json'), JSON.stringify({
+    id, createdAt: '2026-09-22T02:00:00.000Z', options: { title: '任务标题' },
+  }))
+  writeFileSync(join(directory, 'final_video.mp4'), Buffer.alloc(48, 1))
+  writeFileSync(join(directory, 'publish_package_handoff.json'), JSON.stringify({
+    video: '/tmp/untrusted.mp4', title: '发布标题', description: '发布简介',
+    tags: ['AI', '#口播'], ai_generated_disclosure: '本视频包含 AI 生成内容',
+  }))
+  return directory
+}
+
+describe('the loopback gate', () => {
+  it('allows same-origin reads and explicitly marked writes', () => {
+    expect(permitted(request({ 'x-ejianbao': '1' }))).toBe(true)
+    expect(permitted(request({}, 'GET'))).toBe(true)
+    expect(permitted(request({ 'x-ejianbao': '1', origin: 'http://127.0.0.1:43120' }))).toBe(true)
+    expect(permitted(request({ 'x-ejianbao': '1', origin: 'https://127.0.0.1:43120' }))).toBe(true)
+    expect(permitted({ method: 'GET', headers: { host: '127.0.0.1:43120' }, socket: { remoteAddress: '::1' } } as IncomingMessage)).toBe(true)
+  })
+
+  it('refuses cross-site, remote, and unmarked writes', () => {
+    expect(permitted(request({}))).toBe(false)
+    expect(permitted(request({ 'x-ejianbao': '1', origin: 'https://evil.example' }))).toBe(false)
+    expect(permitted(request({ 'x-ejianbao': '1', 'sec-fetch-site': 'cross-site' }))).toBe(false)
+    expect(permitted({ method: 'GET', headers: { host: '127.0.0.1:43120' }, socket: { remoteAddress: '10.0.0.7' } } as IncomingMessage)).toBe(false)
+  })
+})
+
+describe('e剪宝 work resolution', () => {
+  it('uses the canonical final_video.mp4 and exposes handoff metadata without a path', () => {
+    const home = temp()
+    const directory = writeWork(home)
+    const work = resolveWork(WORK_ID, { DSH_HOME: home })
+    expect(work.file).toBe(realpathSync(join(directory, 'final_video.mp4')))
+    expect(work).toMatchObject({ title: '发布标题', description: '发布简介', tags: ['AI', '口播'], bytes: 48 })
+    const listed = listWorks({ DSH_HOME: home })
+    expect(listed).toHaveLength(1)
+    expect(listed[0]).not.toHaveProperty('file')
+  })
+
+  it('rejects invalid ids and a final video symlink escaping the job', () => {
+    const home = temp()
+    expect(() => resolveWork('../../etc/passwd', { DSH_HOME: home })).toThrow('作品 ID 无效')
+    mkdirSync(worksRoot({ DSH_HOME: home }), { recursive: true })
+    expect(() => resolveWork(WORK_ID, { DSH_HOME: home })).toThrow('作品成片不存在')
+    const directory = join(worksRoot({ DSH_HOME: home }), WORK_ID)
+    const outside = join(home, 'outside.mp4')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(directory, 'job.json'), JSON.stringify({ id: WORK_ID }))
+    writeFileSync(outside, 'video')
+    symlinkSync(outside, join(directory, 'final_video.mp4'))
+    expect(() => resolveWork(WORK_ID, { DSH_HOME: home })).toThrow('作品成片不存在')
+    expect(listWorks({ DSH_HOME: home })).toEqual([])
+  })
+})
+
+describe('the Host publisher route', () => {
+  it('forwards only validated work ids and sanitizes Worker data', async () => {
+    const home = temp()
+    const directory = writeWork(home)
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    const calls: Array<{ method: string; params: unknown }> = []
+    const account: PublisherAccount = {
+      id: ACCOUNT_ID, displayName: '品牌主账号', platform: 'dy', loginState: 'logged-in',
+    }
+    const publisher = {
+      status: () => ({ supported: true, running: false }),
+      selectLocalVideo: async () => ({ id: LOCAL_VIDEO_ID, fileName: '本地视频.mp4', title: '本地视频', bytes: 123 }),
+      request: async (method: string, params: unknown = {}) => {
+        calls.push({ method, params })
+        if (method === 'accounts.list') return [account]
+        if (method === 'system.capabilities') return [{
+          platform: 'dy', contentTypes: ['video'],
+          modes: { video: ['publish', 'draft'] }, requiredFields: {},
+        }]
+        if (method === 'accounts.importPreview') return {
+          sourceData: '/private/source', sourceProfile: '/private/profile', running: false,
+          accounts: [{ displayName: '旧账号', platform: 'dy', platformName: '抖音', partition: 'secret' }],
+        }
+        if (method === 'submissions.list') return []
+        if (method === 'submissions.openTarget') return { kind: 'backend', url: 'https://private.example/draft' }
+        if (method === 'submissions.create') return {
+          accepted: true,
+          submission: {
+            id: SUBMISSION_ID, createdAt: '2026-09-22T03:00:00.000Z',
+            contentId: WORK_ID, contentType: 'video', workId: WORK_ID, title: '发布标题', mode: 'draft',
+            targets: [{ accountId: ACCOUNT_ID, platform: 'dy', accountName: '品牌主账号' }],
+          },
+        }
+        return { ok: true }
+      },
+    }
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
+      ctx.provide('desktopRuntime', { publisher } as never)
+      await ctx.plugin(plugin)
+      const base = `http://127.0.0.1:${String(ctx.webServer.port)}${API}`
+      const send = (action: string, body?: unknown) => fetch(`${base}/${action}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { 'x-ejianbao': '1', 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+
+      expect(await (await send('capability')).json()).toEqual({ supported: true, running: false })
+      expect(await (await send('session-content/session-1')).json()).toEqual({
+        sessionId: 'session-1', contentId: null, revision: null, content: null,
+      })
+      const sessionDraft = legacySessionDraft('session-1', 'article', '对话定稿', '正文')
+      expect(await (await send('session-content/session-1')).json()).toMatchObject({
+        sessionId: 'session-1', contentId: sessionDraft.contentId, revision: sessionDraft.revision,
+        content: { title: '对话定稿', body: '正文' },
+      })
+      const encodedDraft = legacySessionDraft('conversation/with space', 'image-note', '图文')
+      expect(await (await send(`session-content/${encodeURIComponent('conversation/with space')}`)).json()).toMatchObject({
+        sessionId: 'conversation/with space', contentId: encodedDraft.contentId,
+      })
+      const publicWorks = await (await send('works')).json() as unknown[]
+      expect(publicWorks).toHaveLength(1)
+      expect(publicWorks[0]).not.toHaveProperty('file')
+
+      const preview = await (await send('import-preview')).json()
+      expect(preview).toEqual({
+        running: false,
+        accounts: [{ displayName: '旧账号', platform: 'dy', platformName: '抖音' }],
+      })
+
+      const wechatAccount = await send('accounts', {
+        displayName: '公众号', platform: 'wxmp', appId: 'wxd678efh567hg6787', appSecret: 'Z'.repeat(32),
+      })
+      expect(wechatAccount.status).toBe(201)
+      expect(calls.find(call => call.method === 'accounts.create')?.params).toMatchObject({
+        platform: 'wxmp', appId: 'wxd678efh567hg6787', appSecret: 'Z'.repeat(32),
+      })
+      const unnamedAccount = await send('accounts', { displayName: '', platform: 'dy' })
+      expect(unnamedAccount.status).toBe(201)
+      expect(calls.filter(call => call.method === 'accounts.create').at(-1)?.params).toMatchObject({
+        displayName: '', platform: 'dy',
+      })
+      expect((await send('accounts', {
+        displayName: '', platform: 'wxmp', appId: 'wxd678efh567hg6787', appSecret: 'Z'.repeat(32),
+      })).status).toBe(400)
+      const accountCalls = calls.filter(call => call.method === 'accounts.create').length
+      expect((await send('accounts', { displayName: '公众号', platform: 'wxmp', appId: 'bad', appSecret: 'Z'.repeat(32) })).status).toBe(400)
+      expect(calls.filter(call => call.method === 'accounts.create')).toHaveLength(accountCalls)
+
+      const accepted = await send('submissions', {
+        workId: WORK_ID, title: '发布标题', description: '简介', tags: ['AI'],
+        creativeStatement: 'ai_generated', mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(accepted.status).toBe(202)
+      const create = calls.find(call => call.method === 'submissions.create')
+      expect(create?.params).toMatchObject({
+        workId: WORK_ID, file: realpathSync(join(directory, 'final_video.mp4')), mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      const beforeOpen = calls.filter(call => call.method === 'submissions.openTarget').length
+      expect((await send('submission-open-target', { submissionId: 'invalid', accountId: ACCOUNT_ID })).status).toBe(400)
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: 'invalid' })).status).toBe(400)
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, url: 'https://evil.example' })).status).toBe(400)
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, listOnly: 'true' })).status).toBe(400)
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, listOnly: null })).status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.openTarget')).toHaveLength(beforeOpen)
+      const opened = await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID })
+      expect(opened.status).toBe(200)
+      expect(await opened.json()).toEqual({ kind: 'backend' })
+      expect((await send('submission-open-target', { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, listOnly: true })).status).toBe(200)
+      expect(calls.filter(call => call.method === 'submissions.openTarget')).toEqual([
+        { method: 'submissions.openTarget', params: { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID } },
+        { method: 'submissions.openTarget', params: { submissionId: SUBMISSION_ID, accountId: ACCOUNT_ID, listOnly: true } },
+      ])
+      const beforeDelete = calls.filter(call => call.method === 'submissions.delete').length
+      expect((await send('submission-delete', { id: 'invalid' })).status).toBe(400)
+      expect((await send('submission-delete', { id: SUBMISSION_ID, file: '/tmp/unsafe' })).status).toBe(400)
+      expect((await send('submission-delete', { id: SUBMISSION_ID, acknowledgeUnknown: 'true' })).status).toBe(400)
+      expect((await send('submission-delete', { id: SUBMISSION_ID, acknowledgeUnknown: null })).status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.delete')).toHaveLength(beforeDelete)
+      const deleted = await send('submission-delete', { id: SUBMISSION_ID })
+      expect(deleted.status).toBe(200)
+      expect(await deleted.json()).toEqual({ ok: true })
+      expect((await send('submission-delete', { id: SUBMISSION_ID, acknowledgeUnknown: false })).status).toBe(200)
+      expect((await send('submission-delete', { id: SUBMISSION_ID, acknowledgeUnknown: true })).status).toBe(200)
+      expect(calls.filter(call => call.method === 'submissions.delete')).toEqual([
+        { method: 'submissions.delete', params: { id: SUBMISSION_ID } },
+        { method: 'submissions.delete', params: { id: SUBMISSION_ID, acknowledgeUnknown: false } },
+        { method: 'submissions.delete', params: { id: SUBMISSION_ID, acknowledgeUnknown: true } },
+      ])
+
+      const chosen = await send('local-video-select', {})
+      expect(chosen.status).toBe(200)
+      expect(await chosen.json()).toEqual({ id: LOCAL_VIDEO_ID, fileName: '本地视频.mp4', title: '本地视频', bytes: 123 })
+      const localAccepted = await send('submissions', {
+        contentType: 'video', localVideoId: LOCAL_VIDEO_ID, title: '本地视频', mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(localAccepted.status).toBe(202)
+      const localCreate = calls.filter(call => call.method === 'submissions.create').at(-1)?.params as Record<string, unknown>
+      expect(localCreate).toMatchObject({ localVideoId: LOCAL_VIDEO_ID, title: '本地视频' })
+      expect(localCreate).not.toHaveProperty('file')
+      expect(localCreate).not.toHaveProperty('workId')
+
+      const videoDraft = await (await send('contents', { contentType: 'video' })).json() as { id: string; revision: number }
+      const savedVideo = await (await send('content-save', {
+        id: videoDraft.id, revision: videoDraft.revision, title: '第二条视频', body: '', summary: '',
+        description: '第二条简介', shortTitle: '短标题', tags: ['AI'], creativeStatement: 'none',
+        videoSource: { kind: 'work', workId: WORK_ID },
+      })).json() as { revision: number }
+      const cards = await send('contents-query', { contentType: 'video', query: '第二条简介' })
+      expect(cards.status).toBe(200)
+      expect(await cards.json()).toMatchObject({
+        items: [{ id: videoDraft.id, title: '第二条视频', excerpt: '第二条简介',
+          videoSource: { kind: 'work', workId: WORK_ID } }],
+        nextCursor: null,
+      })
+      expect((await send('contents-query', { contentType: 'video' })).status).toBe(400)
+      expect((await send('contents-query', { contentType: 'video', query: '', cursor: 1 })).status).toBe(400)
+      expect((await send('contents-query', { contentType: 'video', query: '', unwanted: true })).status).toBe(400)
+      const draftAccepted = await send('submissions', {
+        contentType: 'video', contentId: videoDraft.id, revision: savedVideo.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(draftAccepted.status).toBe(202)
+      expect(calls.filter(call => call.method === 'submissions.create').at(-1)?.params).toMatchObject({
+        workId: WORK_ID, file: realpathSync(join(directory, 'final_video.mp4')),
+        title: '第二条视频', description: '第二条简介', shortTitle: '短标题',
+      })
+      const duplicate = await (await send('content-copy', { id: videoDraft.id })).json() as { id: string; videoSource: unknown }
+      expect(duplicate.id).not.toBe(videoDraft.id)
+      expect(duplicate.videoSource).toEqual({ kind: 'work', workId: WORK_ID })
+      expect((await send('submissions', {
+        contentType: 'video', contentId: videoDraft.id, revision: videoDraft.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })).status).toBe(400)
+
+      const localDraft = await (await send('contents', { contentType: 'video' })).json() as { id: string; revision: number }
+      const savedLocal = await (await send('content-save', {
+        id: localDraft.id, revision: localDraft.revision, title: '本地第二条', body: '', summary: '',
+        description: '', shortTitle: '', tags: [], creativeStatement: 'none',
+        videoSource: { kind: 'local', localVideoId: LOCAL_VIDEO_ID, fileName: '本地视频.mp4', bytes: 123 },
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'video', contentId: localDraft.id, revision: savedLocal.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })).status).toBe(202)
+      const localDraftCreate = calls.filter(call => call.method === 'submissions.create').at(-1)?.params as Record<string, unknown>
+      expect(localDraftCreate).toMatchObject({ localVideoId: LOCAL_VIDEO_ID, title: '本地第二条' })
+      expect(localDraftCreate).not.toHaveProperty('file')
+      expect(localDraftCreate).not.toHaveProperty('contentDirectory')
+
+      const beforeRejected = calls.filter(call => call.method === 'submissions.create').length
+      const rejected = await send('submissions', {
+        workId: WORK_ID, file: '/tmp/attacker.mp4', title: '标题', mode: 'publish', accountIds: [ACCOUNT_ID],
+      })
+      expect(rejected.status).toBe(400)
+      expect((await rejected.json()).error).toContain('不支持的字段')
+      expect((await send('submissions', {
+        workId: WORK_ID, localVideoId: LOCAL_VIDEO_ID, title: '标题', mode: 'draft', accountIds: [ACCOUNT_ID],
+      })).status).toBe(400)
+      expect((await send('submissions', {
+        title: '标题', mode: 'draft', accountIds: [ACCOUNT_ID],
+      })).status).toBe(400)
+      expect((await send('local-video-select', { file: '/tmp/attacker.mp4' })).status).toBe(400)
+      expect((await send('content-save', {
+        id: localDraft.id, revision: savedLocal.revision, title: '伪造路径', body: '', summary: '',
+        description: '', shortTitle: '', tags: [], creativeStatement: 'none',
+        videoSource: { kind: 'local', localVideoId: LOCAL_VIDEO_ID, fileName: '本地视频.mp4', bytes: 123,
+          file: '/tmp/attacker.mp4' },
+      })).status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(beforeRejected)
+
+      expect((await send('jobs')).status).toBe(404)
+      expect((await send('history')).status).toBe(404)
+      expect((await fetch(`${base}/capability`, { headers: { origin: 'https://evil.example' } })).status).toBe(403)
+      expect((await fetch(`${base}/accounts`, { method: 'POST', body: '{}' })).status).toBe(403)
+    } finally {
+      await ctx.fiber.dispose()
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+    }
+  }, 30_000)
+
+  it('owns draft files, previews binary assets and forwards only a resolved content package', async () => {
+    const home = temp()
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    const calls: Array<{ method: string; params: unknown }> = []
+    let articleEnabled = true
+    const account: PublisherAccount = {
+      id: ACCOUNT_ID, displayName: '掘金主账号', platform: 'juejin', loginState: 'logged-in',
+    }
+    const imageAccount: PublisherAccount = {
+      id: LOCAL_VIDEO_ID, displayName: '小红书主账号', platform: 'xhs', loginState: 'logged-in',
+    }
+    const publisher = {
+      status: () => ({ supported: true, running: true }),
+      request: async (method: string, params: unknown = {}) => {
+        calls.push({ method, params })
+        if (method === 'accounts.list') return [account, imageAccount]
+        if (method === 'system.capabilities') return [...(articleEnabled ? [{
+          platform: 'juejin', contentTypes: ['article'],
+          modes: { article: ['publish', 'draft'] }, requiredFields: { article: ['category'] }, maxAssets: { article: 1 },
+        }] : []), {
+          platform: 'xhs', contentTypes: ['image-note'],
+          modes: { 'image-note': ['publish', 'draft'] }, requiredFields: {},
+          maxTitleLength: { 'image-note': 20 }, maxAssets: { 'image-note': 20 },
+        }]
+        if (method === 'submissions.create') return {
+          accepted: true, submission: {
+            id: '33333333-3333-4333-8333-333333333333', contentId: (params as { contentId: string }).contentId,
+            contentType: 'article', title: '文章', mode: 'draft', createdAt: new Date().toISOString(),
+            targets: [{ accountId: ACCOUNT_ID, accountName: '掘金主账号', platform: 'juejin' }],
+          },
+        }
+        return []
+      },
+    }
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
+      ctx.provide('desktopRuntime', { publisher } as never)
+      await ctx.plugin(plugin)
+      const base = `http://127.0.0.1:${String(ctx.webServer.port)}${API}`
+      const send = (action: string, body: unknown) => fetch(`${base}/${action}`, {
+        method: 'POST', headers: { 'x-ejianbao': '1', 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const created = await (await send('contents', { contentType: 'article' })).json() as { id: string; revision: number; articleTheme: string }
+      expect(created.articleTheme).toBe('classic')
+      const saved = await (await send('content-save', {
+        id: created.id, revision: created.revision, title: '文章', body: '# 正文',
+        summary: '', tags: ['AI'], creativeStatement: 'none', articleTheme: 'classic',
+        platformFields: { juejin: { category: '前端' } },
+        platformVariants: { juejin: { title: '掘金专用标题', body: '掘金专用正文' } },
+      })).json() as { revision: number; articleTheme: string; platformVariants: { juejin: { title: string; body: string } } }
+      expect(saved.revision).toBe(2)
+      expect(saved.articleTheme).toBe('classic')
+      expect((await send('content-save', {
+        id: created.id, revision: saved.revision, title: '文章', body: '# 正文',
+        summary: '', tags: ['AI'], creativeStatement: 'none', articleTheme: 'unknown',
+      })).status).toBe(400)
+      expect((await send('content-save', {
+        id: created.id, revision: saved.revision, title: '文章', body: '# 正文',
+        summary: '', tags: ['AI'], creativeStatement: 'none', articleTheme: 'classic', unlisted: true,
+      })).status).toBe(400)
+      expect(saved.platformVariants.juejin).toEqual({ title: '掘金专用标题', body: '掘金专用正文' })
+      expect((await (await fetch(`${base}/content/${created.id}`)).json() as { platformVariants: unknown }).platformVariants)
+        .toEqual(saved.platformVariants)
+      const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1])
+      const uploaded = await fetch(`${base}/content-asset-upload/${created.id}`, {
+        method: 'POST', headers: {
+          'x-ejianbao': '1', 'x-publisher-file-name': encodeURIComponent('封面.png'),
+          'content-type': 'application/octet-stream',
+        },
+        body: png,
+      })
+      expect(uploaded.status).toBe(201)
+      const withAsset = await uploaded.json() as { revision: number; assets: Array<{ id: string }> }
+      expect((withAsset as typeof withAsset & { coverAssetId: string }).coverAssetId).toBe(withAsset.assets[0]!.id)
+      const image = await fetch(`${base}/content-asset/${created.id}/${withAsset.assets[0]!.id}`)
+      expect(image.headers.get('content-type')).toBe('image/png')
+      expect(Buffer.from(await image.arrayBuffer())).toEqual(png)
+      const invalid = await send('submissions', {
+        contentType: 'article', contentId: created.id, revision: saved.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(invalid.status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(0)
+      const accepted = await send('submissions', {
+        contentType: 'article', contentId: created.id, revision: withAsset.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(accepted.status).toBe(202)
+      const forwarded = calls.find(call => call.method === 'submissions.create')?.params as Record<string, unknown>
+      expect(forwarded).toMatchObject({ contentId: created.id, contentType: 'article', revision: withAsset.revision })
+      expect(String(forwarded.contentDirectory)).toContain(join('publisher', 'contents', created.id))
+      expect(forwarded).not.toHaveProperty('file')
+      const attacker = await send('submissions', {
+        contentType: 'article', contentId: created.id, revision: withAsset.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID], contentDirectory: '/tmp/attacker',
+      })
+      expect(attacker.status).toBe(400)
+      articleEnabled = false
+      const disabled = await send('submissions', {
+        contentType: 'article', contentId: created.id, revision: withAsset.revision,
+        mode: 'draft', accountIds: [ACCOUNT_ID],
+      })
+      expect(disabled.status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(1)
+
+      const imageDraft = await (await send('contents', { contentType: 'image-note' })).json() as { id: string; revision: number }
+      const imageSaved = await (await send('content-save', {
+        id: imageDraft.id, revision: imageDraft.revision, title: '图文笔记', body: '正文',
+        summary: '', tags: ['话题'], creativeStatement: 'none',
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'image-note', contentId: imageDraft.id, revision: imageSaved.revision,
+        mode: 'draft', accountIds: [imageAccount.id],
+      })).status).toBe(400)
+      const imageUploaded = await fetch(`${base}/content-asset-upload/${imageDraft.id}`, {
+        method: 'POST', headers: {
+          'x-ejianbao': '1', 'x-publisher-file-name': encodeURIComponent('图片.png'),
+          'content-type': 'application/octet-stream',
+        }, body: png,
+      })
+      expect(imageUploaded.status).toBe(201)
+      const imageWithAsset = await imageUploaded.json() as { revision: number; assets: Array<{ id: string }> }
+      const tooLong = await (await send('content-save', {
+        id: imageDraft.id, revision: imageWithAsset.revision, title: '这是一条超过小红书二十个字限制的图文笔记标题', body: '正文',
+        summary: '', tags: ['话题'], creativeStatement: 'none', assetOrder: imageWithAsset.assets.map(asset => asset.id),
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'image-note', contentId: imageDraft.id, revision: tooLong.revision,
+        mode: 'draft', accountIds: [imageAccount.id],
+      })).status).toBe(400)
+      const invalidStatement = await (await send('content-save', {
+        id: imageDraft.id, revision: tooLong.revision, title: '图文笔记', body: '正文',
+        summary: '', tags: ['话题'], creativeStatement: 'repost', assetOrder: imageWithAsset.assets.map(asset => asset.id),
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'image-note', contentId: imageDraft.id, revision: invalidStatement.revision,
+        mode: 'draft', accountIds: [imageAccount.id],
+      })).status).toBe(400)
+      expect(calls.filter(call => call.method === 'submissions.create')).toHaveLength(1)
+      const validImage = await (await send('content-save', {
+        id: imageDraft.id, revision: invalidStatement.revision, title: '图文笔记', body: '正文',
+        summary: '', tags: ['话题'], creativeStatement: 'none', assetOrder: imageWithAsset.assets.map(asset => asset.id),
+      })).json() as { revision: number }
+      expect((await send('submissions', {
+        contentType: 'image-note', contentId: imageDraft.id, revision: validImage.revision,
+        mode: 'draft', accountIds: [imageAccount.id],
+      })).status).toBe(202)
+      expect(calls.filter(call => call.method === 'submissions.create').at(-1)?.params).toMatchObject({
+        contentType: 'image-note', contentId: imageDraft.id, revision: validImage.revision,
+      })
+      const malformed = await fetch(`${base}/content-save`, {
+        method: 'POST', headers: { 'x-ejianbao': '1', 'content-type': 'application/json' }, body: '{bad',
+      })
+      expect(malformed.status).toBe(400)
+      expect((await malformed.json() as { error: string }).error).toContain('JSON')
+      const oversized = await fetch(`${base}/content-save`, {
+        method: 'POST', headers: { 'x-ejianbao': '1', 'content-type': 'application/json' }, body: `{"body":"${'x'.repeat(4 * 1024 * 1024)}"}`,
+      })
+      expect(oversized.status).toBe(400)
+    } finally {
+      await ctx.fiber.dispose()
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+    }
+  }, 30_000)
+})

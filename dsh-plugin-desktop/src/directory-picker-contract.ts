@@ -1,4 +1,4 @@
-/** Same-origin endpoint used by the Windows browse panel's native-picker shortcut. */
+/** Same-origin endpoint for macOS and Windows native folder selection. */
 export const DESKTOP_DIRECTORY_PICKER_PATH = '/_dsh/desktop/pick-directory'
 
 /** Same-origin endpoint used before either workspace picker accepts a path. */

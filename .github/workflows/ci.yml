@@ -137,6 +137,26 @@ jobs:
           path: ${{ steps.yarn-cache.outputs.dir }}
           key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - run: yarn install --immutable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.5
+      - run: corepack enable
+      - name: Build Windows MatrixMedia Publisher Worker
+        working-directory: matrixmedia-publisher
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          corepack yarn@1.22.22 install --frozen-lockfile
+          corepack yarn@1.22.22 test:publisher-worker
+          corepack yarn@1.22.22 build:dir
+          corepack yarn@1.22.22 electron-builder --config electron-builder.publisher.yml --win dir --x64 --publish never
+      - name: Smoke Windows Publisher Worker lifecycle
+        run: node scripts/smoke-windows-publisher-worker.mjs
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.2
+      - run: corepack enable
       - run: yarn workspace ${{ matrix.workspace }} check:win-package
       - name: Build Windows installer
         env:
@@ -146,6 +166,16 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: yarn workspace ${{ matrix.workspace }} dist:win-portable
+      - name: Upload Stable Windows test packages
+        if: github.event_name == 'pull_request' && matrix.workspace == 'dsh-plugin-desktop'
+        uses: actions/upload-artifact@v7
+        with:
+          name: stable-windows-test-${{ github.run_id }}
+          path: |
+            dsh-plugin-desktop/dist/eBao-Studio-*-x64-Setup.exe
+            dsh-plugin-desktop/dist/eBao-Studio-*-x64-Portable.zip
+          if-no-files-found: error
+          retention-days: 7
 
   # macOS-only universal packaging smoke on a real macOS runner: the signed
   # release is built manually on a credentialed machine, so an unsigned DMG
@@ -178,11 +208,37 @@ jobs:
           path: ${{ steps.yarn-cache.outputs.dir }}
           key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - run: yarn install --immutable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.5
+      - run: corepack enable
+      - name: Build macOS MatrixMedia Publisher Worker
+        working-directory: matrixmedia-publisher
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          corepack yarn@1.22.22 install --frozen-lockfile
+          corepack yarn@1.22.22 test:publisher-worker
+          corepack yarn@1.22.22 build:publisher-worker:universal
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.2
+      - run: corepack enable
       - run: yarn workspace ${{ matrix.workspace }} check:mac-package
       - name: Build macOS smoke artifact
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: yarn workspace ${{ matrix.workspace }} dist:mac-smoke
+      - name: Upload Stable macOS test packages
+        if: github.event_name == 'pull_request' && matrix.workspace == 'dsh-plugin-desktop'
+        uses: actions/upload-artifact@v7
+        with:
+          name: stable-macos-test-${{ github.run_id }}
+          path: |
+            dsh-plugin-desktop/dist/mac-smoke/eBao-Studio-*-universal.dmg
+            dsh-plugin-desktop/dist/mac-smoke/eBao-Studio-*-universal.zip
+          if-no-files-found: error
+          retention-days: 7
 
   # Upstream toolchain smoke: the portable-shell scripts must resolve the
   # pinned submodule's own Yarn/pnpm release on Windows.

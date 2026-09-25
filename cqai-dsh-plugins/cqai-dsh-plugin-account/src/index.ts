@@ -652,7 +652,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     try {
       request = await this.oidc.createAuthorizationRequest(
         callbackServer.redirectUri,
-        { prompt: Prompt.Login },
+        { prompt: Prompt.LoginConsent },
         signal,
       )
     } catch (cause) {
@@ -776,6 +776,12 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       session.signal,
     )
     token = await this.ensureResourceToken(token, session.signal)
+    if (token.refreshToken === undefined) {
+      throw new DsnAccountError(
+        'DSN_PROTOCOL_ERROR',
+        'CQAI Club 未返回刷新令牌，请重新授权。',
+      )
+    }
 
     const expiresAt = attempt.request.expiresAt
     let transientFailures = 0

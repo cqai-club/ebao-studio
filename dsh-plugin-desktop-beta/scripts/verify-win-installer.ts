@@ -3,6 +3,11 @@
 import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  PACKAGED_WINDOWS_PUBLISHER_HELPER_RELATIVE_PATH,
+  WINDOWS_PUBLISHER_ASAR_RELATIVE_PATH,
+  WINDOWS_PUBLISHER_EXECUTABLE,
+} from './publisher-helper.ts'
 
 /** Verify a complete in-memory Windows PE image. */
 export function assertPortableExecutableBuffer(data: Buffer, label: string, source: string): void {
@@ -96,6 +101,15 @@ export function verifyWindowsInstaller(
 
   assertPortableExecutable(installerPath, 'Windows NSIS installer')
   assertPortableExecutable(applicationPath, 'unpacked Windows application')
+  const publisherRoot = join(distDir, 'win-unpacked', PACKAGED_WINDOWS_PUBLISHER_HELPER_RELATIVE_PATH)
+  assertPortableExecutable(join(publisherRoot, WINDOWS_PUBLISHER_EXECUTABLE), 'unpacked Windows Publisher Worker')
+  for (const entry of [WINDOWS_PUBLISHER_ASAR_RELATIVE_PATH, 'LICENSE', 'SOURCE.json']) {
+    const path = join(publisherRoot, entry)
+    const stat = statSync(path)
+    if (!stat.isFile() || stat.size === 0) {
+      throw new Error(`unpacked Windows Publisher Worker is missing ${entry}: ${path}`)
+    }
+  }
   return { installerPath, applicationPath }
 }
 

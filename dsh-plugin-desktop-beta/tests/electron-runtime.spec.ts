@@ -6,6 +6,7 @@ import { desktopTrayLabel } from '../src/tray-locale.ts'
 import { DESKTOP_FRAME_HEIGHT } from '../src/window-chrome.ts'
 import { DESKTOP_RELEASE_CHANNEL } from '../src/product-identity.ts'
 import type { DesktopReleaseChannel } from '../src/update-checker.ts'
+import type { DesktopPublisherRuntime } from '../src/publisher-runtime.ts'
 
 const terminal = vi.hoisted(() => ({ open: vi.fn() }))
 const diagnostics = vi.hoisted(() => ({ export: vi.fn() }))
@@ -801,6 +802,26 @@ describe('Electron desktop runtime', () => {
     await runtime.mountScheduled()
 
     await expect(runtime.pickDirectory()).resolves.toBe('C:\\Work')
+    expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(
+      electron.browserWindows[0],
+      {
+        title: 'Select Workspace Directory',
+        properties: ['openDirectory', 'dontAddToRecent'],
+      },
+    )
+
+    await release()
+  })
+
+  it('opens one parented macOS folder chooser and returns its selected path', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    electron.dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/Users/example/Projects'] })
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+    await runtime.mountScheduled()
+
+    await expect(runtime.pickDirectory()).resolves.toBe('/Users/example/Projects')
     expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(
       electron.browserWindows[0],
       {
@@ -2610,5 +2631,28 @@ describe('Electron desktop runtime', () => {
     expect(electron.webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(null)
     await expect(release()).rejects.toThrow('renderer unavailable')
     expect(electron.nativeTheme.themeSource).toBe('light')
+  })
+
+  it('warns before quitting while the Publisher Worker has an active task', async () => {
+    const publisherRequest = vi.fn(async () => ({ busy: true }))
+    const publisher: DesktopPublisherRuntime = {
+      status: () => ({ supported: true, running: true }),
+      selectLocalVideo: async () => null,
+      readLocalVideoChunk: async () => ({ ok: false, code: 'video-selection-expired', message: 'missing' }),
+      request: publisherRequest as DesktopPublisherRuntime['request'],
+    }
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(
+      async () => {}, undefined, undefined, undefined, undefined, undefined, publisher,
+    )
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    await expect(runtime.confirmPublisherQuit()).resolves.toBe(false)
+    expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'warning',
+      defaultId: 1,
+      cancelId: 1,
+    }))
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+    await expect(runtime.confirmPublisherQuit()).resolves.toBe(true)
   })
 })

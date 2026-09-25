@@ -30,7 +30,18 @@ body:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) 
 .dshDesktopFrame[data-desktop-mode="advanced"][data-desktop-platform="darwin"] .dshDesktopRightbarSurface { grid-row: 2; }
 .dshDesktopFrame[data-desktop-mode="advanced"][data-desktop-platform="darwin"] .dshDesktopSidebarSurface::before { content: ""; position: absolute; z-index: ${ADVANCED_MACOS_DRAG_LAYER_Z_INDEX}; top: 0; right: 0; left: ${MACOS_TRAFFIC_LIGHT_SAFE_WIDTH}px; height: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px; user-select: none; -webkit-app-region: drag; }
 .dshDesktopMacCaptionRow { position: absolute; z-index: ${ADVANCED_MACOS_DRAG_LAYER_Z_INDEX}; grid-column: 2 / -1; grid-row: 1; top: 0; right: 0; left: 0; height: ${ADVANCED_MACOS_DRAG_REGION_HEIGHT}px; background: var(--dsw-alias-bg-base); user-select: none; -webkit-app-region: drag; }
-.dshDesktopConversationSurface { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--dsw-alias-bg-base); }
+.dshDesktopConversationSurface { position: relative; grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; background: var(--dsw-alias-bg-base); }
+.dshDesktopMainPanelSurface { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.dshDesktopAgentDrawer { box-sizing: border-box; flex: 0 0 420px; width: 420px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-base); }
+.dshDesktopAgentDrawerHeader { box-sizing: border-box; flex: none; height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px 0 18px; border-bottom: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; }
+.dshDesktopAgentDrawerClose { flex: none; width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 22px; line-height: 1; cursor: pointer; }
+.dshDesktopAgentDrawerClose:hover, .dshDesktopAgentDrawerClose:focus-visible { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dshDesktopAgentDrawerClose:focus-visible { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 2px; }
+.dshDesktopAgentConversation { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+/* ConversationRoot defaults to a 680px reading column. The drawer needs its own width. */
+.dshDesktopAgentDrawer [data-slot="main.conversation"] > * { --dsh-chat-content-width: max(0px, calc(var(--dsh-conversation-column-width, 0px) - 48px)); }
+.dshDesktopAgentDrawer [data-width-handle] { display: none; }
+.dshDesktopConversationSurface[data-pub-agent-overlay] .dshDesktopAgentDrawer { position: absolute; z-index: 80; top: 0; right: 0; bottom: 0; width: min(460px, 100%); box-shadow: -12px 0 28px rgb(0 0 0 / 12%); }
 .dshDesktopRightbarSurface { position: relative; grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; overflow: visible; }
 .dshDesktopFrame[data-rightbar-fullscreen], .dshDesktopFrame[data-rightbar-fullscreen] .dshDesktopResizeHandle { transition: none; }
 .dshDesktopFrame[data-desktop-mode="advanced"][data-desktop-platform="win32"] { grid-template-rows: ${ADVANCED_WINDOWS_TITLEBAR_HEIGHT}px minmax(0, 1fr); }

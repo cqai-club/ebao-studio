@@ -1,0 +1,58 @@
+# 多平台账号管理与发布
+
+易宝工坊的一个 React 主面板，默认直接展示发布内容，右上角提供“发布历史”和“平台账号管理”入口；进入这两个页面后可返回发布内容。发布页可切换文章、图文、视频：
+
+- **平台账号管理**：添加、改名、登录/重新登录、手动检查、打开账号专属后台、删除和导入旧 MatrixMedia 账号。网页登录平台可留空账号名称，登录后尝试读取平台昵称；未识别时可手动改名。微信公众号通过 AppID/AppSecret 授权，添加时仍需填写名称。
+- **视频**：与文章、图文共用“选择本地草稿 / 新建 / 复制 / 删除”工具栏，支持多份自动保存的视频草稿；每份可选择 e剪宝成片或本地 MP4 文件，为每个平台指定一个账号，立即发布或转存平台草稿。
+- **文章和图文**：多份本地草稿、Markdown 编辑与阅读排版预览、`.md/.txt` 导入、图片素材。文章首张图片自动作为封面，删除封面后自动改用下一张；素材列表可将图片以 `ebao-asset://<UUID>` 插入正文，封面也可兼作插图。图文图片支持拖动或按钮排序。已有适配器的掘金/B站专栏、头条、百家号、微信公众号文章和小红书图文均开放草稿与立即发布；页面按所选平台提示标题、素材数量和必填字段限制。图文账号还可选择抖音、快手，平台版本可准备但提交能力尚未开放。头条保留文章和视频，不提供图文。未实现的内容类型组合仍不可提交。
+
+## 从 Agent 对话创作
+
+文章和图文从 Agent 对话开始时，Agent 先在当前工作区创建真实的 `.md` 原稿，再通过 `publisher_register_source` 把**原文件**与当前会话关联。正文图片写成 Markdown 本地路径，路径相对 MD 所在目录解析；Agent 自动登记只读取其工作目录内的文件。上传或生图只得到附件引用时，可用 `publisher_export_image` 将选中的图片落在原稿旁，再把返回的相对路径写入 MD；这一工具不检查会话图片事件。通用预览直接读取原稿和引用的图片，原稿与图片此时都不复制到发布库。浏览器只收到不含磁盘路径的 `source-image://` 引用。修改原稿后，预览按文件与图片字节修订号刷新；原文件丢失、图片缺失或格式不支持时给出错误。
+
+仅当用户明确要求社交平台或多平台发布时，Agent 才调用 `publisher_prepare_preview`，以 MD 为内容源整理文章／图文类型、目标平台和可选的平台标题、正文、摘要、标签；候选预览继续引用原稿图片，不生成发布准备单。候选引用的图片并集不能超过 20 张；公众号文章候选选用的图片不能是 WebP，需先转换原图并更新 MD。用户点击预览中的“发布”后，Host 才把候选实际引用的图片转存为 Publisher 素材，把引用改为 `ebao-asset://`，创建可编辑的发布准备单并打开多平台发布页。重复点击同一候选会打开已有准备单，保留页面修改；同一原稿的新候选会生成新准备单，原稿变更后需重新准备预览。用户在发布页选择账号、修改内容及提交方式，点击“检查并提交”并最终确认后才进入本机发布队列。既有对话草稿仍可读取，视频沿用原发布页流程。
+
+## 平台版本与排版
+
+- 发布准备单的主稿是一份本地内容。平台版本的标题、正文、摘要、标签、封面、所用图片及顺序默认继承主稿；某字段单独修改后只影响对应平台。Agent 可在点击“发布”前准备平台候选文案；进入发布页后，手动编辑使用草稿修订号保护，避免跨页面覆盖。
+- 发布页可在未登录或 Worker 暂不可用时准备各平台版本。选账号后逐个平台显示标题、图片数量、封面、正文插图和必填字段的提交限制；超出限制须修改该平台版本。掘金和 B 站专栏可从多图主稿中只选一张封面，公众号等其他目标仍可保留自己的图片组合。平台正文若引用了本平台未选的图片，提交前会提示。
+- 预览展示各平台**实际选用的文案和图片组合**。文章主稿与对话右栏共用 Markdown 阅读组件，支持标题层级、强调、引用、列表、链接和正文插图。新文章默认使用“清新杂志”排版主题；旧草稿沿用“基础排版”，可在发布页切换到“文颜灵感 · 橙心／青金石／紫韵”。主题仅应用到公众号文章正文，公众号标题、封面和摘要是独立字段；未插入正文的素材不会作为正文图片展示。公众号 Worker 把 Markdown 转换为带内联样式的 HTML 后写入官方草稿。B站专栏将 Markdown 转成富文本再粘贴；其他平台仍由各自编辑器处理。页面只展示结构或近似排版，最终样式须在各平台后台核对。
+- “文颜灵感”三种样式分别参考 [文颜主题库](https://github.com/caol64/wenyan-core) 中的 [Orange Heart](https://github.com/evgo2017/typora-theme-orange-heart)、[Lapis](https://github.com/YiNNx/typora-theme-lapis) 和 [Purple](https://github.com/hliu202/typora-purple-theme) 的配色与阅读层次。此处的预览 CSS 和 Worker 内联样式独立编写，没有直接拷贝文颜或原 Typora 主题的 CSS、图片或字体；它们是针对现有 Markdown 渲染器和公众号草稿 HTML 的适配，并非原主题的像素级复刻。文颜核心项目声明 Apache-2.0，三款原主题各自声明 MIT。
+- “检查并提交”按每个目标账号的有效版本校验并捕获不可变快照。Worker 在执行该目标时再次读取其平台版本。提交进入本机队列不代表平台已发布成功。
+
+页面通过 DSH Web Route 调用 Electron 主进程的 `PublisherSupervisor`，再由 Supervisor 使用 stdin/stdout NDJSON 驱动独立的 MatrixMedia Publisher Worker。浏览器不能直连 Worker，不接收 Cookie、session partition 或任意本地文件路径。视频草稿与文章、图文草稿均保存在 `<DSH home>/publisher/contents/<id>/`，支持约 800ms 防抖自动保存。选择 e剪宝成片时，草稿只保存 `workId`，Host 固定解析 `<DSH home>/ejianbao/jobs/<workId>/final_video.mp4`；选择本地 MP4 时，由 Electron 原生文件对话框选取，草稿只保存不含路径的 `localVideoId`、文件名和大小，真实路径由 Electron main 私有目录 `<userData>/publisher/local-videos/` 保存，重启后仍可解析。发布页通过同源字节范围路由播放所选视频；本地文件由 Electron main 按选取 ID 分块读取，每次核对设备号、文件身份、大小和修改时间，移动或变化后须重新选择。播放器不自动播放或转码。视频提交只传内容 ID 与修订号，Host 解析草稿并转成现有 Worker 视频请求；Supervisor 在提交时重新校验本地视频并将真实路径交给 Worker。文章和图文由 Worker 接受前复制不可变内容快照。本地视频本体不复制到草稿库；编辑及提交后需保留原文件，移动、删除或修改后需要重新选择。删除视频草稿不会自动删除文件，也不影响已接受的提交。
+
+## 产品语义
+
+- 提交前同步校验作品、参数和全部目标账号登录态，任一失败则整单拒绝且不落提交记录。
+- 文章/图文在 React 和 Host 两层先校验正文、图片、封面、目标平台的标题与素材限制、必填字段及已知内容声明限制；Worker 仍独立复核并保存不可变快照。
+- Worker 持久化后才返回 `accepted: true`，随后进入全局串行队列。
+- Worker 接受后以默认 3 秒自动消失的 Tips 显示 **“已提交，请稍后到平台后台确认”**；账号忙碌等操作错误也使用 Tips。不轮询、不推送、不展示内部成功、失败、百分比、日志或截图。
+- “打开平台后台”复用该账号同一 Chromium session。
+- 不支持定时、非 MP4 本地视频、自动结果核验或自动重试。
+- 文章平台及小红书图文沿用已有适配器，但尚未完成全部真实平台验收；页面变化、权限和风控可能使任务失败或结果不明确，须到账号后台确认。抖音、快手图文适配器已准备内容填入路径，但由于草稿保存结果未确认，不对外开放提交能力。文章中的平台格式差异会在预览或提交前提示；提交时只调整目标平台副本，原始 MD 和本地编辑稿保留。有调整的“立即发布”会转存平台草稿供核对。头条和百家号支持已上传的正文插图，无法使用的图片引用会从平台副本移除；标签写入未验收，提交时跳过标签；头条还会跳过独立摘要。掘金、B站专栏只上传一张封面，不支持的正文插图和其余图片会从平台副本移除。掘金分类未填时使用默认“前端”。B站富文本粘贴及公众号主题的真实后台呈现仍需以平台草稿核对。
+- macOS 和 Windows 使用各自随包的 Publisher Worker；缺少对应 Worker 时返回 `publisher-worker-missing`，Linux 返回 `publisher-not-supported`。Windows 请直接添加账号并登录；旧 MatrixMedia 账号导入只在 macOS 开放。
+- 微信公众号与已有的视频号是两个独立账号目标。公众号文章使用官方 `stable_token`、素材上传、草稿箱和 `freepublish` 接口；需在账号管理输入 AppID/AppSecret，并在微信公众平台确认接口权限及本机出口 IP 白名单。AppSecret 通过 Electron `safeStorage` 在 Worker 本地加密保存，不进入公开账号响应。文章上传 WebP 时会先在本机转为 JPEG（透明区域填白）；既有 WebP 正文素材会在公众号平台副本中省略。公众号接口只接收 JPEG/PNG 图片，仍需至少一张小于 10MB 的可用封面；提交时会自动选择可用封面、截短超过 64 字的标题或 120 字的摘要，并省略不兼容或大于等于 1MB 的正文插图。标签写入暂不支持，提交时会跳过标签。立即发布是公众号“发布”能力，并非群发给粉丝。发布状态不明确时不自动重试，请到公众号后台核对。
+- 账号状态检查若显示微信错误码 `40164`，需把实际调用微信 API 的公网出口 IP 加入该公众号的接口 IP 白名单。桌面端直连时通常是当前网络的出口 IP；更换网络、VPN 或代理后可能变化。Worker 只提取微信响应中的合法 IPv4 地址用于提示，不显示原始错误消息或密钥。
+
+## 本机安全边界
+
+- Route 仅允许 loopback、同源读取和带 `x-ejianbao: 1` 的写请求。
+- 常规 JSON 请求体上限 64 KiB，草稿保存请求上限 4 MiB（正文最多 2 MiB），原始图片上传上限 20 MiB；动作和字段采用白名单校验。
+- 账号使用 UUID 身份；显示名与 session partition 分离。
+- 登录窗口/后台窗口与同账号发布任务互斥。
+- 已开始后中断的任务只标记为 Worker 内部未知状态，绝不自动重发。
+
+## 构建与测试
+
+macOS 开发运行前需使用当前 MatrixMedia 源码重新构建 Universal Helper；旧 Helper 的能力矩阵不会因前端重新构建而变化。测试时可将独立构建放在被 Git 忽略的 `matrixmedia-publisher/build/publisher-worker-open/mac-universal/MatrixMedia Publisher Worker.app`，Desktop dev 会优先使用它，不覆盖正在运行的默认 Helper。正式打包仍使用 `matrixmedia-publisher/build/publisher-worker/mac-universal/MatrixMedia Publisher Worker.app`，打包前必须重新构建该标准产物。
+
+Windows x64 使用 `matrixmedia-publisher/build/publisher-worker/win-unpacked/` 中的完整 Electron Helper。需在 Windows 上以 Node 20 构建，再运行 Desktop 的 Windows 打包命令；构建步骤见 [`UPSTREAM.md`](./UPSTREAM.md)。
+
+```bash
+corepack yarn workspace cqai-dsh-plugin-publisher build
+corepack yarn workspace cqai-dsh-plugin-publisher typecheck
+corepack yarn workspace cqai-dsh-plugin-publisher test
+```
+
+Worker 源码、Node 20 构建及 GPL-2.0-only 声明见 [`UPSTREAM.md`](./UPSTREAM.md) 与 [`vendor/matrixmedia/README.md`](../../vendor/matrixmedia/README.md)。
