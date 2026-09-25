@@ -235,7 +235,17 @@ export async function smokeWindowsPublisherWorker() {
       await withTimeout(exited, 3_000, 'Windows Publisher Worker termination').catch(() => undefined)
     }
     if (server.listening) await new Promise(resolveClose => server.close(resolveClose))
-    rmSync(dataRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    try {
+      rmSync(dataRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 })
+    } catch (error) {
+      // Electron subprocesses can briefly retain Windows file handles after the
+      // Worker exits. This disposable profile contains no account credentials.
+      if (['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error?.code)) {
+        console.warn(`Windows Publisher Worker smoke profile cleanup deferred: ${error.code}`)
+      } else {
+        throw error
+      }
+    }
   }
 }
 

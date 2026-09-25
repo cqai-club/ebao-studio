@@ -39,7 +39,7 @@ describe('Publisher Worker package gate', () => {
     const value = fixture()
     const thin = PUBLISHER_HELPER_UNIVERSAL_ENTRIES[3]
     expect(() => verifyPublisherHelper(value.root, filename =>
-      filename.endsWith(thin) ? ['arm64'] : ['x86_64', 'arm64']))
+      filename === join(value.app, thin) ? ['arm64'] : ['x86_64', 'arm64']))
       .toThrow(`Publisher Worker entry ${thin} is missing x86_64`)
   })
 
