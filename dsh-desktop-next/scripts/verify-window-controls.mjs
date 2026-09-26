@@ -332,6 +332,11 @@ try {
   assert.equal(await context.pages().length, 1)
   await remoteDialog.getByRole('button', { name: /^(关闭远程控制|Close Remote Control|关闭手机连接)$/ }).click()
   await remoteDialog.waitFor({ state: 'hidden' })
+  await page.waitForFunction(() => {
+    const choice = document.querySelector('[data-next-markets] [role="radio"]:last-child')
+    return choice instanceof HTMLElement && choice.getAttribute('aria-disabled') !== 'true'
+      && choice.getAttribute('data-actionable') === 'true'
+  })
   await dshChoice.focus()
   await page.waitForFunction(() => document.activeElement === document.querySelector('[data-next-markets] [role="radio"]:last-child'))
   await dshChoice.press('Space')
