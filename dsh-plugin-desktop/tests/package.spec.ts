@@ -207,7 +207,7 @@ describe('published package surface', () => {
       'cqai-dsh-plugin-publisher': '0.1.0',
       'dsh-community-market': '0.1.0-dev.0',
       'dsh-ppt': '0.1.1-rc.2',
-      'dsh-ppt-composer': 'file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz',
+      'dsh-ppt-composer': 'file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz',
       dshmarket: expect.stringMatching(/^\d+\.\d+\.\d+/),
       'react-dom': '18.3.1',
     })

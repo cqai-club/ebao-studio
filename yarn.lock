@@ -2269,12 +2269,12 @@ __metadata:
 
 "@deepseek-ai/dsh-client-ui-conversation@patch:@deepseek-ai/dsh-client-ui-conversation@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz#./patches/dsh-client-ui-conversation@0.1.7-rc.2.patch::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.1.7-rc.2
-  resolution: "@deepseek-ai/dsh-client-ui-conversation@patch:@deepseek-ai/dsh-client-ui-conversation@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%23vendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%3A%3Ahash=3ee421&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-conversation@0.1.7-rc.2.patch::version=0.1.7-rc.2&hash=e2b410&locator=deepseek-harness-desktop%40workspace%3A."
+  resolution: "@deepseek-ai/dsh-client-ui-conversation@patch:@deepseek-ai/dsh-client-ui-conversation@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%23vendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%3A%3Ahash=3ee421&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-conversation@0.1.7-rc.2.patch::version=0.1.7-rc.2&hash=3eafcc&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@deepseek-ai/schemastery": "npm:~3.18.4"
   peerDependencies:
     "@deepseek-ai/cordis": ~4.0.4
-  checksum: 10c0/81e5f7b16710169c9b016c00447230157b539f60da8ae2b2af65376ce303a6addfd3218c087802cd452826ee9d4cf208ec66b1c4a9a71975ef4f2b4d4a866094
+  checksum: 10c0/3a13d760d19006f723ae23eb9fa0ab7f6f88c2b5ad24278375d65dc1ed912a262a7f743d2670d1e4159dbde86f546e625e9e60a6366f0f54ca054d771b19a0ee
   languageName: node
   linkType: hard
 
@@ -12827,7 +12827,7 @@ __metadata:
     cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dsh-ppt: "npm:0.1.1-rc.2"
-    dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz"
+    dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz"
     dshmarket: "npm:1.66.1"
     electron: "npm:44.0.0"
     electron-builder: "npm:26.15.7"
@@ -13052,7 +13052,7 @@ __metadata:
     cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dsh-ppt: "npm:0.1.1-rc.2"
-    dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz"
+    dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz"
     dshmarket: "npm:1.66.1"
     electron: "npm:44.0.0"
     electron-builder: "npm:26.15.7"
@@ -13090,35 +13090,35 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz::locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop":
+"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop":
   version: 0.1.1-rc.2
-  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz::hash=df2c9c&locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop"
+  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::hash=b9be66&locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop"
   dependencies:
     "@deepseek-ai/schemastery": "npm:3.18.2"
     dsh-ppt: "npm:0.1.1-rc.2"
   peerDependencies:
-    "@deepseek-ai/cordis": 4.0.2
-    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1
-  checksum: 10c0/1d699cb3b752225da267f466cac1c8f1c5a2d86b05915f3c348bcc1524c590ffa96aaec3a278854f22488dd9a9c67b8e04181f378c8c655219ed35049142447e
+    "@deepseek-ai/cordis": ~4.0.4
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+  checksum: 10c0/82f7f39f304ac626c09856e857b29fff48d082037c4d836cc2d8035b008669145c4b55eeedce3809b9c1c688a3ed567db978a15a9d03f7a09fde4c7f673d56fc
   languageName: node
   linkType: hard
 
-"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz::locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta":
+"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta":
   version: 0.1.1-rc.2
-  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz::hash=df2c9c&locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta"
+  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::hash=b9be66&locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta"
   dependencies:
     "@deepseek-ai/schemastery": "npm:3.18.2"
     dsh-ppt: "npm:0.1.1-rc.2"
   peerDependencies:
-    "@deepseek-ai/cordis": 4.0.2
-    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1
-  checksum: 10c0/1d699cb3b752225da267f466cac1c8f1c5a2d86b05915f3c348bcc1524c590ffa96aaec3a278854f22488dd9a9c67b8e04181f378c8c655219ed35049142447e
+    "@deepseek-ai/cordis": ~4.0.4
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+  checksum: 10c0/82f7f39f304ac626c09856e857b29fff48d082037c4d836cc2d8035b008669145c4b55eeedce3809b9c1c688a3ed567db978a15a9d03f7a09fde4c7f673d56fc
   languageName: node
   linkType: hard
 
-"dsh-ppt@file:vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
+"dsh-ppt@file:vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.1.1-rc.2
-  resolution: "dsh-ppt@file:vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz#vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz::hash=a102ab&locator=deepseek-harness-desktop%40workspace%3A."
+  resolution: "dsh-ppt@file:vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::hash=65d04a&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@aiden0z/pptx-renderer": "npm:1.2.4"
     "@deepseek-ai/schemastery": "npm:3.18.2"
@@ -13130,24 +13130,24 @@ __metadata:
     typescript: "npm:^6.0.3"
     zod: "npm:^4.4.3"
   peerDependencies:
-    "@deepseek-ai/cordis": 4.0.2
-    "@deepseek-ai/dsh-agent": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-brand": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-client-connection": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-client-locale": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-client-ui-conversation": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-client-ui-slots": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-llm": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-session": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-skill": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-system-prompt": ^0.1.5-rc.1
-    "@deepseek-ai/dsh-tools": ^0.1.5-rc.1
+    "@deepseek-ai/cordis": ~4.0.4
+    "@deepseek-ai/dsh-agent": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-brand": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-connection": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-locale": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-conversation": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-llm": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-session": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-skill": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-system-prompt": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-tools": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
     react: ^18.2.0
   bin:
     dsh-pptd: ./lib/bin.js
-  checksum: 10c0/68372c4b84b324bd699f52051c2fa198f333e38454d726d71b1d56dd94a68499707126f32f833119144907e2281f83c9b8ee5569c64892ad1e5a0cc5554c282c
+  checksum: 10c0/8d0e0f066316cfcfc076e8bc2c744f745d63cabdaf5af5b965d84aba3371d42b442baf5a6ddf1b24c2c8da882508d7d09f7ae3cfaff088271556fbdd68bf4669
   languageName: node
   linkType: hard
 
