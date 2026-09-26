@@ -10,6 +10,6 @@ CQAI 的第一个 易宝工坊 插件，负责把左侧快捷入口和 `dsh-bett
 
 ## 运行要求
 
-- DSH `0.1.5-rc.1+`
+- DSH `0.1.7-rc.2+`
 - `dsh-better-sidebar` `0.19.x`
 - 易宝工坊 的 Web Client Profile

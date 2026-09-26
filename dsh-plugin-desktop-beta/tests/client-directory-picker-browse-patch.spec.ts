@@ -1,12 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
+// Derived, not hand-written: the beta channel's pinned core is the single source of truth
+// for the patch filename, so a core bump does not strand this spec on a deleted patch.
+const runtimeVersion = String(JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).dependencies['@deepseek-ai/dsh'])
 const patch = readFileSync(new URL(
-  '../../patches/dsh-client-ui-directory-picker-browse@0.1.5-rc.1.patch',
+  `../../patches/dsh-client-ui-directory-picker-browse@${runtimeVersion}.patch`,
   import.meta.url,
 ), 'utf8')
 
-describe('0.1.3 alpha.2 browse directory-picker client patch', () => {
+describe('0.1.7 rc.2 browse directory-picker client patch', () => {
   it('publishes the desktop bridge through the compiled flow and declarations', () => {
     for (const marker of [
       '__DSH_DESKTOP_PICK_DIRECTORY__',
@@ -15,10 +20,12 @@ describe('0.1.3 alpha.2 browse directory-picker client patch', () => {
       'validateDirectory?: (path: string) => Promise<boolean>;',
       '"browser.nativePicker": "使用系统选择文件夹"',
       '"browser.nativePicker": "Choose with system dialog"',
-      'IconFolderOpen16',
+      'IconFolderOpenRegular',
     ]) {
       expect(patch).toContain(marker)
     }
+    // 0.1.7 dropped the size-suffixed icon family; an undefined element type crashes the dialog.
+    expect(patch).not.toContain('IconFolderOpen16')
   })
 
   it('shows the native picker on macOS and Windows while validating Windows paths only', () => {

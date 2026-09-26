@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -18,8 +19,10 @@ import {
   indexPackagedAsarHeader,
   listDesktopRuntimeEntries,
   MAX_DATAIKU_UV_SMART_UNPACK_BYTES,
+  MAX_LIBREOFFICE_KIT_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_FILES,
+  MAX_SHERPA_ONNX_SMART_UNPACK_BYTES,
   MAX_UNPACKED_RUNTIME_BYTES,
   MAX_UNPACKED_RUNTIME_FILES,
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
@@ -36,6 +39,7 @@ import {
   REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
+  resolvePackagedApplicationRoot,
   resolvePackagedAsarPath,
   resolvePackagedExecutablePath,
   resolvePackagedUnpackedRoot,
@@ -43,6 +47,7 @@ import {
   smokePackagedElectronRuntime,
   summarizeUnpackedRuntime,
   verifyPackagedRuntime,
+  verifyPackagedAgentsAnywhere,
   verifySelectiveUnpackedRuntime,
   type ArchiveHeaderReader,
   type FileProbe,
@@ -264,8 +269,7 @@ describe('packaged desktop runtime verification', () => {
 
   it('keeps the shipped PTC preset present and integrity-protected in app.asar', () => {
     expect(REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES).toEqual([
-      'node_modules/@deepseek-ai/dsh-agent-presets/presets/ptc/agent.cordis.yml',
-      'node_modules/@deepseek-ai/dsh-agent-presets/presets/ptc/preset.yml',
+      'node_modules/@deepseek-ai/dsh-web-app/presets/ptc.patch.yml',
     ])
     for (const entry of REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES) {
       expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
@@ -414,9 +418,47 @@ describe('packaged desktop runtime verification', () => {
         expect(received).toBe(summary)
         calls.push('report')
       },
+      () => { calls.push('aa') },
     )
 
-    expect(calls).toEqual(['static', 'report'])
+    expect(calls).toEqual(['static', 'aa', 'report'])
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects a 0644 packaged uv before signing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-packaged-uv-'))
+    try {
+      const base = context(root, 'darwin', 4)
+      const target: PackagedRuntimeContext = {
+        ...base, packager: { ...base.packager, platformSpecificBuildOptions: { asar: false } },
+      }
+      const files = ['arm64', 'x64'].map(arch => join(
+        resolvePackagedApplicationRoot(target), 'node_modules', '@dataiku', `uv-darwin-${arch}`, 'bin', 'uv',
+      ))
+      for (const path of files) {
+        mkdirSync(join(path, '..'), { recursive: true })
+        writeFileSync(path, 'uv fixture')
+        chmodSync(path, 0o644)
+      }
+      const read = (path: string): Buffer => Buffer.from(path.endsWith('package.json') ? '{"version":"1.0.0"}' : 'same AA')
+      expect(() => verifyPackagedAgentsAnywhere(target, read, read)).toThrow()
+      for (const path of files) chmodSync(path, 0o755)
+      expect(() => verifyPackagedAgentsAnywhere(target, read, read)).not.toThrow()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a stale AA version or entry copied into the installation payload', () => {
+    const installed = (path: string): Buffer => path.endsWith('package.json')
+      ? Buffer.from(JSON.stringify({ version: '0.1.0-dev.desktop.c123' }))
+      : Buffer.from('prepared AA entry')
+    expect(() => verifyPackagedAgentsAnywhere(context('/build', 'win32'), installed, installed)).not.toThrow()
+    expect(() => verifyPackagedAgentsAnywhere(context('/build', 'win32'), installed, path =>
+      path.endsWith('package.json') ? Buffer.from('{"version":"0.1.0-old"}') : installed(path),
+    )).toThrow('Packaged AA version mismatch')
+    expect(() => verifyPackagedAgentsAnywhere(context('/build', 'win32'), installed, path =>
+      path.endsWith('lib/index.js') ? Buffer.from('stale AA entry') : installed(path),
+    )).toThrow('Packaged AA entry differs')
   })
 
   it('tracks ripgrep and the ConPTY native surface required on Windows', () => {
@@ -454,6 +496,30 @@ describe('packaged desktop runtime verification', () => {
     expect(resolvePackagedExecutablePath(runtimeContext)).toBe(expectedExecutable)
     expect(readHeader).toHaveBeenCalledWith(expectedPath)
     expect(listUnpacked).toHaveBeenCalledWith(`${expectedPath}.unpacked`)
+  })
+
+  it.each(['win32', 'darwin', 'linux'] as const)('verifies a plain %s app and refuses an accidental ASAR entry', platform => {
+    const base = context('/build', platform, 1)
+    const runtimeContext: PackagedRuntimeContext = {
+      ...base, packager: { ...base.packager, platformSpecificBuildOptions: { asar: false } },
+    }
+    const appRoot = resolvePackagedApplicationRoot(runtimeContext)
+    const paths = [...new Set([
+      ...REQUIRED_PACKAGED_RUNTIME_ENTRIES, ...DESKTOP_RUNTIME_ENTRIES,
+      ...requiredPhysicalEntries(runtimeContext),
+    ])]
+    const files = paths.map(path => ({ path, bytes: 1 }))
+    const readHeader = vi.fn<ArchiveHeaderReader>(headerReader([]))
+    const external: readonly string[] = platform === 'darwin' ? REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES
+      : platform === 'win32' ? REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES : []
+    const externalRoot = dirname(resolvePackagedAsarPath(runtimeContext))
+    const exists = (filename: string) => paths.includes(relative(appRoot, filename).replaceAll('\\', '/'))
+      || external.includes(relative(externalRoot, filename).replaceAll('\\', '/'))
+    expect(() => verifyPackagedRuntime(runtimeContext, readHeader, exists, () => files)).not.toThrow()
+    expect(readHeader).not.toHaveBeenCalled()
+    expect(() => verifyPackagedRuntime(runtimeContext, readHeader,
+      filename => filename === resolvePackagedAsarPath(runtimeContext) || exists(filename),
+      () => files)).toThrow('unexpectedly contains app.asar')
   })
 
   it('uses LinuxPackager executableName instead of appInfo.productFilename', () => {
@@ -695,6 +761,22 @@ describe('packaged desktop runtime verification', () => {
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@vscode/ripgrep-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@img/sharp-')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@deepseek-ai/libreoffice-kit-')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/sherpa-onnx-')
+  })
+
+  it('caps each office and speech native architecture inside the expanded ASAR budget', () => {
+    for (const [path, budget, prefix] of [
+      ['node_modules/@deepseek-ai/libreoffice-kit-darwin-arm64/native.dat', MAX_LIBREOFFICE_KIT_SMART_UNPACK_BYTES, 'node_modules/@deepseek-ai/libreoffice-kit-'],
+      ['node_modules/sherpa-onnx-darwin-arm64/native.node', MAX_SHERPA_ONNX_SMART_UNPACK_BYTES, 'node_modules/sherpa-onnx-'],
+    ] as const) {
+      expect(() => verifySelectiveUnpackedRuntime(
+        asarIndex([path]), '/build/resources/app.asar.unpacked', [{ path, bytes: budget }],
+      )).not.toThrow()
+      expect(() => verifySelectiveUnpackedRuntime(
+        asarIndex([path]), '/build/resources/app.asar.unpacked', [{ path, bytes: budget + 1 }],
+      )).toThrow(`${prefix} smart-unpack budget ${String(budget)} bytes`)
+    }
   })
 
   it('accepts pnpm as an indivisible smart-unpacked package with native helpers', () => {
@@ -925,5 +1007,28 @@ describe('packaged desktop runtime verification', () => {
 
     expect(() => smokePackagedElectronRuntime(context('/build', process.platform), run))
       .toThrow('status null; signal=SIGTERM')
+  })
+
+  // `prepare-fs-ext.ts` names its output after the ABI of whichever Electron is
+  // actually installed (`electron.abi${abi}.node`), but the manifests above spell that
+  // number out. Bumping the Electron pin across an ABI boundary therefore makes the two
+  // disagree, and nothing fails until a packaging job goes looking for a file that was
+  // never built — on macOS that surfaced only as "universal macOS runtime is missing 2
+  // native file(s)" at the very end of a 14-minute job. Reading electron's own
+  // `abi_version` here turns that into an immediate, every-platform unit failure.
+  it('pins fs-ext ABI manifests to the ABI of the installed Electron', () => {
+    const abi = readFileSync(
+      fileURLToPath(new URL('../node_modules/electron/abi_version', import.meta.url)),
+      'utf8',
+    ).trim()
+    expect(abi).toMatch(/^\d+$/)
+
+    const manifestPaths = [
+      ...Object.values(REQUIRED_POSIX_FS_EXT_ENTRIES).flatMap(byArch => Object.values(byArch)),
+      ...REQUIRED_MACOS_UNIVERSAL_ENTRIES,
+    ].filter(path => path.includes('/fs-ext/'))
+
+    expect(manifestPaths.length).toBeGreaterThan(0)
+    expect(manifestPaths.filter(path => !path.endsWith(`/electron.abi${abi}.node`))).toEqual([])
   })
 })

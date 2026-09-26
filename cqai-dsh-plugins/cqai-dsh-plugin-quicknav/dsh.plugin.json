@@ -4,7 +4,7 @@
   "main": "./lib/index.js",
   "description": "CQAI quick navigation and dsh-better-sidebar workbench entry",
   "engines": {
-    "dsh": ">=0.1.5-rc.1"
+    "dsh": ">=0.1.7-rc.2"
   },
   "client": {
     "main": "./lib/client.js"

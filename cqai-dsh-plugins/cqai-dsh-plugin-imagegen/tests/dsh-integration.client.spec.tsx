@@ -21,6 +21,8 @@ const SID = 'session-imagegen' as SessionId
 
 function inputActions(overrides: Partial<InputActions> = {}): InputActions {
   return {
+    captureInsertion: vi.fn(() => ({ start: 0, end: 0, draftRev: 0 })),
+    insertText: vi.fn(() => true),
     setDraft: vi.fn(),
     addAttachments: vi.fn(() => true),
     removeAttachment: vi.fn(),

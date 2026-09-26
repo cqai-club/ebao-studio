@@ -1,6 +1,6 @@
 import { FuseV1Options, FuseVersion, type FuseConfig } from '@electron/fuses'
 import { FuseState } from '@electron/fuses/dist/constants.js'
-import { Arch, getArchSuffix } from 'builder-util'
+import { Arch } from 'builder-util'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -90,6 +90,12 @@ describe('final Electron fuse verification', () => {
         packager: { appInfo: { productFilename: '易宝工坊 Beta' } },
       },
     ])
+  })
+
+  it.each(['mac', 'win', 'linux'] as const)('propagates global directory packaging to final %s fuse checks', key => {
+    const configured = result([{ key, archs: [Arch.x64] }], { asar: false })
+    const contexts = resolveFinalPackagedRuntimeContexts(configured, () => true)
+    expect(contexts[0]?.packager.platformSpecificBuildOptions?.asar).toBe(false)
   })
 
   it('honors Linux executableName and recovers a configured suffixless architecture', () => {
@@ -188,53 +194,45 @@ describe('final Electron fuse verification', () => {
       ])
   })
 
-  it('recovers a directory build when the platform packager omits its NoOpTarget', () => {
+  it('resolves a directory-only build, whose dir target electron-builder never registers, to the host architecture', () => {
+    // electron-builder's Windows, Linux and macOS packagers skip DIR_TARGET in
+    // createTargets(), so `--dir` reaches afterAllArtifactBuild with an empty
+    // target map even though a configured target (nsis:x64) exists.
     const platform = { buildConfigurationKey: 'win' }
     const built = {
       outDir: '/build',
-      configuration: {
-        productName: '易宝工坊',
-        win: { defaultArch: 'x64' },
-      },
+      configuration: { productName: '易宝工坊 Beta', win: { target: [{ target: 'nsis', arch: ['x64'] }] } },
       platformToTargets: new Map([[platform, new Map()]]),
     } satisfies ElectronArtifactBuildResult
-    const executable = join('/build', 'win-unpacked', '易宝工坊.exe')
 
-    expect(resolveFinalPackagedRuntimeContexts(
-      built,
-      filename => filename === executable,
-    )).toEqual([expect.objectContaining({
-      appOutDir: join('/build', 'win-unpacked'),
-      arch: Arch.x64,
-      electronPlatformName: 'win32',
-    })])
+    expect(resolveFinalPackagedRuntimeContexts(built, () => true, ['node', 'cli.js', '--dir']))
+      .toEqual([expect.objectContaining({ arch: Arch[process.arch as keyof typeof Arch] })])
   })
 
-  it('uses the build-process architecture for an omitted directory target without a default', () => {
+  it('resolves a directory-only build to the arch flags on the electron-builder command line', () => {
+    // `--dir --arm64` on an x64 host writes win-arm64-unpacked. The flags never
+    // reach BuildResult, so without reading them back the hook would verify a
+    // stale win-unpacked left by an earlier x64 build.
     const platform = { buildConfigurationKey: 'win' }
     const built = {
       outDir: '/build',
-      configuration: { productName: '易宝工坊 Beta' },
+      configuration: { productName: '易宝工坊 Beta', win: { target: [{ target: 'nsis', arch: ['x64'] }] } },
       platformToTargets: new Map([[platform, new Map()]]),
     } satisfies ElectronArtifactBuildResult
-    const expectedArch = new Map<string, Arch>([
-      ['ia32', Arch.ia32],
-      ['x64', Arch.x64],
-      ['arm64', Arch.arm64],
-    ]).get(process.arch)
-
-    expect(expectedArch).toBeDefined()
-    if (expectedArch === undefined) throw new Error(`unsupported test architecture ${process.arch}`)
-    const expectedOutDir = join('/build', `win${getArchSuffix(expectedArch)}-unpacked`)
-    const executable = join(expectedOutDir, '易宝工坊 Beta.exe')
-    expect(resolveFinalPackagedRuntimeContexts(
+    const archs = (...flags: string[]) => resolveFinalPackagedRuntimeContexts(
       built,
-      filename => filename === executable,
-    )).toEqual([expect.objectContaining({
-      appOutDir: expectedOutDir,
-      arch: expectedArch,
-      electronPlatformName: 'win32',
-    })])
+      () => true,
+      ['node', 'cli.js', '--dir', ...flags],
+    ).map(context => Arch[context.arch!])
+
+    expect(archs('--arm64')).toEqual(['arm64'])
+    expect(archs('--arm64', '--x64')).toEqual(['arm64', 'x64'])
+    expect(archs('--arm64=true')).toEqual(['arm64'])
+    expect(archs('--arm64', 'true')).toEqual(['arm64'])
+    expect(archs('--ia32', '--no-ia32', '--arm64')).toEqual(['arm64'])
+    expect(archs('--arm64=false')).toEqual([process.arch])
+    expect(archs('--arm64', 'false')).toEqual([process.arch])
+    expect(archs('--', '--arm64')).toEqual([process.arch])
   })
 
   it('resolves mac universal from the target packager request and ignores component outputs', () => {
@@ -308,6 +306,20 @@ describe('final Electron fuse verification', () => {
 
     await expect(verifyElectronExecutableFuses('/build/易宝工坊 Beta.exe', read))
       .rejects.toThrow(`${name}=DISABLE`)
+  })
+
+  it('requires both ASAR fuses disabled for directory packages', async () => {
+    const disabled = {
+      [FuseV1Options.OnlyLoadAppFromAsar]: FuseState.DISABLE,
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: FuseState.DISABLE,
+    }
+    await expect(verifyElectronExecutableFuses('/build/app', async () => fuseWire(disabled), false))
+      .resolves.toBeUndefined()
+    for (const option of [FuseV1Options.OnlyLoadAppFromAsar, FuseV1Options.EnableEmbeddedAsarIntegrityValidation]) {
+      await expect(verifyElectronExecutableFuses('/build/app', async () => fuseWire({
+        ...disabled, [option]: FuseState.ENABLE,
+      }), false)).rejects.toThrow('invalid required fuses')
+    }
   })
 
   it('wraps an unreadable final executable with its resolved path', async () => {

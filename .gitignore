@@ -25,3 +25,6 @@ vendor/matrixmedia/*/matrixmedia-win-x64/
 .portable/
 __pycache__/
 *.pyc
+dsh-desktop-next/lib/
+dsh-desktop-next/dist/
+dsh-desktop-next/.desktop-next/

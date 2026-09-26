@@ -12,8 +12,8 @@ import type {
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
-  Message,
   PreparedAdapterCall,
+  RequestMessage,
   StreamChunk,
   TokenUsage,
   ToolSchema,
@@ -21,7 +21,7 @@ import type {
 import type {
   AttachmentStore,
   ImageAttachmentRef,
-  ImageRequestPolicy,
+  ImageRequestTarget,
   RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 
@@ -37,6 +37,7 @@ export const CQAI_PROVIDER = 'cqaiclub'
 
 type WireMessage =
   | { role: 'system'; content: string }
+  | { role: 'developer'; content: string }
   | { role: 'user'; content: WireUserContent }
   | { role: 'assistant'; content: string; reasoning_content?: string; tool_calls?: WireToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string }
@@ -104,10 +105,17 @@ export interface CqaiClubAdapterOptions {
   resolveAttachments?: () => AttachmentStore | undefined
 }
 
-const CQAI_IMAGE_REQUEST_POLICY = {
-  maxPixels: 640_000,
-  maxBytes: 1024 * 1024,
-} as const satisfies ImageRequestPolicy
+const CQAI_IMAGE_MAX_PIXELS = 640_000
+const CQAI_IMAGE_MAX_BYTES = 1024 * 1024
+
+function imageRequestTarget(ref: ImageAttachmentRef): ImageRequestTarget {
+  const scale = Math.min(1, Math.sqrt(CQAI_IMAGE_MAX_PIXELS / (ref.width * ref.height)))
+  return {
+    width: Math.max(1, Math.floor(ref.width * scale)),
+    height: Math.max(1, Math.floor(ref.height * scale)),
+    maxBytes: CQAI_IMAGE_MAX_BYTES,
+  }
+}
 
 const TOOL_RESULT_IMAGE_TEXT = 'Attached image(s) from tool result:'
 
@@ -260,7 +268,7 @@ function modelInputModalities(model: DsnModel): readonly ['text'] | readonly ['t
   return isVisionChatModel(model) ? ['text', 'image'] : ['text']
 }
 
-function serializeAssistant(message: Message): Extract<WireMessage, { role: 'assistant' }> {
+function serializeAssistant(message: Extract<RequestMessage, { role: 'assistant' }>): Extract<WireMessage, { role: 'assistant' }> {
   const text: string[] = []
   const reasoning: string[] = []
   const toolCalls: WireToolCall[] = []
@@ -286,7 +294,7 @@ function serializeAssistant(message: Message): Extract<WireMessage, { role: 'ass
   }
 }
 
-function serializeMessages(system: string | undefined, messages: Message[]): WireMessage[] {
+function serializeMessages(system: string | undefined, messages: readonly RequestMessage[]): WireMessage[] {
   const wire: WireMessage[] = []
   if (system !== undefined && system.length > 0) wire.push({ role: 'system', content: system })
 
@@ -295,36 +303,29 @@ function serializeMessages(system: string | undefined, messages: Message[]): Wir
       wire.push({ role: 'system', content: flattenText(message.content) })
       continue
     }
+    if (message.role === 'developer') {
+      const text = message.content.filter(block => block.type === 'text' || block.type === 'reasoning')
+      if (text.length > 0) wire.push({ role: 'developer', content: flattenText(text) })
+      continue
+    }
     if (message.role === 'assistant') {
       wire.push(serializeAssistant(message))
       continue
     }
 
-    const text: string[] = []
-    const toolResults: Array<{ toolCallId: string; content: string }> = []
-    for (const block of message.content) {
-      if (block.type === 'tool-result') {
-        toolResults.push({
-          toolCallId: String(block.toolCallId),
-          content: flattenText(block.content) || '(no output)',
-        })
-      } else if (block.type === 'text' || block.type === 'reasoning') {
-        text.push(block.text)
-      } else {
-        assertTextOnly(block)
-      }
+    if (message.role === 'tool') {
+      wire.push({ role: 'tool', tool_call_id: String(message.toolCallId), content: flattenText(message.content) || '(no output)' })
+      continue
     }
-    if (text.length > 0 || toolResults.length === 0) wire.push({ role: 'user', content: text.join('') })
-    for (const result of toolResults) {
-      wire.push({ role: 'tool', tool_call_id: result.toolCallId, content: result.content })
-    }
+
+    wire.push({ role: 'user', content: flattenText(message.content) })
   }
   return wire
 }
 
 async function serializeMessagesWithImages(
   system: string | undefined,
-  messages: readonly Message[],
+  messages: readonly RequestMessage[],
   requestImages: ReadonlyMap<ImageAttachmentRef['attachmentId'], RequestImageAttachment>,
 ): Promise<WireMessage[]> {
   const wire: WireMessage[] = []
@@ -346,34 +347,34 @@ async function serializeMessagesWithImages(
       wire.push({ role: 'system', content: flattenText(message.content) })
       continue
     }
+    if (message.role === 'developer') {
+      flushToolImages()
+      const text = message.content.filter(block => block.type === 'text' || block.type === 'reasoning')
+      if (text.length > 0) wire.push({ role: 'developer', content: flattenText(text) })
+      continue
+    }
     if (message.role === 'assistant') {
       flushToolImages()
       wire.push(serializeAssistant(message))
       continue
     }
-
-    const regular = message.content.filter(block => block.type !== 'tool-result')
-    const toolResults = message.content.filter((block): block is Extract<ContentBlock, { type: 'tool-result' }> => (
-      block.type === 'tool-result'
-    ))
-    const content = wireUserContent(imageContentParts(regular, requestImages))
-    if (content.length > 0 || toolResults.length === 0) {
-      flushToolImages()
-      wire.push({ role: 'user', content })
-    }
-    for (const result of toolResults) {
-      const parts = imageContentParts(result.content, requestImages)
+    if (message.role === 'tool') {
+      const parts = imageContentParts(message.content, requestImages)
       const images = parts.filter((part): part is WireImageContentPart => part.type === 'image_url')
       const text = parts.filter((part): part is WireTextContentPart => part.type === 'text')
         .map(part => part.text)
         .join('')
       wire.push({
         role: 'tool',
-        tool_call_id: String(result.toolCallId),
+        tool_call_id: String(message.toolCallId),
         content: text || '(no output)',
       })
       pendingToolImages.push(...images)
+      continue
     }
+    const content = wireUserContent(imageContentParts(message.content, requestImages))
+    flushToolImages()
+    wire.push({ role: 'user', content })
   }
   flushToolImages()
   return wire
@@ -406,9 +407,6 @@ function imageContentParts(
         })
         break
       }
-      case 'tool-result':
-        parts.push(...imageContentParts(block.content, requestImages))
-        break
       default:
         assertTextOnly(block)
     }
@@ -425,9 +423,9 @@ function wireUserContent(parts: readonly WireUserContentPart[]): WireUserContent
   return text.join('')
 }
 
-function assertSupportedImageRoles(messages: readonly Message[]): void {
+function assertSupportedImageRoles(messages: readonly RequestMessage[]): void {
   for (const message of messages) {
-    if (message.role !== 'user' && contentHasImage(message.content)) {
+    if (message.role !== 'user' && message.role !== 'tool' && contentHasImage(message.content)) {
       throw new LlmError(
         `CQAI Club 无法在 ${message.role} 消息中表示图片输入`,
         'UNSUPPORTED_CONTENT',
@@ -442,12 +440,11 @@ function collectImageRefs(
 ): void {
   for (const block of blocks) {
     if (block.type === 'image') refs.set(block.attachment.attachmentId, block.attachment)
-    else if (block.type === 'tool-result') collectImageRefs(block.content, refs)
   }
 }
 
 async function prepareRequestImages(
-  messages: readonly Message[],
+  messages: readonly RequestMessage[],
   attachments: AttachmentStore,
   signal?: AbortSignal,
 ): Promise<Map<ImageAttachmentRef['attachmentId'], RequestImageAttachment>> {
@@ -455,7 +452,7 @@ async function prepareRequestImages(
   for (const message of messages) collectImageRefs(message.content, refs)
   const orderedRefs = [...refs.values()]
   const projected = await Promise.all(orderedRefs.map(
-    ref => attachments.readImageRequest(ref, CQAI_IMAGE_REQUEST_POLICY, signal),
+    ref => attachments.readImageRequest(ref, imageRequestTarget(ref), signal),
   ))
   return new Map(orderedRefs.map((ref, index) => (
     [ref.attachmentId, projected[index] as RequestImageAttachment]
@@ -473,12 +470,11 @@ function serializeTools(tools: ToolSchema[]): WireTool[] {
   }))
 }
 
-function flattenText(blocks: ContentBlock[]): string {
+function flattenText(blocks: readonly ContentBlock[]): string {
   return blocks.map((block) => {
     switch (block.type) {
       case 'text':
       case 'reasoning': return block.text
-      case 'tool-result': return flattenText(block.content)
       default: return assertTextOnly(block)
     }
   }).join('')
@@ -491,7 +487,7 @@ function assertTextOnly(block: ContentBlock): never {
   if (block.type === 'file') {
     throw new LlmError('CQAI Club 当前适配器暂不支持文件输入', 'UNSUPPORTED_CONTENT')
   }
-  if (block.type === 'tool-call' || block.type === 'tool-result') {
+  if (block.type === 'tool-call') {
     throw new LlmError('CQAI Club 收到了不支持的消息内容', 'UNSUPPORTED_CONTENT')
   }
   throw new LlmError('CQAI Club 收到了不支持的消息内容', 'UNSUPPORTED_CONTENT')

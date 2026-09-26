@@ -40,8 +40,7 @@ type RuntimeHarness = {
     saveSelection: ReturnType<typeof vi.fn>
   }
   categorySettings: {
-    current: () => Partial<Record<DsnDefaultModelCategory, string>>
-    update: ReturnType<typeof vi.fn>
+    mutate: ReturnType<typeof vi.fn>
   }
   setDefaultSelection: (selection: DsnDefaultModelSelection) => void
 }
@@ -95,24 +94,14 @@ function makeRuntime(options: {
     }),
   }
   let categoryDefaults = { ...options.categoryDefaults }
-  let categorySettingsChanged = (): void => {}
   const categorySettings = {
-    installSection: vi.fn((
-      _owner: unknown,
-      _namespace: string,
-      _schema: unknown,
-      _entry: unknown,
-      hooks: { setSource(source: () => typeof categoryDefaults): void; onChange(): void },
-    ) => {
-      hooks.setSource(() => categoryDefaults)
-      categorySettingsChanged = hooks.onChange
-      hooks.onChange()
+    mutate: vi.fn(async (_namespace: string, ops: Array<{ op: 'set'; path: string[]; value: string }>) => {
+      for (const op of ops) {
+        if (op.path[0] === 'categoryDefaultModels' && op.path[1] !== undefined) {
+          categoryDefaults = { ...categoryDefaults, [op.path[1]]: op.value }
+        }
+      }
     }),
-    update: vi.fn(async (_namespace: string, patch: Partial<Record<DsnDefaultModelCategory, string>>) => {
-      categoryDefaults = { ...categoryDefaults, ...patch }
-      categorySettingsChanged()
-    }),
-    current: () => ({ ...categoryDefaults }),
   }
   const setDefaultSelection = (selection: DsnDefaultModelSelection): void => {
     globalDefault = { ...selection }
@@ -153,6 +142,7 @@ function makeRuntime(options: {
     accountServiceUrl: resource,
     scopes: ['openid', 'offline_access', 'profile', 'email', 'ai:invoke'],
     requestTimeoutMs: 1000,
+    categoryDefaultModels: { get: () => ({ ...categoryDefaults }) },
   })
   if (flow === undefined || rpc === undefined) throw new Error('runtime test harness did not capture registrations')
   return { runtime, flow, rpc, records, emit, defaultModel, categorySettings, setDefaultSelection }
@@ -416,7 +406,7 @@ describe('DsnAccountServiceRuntime', () => {
     expect(harness.defaultModel.saveSelection).not.toHaveBeenCalled()
   })
 
-  it('reads and persists category defaults with the DSH 0.1.5 global-model API', async () => {
+  it('reads and persists category defaults with the DSH global-model API', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
       const url = String(input)
       if (url.endsWith('/v1/models')) return json({
@@ -467,9 +457,9 @@ describe('DsnAccountServiceRuntime', () => {
     expect(harness.defaultModel.saveSelection).toHaveBeenCalledWith({
       provider: 'cqaiclub', model: 'vision-model',
     })
-    expect(harness.categorySettings.update).toHaveBeenCalledWith(
-      'cqaiclub-category-default-models',
-      { 'text-multimodal': 'vision-model' },
+    expect(harness.categorySettings.mutate).toHaveBeenCalledWith(
+      'cqaiclub-dsn-account',
+      [{ op: 'set', path: ['categoryDefaultModels', 'text-multimodal'], value: 'vision-model' }],
     )
 
     harness.defaultModel.saveSelection.mockClear()
@@ -486,9 +476,9 @@ describe('DsnAccountServiceRuntime', () => {
       },
     })
     expect(harness.defaultModel.saveSelection).not.toHaveBeenCalled()
-    expect(harness.categorySettings.update).toHaveBeenLastCalledWith(
-      'cqaiclub-category-default-models',
-      { image: 'shared-image-model' },
+    expect(harness.categorySettings.mutate).toHaveBeenLastCalledWith(
+      'cqaiclub-dsn-account',
+      [{ op: 'set', path: ['categoryDefaultModels', 'image'], value: 'shared-image-model' }],
     )
 
     await expect(harness.rpc('models/category-defaults/set', {

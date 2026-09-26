@@ -173,6 +173,7 @@ async function renderPublisher(mode: 'compatibility' | 'extended') {
   const ctx = {
     sessions,
     workspaces,
+    uiWorkspace: { openSession: sessions.open },
     slots: {
       inject: (_slot: string, callback: () => void) => callback(),
       register: (options: { name: string; key?: string }, renderer: () => ReactNode) => {

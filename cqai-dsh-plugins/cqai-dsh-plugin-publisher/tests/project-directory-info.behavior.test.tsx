@@ -7,7 +7,7 @@ import { api } from '../src/client/shared.tsx'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Menu: ({ anchor, open, items, onSelect }: any) => <>{anchor}{open && <div role="menu">{items.map((item: any) => <button type="button" key={item.id} data-app={item.id} onClick={() => onSelect(item.id)}>{item.label}</button>)}</div>}</>,
-  IconChevronDownOutline14: () => <span aria-hidden="true">⌄</span>,
+  IconChevronDownOutlineMedium: () => <span aria-hidden="true">⌄</span>,
 }))
 
 vi.mock('../src/client/shared.tsx', () => ({

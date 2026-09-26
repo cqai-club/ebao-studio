@@ -72,7 +72,7 @@ await check('A1 host exports the plugin contract', () => {
   assert.equal(typeof host.generateImage, 'function')
 })
 await check('A2 Config schema validates + marks apiKey secret', () => {
-  const resolved = host.Config({ apiUrl: 'https://x/v1', apiKey: 'sk-1' })
+  const resolved = host.Config({ apiUrl: 'https://x/v1', apiKey: 'sk-1' }).get()
   assert.equal(resolved.apiKey, 'sk-1')
   assert.equal(resolved.enabled, true)
   assert.equal(resolved.allowAgentImageGeneration, true)

@@ -12,7 +12,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Button: ({ children, variant: _variant, size: _size, ...props }: any) => <button type="button" {...props}>{children}</button>,
   Input: (props: any) => <input {...props}/>,
   Menu: ({ anchor }: any) => anchor,
-  IconChevronDownOutline14: () => <span aria-hidden="true">⌄</span>,
+  IconChevronDownOutlineMedium: () => <span aria-hidden="true">⌄</span>,
 }))
 
 vi.mock('../src/client/shared.tsx', () => ({

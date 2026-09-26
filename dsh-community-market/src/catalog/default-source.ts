@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type { CatalogSourceManifest, LocalSourceRecord } from '../contracts/index.js'
 import { validateLocalSourceRecords } from '../contracts/validate.js'
 import type { CommunityMarketService } from '../policy.js'
-import { SettingsCatalogSourceStore, type MarketSettingsDocument } from './source-store.js'
+import { PersistentCatalogSourceStore } from './source-store.js'
+import type { MarketStateStore } from './state-store.js'
 
 export type MarketDefaultSourceInitialization =
   | 'not-configured'
@@ -30,20 +30,19 @@ function configuredManifestUrl(
  * A failed manifest fetch leaves the marker unset so a later generation can retry.
  */
 export async function initializeMarketDefaultSource(
-  scope: SettingsScope<MarketSettingsDocument>,
+  state: MarketStateStore,
   marketPolicies: Pick<CommunityMarketService, 'listPolicies'>,
   signal: AbortSignal,
   readManifest: MarketDefaultSourceManifestReader,
 ): Promise<MarketDefaultSourceInitialization> {
   signal.throwIfAborted()
-  const current = scope.get()
-  if (current.defaultSourceApplied === true) return 'already-applied'
+  if (state.getDefaultSourceApplied()) return 'already-applied'
 
-  const currentRecords = [...current.sources]
+  const currentRecords = [...state.getSources()]
   validateLocalSourceRecords(currentRecords)
   if (currentRecords.length > 0) {
     signal.throwIfAborted()
-    await scope.update({ defaultSourceApplied: true })
+    await state.setSources(currentRecords, { markDefaultSourceApplied: true })
     return 'preserved-existing'
   }
 
@@ -52,14 +51,13 @@ export async function initializeMarketDefaultSource(
   const manifest = await readManifest(manifestUrl, signal)
   signal.throwIfAborted()
 
-  // Re-read immediately before persistence so settings changed outside this
+  // Re-read immediately before persistence so state changed outside this
   // scheduler still win over the product default.
-  const latest = scope.get()
-  if (latest.defaultSourceApplied === true) return 'already-applied'
-  const latestRecords = [...latest.sources]
+  if (state.getDefaultSourceApplied()) return 'already-applied'
+  const latestRecords = [...state.getSources()]
   validateLocalSourceRecords(latestRecords)
   if (latestRecords.length > 0) {
-    await scope.update({ defaultSourceApplied: true })
+    await state.setSources(latestRecords, { markDefaultSourceApplied: true })
     return 'preserved-existing'
   }
 
@@ -74,6 +72,6 @@ export async function initializeMarketDefaultSource(
     order: 0,
   }
   validateLocalSourceRecords([source])
-  await new SettingsCatalogSourceStore(scope).save([source], { markDefaultSourceApplied: true })
+  await new PersistentCatalogSourceStore(state).save([source], { markDefaultSourceApplied: true })
   return 'seeded'
 }

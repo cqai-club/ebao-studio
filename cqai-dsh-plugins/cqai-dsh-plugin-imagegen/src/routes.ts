@@ -84,6 +84,8 @@ export interface SettingsSeam {
 export interface ImageGenRoutesDeps {
   /** The settings seam (namespace storage). */
   settings: SettingsSeam
+  /** Actual rc.2 Loader entry id; the bridge keeps its existing public name. */
+  settingsNamespace?: string
   /** Resolve the current upstream config (legacy single-endpoint path). */
   resolve: () => UpstreamConfig
   /** Resolve the current channel view (the channel-aware path). */
@@ -464,9 +466,9 @@ function imageDataUrl(value: string): { mediaType: ImageMediaType; data: Uint8Ar
 }
 
 /** Project one settings descriptor onto the bridge wire view. */
-function toView(descriptor: SettingsDescriptor): Record<string, unknown> {
+function toView(descriptor: SettingsDescriptor, publicNamespace = String(descriptor.ns)): Record<string, unknown> {
   return {
-    ns: String(descriptor.ns),
+    ns: publicNamespace,
     schema: descriptor.schema,
     value: descriptor.value,
     ...descriptor.base === undefined ? {} : { base: descriptor.base },
@@ -493,6 +495,7 @@ function failureOf(error: unknown): { ok: false; code: string; message: string }
  * @returns the route registrations.
  */
 export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
+  const settingsNamespace = deps.settingsNamespace ?? IMAGEGEN_SETTINGS_NAMESPACE
   const history = deps.history ?? {
     list: listHistory,
     append: appendHistory,
@@ -784,11 +787,11 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
       handler: async (req, res) => {
         if (!guard(req, res, 'POST')) return
         const descriptor = deps.settings.describe({ redactSecrets: true })
-          .find(candidate => String(candidate.ns) === IMAGEGEN_SETTINGS_NAMESPACE)
+          .find(candidate => String(candidate.ns) === settingsNamespace)
         writeJson(res, 200, {
           ok: true,
           value: {
-            namespaces: descriptor === undefined ? [] : [toView(projectDescriptor(descriptor))],
+            namespaces: descriptor === undefined ? [] : [toView(projectDescriptor(descriptor), IMAGEGEN_SETTINGS_NAMESPACE)],
             writable: deps.settings.writable !== false,
           },
         })
@@ -814,19 +817,19 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
         try {
           // The alpha.2 settings package no longer exports settingsNamespace;
           // the bridge already checked this value against our fixed namespace.
-          if (deps.mutateSettings !== undefined) await deps.mutateSettings(ns, body.ops, expectedRevision)
-          else await deps.settings.mutate(ns, body.ops, expectedRevision)
+          if (deps.mutateSettings !== undefined) await deps.mutateSettings(settingsNamespace, body.ops, expectedRevision)
+          else await deps.settings.mutate(settingsNamespace, body.ops, expectedRevision)
         } catch (error) {
           writeJson(res, 200, failureOf(error))
           return
         }
         const descriptor = deps.settings.describe({ redactSecrets: true })
-          .find(candidate => String(candidate.ns) === ns)
+          .find(candidate => String(candidate.ns) === settingsNamespace)
         if (descriptor === undefined) {
           writeJson(res, 200, { ok: false, code: 'internal', message: `settings namespace "${ns}" was disposed after the mutate` })
           return
         }
-        writeJson(res, 200, { ok: true, value: toView(projectDescriptor(descriptor)) })
+        writeJson(res, 200, { ok: true, value: toView(projectDescriptor(descriptor), IMAGEGEN_SETTINGS_NAMESPACE) })
       },
     },
     // ----------------------------------------------------------- generate

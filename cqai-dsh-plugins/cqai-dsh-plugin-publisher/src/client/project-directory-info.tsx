@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconChevronDownOutline14, Menu, type MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, Menu, type MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import { api, errorMessage } from './shared.tsx'
 
 type ProjectWorkspace = { contentId: string; path: string }
@@ -121,7 +121,7 @@ export function ProjectDirectoryInfo({ contentId }: { contentId: string }) {
           void openDirectory(id)
         }} anchor={<div className="pub-project-directory-open">
           <button type="button" aria-label={`在${APP_LABELS[current]}中打开项目目录`} disabled={opening} onClick={() => void openDirectory(current)}><AppIcon id={current}/><span>打开文件夹</span></button>
-          <button type="button" aria-label="选择打开项目目录的应用" aria-haspopup="menu" aria-expanded={menuOpen} disabled={opening} onClick={() => setMenuOpen(value => !value)}><IconChevronDownOutline14 size={12}/></button>
+          <button type="button" aria-label="选择打开项目目录的应用" aria-haspopup="menu" aria-expanded={menuOpen} disabled={opening} onClick={() => setMenuOpen(value => !value)}><IconChevronDownOutlineMedium size={12}/></button>
         </div>}/>}
     </div>
     {error ? <p className="pub-project-directory-error" role="alert">项目目录不可用：{error} <button className="pub-project-directory-retry" type="button" onClick={() => setRetry(value => value + 1)}>重试</button></p>

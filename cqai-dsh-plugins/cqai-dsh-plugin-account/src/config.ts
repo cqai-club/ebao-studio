@@ -7,7 +7,13 @@ import {
   DEFAULT_SCOPES,
   MODEL_CATALOG_CACHE_TTL_MS,
   type DsnAccountConfig,
+  type DsnDefaultModelCategory,
 } from './protocol.ts'
+
+type CategoryDefaultModels = Partial<Record<DsnDefaultModelCategory, string>>
+export type AccountPluginConfig = DsnAccountConfig & {
+  categoryDefaultModels: { get(): Readonly<CategoryDefaultModels> }
+}
 
 export const Config = z.object({
   issuer: z.string().default(DEFAULT_ISSUER),
@@ -17,7 +23,14 @@ export const Config = z.object({
   scopes: z.array(String).role('table').default([...DEFAULT_SCOPES]),
   requestTimeoutMs: z.natural().min(1000).default(15_000),
   modelCatalogCacheTtlMs: z.natural().min(1000).default(MODEL_CATALOG_CACHE_TTL_MS),
-})
+  categoryDefaultModels: z.object({
+    image: z.string(),
+    'text-multimodal': z.string(),
+    video: z.string(),
+    audio: z.string(),
+    other: z.string(),
+  }).default({}).volatile(),
+}) as unknown as z<AccountPluginConfig>
 
 export function normalizeConfig(config: Partial<DsnAccountConfig> | undefined): DsnAccountConfig {
   const value: DsnAccountConfig = {

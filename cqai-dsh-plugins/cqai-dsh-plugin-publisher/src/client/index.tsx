@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -25,7 +26,7 @@ import { api, css, errorMessage, PublisherModal } from './shared.tsx'
 import { PublisherTipsProvider } from './tips.tsx'
 import { VideoPage } from './video.tsx'
 
-export const inject = ['slots', 'layout', 'sidebarRight', 'sidebarRightTabs', 'sessions', 'workspaces']
+export const inject = ['slots', 'layout', 'sidebarRight', 'sidebarRightTabs', 'sessions', 'workspaces', 'uiWorkspace']
 const PUBLISHER_PANEL = 'cqai-publisher' as MainPanelId
 const AGENT_DRAWER_EVENT = 'cqai-publisher-agent-drawer'
 type PublisherTab = 'publish' | 'history' | 'accounts' | 'settings'
@@ -98,7 +99,7 @@ function handleTabKeyDown(event: KeyboardEvent<HTMLElement>) {
   tabs[next]?.click()
 }
 
-function PublisherPage({ sessions, workspaces }: { sessions: ISessions; workspaces: IWorkspaces }) {
+function PublisherPage({ sessions, workspaces, uiWorkspace }: { sessions: ISessions; workspaces: IWorkspaces; uiWorkspace: UiWorkspace }) {
   const [tab, setTab] = useState<PublisherTab>('publish')
   const pageTitleRef = useRef<HTMLHeadingElement>(null)
   const [editingIds, setEditingIds] = useState<Partial<Record<PublisherContentType, string>>>(() => {
@@ -219,7 +220,7 @@ function PublisherPage({ sessions, workspaces }: { sessions: ISessions; workspac
       await waitForWorkspaceSession(workspaces, workspace.workspaceId, sessionId)
     }
     if (!stillCurrent()) return
-    sessions.open(sessionId)
+    uiWorkspace.openSession(sessionId)
     const binding = await api<Omit<AgentDrawerBinding, 'workspaceId'>>('agent-draft-bind', { sessionId, contentId: content.id })
     if (!stillCurrent() || sessions.list.getSnapshot().current !== sessionId) {
       await api('agent-draft-bind', { sessionId, contentId: null, bindingToken: binding.bindingToken })
@@ -355,8 +356,8 @@ function PublisherPage({ sessions, workspaces }: { sessions: ISessions; workspac
 export function apply(ctx: Context): void {
   // This package also builds its Host entry, whose `sessions` property is a
   // different service. The client injection above guarantees this face here.
-  const { sessions, workspaces } = ctx as unknown as { sessions: ISessions; workspaces: IWorkspaces }
-  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PUBLISHER_PANEL }, () => <PublisherPage sessions={sessions} workspaces={workspaces}/>))
+  const { sessions, workspaces, uiWorkspace } = ctx as unknown as { sessions: ISessions; workspaces: IWorkspaces; uiWorkspace: UiWorkspace }
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PUBLISHER_PANEL }, () => <PublisherPage sessions={sessions} workspaces={workspaces} uiWorkspace={uiWorkspace}/>))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PUBLISHER_PANEL, order: 42, label: '多平台发布' }, ({ size }: PropsRuntime<'sidebar.panellist'>) => <PublishIcon size={size}/>))
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: PREVIEW_ID,

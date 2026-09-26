@@ -184,7 +184,7 @@ describe('CqaiClubAdapter', () => {
 
     expect(readImageRequest).toHaveBeenCalledWith(
       imageRef,
-      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+      { width: 1, height: 1, maxBytes: 1024 * 1024 },
       signal,
     )
     const [, init] = service.fetchAi.mock.calls[0] as [string, RequestInit]

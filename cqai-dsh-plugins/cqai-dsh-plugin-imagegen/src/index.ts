@@ -8,13 +8,15 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { DsnAccountService } from '@cqaiclub/dsn-account'
+import type { DsnAccountService, DsnAccountSnapshot } from '@cqaiclub/dsn-account'
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import { installSettingsSectionCompat, settingsNamespaceCompat } from './settings-compat.ts'
-import z from 'schemastery'// Type-only: pulls the webServer Context merge (route registration).
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import z from '@deepseek-ai/schemastery'
+import { migrateLegacyImageGenSettings } from './settings-legacy-migration.ts'
+// Type-only: pulls the webServer Context merge (route registration).
 import type {} from '@deepseek-ai/dsh-host-webserver'
 // Type-only: pulls the systemPrompt Context merge (announcement section).
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -25,7 +27,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 // structurally (see CanvasSkillServices): the host half must not import those
 // packages at runtime, and this deployment does not resolve them at
 // type-check time either.
-import { IMAGEGEN_SETTINGS_NAMESPACE, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigPreviewRequest, type CanvasSkillConfigPreviewResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillConfigView, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type ChannelConfig, type ModelMapping } from './protocol.ts'
+import { IMAGEGEN_PROFILE_ENTRY_ID, IMAGEGEN_SETTINGS_NAMESPACE, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigPreviewRequest, type CanvasSkillConfigPreviewResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillConfigView, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type ChannelConfig, type ModelMapping } from './protocol.ts'
 import { makeRoutes, type SettingsSeam } from './routes.ts'
 import { syncAllTemplates } from './templates-store.ts'
 import { setStorageSyncHandler, putObject, type StorageSyncConfig } from './storage-sync.ts'
@@ -373,7 +375,7 @@ export { recipeFor, recipeNames } from './skill-config-recipes.ts'
 export { isZipDirectory, readZipDirectory, readZipEntry } from './zip.ts'
 export { canvasStore, isBlockedFileName, fileKindOf, MAX_CANVAS_FILE_BYTES, mimeFromFileName, safeFileName } from './canvas-store.ts'
 /** The branded settings namespace of this plugin (the card edits it). */
-export const ImageGenSettingsNamespace = settingsNamespaceCompat(IMAGEGEN_SETTINGS_NAMESPACE)
+export const ImageGenSettingsNamespace = IMAGEGEN_PROFILE_ENTRY_ID as SettingsNamespace
 
 /**
  * Plugin config, validated by the same-named schemastery schema.
@@ -452,7 +454,9 @@ export interface Config {
   imageModels?: string[]
 }
 
-export const Config: z<Config> = z.object({
+type ConfigSource = Config | { get(): Readonly<Config> }
+
+export const Config = z.object({
   enabled: z.boolean().default(true),
   announceToAgent: z.boolean().default(true),
   allowAgentImageGeneration: z.boolean().default(true),
@@ -491,7 +495,7 @@ export const Config: z<Config> = z.object({
   apiUrl: z.string().default(''),
   apiKey: z.string().role('secret').default(''),
   imageModels: z.array(z.string()).default([]),
-})
+}).volatile() as unknown as z<ConfigSource>
 
 /** Schema defaults, re-read for hand-built contexts (the loader applies them normally). */
 const DEFAULT_ENABLED = true
@@ -612,7 +616,7 @@ export function resolveStorageConfig(
  * @param ctx - host plugin context carrying webServer/systemPrompt.
  * @param config - resolved plugin config (schema defaults applied by the loader).
  */
-export function apply(ctx: Context, config?: Config): () => void {
+export function apply(ctx: Context, config?: ConfigSource): () => void {
   const disposeMountGuard = installImagegenMountGuard(ctx)
   // Authentication, quota, model discovery and token refresh have one owner:
   // the separately mounted @cqaiclub/dsn-account service. ImageGen consumes
@@ -624,11 +628,12 @@ export function apply(ctx: Context, config?: Config): () => void {
   })
   const secretVault = new ImageGenSecretVault(ctx.credentials)
   const vaultReady = secretVault.ready()
-  setImageDataRoot(config?.localStoragePath)
+  const readConfig = (): Config => (config && 'get' in config ? config.get() : config ?? {}) as Config
+  setImageDataRoot(readConfig().localStoragePath)
 
   // The live source the surfaces read: the settings section once the settings
   // service is attached, the composition entry otherwise.
-  let current: () => Config = () => config ?? {}
+  let current: () => Config = readConfig
   const resolve = (): EffectiveConfig => {
     const value = current() ?? {}
     setImageDataRoot(value.localStoragePath)
@@ -1122,20 +1127,26 @@ export function apply(ctx: Context, config?: Config): () => void {
       // Validate and back it up before the settings write makes that root live;
       // a failed migration therefore leaves both the active setting and source
       // data untouched.
-      const nextRoot = requestedImageDataRoot(publicOps, config?.localStoragePath)
+      const nextRoot = requestedImageDataRoot(publicOps, readConfig().localStoragePath)
       if (nextRoot !== undefined) await ensureImageDataMigration(resolveImageDataRoot(nextRoot))
       if (publicOps.length > 0) await seam.mutate(ns, publicOps, expectedRevision)
     }
     settingsStartup = (async () => {
       await vaultReady
-      await secretVault.migrateLegacySettings(seam, IMAGEGEN_SETTINGS_NAMESPACE)
+      const profileHome = (ctx as Context & { profileContext?: { home: string } }).profileContext?.home
+      if (profileHome) {
+        const loader = (ctx.root as unknown as { loader?: { await(): Promise<void> } }).loader
+        if (loader) await loader.await()
+        await migrateLegacyImageGenSettings(profileHome, seam)
+      }
+      await secretVault.migrateLegacySettings(seam, IMAGEGEN_PROFILE_ENTRY_ID)
       // Re-read localStoragePath after the settings namespace is attached.
       resolve()
       await ensureImageDataMigration(imageDataRoot())
     })()
     // Skill configuration values are written through the same namespace the
     // settings card edits; the panel never crafts settings ops itself.
-    mutateSettings = async ops => { await secureMutate(IMAGEGEN_SETTINGS_NAMESPACE, ops) }
+    mutateSettings = async ops => { await secureMutate(IMAGEGEN_PROFILE_ENTRY_ID, ops) }
     sctx.effect(
       () => {
         let disposed = false
@@ -1144,6 +1155,7 @@ export function apply(ctx: Context, config?: Config): () => void {
           if (disposed) return
           const routes = makeRoutes({
             settings: seam,
+            settingsNamespace: IMAGEGEN_PROFILE_ENTRY_ID,
             cqai,
             projectSettingsDescriptor: descriptor => secretVault.projectDescriptor(descriptor),
             mutateSettings: secureMutate,
@@ -1263,15 +1275,17 @@ export function apply(ctx: Context, config?: Config): () => void {
     })
   }
 
-  installSettingsSectionCompat(ctx, ImageGenSettingsNamespace, Config, config ?? {}, {
-    setSource: (source) => {
-      current = source
-      sync()
-    },
-    onChange: sync,
+  ctx.inject(['settings'], (sctx) => {
+    sctx.effect(() => sctx.settings.configure({ auto: false }, ctx.fiber))
+  })
+  ctx.on('settings/document-updated', (namespace) => {
+    if (String(namespace) === IMAGEGEN_PROFILE_ENTRY_ID) sync()
   })
 
-  ctx.on('dsn-account/changed', (snapshot) => {
+  const accountEvents = ctx as unknown as {
+    on(event: 'dsn-account/changed', listener: (snapshot: DsnAccountSnapshot) => void): void
+  }
+  accountEvents.on('dsn-account/changed', (snapshot) => {
     // The event already contains the current state. Calling describe() here
     // would call getStatus(), which emits dsn-account/changed again and turns
     // one account poll into an infinite Host-side feedback loop.

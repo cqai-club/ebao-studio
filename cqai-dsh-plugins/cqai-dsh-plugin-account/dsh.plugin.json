@@ -4,7 +4,7 @@
   "main": "./lib/index.js",
   "description": "CQAI Club shared account and quota plugin for 易宝工坊",
   "engines": {
-    "dsh": ">=0.1.5-rc.1"
+    "dsh": ">=0.1.7-rc.2"
   },
   "client": {
     "main": "./client/client.js"

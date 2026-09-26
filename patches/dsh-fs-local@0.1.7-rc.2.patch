@@ -1,0 +1,28 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -144,4 +144,5 @@
+ /** Opaque version token from high-resolution identity and freshness metadata. */
+-function versionOf(info) {
++function versionOf(info, absolutePath) {
++	if (info.mtimeNs === void 0 || info.ctimeNs === void 0) return FsVersion(`${absolutePath}:${info.size}:${Number(info.mode)}:${info.mtime.getTime()}:${info.ctime.getTime()}`);
+ 	return FsVersion(`${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`);
+ }
+@@ -241,6 +242,6 @@
+ 	return {
+-		version: versionOf(info),
+-		mode: Number(info.mode & 511n),
++		version: versionOf(info, absolutePath),
++		mode: Number(info.mode) & 511,
+ 		type: pathType(info),
+ 		size: Number(info.size)
+ 	};
+@@ -256,6 +257,6 @@
+ 	return {
+-		version: versionOf(info),
+-		mode: Number(info.mode & 511n),
++		version: versionOf(info, absolutePath),
++		mode: Number(info.mode) & 511,
+ 		type: pathLinkType(info),
+ 		size: Number(info.size)
+ 	};

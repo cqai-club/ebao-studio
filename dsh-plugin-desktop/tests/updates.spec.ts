@@ -412,6 +412,25 @@ describe('desktop update Host plugin', () => {
     expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available')
   })
 
+  it('rechecks a digest-bearing manifest before invoking the native updater', async () => {
+    vi.useFakeTimers()
+    let requestCount = 0
+    const harness = await createHarness({
+      packaged: false,
+      request: async () => {
+        requestCount += 1
+        return Response.json({ version: '2.1.0', sha256: { windows: 'c'.repeat(64), mac: 'd'.repeat(64) } })
+      },
+      confirmDownload: async () => true,
+    })
+
+    const pending = harness.tray.invoke()
+    await vi.waitFor(() => { expect(harness.downloadAndInstall).toHaveBeenCalledOnce() })
+    expect(requestCount).toBe(2)
+    expect(harness.downloadAndInstall).toHaveBeenCalledWith('2.1.0', expect.any(AbortSignal))
+    await pending
+  })
+
   it('treats a manual available-version selection as a fresh confirmation', async () => {
     const confirmDownload = vi.fn()
       .mockResolvedValueOnce(false)
