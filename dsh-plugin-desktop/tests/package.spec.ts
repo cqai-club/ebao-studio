@@ -821,7 +821,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.5')
+    expect(manifest.version).toBe('0.0.6')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
@@ -877,6 +877,7 @@ describe('published package surface', () => {
       'cordis.patch.yml',
       'lib/**',
       'package.json',
+      'node_modules/@agents-anywhere/dsh-bridge-next/**',
       '!node_modules/node-pty/build/**',
       '!node_modules/fs-ext/build/**',
     ])
