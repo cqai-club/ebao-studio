@@ -211,6 +211,11 @@ try {
     const entries = [...ctx.loader.entries()].map(entry => `${entry.id}=${String(entry.options.name)}`)
     throw new Error(`assembled desktop profile is missing the default CQAI ImageGen plugin: ${entries.join(', ')}`)
   }
+  const pptEntries = [...ctx.loader.entries()]
+    .filter(entry => entry.options.name === 'dsh-ppt-composer')
+  if (pptEntries.length !== 1) {
+    throw new Error(`assembled desktop profile must mount one DSH PPT composer, found ${pptEntries.length}`)
+  }
 
   if (ctx.get('desktopPnpm') === undefined) {
     throw new Error('assembled desktop profile is missing the desktop pnpm Host capability')
@@ -353,6 +358,7 @@ try {
   }
   for (const id of [
     'dsh-plugin-desktop',
+    'dsh-ppt-composer',
     '@deepseek-ai/dsh-client-file-upload',
     '@deepseek-ai/dsh-client-ui-conversation',
     '@deepseek-ai/dsh-client-ui-sidebar',

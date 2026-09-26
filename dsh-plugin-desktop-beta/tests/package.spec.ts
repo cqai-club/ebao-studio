@@ -218,6 +218,8 @@ describe('published package surface', () => {
       'cqai-dsh-plugin-market': '0.1.0',
       'cqai-dsh-plugin-publisher': '0.1.0',
       'dsh-community-market': '0.1.0-dev.0',
+      'dsh-ppt': '0.1.1-rc.2',
+      'dsh-ppt-composer': 'file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz',
       dshmarket: '1.38.1',
       'react-dom': '18.3.1',
     })

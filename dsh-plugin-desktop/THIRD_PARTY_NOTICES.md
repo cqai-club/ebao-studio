@@ -7,7 +7,7 @@ These ship as prebuilt runtimes inside the installer rather than as npm dependen
 they are not enumerated in the table below.
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| MatrixMedia（矩媒） | 0.11.4 | GPL-2.0-only | https://github.com/hanliang97/MatrixMedia.git @ a6fc39056254986786c0026e99b7e75cd05282e4 |
+| MatrixMedia（矩媒） | 0.11.4 | GPL-2.0-only | https://github.com/hanliang97/MatrixMedia.git @ 1962bcf47b57e1510db790cceff2afc67f16ea9a |
 MatrixMedia（矩媒） is built from the pinned `matrixmedia-publisher/` Git submodule and bundled at
 `resources/publisher/MatrixMedia Publisher Worker.app` as the isolated publishing Helper.
 Its complete license is installed at `resources/publisher/LICENSE`; `resources/publisher/SOURCE.json`
@@ -17,7 +17,12 @@ records the public repository, branch, exact source commit, build command, and l
 | --- | --- | --- |
 | @agentclientprotocol/sdk | 1.4.0 | Apache-2.0 |
 | @agents-anywhere/dsh-bridge-next | 0.1.0-dev.0.desktop.cb413330914fb.rcda81994 | MIT |
+| @aiden0z/pptx-renderer | 1.2.4 | Apache-2.0 |
 | @anthropic-ai/sdk | 0.123.0 | MIT |
+| @asamuzakjp/css-color | 5.1.11 | MIT |
+| @asamuzakjp/dom-selector | 7.1.1 | MIT |
+| @asamuzakjp/generational-cache | 1.0.1 | MIT |
+| @asamuzakjp/nwsapi | 2.3.9 | MIT |
 | @aws-crypto/sha256-browser | 5.2.0 | Apache-2.0 |
 | @aws-crypto/sha256-js | 5.2.0 | Apache-2.0 |
 | @aws-crypto/supports-web-crypto | 5.2.0 | Apache-2.0 |
@@ -45,7 +50,14 @@ records the public repository, branch, exact source commit, build command, and l
 | @babel/code-frame | 7.29.7 | MIT |
 | @babel/helper-validator-identifier | 7.29.7 | MIT |
 | @babel/runtime | 7.29.7 | MIT |
+| @bramus/specificity | 2.4.2 | MIT |
 | @cqaiclub/dsn-account | 0.1.1 | MIT |
+| @csstools/color-helpers | 6.1.1 | MIT-0 |
+| @csstools/css-calc | 3.3.0 | MIT |
+| @csstools/css-color-parser | 4.2.0 | MIT |
+| @csstools/css-parser-algorithms | 4.0.0 | MIT |
+| @csstools/css-syntax-patches-for-csstree | 1.1.8 | MIT-0 |
+| @csstools/css-tokenizer | 4.0.0 | MIT |
 | @deepseek-ai/cordis | 4.0.2 | MIT |
 | @deepseek-ai/cordis-plugin-group | 1.0.2 | MIT |
 | @deepseek-ai/cordis-plugin-hmr | 1.0.17 | MIT |
@@ -293,6 +305,7 @@ records the public repository, branch, exact source commit, build command, and l
 | @deepseek-ai/schemastery | 3.18.2 | MIT |
 | @earendil-works/pi-ai | 0.85.1 | MIT |
 | @earendil-works/pi-telemetry | 0.85.1 | MIT |
+| @exodus/bytes | 1.15.1 | MIT |
 | @google/genai | 1.52.0 | Apache-2.0 |
 | @hono/node-server | 2.1.0 | MIT |
 | @img/colour | 1.1.0 | MIT |
@@ -300,9 +313,13 @@ records the public repository, branch, exact source commit, build command, and l
 | @img/sharp-darwin-x64 | 0.35.3 | Apache-2.0 |
 | @img/sharp-libvips-darwin-arm64 | 1.3.2 | LGPL-3.0-or-later |
 | @img/sharp-libvips-darwin-x64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-win32-arm64 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later |
+| @img/sharp-win32-x64 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later |
 | @joplin/turndown-plugin-gfm | 1.0.67 | MIT |
 | @koromix/koffi-darwin-arm64 | 3.1.5 | MIT |
 | @koromix/koffi-darwin-x64 | 3.1.5 | MIT |
+| @koromix/koffi-win32-arm64 | 3.1.5 | MIT |
+| @koromix/koffi-win32-x64 | 3.1.5 | MIT |
 | @mixmark-io/domino | 2.2.0 | BSD-2-Clause |
 | @modelcontextprotocol/sdk | 1.30.0 | MIT |
 | @noble/hashes | 1.4.0 | MIT |
@@ -355,11 +372,13 @@ records the public repository, branch, exact source commit, build command, and l
 | @smithy/util-utf8 | 2.3.0 | Apache-2.0 |
 | @stablelib/base64 | 1.0.1 | MIT |
 | @standard-schema/spec | 1.1.0 | MIT |
-| @types/node | 26.2.0 | MIT |
+| @types/node | 22.20.4 | MIT |
 | @types/retry | 0.12.0 | MIT |
 | @vscode/ripgrep | 1.18.0 | MIT |
 | @vscode/ripgrep-darwin-arm64 | 1.18.0 | MIT |
 | @vscode/ripgrep-darwin-x64 | 1.18.0 | MIT |
+| @vscode/ripgrep-win32-arm64 | 1.18.0 | MIT |
+| @vscode/ripgrep-win32-x64 | 1.18.0 | MIT |
 | @xterm/headless | 6.0.0 | MIT |
 | accepts | 2.0.0 | MIT |
 | adm-zip | 0.6.0 | MIT |
@@ -373,6 +392,7 @@ records the public repository, branch, exact source commit, build command, and l
 | async-function | 1.0.0 | MIT |
 | async-generator-function | 1.0.0 | MIT |
 | base64-js | 1.5.1 | MIT |
+| bidi-js | 1.0.3 | MIT |
 | bignumber.js | 9.3.1 | MIT |
 | body-parser | 2.3.0 | MIT |
 | bowser | 2.14.1 | MIT |
@@ -396,6 +416,7 @@ records the public repository, branch, exact source commit, build command, and l
 | content-type | 1.0.5 | MIT |
 | cookie | 0.7.2 | MIT |
 | cookie-signature | 1.2.2 | MIT |
+| core-util-is | 1.0.3 | MIT |
 | cors | 2.8.6 | MIT |
 | cosmokit | 1.8.1 | MIT |
 | cqai-dsh-plugin-imagegen | 0.1.0 | Apache-2.0 |
@@ -403,9 +424,12 @@ records the public repository, branch, exact source commit, build command, and l
 | cqai-dsh-plugin-publisher | 0.1.0 | MIT |
 | cqai-dsh-plugin-video | 0.1.0 | MIT |
 | cross-spawn | 7.0.6 | MIT |
+| css-tree | 3.2.1 | MIT |
 | data-uri-to-buffer | 4.0.1 | MIT |
+| data-urls | 7.0.0 | MIT |
 | debug | 4.4.3 | MIT |
 | decamelize | 1.2.0 | MIT |
+| decimal.js | 10.6.0 | MIT |
 | default-browser | 5.5.1 | MIT |
 | default-browser-id | 5.0.1 | MIT |
 | define-lazy-prop | 3.0.0 | MIT |
@@ -414,9 +438,12 @@ records the public repository, branch, exact source commit, build command, and l
 | diff | 9.0.0 | BSD-3-Clause |
 | dijkstrajs | 1.0.3 | MIT |
 | dsh-community-market | 0.1.0-dev.0 | MIT |
+| dsh-ppt | 0.1.1-rc.2 | MIT |
+| dsh-ppt-composer | 0.1.1-rc.2 | MIT |
 | dshmarket | 1.38.1 | MIT |
 | dunder-proto | 1.0.1 | MIT |
 | ecdsa-sig-formatter | 1.0.11 | Apache-2.0 |
+| echarts | 6.1.0 | Apache-2.0 |
 | ee-first | 1.1.1 | MIT |
 | electron-updater | 6.8.9 | MIT |
 | emoji-regex | 8.0.0 | MIT |
@@ -458,10 +485,14 @@ records the public repository, branch, exact source commit, build command, and l
 | has-symbols | 1.1.0 | MIT |
 | hasown | 2.0.4 | MIT |
 | hono | 4.13.2 | MIT |
+| html-encoding-sniffer | 6.0.0 | MIT |
 | http-errors | 2.0.1 | MIT |
 | http-proxy-agent | 7.0.2 | MIT |
+| https | 1.0.0 | ISC |
 | https-proxy-agent | 7.0.6 | MIT |
 | iconv-lite | 0.7.3 | MIT |
+| image-size | 1.2.1 | MIT |
+| immediate | 3.0.6 | MIT |
 | inherits | 2.0.4 | ISC |
 | ip-address | 10.5.0 | MIT |
 | ipaddr.js | 2.5.0 | MIT |
@@ -469,30 +500,37 @@ records the public repository, branch, exact source commit, build command, and l
 | is-fullwidth-code-point | 3.0.0 | MIT |
 | is-in-ssh | 1.0.0 | MIT |
 | is-inside-container | 1.0.0 | MIT |
+| is-potential-custom-element-name | 1.0.1 | MIT |
 | is-promise | 4.0.0 | MIT |
 | is-wsl | 3.1.1 | MIT |
+| isarray | 1.0.0 | MIT |
 | isexe | 2.0.0 | ISC |
 | jose | 6.2.8 | MIT |
 | js-tokens | 4.0.0 | MIT |
 | js-yaml | 4.3.1 | MIT |
+| jsdom | 29.1.1 | MIT |
 | json-bigint | 1.0.0 | MIT |
 | json-schema-to-ts | 3.1.1 | MIT |
 | json-schema-traverse | 1.0.0 | MIT |
 | json-schema-typed | 8.0.2 | BSD-2-Clause |
 | jsonfile | 6.2.1 | MIT |
+| jszip | 3.10.2 | (MIT OR GPL-3.0-or-later) |
 | jwa | 2.0.1 | MIT |
 | jws | 4.0.1 | MIT |
 | koffi | 3.1.5 | MIT |
 | lazy-val | 1.0.5 | MIT |
+| lie | 3.3.0 | MIT |
 | linkify-it | 5.0.2 | MIT |
 | locate-path | 5.0.0 | MIT |
 | lodash.escaperegexp | 4.1.2 | MIT |
 | lodash.isequal | 4.5.0 | MIT |
 | long | 5.3.2 | Apache-2.0 |
 | loose-envify | 1.4.0 | MIT |
+| lru-cache | 11.5.2 | BlueOak-1.0.0 |
 | lucide-react | 1.41.0 | ISC |
 | markdown-it | 14.1.0 | MIT |
 | math-intrinsics | 1.1.0 | MIT |
+| mdn-data | 2.27.1 | CC0-1.0 |
 | mdurl | 2.1.0 | MIT |
 | media-typer | 1.1.1 | MIT |
 | merge-descriptors | 2.0.0 | MIT |
@@ -506,6 +544,8 @@ records the public repository, branch, exact source commit, build command, and l
 | node-addon-require-builtin | 0.1.4 | MIT |
 | node-addon-require-builtin-darwin-arm64 | 0.1.4 | MIT |
 | node-addon-require-builtin-darwin-x64 | 0.1.4 | MIT |
+| node-addon-require-builtin-win32-arm64-msvc | 0.1.4 | MIT |
+| node-addon-require-builtin-win32-x64-msvc | 0.1.4 | MIT |
 | node-domexception | 1.0.0 | MIT |
 | node-fetch | 3.3.2 | MIT |
 | node-pty | 1.2.0-beta.15 | MIT |
@@ -520,6 +560,8 @@ records the public repository, branch, exact source commit, build command, and l
 | p-locate | 4.1.0 | MIT |
 | p-retry | 4.6.2 | MIT |
 | p-try | 2.2.0 | MIT |
+| pako | 1.0.11 | (MIT AND Zlib) |
+| parse5 | 8.0.1 | MIT |
 | parseurl | 1.3.3 | MIT |
 | partial-json | 0.1.7 | MIT |
 | path-exists | 4.0.0 | MIT |
@@ -532,17 +574,22 @@ records the public repository, branch, exact source commit, build command, and l
 | pngjs | 5.0.0 | MIT |
 | pnpm | 11.8.0 | MIT |
 | powershell-utils | 0.2.0 | MIT |
+| pptxgenjs | 4.0.1 | MIT |
+| process-nextick-args | 2.0.1 | MIT |
 | protobufjs | 7.6.5 | BSD-3-Clause |
 | proxy-addr | 2.0.7 | MIT |
+| punycode | 2.3.1 | MIT |
 | punycode.js | 2.3.1 | MIT |
 | pvtsutils | 1.3.6 | MIT |
 | pvutils | 1.2.0 | MIT |
 | qrcode | 1.5.4 | MIT |
 | qs | 6.15.3 | BSD-3-Clause |
+| queue | 6.0.2 | MIT |
 | range-parser | 1.3.0 | MIT |
 | raw-body | 3.0.2 | MIT |
 | react | 18.3.1 | MIT |
 | react-dom | 18.3.1 | MIT |
+| readable-stream | 2.3.8 | MIT |
 | readdirp | 4.1.2 | MIT |
 | reflect-metadata | 0.2.2 | Apache-2.0 |
 | require-directory | 2.1.1 | MIT |
@@ -555,6 +602,7 @@ records the public repository, branch, exact source commit, build command, and l
 | safe-buffer | 5.2.1 | MIT |
 | safer-buffer | 2.1.2 | MIT |
 | sax | 1.6.1 | BlueOak-1.0.0 |
+| saxes | 6.0.0 | ISC |
 | scheduler | 0.23.2 | MIT |
 | schemastery | 3.18.0 | MIT |
 | selfsigned | 5.5.0 | MIT |
@@ -562,6 +610,7 @@ records the public repository, branch, exact source commit, build command, and l
 | send | 1.2.1 | MIT |
 | serve-static | 2.2.1 | MIT |
 | set-blocking | 2.0.0 | ISC |
+| setimmediate | 1.0.5 | MIT |
 | setprototypeof | 1.2.0 | ISC |
 | sharp | 0.35.3 | Apache-2.0 |
 | shebang-command | 2.0.0 | MIT |
@@ -571,35 +620,51 @@ records the public repository, branch, exact source commit, build command, and l
 | side-channel-map | 1.0.1 | MIT |
 | side-channel-weakmap | 1.0.2 | MIT |
 | sonner | 2.0.8 | MIT |
+| source-map-js | 1.2.1 | BSD-3-Clause |
 | standardwebhooks | 1.1.1 | MIT |
 | statuses | 2.0.2 | MIT |
+| string_decoder | 1.1.1 | MIT |
 | string-width | 4.2.3 | MIT |
 | strip-ansi | 6.0.1 | MIT |
+| symbol-tree | 3.2.4 | MIT |
 | tiny-typed-emitter | 2.1.0 | MIT |
+| tldts | 7.4.10 | MIT |
+| tldts-core | 7.4.10 | MIT |
 | toidentifier | 1.0.1 | MIT |
+| tough-cookie | 6.0.2 | BSD-3-Clause |
+| tr46 | 6.0.0 | MIT |
 | ts-algebra | 2.0.0 | MIT |
 | tslib | 2.8.1 | 0BSD |
 | tsyringe | 4.10.0 | MIT |
 | turndown | 7.2.4 | MIT |
 | type-is | 2.1.0 | MIT |
 | typebox | 1.3.7 | MIT |
+| typescript | 6.0.3 | Apache-2.0 |
 | uc.micro | 2.1.0 | MIT |
 | undici | 8.10.0 | MIT |
-| undici-types | 8.3.0 | MIT |
+| undici-types | 6.21.0 | MIT |
 | universalify | 2.0.1 | MIT |
 | unpipe | 1.0.0 | MIT |
+| util-deprecate | 1.0.2 | MIT |
 | vary | 1.1.2 | MIT |
+| w3c-xmlserializer | 5.0.0 | MIT |
 | web-streams-polyfill | 3.3.3 | MIT |
+| webidl-conversions | 8.0.1 | BSD-2-Clause |
+| whatwg-mimetype | 5.0.0 | MIT |
+| whatwg-url | 16.0.1 | MIT |
 | which | 2.0.2 | ISC |
 | which-module | 2.0.1 | ISC |
 | wrap-ansi | 6.2.0 | MIT |
 | wrappy | 1.0.2 | ISC |
 | ws | 8.21.3 | MIT |
 | wsl-utils | 1.0.0 | MIT |
+| xml-name-validator | 5.0.0 | Apache-2.0 |
+| xmlchars | 2.2.0 | MIT |
 | y18n | 4.0.3 | ISC |
 | yaml | 2.9.0 | ISC |
 | yargs | 15.4.1 | MIT |
 | yargs-parser | 18.1.3 | ISC |
 | zod | 4.4.3 | MIT |
 | zod-to-json-schema | 3.25.2 | ISC |
-> Notice-required licenses in use: BlueOak-1.0.0, LGPL-3.0-or-later. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.
+| zrender | 6.1.0 | BSD-3-Clause |
+> Notice-required licenses in use across supported builds: BlueOak-1.0.0, LGPL-3.0-or-later, Apache-2.0 AND LGPL-3.0-or-later. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.

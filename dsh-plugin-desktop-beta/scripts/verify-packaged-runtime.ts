@@ -132,6 +132,22 @@ export const REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES = [
   'node_modules/cqai-dsh-plugin-publisher/lib/client.js',
 ] as const
 
+/** PPT authoring, composer, and a representative bundled template preview. */
+export const REQUIRED_DSH_PPT_RUNTIME_ENTRIES = [
+  'node_modules/dsh-ppt-composer/package.json',
+  'node_modules/dsh-ppt-composer/cordis.patch.yml',
+  'node_modules/dsh-ppt-composer/lib/index.js',
+  'node_modules/dsh-ppt-composer/lib/client.js',
+  'node_modules/dsh-ppt/package.json',
+  'node_modules/dsh-ppt/cordis.patch.yml',
+  'node_modules/dsh-ppt/lib/index.js',
+  'node_modules/dsh-ppt/lib/client.js',
+  'node_modules/dsh-ppt/lib/preview-manifest.js',
+  'node_modules/dsh-ppt/skills/dsh-ppt/SKILL.md',
+  'node_modules/dsh-ppt/skills/dsh-ppt/references/composition.md',
+  'node_modules/dsh-ppt/skills/dsh-ppt/references/work/curated-modular-logistics-system/pages/01.jpg',
+] as const
+
 /** AfterPack fields consumed without importing Electron Builder's incomplete declaration graph. */
 export interface PackagedRuntimeContext {
   /** Completed platform application directory. */
@@ -163,6 +179,7 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   ...REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   ...REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
+  ...REQUIRED_DSH_PPT_RUNTIME_ENTRIES,
   'node_modules/open/index.js',
   // In-app update staging and its abort bridge must remain ASAR-integrity protected.
   'node_modules/electron-updater/out/main.js',

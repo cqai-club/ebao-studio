@@ -50,6 +50,21 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@aiden0z/pptx-renderer@npm:1.2.4":
+  version: 1.2.4
+  resolution: "@aiden0z/pptx-renderer@npm:1.2.4"
+  dependencies:
+    echarts: "npm:^6.0.0"
+    jszip: "npm:^3.10.1"
+  peerDependencies:
+    pdfjs-dist: ">=5 <7"
+  peerDependenciesMeta:
+    pdfjs-dist:
+      optional: true
+  checksum: 10c0/48629f1a9097b861e2237dac5705bd774339ce87869180ce37c40ad676745d28a3bca7b7dbd05a0eb703286c2bb319d8093dc5092d165de79465e718c576bc69
+  languageName: node
+  linkType: hard
+
 "@antfu/install-pkg@npm:^2.0.1":
   version: 2.0.1
   resolution: "@antfu/install-pkg@npm:2.0.1"
@@ -8046,6 +8061,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:^22.8.1":
+  version: 22.20.4
+  resolution: "@types/node@npm:22.20.4"
+  dependencies:
+    undici-types: "npm:~6.21.0"
+  checksum: 10c0/3a17e19f7b7b7a6d6c695ef8b0a34b70f84829a1539f57d338487bc3b51ddd4ca86ffbcbcc4f1307a41de83d02c1b7dfbb16e8cb6a9c3a8360b4306ccf9ead2d
+  languageName: node
+  linkType: hard
+
 "@types/node@npm:^24.9.0":
   version: 24.13.3
   resolution: "@types/node@npm:24.13.3"
@@ -11058,6 +11082,8 @@ __metadata:
     cqai-dsh-plugin-publisher: "npm:0.1.0"
     cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
+    dsh-ppt: "npm:0.1.1-rc.2"
+    dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz"
     dshmarket: "npm:1.38.1"
     electron: "npm:43.3.0"
     electron-builder: "npm:26.15.7"
@@ -11263,6 +11289,8 @@ __metadata:
     cqai-dsh-plugin-publisher: "npm:0.1.0"
     cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
+    dsh-ppt: "npm:0.1.1-rc.2"
+    dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz"
     dshmarket: "npm:1.38.1"
     electron: "npm:43.3.0"
     electron-builder: "npm:26.15.7"
@@ -11298,6 +11326,67 @@ __metadata:
     dsh-plugin-desktop: lib/bin.js
   languageName: unknown
   linkType: soft
+
+"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz::locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop":
+  version: 0.1.1-rc.2
+  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz::hash=df2c9c&locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop"
+  dependencies:
+    "@deepseek-ai/schemastery": "npm:3.18.2"
+    dsh-ppt: "npm:0.1.1-rc.2"
+  peerDependencies:
+    "@deepseek-ai/cordis": 4.0.2
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1
+  checksum: 10c0/1d699cb3b752225da267f466cac1c8f1c5a2d86b05915f3c348bcc1524c590ffa96aaec3a278854f22488dd9a9c67b8e04181f378c8c655219ed35049142447e
+  languageName: node
+  linkType: hard
+
+"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz::locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta":
+  version: 0.1.1-rc.2
+  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz::hash=df2c9c&locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta"
+  dependencies:
+    "@deepseek-ai/schemastery": "npm:3.18.2"
+    dsh-ppt: "npm:0.1.1-rc.2"
+  peerDependencies:
+    "@deepseek-ai/cordis": 4.0.2
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1
+  checksum: 10c0/1d699cb3b752225da267f466cac1c8f1c5a2d86b05915f3c348bcc1524c590ffa96aaec3a278854f22488dd9a9c67b8e04181f378c8c655219ed35049142447e
+  languageName: node
+  linkType: hard
+
+"dsh-ppt@file:vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 0.1.1-rc.2
+  resolution: "dsh-ppt@file:vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz#vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz::hash=a102ab&locator=deepseek-harness-desktop%40workspace%3A."
+  dependencies:
+    "@aiden0z/pptx-renderer": "npm:1.2.4"
+    "@deepseek-ai/schemastery": "npm:3.18.2"
+    fflate: "npm:^0.8.3"
+    js-yaml: "npm:^4.2.0"
+    jsdom: "npm:29.1.1"
+    pptxgenjs: "npm:^4.0.1"
+    sharp: "npm:^0.35.3"
+    typescript: "npm:^6.0.3"
+    zod: "npm:^4.4.3"
+  peerDependencies:
+    "@deepseek-ai/cordis": 4.0.2
+    "@deepseek-ai/dsh-agent": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-brand": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-connection": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-locale": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-conversation": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-llm": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-session": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-skill": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-system-prompt": ^0.1.5-rc.1
+    "@deepseek-ai/dsh-tools": ^0.1.5-rc.1
+    react: ^18.2.0
+  bin:
+    dsh-pptd: ./lib/bin.js
+  checksum: 10c0/68372c4b84b324bd699f52051c2fa198f333e38454d726d71b1d56dd94a68499707126f32f833119144907e2281f83c9b8ee5569c64892ad1e5a0cc5554c282c
+  languageName: node
+  linkType: hard
 
 "dshmarket@npm:1.38.1":
   version: 1.38.1
@@ -11375,6 +11464,16 @@ __metadata:
   dependencies:
     safe-buffer: "npm:^5.0.1"
   checksum: 10c0/ebfbf19d4b8be938f4dd4a83b8788385da353d63307ede301a9252f9f7f88672e76f2191618fd8edfc2f24679236064176fab0b78131b161ee73daa37125408c
+  languageName: node
+  linkType: hard
+
+"echarts@npm:^6.0.0":
+  version: 6.1.0
+  resolution: "echarts@npm:6.1.0"
+  dependencies:
+    tslib: "npm:2.3.0"
+    zrender: "npm:6.1.0"
+  checksum: 10c0/a0911a9d75969ff946d0bce998e95e1924cdec7f5ca6be13ded376e2a47067c70b264ee8d04ba84345aa7895363e202f54c87d2bae114859bd154d565babc09c
   languageName: node
   linkType: hard
 
@@ -11878,7 +11977,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fflate@npm:^0.8.2":
+"fflate@npm:^0.8.2, fflate@npm:^0.8.3":
   version: 0.8.3
   resolution: "fflate@npm:0.8.3"
   checksum: 10c0/eab181ca37f5348ae76d4b6f840e0026e30220e33153289ac942222d8b9638237d486507dbcc09878d724095bd354993a2ee48bbee99c8f2c6440d4448719aa7
@@ -12458,6 +12557,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"https@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "https@npm:1.0.0"
+  checksum: 10c0/e36eb4c38f09264bb273925b2d658c38bb8dda655cdff679b75dc45ccac26b1520fadcf00be677ccc4432a62f44a408b522f66cfc802ce30f4effe75decfd554
+  languageName: node
+  linkType: hard
+
 "human-signals@npm:^2.1.0":
   version: 2.1.0
   resolution: "human-signals@npm:2.1.0"
@@ -12494,6 +12600,24 @@ __metadata:
   version: 5.3.2
   resolution: "ignore@npm:5.3.2"
   checksum: 10c0/f9f652c957983634ded1e7f02da3b559a0d4cc210fca3792cb67f1b153623c9c42efdc1c4121af171e295444459fc4a9201101fb041b1104a3c000bccb188337
+  languageName: node
+  linkType: hard
+
+"image-size@npm:^1.2.1":
+  version: 1.2.1
+  resolution: "image-size@npm:1.2.1"
+  dependencies:
+    queue: "npm:6.0.2"
+  bin:
+    image-size: bin/image-size.js
+  checksum: 10c0/f8b3c19d4476513f1d7e55c3e6db80997b315444743e2040d545cbcaee59be03d2eb40c46be949a8372697b7003fdb0c04925d704390a7f606bc8181e25c0ed4
+  languageName: node
+  linkType: hard
+
+"immediate@npm:~3.0.5":
+  version: 3.0.6
+  resolution: "immediate@npm:3.0.6"
+  checksum: 10c0/f8ba7ede69bee9260241ad078d2d535848745ff5f6995c7c7cb41cfdc9ccc213f66e10fa5afb881f90298b24a3f7344b637b592beb4f54e582770cdce3f1f039
   languageName: node
   linkType: hard
 
@@ -12987,6 +13111,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"jszip@npm:^3.10.1":
+  version: 3.10.2
+  resolution: "jszip@npm:3.10.2"
+  dependencies:
+    lie: "npm:~3.3.0"
+    pako: "npm:~1.0.2"
+    readable-stream: "npm:~2.3.6"
+    setimmediate: "npm:^1.0.5"
+  checksum: 10c0/c51b1473062bb7ac81c0c76047d99a2b56a062f2427ac989e28b46b31ecab636a440f137d15ff6320a961b7e1048c802f0bed83a2e10ed0ba9c2cfd84e818bc6
+  languageName: node
+  linkType: hard
+
 "jwa@npm:^2.0.1":
   version: 2.0.1
   resolution: "jwa@npm:2.0.1"
@@ -13135,6 +13271,15 @@ __metadata:
     typescript:
       optional: true
   checksum: 10c0/a9a6d8d18b74c87759886653ad77705d0ba417f38ee065cc623b7e3ca3b663c21b89314b393d8323ee01e7108676e697a4c07be22522f3743355a751dda16d0f
+  languageName: node
+  linkType: hard
+
+"lie@npm:~3.3.0":
+  version: 3.3.0
+  resolution: "lie@npm:3.3.0"
+  dependencies:
+    immediate: "npm:~3.0.5"
+  checksum: 10c0/56dd113091978f82f9dc5081769c6f3b947852ecf9feccaf83e14a123bc630c2301439ce6182521e5fbafbde88e88ac38314327a4e0493a1bea7e0699a7af808
   languageName: node
   linkType: hard
 
@@ -14341,6 +14486,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pako@npm:~1.0.2":
+  version: 1.0.11
+  resolution: "pako@npm:1.0.11"
+  checksum: 10c0/86dd99d8b34c3930345b8bbeb5e1cd8a05f608eeb40967b293f72fe469d0e9c88b783a8777e4cc7dc7c91ce54c5e93d88ff4b4f060e6ff18408fd21030d9ffbe
+  languageName: node
+  linkType: hard
+
 "parent-module@npm:^1.0.0":
   version: 1.0.1
   resolution: "parent-module@npm:1.0.1"
@@ -14622,6 +14774,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pptxgenjs@npm:^4.0.1":
+  version: 4.0.1
+  resolution: "pptxgenjs@npm:4.0.1"
+  dependencies:
+    "@types/node": "npm:^22.8.1"
+    https: "npm:^1.0.0"
+    image-size: "npm:^1.2.1"
+    jszip: "npm:^3.10.1"
+  checksum: 10c0/b849e5fb7de9f97c7a38ad1878d39418d9347a44cf39dc17b1dcac96e4abcece50ea06ab0d2b01b860a54f978dbe83aca36f53cf23f54e655ebe04de7d91af96
+  languageName: node
+  linkType: hard
+
 "prettier@npm:^3.2.5":
   version: 3.9.6
   resolution: "prettier@npm:3.9.6"
@@ -14816,6 +14980,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"queue@npm:6.0.2":
+  version: 6.0.2
+  resolution: "queue@npm:6.0.2"
+  dependencies:
+    inherits: "npm:~2.0.3"
+  checksum: 10c0/cf987476cc72e7d3aaabe23ccefaab1cd757a2b5e0c8d80b67c9575a6b5e1198807ffd4f0948a3f118b149d1111d810ee773473530b77a5c606673cac2c9c996
+  languageName: node
+  linkType: hard
+
 "quick-lru@npm:^5.1.1":
   version: 5.1.1
   resolution: "quick-lru@npm:5.1.1"
@@ -14890,7 +15063,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"readable-stream@npm:^2.0.2":
+"readable-stream@npm:^2.0.2, readable-stream@npm:~2.3.6":
   version: 2.3.8
   resolution: "readable-stream@npm:2.3.8"
   dependencies:
@@ -15515,6 +15688,13 @@ __metadata:
   version: 2.0.0
   resolution: "set-blocking@npm:2.0.0"
   checksum: 10c0/9f8c1b2d800800d0b589de1477c753492de5c1548d4ade52f57f1d1f5e04af5481554d75ce5e5c43d4004b80a3eb714398d6907027dc0534177b7539119f4454
+  languageName: node
+  linkType: hard
+
+"setimmediate@npm:^1.0.5":
+  version: 1.0.5
+  resolution: "setimmediate@npm:1.0.5"
+  checksum: 10c0/5bae81bfdbfbd0ce992893286d49c9693c82b1bcc00dcaaf3a09c8f428fdeacf4190c013598b81875dfac2b08a572422db7df779a99332d0fce186d15a3e4d49
   languageName: node
   linkType: hard
 
@@ -16330,6 +16510,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"tslib@npm:2.3.0":
+  version: 2.3.0
+  resolution: "tslib@npm:2.3.0"
+  checksum: 10c0/a845aed84e7e7dbb4c774582da60d7030ea39d67307250442d35c4c5dd77e4b44007098c37dd079e100029c76055f2a362734b8442ba828f8cc934f15ed9be61
+  languageName: node
+  linkType: hard
+
 "tslib@npm:^1.9.3":
   version: 1.14.1
   resolution: "tslib@npm:1.14.1"
@@ -16394,7 +16581,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:6.0.3, typescript@npm:^6.0.0":
+"typescript@npm:6.0.3, typescript@npm:^6.0.0, typescript@npm:^6.0.3":
   version: 6.0.3
   resolution: "typescript@npm:6.0.3"
   bin:
@@ -16414,7 +16601,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^6.0.0#optional!builtin<compat/typescript>":
+"typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^6.0.0#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^6.0.3#optional!builtin<compat/typescript>":
   version: 6.0.3
   resolution: "typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>::version=6.0.3&hash=5786d5"
   bin:
@@ -17260,5 +17447,14 @@ __metadata:
   version: 4.4.3
   resolution: "zod@npm:4.4.3"
   checksum: 10c0/7ea31b558e88f9faf44f31dd185e2e1cbf51fed3081787fb96cc2534749b50c0acfc6da7f0922a7353ed092dd358c7d50c28ea96c94d04af64191bd33152eca3
+  languageName: node
+  linkType: hard
+
+"zrender@npm:6.1.0":
+  version: 6.1.0
+  resolution: "zrender@npm:6.1.0"
+  dependencies:
+    tslib: "npm:2.3.0"
+  checksum: 10c0/bfdb5e2ccd70893a9e2c7f33959749a6a1abc8912c2b1af301a05593d677a2f6f6087cdc4f0bf73883b99eea2f2d11d1922c71c3bf0bd4e9e5b362fd32129bce
   languageName: node
   linkType: hard

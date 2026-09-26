@@ -1,6 +1,6 @@
 # cqai-dsh-plugin-desktop Profile
 
-这是 CQAI 本地桌面组合的 Profile 模板。它把本地 `dsh-plugin-desktop`、默认的 `@cqaiclub/dsn-account`、`cqai-dsh-plugin-imagegen`、`dsh-community-market`、`dsh-better-sidebar` 和其他 CQAI 插件组合在一起。产品品牌、窗口标题、托盘和安装包图标直接维护在 `dsh-plugin-desktop`。
+这是 CQAI 本地桌面组合的 Profile 模板。它把本地 `dsh-plugin-desktop`、默认的 `@cqaiclub/dsn-account`、`cqai-dsh-plugin-imagegen`、`dsh-ppt-composer`、`dsh-community-market`、`dsh-better-sidebar` 和其他 CQAI 插件组合在一起。产品品牌、窗口标题、托盘和安装包图标直接维护在 `dsh-plugin-desktop`。
 
 当前模板使用本地路径依赖，适合开发阶段。发布时应把 `dsh-plugin-desktop` 和 CQAI 插件固定到明确版本，或在产品仓库中统一构建并发布。
 
@@ -22,7 +22,7 @@ corepack yarn install
 corepack yarn build
 ```
 
-实际运行时，保留的 `desktop` Profile 会由 Electron 自动按“账号 → e图宝 → 市场”的顺序加入默认产品插件。若要调试其他本地业务插件，请在易宝工坊的设置或托盘 Profile 菜单中创建一个自定义 Profile（例如 `cqai-dev`），再把 `dsh-better-sidebar` 和构建后的 CQAI 插件链接到这个 Profile，最后在 Electron 中选择它并重启。本模板已经默认启用 `cqai-dsh-plugin-imagegen`；它需要的 DSH Authorization 能力由 Desktop 运行时提供。`cqai-dsh-plugin-quicknav` 依赖 `dsh-better-sidebar` 的 `betterSidebar` Client service，不能遗漏这个 bundle。
+实际运行时，保留的 `desktop` Profile 会由 Electron 自动加入默认产品插件，包括 e图宝和 PPT Composer。PPT Composer 会装载 `dsh-ppt` 核心。当前 Desktop 客户端尚未渲染 Composer 依赖的 PPT 按钮插槽，因此仅启用启动配置不会显示 PPT 入口。若要调试其他本地业务插件，请在易宝工坊的设置或托盘 Profile 菜单中创建一个自定义 Profile（例如 `cqai-dev`），再把 `dsh-better-sidebar` 和构建后的 CQAI 插件链接到这个 Profile，最后在 Electron 中选择它并重启。本模板已经默认启用 `cqai-dsh-plugin-imagegen`；它需要的 DSH Authorization 能力由 Desktop 运行时提供。`cqai-dsh-plugin-quicknav` 依赖 `dsh-better-sidebar` 的 `betterSidebar` Client service，不能遗漏这个 bundle。
 
 首次登录在 Desktop 设置页左侧的 `CQAI Club` 标签完成。账号凭证只由 Host 保存，ImageGen 通过 `@cqaiclub/dsn-account` 的 Host 服务获取安全快照。
 

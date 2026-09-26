@@ -213,6 +213,8 @@ describe('desktop profile composition', {
       'third-party-one',
       'dsh-plugin-desktop',
       DESKTOP_PACKAGE_NAME,
+      'dsh-ppt-composer',
+      'dsh-ppt',
       'third-party-two',
     ])).toEqual([
       '@deepseek-ai/dsh-base',
@@ -222,6 +224,7 @@ describe('desktop profile composition', {
       'cqai-dsh-plugin-video',
       'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-market',
+      'dsh-ppt-composer',
       'third-party-one',
       'third-party-two',
     ])
@@ -234,8 +237,8 @@ describe('desktop profile composition', {
     const manifest = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
     writeFileSync(path, JSON.stringify({
       ...manifest,
-      dependencies: { 'third-party-plugin': '^1.2.3' },
-      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'third-party-plugin'] } },
+      dependencies: { 'dsh-ppt': '0.1.1-rc.2', 'third-party-plugin': '^1.2.3' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dsh-ppt', 'third-party-plugin'] } },
       custom: { preserved: true },
     }, undefined, 2) + '\n')
 
@@ -253,9 +256,10 @@ describe('desktop profile composition', {
       'cqai-dsh-plugin-video',
       'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-market',
+      'dsh-ppt-composer',
       'third-party-plugin',
     ])
-    expect(repaired.dependencies).toEqual({ 'third-party-plugin': '^1.2.3' })
+    expect(repaired.dependencies).toEqual({ 'dsh-ppt': '0.1.1-rc.2', 'third-party-plugin': '^1.2.3' })
     expect(repaired.custom.preserved).toBe(true)
   })
 
@@ -289,6 +293,7 @@ describe('desktop profile composition', {
       'cqai-dsh-plugin-video',
       'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-market',
+      'dsh-ppt-composer',
     ])
   })
 

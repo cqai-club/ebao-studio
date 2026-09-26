@@ -95,12 +95,15 @@ const CQAI_ACCOUNT_PACKAGE = '@cqaiclub/dsn-account'
 const CQAI_IMAGEGEN_PACKAGE = 'cqai-dsh-plugin-imagegen'
 const CQAI_PUBLISHER_PACKAGE = 'cqai-dsh-plugin-publisher'
 const CQAI_MARKET_PACKAGE = 'cqai-dsh-plugin-market'
+const PPT_CORE_PACKAGE = 'dsh-ppt'
+const PPT_COMPOSER_PACKAGE = 'dsh-ppt-composer'
 const DEFAULT_PRODUCT_BUNDLES = [
   CQAI_ACCOUNT_PACKAGE,
   CQAI_IMAGEGEN_PACKAGE,
   'cqai-dsh-plugin-video',
   CQAI_PUBLISHER_PACKAGE,
   CQAI_MARKET_PACKAGE,
+  PPT_COMPOSER_PACKAGE,
 ] as const
 const DEFAULT_PRODUCT_BUNDLE_SET = new Set<string>(DEFAULT_PRODUCT_BUNDLES)
 const OFFICIAL_DEEPSEEK_LLM_ROW_ID = 'llm-deepseek'
@@ -340,8 +343,10 @@ export interface SkippedOptionalEntry {
  * @returns base, Web carrier, then every third-party bundle in prior order.
  */
 export function desktopBundleList(current: readonly string[]): string[] {
+  // Composer mounts the core itself; old direct core bundle rows would register it twice.
   const thirdParty = current.filter(name => !REQUIRED_BUNDLE_SET.has(name)
     && !DEFAULT_PRODUCT_BUNDLE_SET.has(name)
+    && name !== PPT_CORE_PACKAGE
     && !DESKTOP_PACKAGE_NAMES.has(name)
     && !OBSOLETE_DESKTOP_BUNDLE_SET.has(name))
   return [...REQUIRED_BUNDLES, ...DEFAULT_PRODUCT_BUNDLES, ...thirdParty]
