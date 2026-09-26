@@ -13,6 +13,8 @@ if (process.platform !== 'linux' || !process.env.DISPLAY) {
 } else { void verify() }
 
 async function verify() {
+  // Headless Electron otherwise presents uncaught main-process errors in a modal dialog.
+  process.on('uncaughtException', (error) => { console.error(error); app.exit(1) })
   const home = mkdtempSync(join(tmpdir(), 'dsh-native-browser-'))
   app.setPath('userData', home)
   const server = createServer((request, response) => {
@@ -43,7 +45,8 @@ async function verify() {
     const guests = new DesktopBrowserGuests(() => [`http://127.0.0.1:${server.address().port + 1}`])
     window = new BrowserWindow({ show: false,
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: true } })
-    guests.bind(window)
+    let boundLease
+    guests.bind(window, (_guest, lease) => { boundLease = lease; return () => {} })
     mark('application cookie setup')
     await window.webContents.session.cookies.set({ url: origin, name: 'app-secret', value: 'app-only' })
     mark('iframe fixture load')
@@ -54,12 +57,21 @@ async function verify() {
 
     mark('guest lease acquisition')
     const first = guests.acquire(window.webContents, '/workspace/one')
-    const attached = new Promise(resolve => { window.webContents.once('did-attach-webview', (_event, guest) => resolve(guest)) })
+    const attached = new Promise(resolve => {
+      window.webContents.once('did-attach-webview', (_event, guest) => {
+        // Browser guest ownership binds on its first dom-ready, before navigation may start.
+        const ready = new Promise(readyResolve => guest.once('dom-ready', readyResolve))
+        resolve({ guest, ready })
+      })
+    })
     mark('webview mount')
     await mountGuest(window, first)
     mark('webview attachment')
-    const contents = await attached
-    mark('guest blank document')
+    const { guest: contents, ready } = await attached
+    mark('guest blank document ready')
+    await ready
+    assert.equal(boundLease, first.lease, 'The first guest document must bind its issued lease')
+    mark('guest blank document URL')
     await wait(() => contents.getURL().startsWith('about:blank#'))
     assert.equal(contents.getLastWebPreferences().webSecurity, true)
     assert.equal(contents.getLastWebPreferences().sandbox, true)
