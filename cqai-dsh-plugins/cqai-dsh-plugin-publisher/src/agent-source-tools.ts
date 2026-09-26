@@ -1,4 +1,5 @@
 /** Agent tools for a file-first conversation. No Publisher content record is created here. */
+import { isAbsolute, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -29,6 +30,7 @@ function asToolResult<T extends object>(value: T): Record<string, JsonValue> {
 }
 
 export const AGENT_SOURCE_GUIDANCE = [
+  '如果用户是在多平台发布的文章编辑页右侧 Agent 抽屉要求修改，先调用 publisher_get_current_draft；返回文章时按当前草稿工具的说明直接保存草稿，此时不要执行下列 Markdown 原稿流程。',
   '文章和图文先保存为真实的本地 Markdown (.md) 文件。原稿保留在你创建的位置；正文图片使用相对于 MD 文件的路径，或指向当前 Agent 工作目录内文件的绝对路径。用户上传或生图只提供附件引用时，用 publisher_export_image 把选中的图片保存到原稿旁，按其返回的相对路径写入 MD。写完并确认文件存在后调用 publisher_register_source，右侧通用预览将直接读取这份原稿及图片。修改原稿后再次登记。',
   '用户仅要求写作、修改或预览时，不准备平台版本，也不创建 Publisher 草稿。图片不要求来自当前会话的上传或生图事件，但必须是原稿实际引用且可读取的本地图片。',
   '只有用户明确要求发布到社交平台或多平台时，先读取已登记原稿，整理文章或图文类型、目标平台和所需的平台文案，然后调用 publisher_prepare_preview。文章可选掘金、B站专栏、头条、百家号、微信公众号；图文可选小红书、抖音、快手，头条不提供图文。平台候选中的图片仍引用原稿返回的 source-image:// 图片地址，不复制素材；候选主稿与平台版本合计最多选 20 张不同图片。文章平台不兼容的插图会在提交平台草稿时提示并移除；公众号仍需可用的 JPEG/PNG 封面。预览可供用户检查。',
@@ -40,9 +42,17 @@ function sessionIdOf(agent: { id: string } | undefined): string {
   return agent.id
 }
 
+export function isAgentWorkspacePath(value: unknown, platform: NodeJS.Platform = process.platform): value is string {
+  if (typeof value !== 'string') return false
+  if (platform !== 'win32') return isAbsolute(value)
+  const root = win32.parse(value).root
+  // A leading slash alone still resolves against the process's current drive.
+  return win32.isAbsolute(value) && root !== '\\' && root !== '/'
+}
+
 function workspaceOf(agent: unknown): string {
   const cwd = (agent as { session?: { header?: { cwd?: unknown } } } | undefined)?.session?.header?.cwd
-  if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw new Error('无法确定当前 Agent 工作目录')
+  if (!isAgentWorkspacePath(cwd)) throw new Error('无法确定当前 Agent 工作目录')
   return cwd
 }
 

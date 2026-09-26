@@ -9,15 +9,17 @@ import type {
 } from './runtime.ts'
 import { HostRpc } from './host-rpc.ts'
 import { isPublisherWorkerMethod } from './publisher-runtime.ts'
+import type { DesktopLocale } from './runtime.ts'
+import { parseDesktopPlatformLoginRequest } from './platform-login.ts'
 
-export type RuntimeSnapshot = Pick<DesktopRuntime, 'platform' | 'windowsBuild' | 'locale' | 'loginCompletionUrl'> & {
+export type RuntimeSnapshot = Pick<DesktopRuntime, 'platform' | 'locale' | 'loginCompletionUrl'> & {
   updates: Omit<DesktopUpdateAdapter, 'request' | 'confirmDownload' | 'showManualCheckResult' | 'downloadAndInstall' | 'registerNotificationAction' | 'notify'>
   publisher: ReturnType<DesktopRuntime['publisher']['status']>
 }
 export function runtimeSnapshot(runtime: DesktopRuntime): RuntimeSnapshot {
   const { isPackaged, canDownload, currentVersion, releaseChannel, statePath, installationId } = runtime.updates
   return {
-    platform: runtime.platform, windowsBuild: runtime.windowsBuild, locale: runtime.locale,
+    platform: runtime.platform, locale: runtime.locale,
     ...(runtime.loginCompletionUrl === undefined ? {} : { loginCompletionUrl: runtime.loginCompletionUrl }),
     updates: { isPackaged, canDownload, currentVersion, statePath,
       ...(releaseChannel ? { releaseChannel } : {}), ...(installationId ? { installationId } : {}) },
@@ -37,7 +39,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
   const calls = new Set<Promise<unknown>>()
   const setup: Promise<unknown>[] = []
   let booting = true
-  const trayPublishers = new Map<string, () => void>()
+  const trayPublishers = new Map<string, () => Promise<void>>()
   const trackSetup = (task: Promise<unknown>) => { if (booting) setup.push(task) }
   const shellSpecs = new Map<string, DesktopShellSpec>()
   const send = <T = void>(method: string, args: unknown[] = [], signal?: AbortSignal): Promise<T> => {
@@ -54,8 +56,17 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
     const releases = Object.entries(handlers).map(([name, handler]) => rpc.handle(`${id}:${name}`, args => handler(...args)))
     return { id, release: () => releases.forEach(dispose => dispose()) }
   }
+  // Electron resolves the system fallback; the startup snapshot may still be English.
+  let localeSync = Promise.resolve()
+  const syncLocale = (preference: DesktopLocale | undefined): Promise<void> => {
+    localeSync = localeSync.catch(() => {}).then(async () => {
+      locale = await send<DesktopLocale>('native:setLocalePreference', [preference])
+      await Promise.all([...trayPublishers.values()].map(publish => publish()))
+    })
+    return localeSync
+  }
   const runtime: DesktopRuntime = {
-    platform: snapshot.platform, windowsBuild: snapshot.windowsBuild,
+    platform: snapshot.platform,
     ...(snapshot.loginCompletionUrl === undefined ? {} : { loginCompletionUrl: snapshot.loginCompletionUrl }),
     get locale() { return locale },
     updates: {
@@ -94,10 +105,11 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
       const callback = callbacks({ quit: spec.requestQuit, mode: spec.requestModeChange,
         ...(spec.readRemoteControl ? { remoteRead: spec.readRemoteControl } : {}),
         ...(spec.enableRemoteControl ? { remoteEnable: spec.enableRemoteControl } : {}),
+        ...(spec.applySetupSettings ? { setup: spec.applySetupSettings } : {}),
       })
-      const { readLocalePreference, readThemeSource, requestQuit: _quit, requestModeChange: _mode, readRemoteControl: _remoteRead, enableRemoteControl: _remoteEnable, ...data } = spec
+      const { readLocalePreference, readThemeSource, requestQuit: _quit, requestModeChange: _mode, readRemoteControl: _remoteRead, enableRemoteControl: _remoteEnable, applySetupSettings: _setup, ...data } = spec
       shellSpecs.set(callback.id, spec)
-      trackSetup(send('shell:schedule', [callback.id, data, readLocalePreference(), readThemeSource(), Boolean(spec.readRemoteControl && spec.enableRemoteControl)]))
+      trackSetup(send('shell:schedule', [callback.id, data, readLocalePreference(), readThemeSource(), Boolean(spec.readRemoteControl && spec.enableRemoteControl), Boolean(spec.applySetupSettings)]))
       return async () => { try { await send('shell:dispose', [callback.id]) } finally { shellSpecs.delete(callback.id); callback.release() } }
     },
     // The parent mounts only after Host boot and this barrier finish.
@@ -106,7 +118,9 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
       setup.length = 0
       booting = false
       for (const [id, spec] of shellSpecs) {
-        await send('shell:preferences', [id, spec.readLocalePreference(), spec.readThemeSource()])
+        const preference = spec.readLocalePreference()
+        await syncLocale(preference)
+        await send('shell:preferences', [id, preference, spec.readThemeSource()])
       }
     },
     registerTrayItem(item) {
@@ -121,8 +135,10 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
           return { label: entry.label(), enabled: entry.enabled?.() ?? true,
             checked: 'checked' in entry ? entry.checked?.() ?? false : false, type: 'type' in entry ? entry.type : undefined, method }
         }
-        trackSetup(send('tray:set', [id, { ...project(item, -1), group: item.group, order: item.order, id: item.id,
-          submenu: item.submenu?.().map((entry, index) => project(entry, index)) }]))
+        const task = send<void>('tray:set', [id, { ...project(item, -1), group: item.group, order: item.order, id: item.id,
+          submenu: item.submenu?.().map((entry, index) => project(entry, index)) }])
+        trackSetup(task)
+        return task
       }
       trayPublishers.set(id, publish)
       publish()
@@ -137,8 +153,11 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
     exportDiagnostics: () => send('native:exportDiagnostics'),
     pickDirectory: () => send('native:pickDirectory'),
     validateDirectory: path => send('native:validateDirectory', [path]),
+    platformLogin(request) { void send('native:platformLogin', [request]) },
     reportRendererBoot: report => { void send('native:reportRendererBoot', [report]) },
-    setLocalePreference(preference) { locale = preference ?? snapshot.locale; trayPublishers.forEach(publish => publish()); void send('native:setLocalePreference', [preference]) },
+    setLocalePreference(preference) {
+      void syncLocale(preference).catch(error => process.stderr.write(`${String(error)}\n`))
+    },
     setThemeSource(source) { void send('native:setThemeSource', [source]) },
     requestRestart: () => send('native:requestRestart'),
     requestRecoveryRestart: () => send('native:requestRecoveryRestart'),
@@ -165,10 +184,15 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   const callback = (method: string, args: unknown[] = []) => rpc.call(method, args)
   const report = (promise: Promise<unknown>) => { void promise.catch(error => process.stderr.write(`${String(error)}\n`)) }
   for (const method of ['show', 'openExternal', 'notifyAttention', 'openTerminal', 'reloadRenderer', 'toggleDeveloperTools',
-    'exportDiagnostics', 'pickDirectory', 'validateDirectory', 'reportRendererBoot', 'setLocalePreference',
+    'exportDiagnostics', 'pickDirectory', 'validateDirectory', 'reportRendererBoot',
     'setThemeSource', 'prepareToQuit'] as const) {
     handle(`native:${method}`, args => (runtime[method] as (...args: any[]) => unknown).apply(runtime, args))
   }
+  handle('native:platformLogin', ([request]) => { runtime.platformLogin(parseDesktopPlatformLoginRequest(request)) })
+  handle('native:setLocalePreference', ([preference]) => {
+    runtime.setLocalePreference(preference)
+    return runtime.locale
+  })
   // Acknowledge restart before teardown can close the channel used by this call.
   for (const method of ['requestRestart', 'requestRecoveryRestart'] as const) {
     handle(`native:${method}`, () => { setImmediate(() => report(runtime[method]())) })
@@ -176,7 +200,7 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
   handle('native:openProfileCreateWindow', ([id]) => runtime.openProfileCreateWindow({
     onSubmit: name => callback(`${id}:submit`, [name]), onCancel: () => report(callback(`${id}:cancel`)),
   }))
-  handle('shell:schedule', ([id, data, locale, theme, remoteControl]) => {
+  handle('shell:schedule', ([id, data, locale, theme, remoteControl, setupSettings]) => {
     if (shells.has(id)) throw new Error('Duplicate Host shell')
     const state = { locale, theme }
     preferences.set(id, state)
@@ -187,6 +211,9 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
       ...(remoteControl ? {
         readRemoteControl: () => callback(`${id}:remoteRead`),
         enableRemoteControl: () => callback(`${id}:remoteEnable`),
+      } : {}),
+      ...(setupSettings ? {
+        applySetupSettings: (settings: unknown) => callback(`${id}:setup`, [settings]),
       } : {}),
     } as DesktopShellSpec))
   })

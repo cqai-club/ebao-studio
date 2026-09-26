@@ -30,6 +30,7 @@ function options(calls: CommandCall[], logs: string[] = []): WindowsPackageOptio
     commandShell: 'C:\\Windows\\System32\\cmd.exe',
     builderCli: 'C:\\repo\\node_modules\\electron-builder\\cli.js',
     prepareRuntime: () => undefined,
+    verifyPublisherWorker: () => undefined,
     verifier: 'C:\\repo\\dsh-plugin-desktop\\scripts\\verify-win-installer.ts',
     nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
     run: (command, args, cwd, env) => {
@@ -119,6 +120,16 @@ describe('Windows x64 installer packaging', () => {
     ])
   })
 
+  it('rejects a missing Publisher Worker before the Desktop build or packaging command', () => {
+    const calls: CommandCall[] = []
+    const value = {
+      ...options(calls),
+      verifyPublisherWorker: () => { throw new Error('Windows Publisher Worker is missing') },
+    }
+    expect(() => packageWindowsInstaller(value)).toThrow('Windows Publisher Worker is missing')
+    expect(calls).toEqual([])
+  })
+
   it('reuses a completed CI package gate when explicitly requested', () => {
     const calls: CommandCall[] = []
     const logs: string[] = []
@@ -147,6 +158,38 @@ describe('Windows x64 installer packaging', () => {
       'Building an unsigned Windows x64 installer; Authenticode is a separate release step.',
       'Skipping the Windows package preflight; the package gate already passed.',
     ])
+  })
+
+  it('overrides electron-builder compression only when requested', () => {
+    const calls: CommandCall[] = []
+    const logs: string[] = []
+    const value = {
+      ...options(calls, logs),
+      env: {
+        ...options(calls).env,
+        DSH_PACKAGE_CHECK_ALREADY_RAN: '1',
+        DSH_WINDOWS_PACKAGE_COMPRESSION: 'store',
+      },
+    }
+
+    packageWindowsArtifact(value, 'zip', 'portable archive')
+
+    expect(calls).toHaveLength(2)
+    expect(calls[0]?.args.at(-1)).toBe('--config.win.compression=store')
+    expect(logs).toContain('Packaging the portable archive with store compression.')
+  })
+
+  it('rejects an unknown compression override before running commands', () => {
+    const calls: CommandCall[] = []
+    const value = {
+      ...options(calls),
+      env: { ...options(calls).env, DSH_WINDOWS_PACKAGE_COMPRESSION: 'fast' },
+    }
+
+    expect(() => packageWindowsInstaller(value)).toThrow(
+      'DSH_WINDOWS_PACKAGE_COMPRESSION must be store, normal, or maximum',
+    )
+    expect(calls).toEqual([])
   })
 
   it.each([

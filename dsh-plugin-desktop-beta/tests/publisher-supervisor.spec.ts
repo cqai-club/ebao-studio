@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { mkdtempSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createConnection } from 'node:net'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -75,9 +76,19 @@ function fixture(handler: (frame: Frame, worker: FakeWorker) => void, overrides:
   const supervisor = new PublisherSupervisor({
     platform: 'darwin', resourcesPath: root, userDataPath: root,
     env: { EBAO_PUBLISHER_WORKER: executable },
-    launch: () => {
+    launch: (_executable, _args, spawnOptions) => {
       const worker = new FakeWorker(handler)
       workers.push(worker)
+      if (overrides.platform === 'win32') {
+        const pipe = String(spawnOptions?.env?.EBAO_PUBLISHER_PIPE ?? '')
+        const token = String(spawnOptions?.env?.EBAO_PUBLISHER_PIPE_TOKEN ?? '')
+        const socket = createConnection(pipe)
+        socket.once('connect', () => socket.write(`${JSON.stringify({ auth: token })}\n`))
+        socket.on('data', chunk => worker.stdin.write(chunk))
+        worker.stdout.on('data', chunk => socket.write(chunk))
+        worker.once('exit', () => socket.destroy())
+        socket.on('error', () => worker.exit(1))
+      }
       return worker as never
     },
     restartDelayMs: 1,
@@ -228,6 +239,18 @@ describe('PublisherSupervisor', () => {
     await supervisor.shutdown()
   })
 
+  it('allows a submission target window to load beyond the ordinary RPC timeout', async () => {
+    const { supervisor } = fixture((frame, worker) => {
+      if (handshake(frame, worker)) return
+      if (frame.method === 'submissions.openTarget') setTimeout(() => worker.reply(frame.id, { kind: 'draft-list' }), 20)
+      if (frame.method === 'system.shutdown') { worker.reply(frame.id, { ok: true }); worker.exit(0) }
+    }, { requestTimeoutMs: 5 })
+    await expect(supervisor.request('submissions.openTarget', {
+      submissionId: '33333333-3333-4333-8333-333333333333', accountId: '22222222-2222-4222-8222-222222222222',
+    })).resolves.toEqual({ kind: 'draft-list' })
+    await supervisor.shutdown()
+  })
+
   it('treats an unanswered submission as uncertain rather than safe to retry', async () => {
     const { supervisor } = fixture((frame, worker) => {
       if (handshake(frame, worker)) return
@@ -282,7 +305,7 @@ describe('PublisherSupervisor', () => {
     const selection = await first.supervisor.selectLocalVideo()
     expect(selection).not.toHaveProperty('file')
     const registry = join(directory, 'publisher', 'local-videos', `${selection!.id}.json`)
-    expect(statSync(registry).mode & 0o077).toBe(0)
+    if (process.platform !== 'win32') expect(statSync(registry).mode & 0o077).toBe(0)
     let forwarded: Record<string, unknown> | undefined
     const second = fixture((frame, worker) => {
       if (handshake(frame, worker)) return
@@ -361,10 +384,62 @@ describe('PublisherSupervisor', () => {
     expect(failed.workers).toHaveLength(0)
   })
 
-  it('reports unsupported systems without launching a legacy fallback', async () => {
-    expect(resolvePublisherWorker({ platform: 'win32', resourcesPath: '/tmp', env: {} })).toBe('')
+  it('resolves the packaged Windows Worker before a development build', () => {
+    const root = mkdtempSync(join(tmpdir(), 'publisher-win-worker-'))
+    roots.push(root)
+    const packaged = join(root, 'publisher', 'MatrixMedia Publisher Worker.exe')
+    const development = join(root, 'development', 'MatrixMedia Publisher Worker.exe')
+    mkdirSync(join(root, 'publisher'))
+    mkdirSync(join(root, 'development'))
+    writeFileSync(packaged, '')
+    writeFileSync(development, '')
+    const options = { platform: 'win32' as const, resourcesPath: root, env: {}, developmentAppPath: development }
+    expect(resolvePublisherWorker(options)).toBe(packaged)
+    expect(resolvePublisherWorker({ ...options, env: { EBAO_PUBLISHER_WORKER: development } })).toBe(development)
+    rmSync(packaged)
+    expect(resolvePublisherWorker(options)).toBe(development)
+    rmSync(development)
+    expect(resolvePublisherWorker(options)).toBe(packaged)
+  })
+
+  it('reports a missing Windows Worker before opening account or submission windows', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'publisher-win-missing-'))
+    roots.push(root)
     const supervisor = new PublisherSupervisor({
-      platform: 'win32', resourcesPath: '/tmp', userDataPath: '/tmp',
+      platform: 'win32', resourcesPath: root, userDataPath: root,
+      developmentAppPath: join(root, 'missing.exe'), env: {},
+      launch: () => { throw new Error('must not launch') },
+    })
+    expect(supervisor.status()).toMatchObject({ supported: false, reason: 'publisher-worker-missing' })
+    await expect(supervisor.request('accounts.list')).rejects.toMatchObject({ code: 'publisher-worker-missing' })
+  })
+
+  it('starts the Windows Worker and reads a local video preview', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'publisher-win-preview-'))
+    roots.push(root)
+    const file = join(root, 'clip.mp4')
+    writeFileSync(file, 'sample-video')
+    const { supervisor, workers } = fixture((frame, worker) => {
+      if (handshake(frame, worker)) return
+      if (frame.method === 'accounts.list') worker.reply(frame.id, [])
+      if (frame.method === 'system.shutdown') { worker.reply(frame.id, { ok: true }); worker.exit(0) }
+    }, { platform: 'win32', pickLocalVideo: async () => file })
+    expect(supervisor.status()).toMatchObject({ supported: true, running: false, legacyAccountImportSupported: false })
+    await expect(supervisor.request('accounts.importPreview')).rejects.toMatchObject({ code: 'import-not-supported' })
+    await expect(supervisor.request('accounts.importApply')).rejects.toMatchObject({ code: 'import-not-supported' })
+    expect(workers).toHaveLength(0)
+    const selected = await supervisor.selectLocalVideo()
+    expect(await supervisor.readLocalVideoChunk(selected!.id, 0, 6)).toEqual({
+      ok: true, bytes: 12, dataBase64: Buffer.from('sample').toString('base64'),
+    })
+    await expect(supervisor.request('accounts.list')).resolves.toEqual([])
+    await supervisor.shutdown()
+  })
+
+  it('reports unsupported systems without launching a legacy fallback', async () => {
+    expect(resolvePublisherWorker({ platform: 'linux', resourcesPath: '/tmp', env: {} })).toBe('')
+    const supervisor = new PublisherSupervisor({
+      platform: 'linux', resourcesPath: '/tmp', userDataPath: '/tmp',
       launch: () => { throw new Error('must not launch') },
     })
     expect(supervisor.status()).toMatchObject({ supported: false, reason: 'publisher-not-supported' })

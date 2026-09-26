@@ -5,11 +5,13 @@ import type { DesktopReleaseChannel, UpdateCheckResult, UpdateRequest } from './
 import type { DesktopInstallationId } from './desktop-installation-id.ts'
 import type { ProfileCreateWindowOptions } from './profile-create-window.ts'
 import type { DesktopPublisherRuntime } from './publisher-runtime.ts'
+import type { DesktopPlatformLoginRequest } from './platform-login.ts'
 import type {
   DesktopWindowMaterial,
   MacosWindowMaterial,
   PersistedWindowsWindowMaterial,
 } from './window-material.ts'
+import type { DesktopSetupWizardSettings } from './setup-wizard-settings.ts'
 
 /** Electron platforms supported by the 易宝工坊 native adapter. */
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
@@ -149,10 +151,8 @@ export interface DesktopTerminalSpec {
 
 /** Values the desktop-shell plugin hands to the Electron adapter. */
 export interface DesktopShellSpec extends DesktopWindowConfig {
-  /** Actual material after platform and Windows-build capability gating. */
+  /** Actual material after platform capability gating. */
   material: DesktopWindowMaterial
-  /** Windows build used for material capability reporting, when applicable. */
-  windowsBuild?: number
   /** Unmodified Web root served by the active DSH profile. */
   url: string
   /** Official one-time launch URL used to mint this Electron session's browser cookie. */
@@ -175,6 +175,12 @@ export interface DesktopShellSpec extends DesktopWindowConfig {
   requestQuit(code: number): void
   /** Persist another mode through the registered desktop settings scope. */
   requestModeChange(mode: DesktopShellMode): Promise<void>
+  /**
+   * Persist first-run Setup choices through the registered settings scopes, the
+   * same Profile patch layer the mode picker writes. The running generation keeps
+   * its presentation; Setup's own continuation offers the restart that applies it.
+   */
+  applySetupSettings?(settings: DesktopSetupWizardSettings): Promise<void>
   readRemoteControl?(): Promise<boolean>
   enableRemoteControl?(): Promise<void>
 }
@@ -183,9 +189,6 @@ export interface DesktopShellSpec extends DesktopWindowConfig {
 export interface DesktopRuntime {
   /** Current Electron platform. */
   readonly platform: DesktopPlatform
-
-  /** NT build number used to gate system backdrop materials. */
-  readonly windowsBuild: number | undefined
 
   /** Locale currently used for native tray contributions. */
   readonly locale: DesktopLocale
@@ -247,6 +250,12 @@ export interface DesktopRuntime {
 
   /** Open the isolated native Profile creator, focusing an existing instance. */
   openProfileCreateWindow(options: Omit<ProfileCreateWindowOptions, 'locale'>): void
+
+  /**
+   * Open a DeepSeek Platform sign-in page, or settle the page after its attempt ended.
+   * @param request - validated request from the Host's account watcher.
+   */
+  platformLogin(request: DesktopPlatformLoginRequest): void
 
   /** Confirm that one renderer-selected workspace is safe to persist. */
   validateDirectory(path: string): Promise<boolean>

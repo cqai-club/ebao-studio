@@ -24,6 +24,10 @@ function fixture(version = '2.0.0'): { readonly root: string; readonly portable:
   const archive = new AdmZip()
   archive.addFile('易宝工坊 Beta.exe', portableExecutable())
   archive.addFile('resources/app.asar', Buffer.from('asar'))
+  archive.addFile('resources/publisher/MatrixMedia Publisher Worker.exe', portableExecutable())
+  archive.addFile('resources/publisher/resources/app.asar', Buffer.from('worker asar'))
+  archive.addFile('resources/publisher/LICENSE', Buffer.from('license'))
+  archive.addFile('resources/publisher/SOURCE.json', Buffer.from('{}'))
   archive.writeZip(portable)
   return { root, portable }
 }
@@ -57,5 +61,15 @@ describe('Windows portable artifact verification', () => {
 
     expect(() => verifyWindowsPortable({ desktopRoot: value.root, version: '2.0.0' }))
       .toThrow('does not have a Windows PE header')
+  })
+
+  it('rejects a portable archive without the Publisher Worker', () => {
+    const value = fixture()
+    const archive = new AdmZip()
+    archive.addFile('易宝工坊 Beta.exe', portableExecutable())
+    archive.addFile('resources/app.asar', Buffer.from('asar'))
+    archive.writeZip(value.portable)
+    expect(() => verifyWindowsPortable({ desktopRoot: value.root, version: '2.0.0' }))
+      .toThrow('resources/publisher/MatrixMedia Publisher Worker.exe')
   })
 })

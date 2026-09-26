@@ -1,10 +1,12 @@
 /** Electron-main supervisor for the isolated MatrixMedia Publisher Worker. */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { constants, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, type Stats } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
+import { createServer, type Server, type Socket } from 'node:net'
+import type { Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { DesktopLogger } from './desktop-logger.ts'
 import { maskSecrets } from './mask-secrets.ts'
@@ -30,6 +32,7 @@ const LOCAL_VIDEO_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]
 const LOCAL_VIDEO_EXTENSIONS = new Set(['.mp4'])
 const MAX_SELECTION_BYTES = 16 * 1024
 const MAX_VIDEO_CHUNK_BYTES = 1024 * 1024
+const PIPE_AUTH_FRAME_BYTES = 256
 
 interface SelectedVideo {
   file: string
@@ -82,11 +85,20 @@ function executableFromOverride(value: string): string {
   return join(target, 'Contents', 'MacOS', appName)
 }
 
-/** Locate the helper without starting it. v1 intentionally has no Windows fallback. */
+/** Locate the platform's packaged or development helper without starting it. */
 export function resolvePublisherWorker(options: Pick<PublisherSupervisorOptions, 'platform' | 'resourcesPath' | 'env' | 'developmentAppPath'>): string {
-  if (options.platform !== 'darwin') return ''
+  if (options.platform !== 'darwin' && options.platform !== 'win32') return ''
   const override = String((options.env ?? process.env).EBAO_PUBLISHER_WORKER ?? '').trim()
   if (override !== '') return executableFromOverride(override)
+  if (options.platform === 'win32') {
+    const packaged = join(options.resourcesPath, 'publisher', 'MatrixMedia Publisher Worker.exe')
+    if (existsSync(packaged)) return packaged
+    const development = options.developmentAppPath ?? fileURLToPath(new URL(
+      '../../matrixmedia-publisher/build/publisher-worker/win-unpacked/MatrixMedia Publisher Worker.exe',
+      import.meta.url,
+    ))
+    return existsSync(development) ? development : packaged
+  }
   const packaged = join(
     options.resourcesPath,
     'publisher',
@@ -135,9 +147,14 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
   private readonly importTimeoutMs: number
   private readonly submissionTimeoutMs: number
   private readonly pickLocalVideo: () => Promise<string | undefined>
+  private readonly useWindowsPipe: boolean
   private readonly localVideosRoot: string
   private readonly localVideos = new Map<string, SelectedVideo>()
   private child: ChildProcessWithoutNullStreams | undefined
+  private transport: Writable | undefined
+  private pipeServer: Server | undefined
+  private pipeSocket: Socket | undefined
+  private rejectPipeConnection: ((error: Error) => void) | undefined
   private startTask: Promise<void> | undefined
   private sequence = 0
   private pendingText = ''
@@ -162,6 +179,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     this.importTimeoutMs = options.importTimeoutMs ?? IMPORT_TIMEOUT_MS
     this.submissionTimeoutMs = options.submissionTimeoutMs ?? SUBMISSION_TIMEOUT_MS
     this.pickLocalVideo = options.pickLocalVideo ?? (async () => undefined)
+    this.useWindowsPipe = this.platform === 'win32'
   }
 
   async selectLocalVideo(): Promise<PublisherLocalVideo | null> {
@@ -245,7 +263,10 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     try {
       // A selected path is private to Electron main. Open the file itself and
       // verify its descriptor so a replaced path cannot redirect a preview.
-      handle = await open(selected.file, constants.O_RDONLY | constants.O_NOFOLLOW)
+      // Windows has no O_NOFOLLOW. The descriptor identity check below still
+      // rejects a path redirected to a different file after selection.
+      const flags = this.platform === 'win32' ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW
+      handle = await open(selected.file, flags)
       cancelled()
       const before = await handle.stat()
       if (!this.matchesLocalVideo(before, selected)) {
@@ -304,12 +325,13 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
   }
 
   status(): PublisherRuntimeStatus {
-    if (this.platform !== 'darwin') {
+    if (this.platform !== 'darwin' && this.platform !== 'win32') {
       return {
         supported: false,
         running: false,
+        legacyAccountImportSupported: false,
         reason: 'publisher-not-supported',
-        message: '多平台发布一期仅支持 macOS',
+        message: '多平台发布目前支持 macOS 和 Windows',
       }
     }
     if (this.executable === '' || !existsSync(this.executable)) {
@@ -317,17 +339,21 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
       return {
         supported: false,
         running: false,
+        legacyAccountImportSupported: this.platform === 'darwin',
         reason: 'publisher-worker-missing',
         message: hasWorkerOverride
           ? '指定的 Publisher Worker 不存在，请检查 EBAO_PUBLISHER_WORKER 并重启 e宝工坊'
           : '未找到内置 Publisher Worker，请重新安装 e宝工坊',
       }
     }
-    return { supported: true, running: this.child !== undefined }
+    return { supported: true, running: this.child !== undefined, legacyAccountImportSupported: this.platform === 'darwin' }
   }
 
   async request<T = unknown>(method: PublisherWorkerMethod, params: unknown = {}, signal?: AbortSignal): Promise<T> {
     if (!isPublisherWorkerMethod(method)) throw new PublisherWorkerError('method-not-allowed', '不允许的发布操作')
+    if (this.platform === 'win32' && (method === 'accounts.importPreview' || method === 'accounts.importApply')) {
+      throw new PublisherWorkerError('import-not-supported', 'Windows 暂不支持导入独立 MatrixMedia 账号，请直接添加账号并登录')
+    }
     if (signal?.aborted) throw new PublisherWorkerError('request-cancelled', '发布操作已取消')
     await this.ensureStarted()
     const workerParams = method === 'submissions.create' ? this.resolveLocalVideoSubmission(params) : params
@@ -335,7 +361,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
       ? this.importTimeoutMs
       : method === 'submissions.create'
         ? this.submissionTimeoutMs
-      : method === 'accounts.openLogin' || method === 'accounts.openDashboard'
+      : method === 'accounts.openLogin' || method === 'accounts.openDashboard' || method === 'submissions.openTarget'
         ? Math.max(this.requestTimeoutMs, WINDOW_TIMEOUT_MS)
         : this.requestTimeoutMs
     const result = await this.call<T>(method, workerParams, signal, timeoutMs)
@@ -352,7 +378,10 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     if (this.restartTimer !== undefined) clearTimeout(this.restartTimer)
     this.restartTimer = undefined
     const child = this.child
-    if (child === undefined) return
+    if (child === undefined) {
+      this.closePipe(new PublisherWorkerError('worker-disconnected', 'Publisher Worker 已停止'))
+      return
+    }
     try {
       await this.call('system.shutdown', {}, undefined, 2_000)
     } catch {
@@ -368,8 +397,8 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
   private async ensureStarted(): Promise<void> {
     const state = this.status()
     if (!state.supported) throw new PublisherWorkerError(state.reason ?? 'publisher-not-supported', state.message ?? '发布能力不可用')
-    if (this.child !== undefined) return
     if (this.startTask !== undefined) return await this.startTask
+    if (this.child !== undefined) return
     this.stopping = false
     const task = this.start().finally(() => {
       if (this.startTask === task) this.startTask = undefined
@@ -378,22 +407,124 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
     await task
   }
 
+  private async openWindowsPipe(): Promise<{ path: string; token: string; connected: Promise<Socket> }> {
+    const name = `ebao-publisher-${randomUUID()}`
+    // A short Unix socket path lets win32 simulation tests run on macOS/Linux.
+    const path = process.platform === 'win32' ? `\\\\.\\pipe\\${name}` : join('/tmp', `${name}.sock`)
+    const token = randomBytes(32).toString('hex')
+    const expected = Buffer.from(token, 'hex')
+    const server = createServer()
+    await new Promise<void>((resolveListen, rejectListen) => {
+      const failed = (error: Error) => rejectListen(error)
+      server.once('error', failed)
+      server.listen(path, () => {
+        server.removeListener('error', failed)
+        resolveListen()
+      })
+    })
+    this.pipeServer = server
+    const connected = new Promise<Socket>((resolveSocket, rejectSocket) => {
+      let settled = false
+      const rejectConnection = (error: Error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(deadline)
+        if (this.rejectPipeConnection === rejectConnection) this.rejectPipeConnection = undefined
+        if (server.listening) server.close()
+        rejectSocket(error)
+      }
+      const deadline = setTimeout(() => rejectConnection(
+        new PublisherWorkerError('worker-unavailable', 'Publisher Worker 未建立本地通信连接'),
+      ), this.handshakeTimeoutMs)
+      this.rejectPipeConnection = rejectConnection
+      server.on('error', error => rejectConnection(error))
+      server.on('connection', socket => {
+        socket.setEncoding('utf8')
+        let text = ''
+        const authTimer = setTimeout(() => socket.destroy(), Math.min(5_000, this.handshakeTimeoutMs))
+        socket.once('close', () => clearTimeout(authTimer))
+        socket.on('error', () => { /* Reject only this unauthenticated connection. */ })
+        const authenticate = (value: string) => {
+          text += value
+          if (Buffer.byteLength(text, 'utf8') > PIPE_AUTH_FRAME_BYTES) { socket.destroy(); return }
+          const newline = text.indexOf('\n')
+          if (newline < 0) return
+          let supplied = Buffer.alloc(0)
+          try {
+            const frame: unknown = JSON.parse(text.slice(0, newline))
+            const auth = frame !== null && typeof frame === 'object' && !Array.isArray(frame)
+              ? (frame as { auth?: unknown }).auth : undefined
+            if (typeof auth === 'string' && /^[0-9a-f]{64}$/u.test(auth)) supplied = Buffer.from(auth, 'hex')
+          } catch { /* Invalid authentication is handled like a wrong token. */ }
+          if (settled || text.slice(newline + 1).trim() !== ''
+            || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+            socket.destroy()
+            return
+          }
+          settled = true
+          clearTimeout(deadline)
+          clearTimeout(authTimer)
+          this.rejectPipeConnection = undefined
+          socket.removeListener('data', authenticate)
+          socket.pause()
+          if (server.listening) server.close()
+          resolveSocket(socket)
+        }
+        socket.on('data', authenticate)
+      })
+    })
+    // A child may fail before start() awaits the connection. Keep the rejection
+    // handled while preserving it for the awaited startup path.
+    void connected.catch(() => undefined)
+    return { path, token, connected }
+  }
+
+  private closePipe(error: Error): void {
+    const reject = this.rejectPipeConnection
+    this.rejectPipeConnection = undefined
+    reject?.(error)
+    this.pipeSocket?.destroy()
+    this.pipeSocket = undefined
+    if (this.pipeServer?.listening) this.pipeServer.close()
+    this.pipeServer = undefined
+  }
+
   private async start(): Promise<void> {
     mkdirSync(this.dataRoot, { recursive: true })
     this.pendingText = ''
     this.pendingLogText = ''
-    const child = this.launch(this.executable, ['--publisher-worker', '--data-dir', this.dataRoot], {
-      cwd: this.dataRoot,
-      env: { ...this.env, MATRIXMEDIA_DATA_DIR: join(this.dataRoot, 'matrix-data') },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
+    const pipe = this.useWindowsPipe ? await this.openWindowsPipe() : undefined
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = this.launch(this.executable, ['--publisher-worker', '--data-dir', this.dataRoot], {
+        cwd: this.dataRoot,
+        env: {
+          ...this.env,
+          MATRIXMEDIA_DATA_DIR: join(this.dataRoot, 'matrix-data'),
+          ...(pipe === undefined ? {} : {
+            EBAO_PUBLISHER_PIPE: pipe.path,
+            EBAO_PUBLISHER_PIPE_TOKEN: pipe.token,
+          }),
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+    } catch (error) {
+      this.closePipe(error instanceof Error ? error : new Error(String(error)))
+      throw error
+    }
     this.child = child
-    child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
-    child.stdout.on('data', value => { this.receive(String(value)) })
+    if (pipe === undefined) {
+      this.transport = child.stdin
+      child.stdout.setEncoding('utf8')
+      child.stdout.on('data', value => { this.receive(String(value)) })
+      child.stdin.on('error', () => { this.handlePipeFailure(child) })
+    } else {
+      child.stdout.resume()
+      child.stdin.on('error', () => { /* Windows GUI stdin is not the protocol transport. */ })
+    }
     child.stderr.on('data', value => { this.receiveWorkerLog(String(value)) })
-    child.stdin.on('error', () => { this.handlePipeFailure(child) })
     child.once('error', error => { this.handleExit(child, error) })
     child.once('exit', (code, signal) => {
       this.handleExit(child, new PublisherWorkerError(
@@ -401,6 +532,23 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
         `Publisher Worker 已退出（${signal ?? String(code ?? 'unknown')}）`,
       ))
     })
+    if (pipe !== undefined) {
+      try {
+        const socket = await pipe.connected
+        if (this.child !== child) throw new PublisherWorkerError('worker-disconnected', 'Publisher Worker 启动时已退出')
+        this.pipeSocket = socket
+        this.transport = socket
+        socket.setEncoding('utf8')
+        socket.on('data', value => { this.receive(String(value)) })
+        socket.on('error', () => { this.handlePipeFailure(child) })
+        socket.on('close', () => { this.handlePipeFailure(child) })
+        socket.resume()
+      } catch (error) {
+        child.kill()
+        this.handleExit(child, error instanceof Error ? error : new Error(String(error)))
+        throw error
+      }
+    }
     const handshake = await this.call<{
       protocolVersion?: unknown
       workerVersion?: unknown
@@ -419,7 +567,8 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
 
   private call<T = unknown>(method: string, params: unknown, signal?: AbortSignal, timeoutMs = this.requestTimeoutMs): Promise<T> {
     const child = this.child
-    if (child === undefined || child.stdin.destroyed) {
+    const transport = this.transport
+    if (child === undefined || transport === undefined || transport.destroyed) {
       return Promise.reject(new PublisherWorkerError('worker-unavailable', 'Publisher Worker 尚未就绪'))
     }
     const id = String(++this.sequence)
@@ -444,7 +593,7 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
         resolve: value => { cleanup(); resolveRequest(value as T) },
         reject,
       })
-      child.stdin.write(`${JSON.stringify({ id, method, params })}\n`, error => {
+      transport.write(`${JSON.stringify({ id, method, params })}\n`, error => {
         if (error !== null && error !== undefined) this.handlePipeFailure(child)
       })
     })
@@ -506,6 +655,8 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
   private handleExit(child: ChildProcessWithoutNullStreams, error: Error): void {
     if (this.child !== child) return
     this.child = undefined
+    this.closePipe(error)
+    this.transport = undefined
     this.pendingText = ''
     this.flushWorkerLog()
     this.rejectPending(error)
@@ -558,6 +709,8 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
       try { await this.call('system.shutdown', {}, undefined, 2_000) } catch { child.kill() }
       if (this.child === child) child.kill()
       this.child = undefined
+      this.closePipe(new PublisherWorkerError('worker-disconnected', 'Publisher Worker 正在重启'))
+      this.transport = undefined
     }
     this.stopping = false
     this.restartCount = 0

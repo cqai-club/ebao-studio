@@ -30,6 +30,16 @@ const electronVersion = /^electronVersion:\s*(\d+\.\d+\.\d+)\s*$/m.exec(builderC
 if (electronVersion !== metadata.electronVersion) {
   fail(`Publisher Worker Electron version is ${electronVersion || 'missing'}, expected ${metadata.electronVersion}`)
 }
+const helperName = /^executableName:\s*(.+)\s*$/m.exec(builderConfig)?.[1]?.trim()
+const outputDirectory = /^  output:\s*(.+)\s*$/m.exec(builderConfig)?.[1]?.trim()
+const expectedWindowsArtifact = `matrixmedia-publisher/${outputDirectory}/win-unpacked/${helperName}.exe`
+if (!helperName || !outputDirectory || metadata.windowsArtifact !== expectedWindowsArtifact) {
+  fail('Windows Publisher Worker artifact drifted from the pinned builder configuration')
+}
+if (!Array.isArray(metadata.windowsBuild) || metadata.windowsBuild.length !== 2
+  || metadata.windowsBuild.some(command => typeof command !== 'string' || command.length === 0)) {
+  fail('Windows Publisher Worker build commands are missing from the source declaration')
+}
 
 for (const entry of [
   'LICENSE',

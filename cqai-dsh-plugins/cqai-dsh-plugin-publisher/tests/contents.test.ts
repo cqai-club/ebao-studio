@@ -19,22 +19,23 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3])
 
 describe('publisher local content library', () => {
-  it('defaults new articles to editorial and preserves the selected theme through revisions and copies', () => {
+  it('defaults new articles to the outer preview layout and preserves later theme choices', () => {
     const env = fixture()
     const article = createContent('article', env)
-    expect(article.articleTheme).toBe('editorial')
+    expect(article.articleTheme).toBe('classic')
+    expect(resolveArticleTheme(article)).toBe('classic')
     expect(createContent('image-note', env).articleTheme).toBeUndefined()
     expect(createContent('video', env).articleTheme).toBeUndefined()
-    const classic = saveContent(article.id, {
+    const editorial = saveContent(article.id, {
       revision: article.revision, title: '文章', body: '正文', summary: '', tags: [],
-      creativeStatement: 'none', articleTheme: 'classic',
+      creativeStatement: 'none', articleTheme: 'editorial',
     }, env)
-    expect(readContent(article.id, env).articleTheme).toBe('classic')
-    expect(() => saveContent(article.id, { ...classic, revision: article.revision, articleTheme: 'editorial' }, env))
+    expect(readContent(article.id, env).articleTheme).toBe('editorial')
+    expect(() => saveContent(article.id, { ...editorial, revision: article.revision, articleTheme: 'classic' }, env))
       .toThrow('重新加载')
-    const edited = saveContent(article.id, { ...classic, title: '更新标题' }, env)
-    expect(edited.articleTheme).toBe('classic')
-    expect(duplicateContent(article.id, env).articleTheme).toBe('classic')
+    const edited = saveContent(article.id, { ...editorial, title: '更新标题' }, env)
+    expect(edited.articleTheme).toBe('editorial')
+    expect(duplicateContent(article.id, env).articleTheme).toBe('editorial')
     expect(() => saveContent(article.id, { ...edited, articleTheme: 'unsupported' as never }, env))
       .toThrow('文章排版主题无效')
     expect(readContent(article.id, env).revision).toBe(edited.revision)

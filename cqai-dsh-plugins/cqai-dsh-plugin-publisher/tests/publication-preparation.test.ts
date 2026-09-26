@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { articleImageSources } from '../src/article-assets.ts'
@@ -33,6 +33,7 @@ describe('publication preparation from an MD source', () => {
     writeFileSync(markdownPath, `# 六张图的文章\n\n正文\n\n${order.map(index => `![图 ${index}](images/${index}.png)`).join('\n\n')}`)
     const source = registerSourceDocument('six-images', markdownPath, env)
     const first = openPublicationFromSource(source.id, source.revision, 'article', env)
+    expect(first.articleTheme).toBe('classic')
     expect(first.title).toBe('六张图的文章')
     expect(first.assets.map(asset => asset.name)).toEqual(order.map(index => `${index}.png`))
     expect(first.coverAssetId).toBe(first.assets[0]?.id)
@@ -179,6 +180,7 @@ describe('publication preparation from an MD source', () => {
     }))
       .toThrow('草稿内容过大')
     expect(listContents(env)).toEqual([])
+    expect(readdirSync(join(env.DSH_HOME, 'publisher', 'projects', 'article'))).toEqual([])
     const prepared = openPublicationFromSource(source.id, source.revision, 'article', env)
     expect(prepared.assets).toHaveLength(1)
     expect(listContents(env)).toHaveLength(1)

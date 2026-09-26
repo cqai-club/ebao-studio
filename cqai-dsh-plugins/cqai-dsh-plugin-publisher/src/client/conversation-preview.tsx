@@ -159,11 +159,11 @@ export function sourcePreviewForSession(
 async function readSessionPreview(sessionId: string, signal: AbortSignal): Promise<SessionPreviewSnapshot> {
   const response = await fetch(sessionPreviewUrl(sessionId), { signal, cache: 'no-store' })
   if (!response.headers.get('content-type')?.includes('application/json')) {
-    throw new Error('内容预览服务暂未就绪')
+    throw new Error('平台分享预览服务暂未就绪')
   }
   const result = await response.json() as SessionPreviewSnapshot & { error?: string }
   if (!response.ok) throw new Error(result.error || '无法读取原始文档')
-  if (result.sessionId !== sessionId) throw new Error('内容预览与当前对话不匹配')
+  if (result.sessionId !== sessionId) throw new Error('平台分享预览与当前对话不匹配')
   return result
 }
 
@@ -189,6 +189,22 @@ export async function openPublicationCandidate(sessionId: string, candidateId: s
   return result
 }
 
+export async function openPublicationSource(sessionId: string, sourceRevision: string, signal?: AbortSignal): Promise<PublisherContent> {
+  const response = await fetch(`${API}/publication-open-source`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-ejianbao': '1' },
+    body: JSON.stringify({ sessionId, sourceRevision }), signal,
+  })
+  if (!response.headers.get('content-type')?.includes('application/json')) {
+    throw new Error('发布准备服务暂未就绪')
+  }
+  const result = await response.json() as PublisherContent & { error?: string }
+  if (!response.ok) throw new Error(result.error || '无法创建文章草稿')
+  if (!result || typeof result.id !== 'string' || result.contentType !== 'article') {
+    throw new Error('文章草稿响应无效')
+  }
+  return result
+}
+
 async function readSessionContent(sessionId: string, signal: AbortSignal): Promise<SessionContentSnapshot> {
   const response = await fetch(sessionContentUrl(sessionId), { signal })
   if (!response.headers.get('content-type')?.includes('application/json')) {
@@ -203,12 +219,16 @@ async function readSessionContent(sessionId: string, signal: AbortSignal): Promi
 const styles = `
 .pub-conv-preview { height: 100%; min-height: 0; overflow: auto; padding: 14px; box-sizing: border-box; color: var(--dsw-alias-label-primary, #111318); background: var(--dsw-alias-bg-base, #fff); font: 14px/1.6 var(--dsw-font-family, inherit); }
 .pub-conv-preview * { box-sizing: border-box; }
-.pub-conv-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
-.pub-conv-controls strong { font-size: 14px; }
-.pub-conv-switch { display: flex; gap: 4px; }
+.pub-conv-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.pub-conv-controls strong { font-size: 14px; white-space: nowrap; }
+.pub-conv-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.pub-conv-switch { display: inline-flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--dsw-alias-border-l2, #d9dce1); border-radius: 11px; background: var(--dsw-alias-bg-module-platform, #f6f7f9); }
 .pub-conv-views { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
 .pub-conv-preview button { cursor: pointer; border: 1px solid var(--dsw-alias-border-l2, #e4e6e9); border-radius: 8px; background: var(--dsw-alias-bg-layer-1, #fff); color: inherit; padding: 5px 9px; font: inherit; }
 .pub-conv-preview button[aria-pressed=true] { background: var(--dsw-specific-sidebar-nav-item-active, #edf0f3); font-weight: 600; }
+.pub-conv-preview .pub-conv-switch button { min-height: 32px; padding: 5px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary, #626873); font-size: 13px; }
+.pub-conv-preview .pub-conv-switch button[aria-pressed=true] { background: var(--dsw-alias-bg-layer-1, #fff); color: var(--dsw-alias-label-primary, #111318); box-shadow: 0 1px 3px #0002; font-weight: 600; }
+.pub-conv-preview .pub-conv-publish { min-height: 36px; padding: 6px 12px; border-color: transparent; background: var(--dsw-alias-button-primary-fill, #0f1115); color: var(--dsw-alias-label-primary-foreground, #fff); font-size: 13px; font-weight: 600; white-space: nowrap; }
 .pub-conv-preview button:disabled { cursor: not-allowed; opacity: .5; }
 .pub-conv-preview button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
 .pub-conv-device-scroll { overflow-x: auto; }
@@ -216,13 +236,12 @@ const styles = `
 .pub-conv-device-scroll[data-device=pc] .pub-source-preview { width: 720px; max-width: none; }
 .pub-conv-note, .pub-conv-error, .pub-conv-muted { color: var(--dsw-alias-label-tertiary, #777d85); font-size: 12px; }
 .pub-conv-error { color: var(--dsw-alias-state-error-primary, #dc2626); }
-.pub-conv-footer { display: flex; justify-content: flex-end; margin-top: 14px; }
-.pub-conv-footer button { background: var(--dsw-alias-state-business-primary, #4176e6); color: #fff; border-color: transparent; padding: 7px 18px; }
 ${contentPreviewCss}
 `
 
-export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsRuntime<'sidebar.right.pane.tab'> & {
+export function ConversationPreview({ sessionId, useTabInfo, onPublish, onOpenPublisher }: PropsRuntime<'sidebar.right.pane.tab'> & {
   onPublish(content: Pick<PublisherContent, 'id' | 'contentType'>, intendedPlatforms?: Platform[]): void
+  onOpenPublisher(): void
 }): ReactNode {
   const { tab } = useTabInfo()
   const [device, setDevice] = useState<'mobile' | 'pc'>('mobile')
@@ -264,7 +283,7 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
         setError(undefined)
         if (!next.preview.source && !(next.legacy && previewableContentId(next.legacy))) tab.actions.close()
       } catch (cause) {
-        if (!controller.signal.aborted) setError({ sessionId, message: cause instanceof Error ? cause.message : '无法读取内容预览' })
+        if (!controller.signal.aborted) setError({ sessionId, message: cause instanceof Error ? cause.message : '无法读取平台分享预览' })
       } finally { pending = false }
     }
     void refresh()
@@ -281,25 +300,29 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
     ? { ...source, title: variant?.title ?? candidate.title, body: variant?.body ?? candidate.body }
     : source
   const publish = async () => {
-    if (!canPublish || publishingRef.current) return
+    if ((!canPublish && !(source && !currentError)) || publishingRef.current) return
     if (!source) {
       if (!content) return
       try { onPublish(content) }
       catch (cause) { setActionError({ sessionId, message: cause instanceof Error ? cause.message : '无法打开发布页面' }) }
       return
     }
-    if (!candidate) return
     const controller = new AbortController()
     openControllerRef.current = controller
     publishingRef.current = true
     setPublishing(true)
     setActionError(undefined)
     try {
-      const preparation = await openPublicationCandidate(sessionId, candidate.id, controller.signal)
-      if (!controller.signal.aborted && activeSessionRef.current === sessionId) onPublish(preparation, [...candidate.platforms])
+      const preparation = candidate
+        ? await openPublicationCandidate(sessionId, candidate.id, controller.signal)
+        : await openPublicationSource(sessionId, source.revision, controller.signal)
+      if (!controller.signal.aborted && activeSessionRef.current === sessionId) {
+        if (candidate) onPublish(preparation, [...candidate.platforms])
+        else onPublish(preparation)
+      }
     } catch (cause) {
       if (!controller.signal.aborted && activeSessionRef.current === sessionId) {
-        setActionError({ sessionId, message: cause instanceof Error ? cause.message : '无法创建发布准备单' })
+        setActionError({ sessionId, message: cause instanceof Error ? cause.message : candidate ? '无法创建发布准备单' : '无法打开文章草稿' })
       }
     } finally {
       if (openControllerRef.current === controller) {
@@ -309,11 +332,22 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
       }
     }
   }
+  const openPublisher = () => {
+    if (publishingRef.current) return
+    if (canPublish || (source && !currentError)) { void publish(); return }
+    try { onOpenPublisher() }
+    catch (cause) { setActionError({ sessionId, message: cause instanceof Error ? cause.message : '无法打开多平台发布' }) }
+  }
   return <div className="pub-conv-preview" data-publisher-preview-session={sessionId}>
     <style>{styles}</style>
-    <div className="pub-conv-controls"><strong>内容预览</strong><div className="pub-conv-switch" role="group" aria-label="预览设备">
-      <button type="button" aria-pressed={device === 'mobile'} onClick={() => setDevice('mobile')}>移动端</button>
-      <button type="button" aria-pressed={device === 'pc'} onClick={() => setDevice('pc')}>PC</button>
+    <div className="pub-conv-controls"><strong>平台分享预览</strong><div className="pub-conv-actions">
+      <div className="pub-conv-switch" role="group" aria-label="预览设备">
+        <button type="button" aria-pressed={device === 'mobile'} onClick={() => setDevice('mobile')}>移动端</button>
+        <button type="button" aria-pressed={device === 'pc'} onClick={() => setDevice('pc')}>PC</button>
+      </div>
+      <button type="button" className="pub-conv-publish" disabled={publishing} onClick={openPublisher}>
+        {publishing ? '正在准备发布…' : '多平台发布'}
+      </button>
     </div></div>
     {currentError && <p className="pub-conv-error" role="status">{currentError}；稍后会自动重试。</p>}
     {actionError?.sessionId === sessionId && <p className="pub-conv-error" role="status">{actionError.message}</p>}
@@ -327,7 +361,7 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
           onClick={() => setView(platform)}>{PLATFORM_LABELS[platform]}</button>)}
       </div>}
       {candidateStale && <p className="pub-conv-error" role="status">原稿已更新，发布候选已失效。请在对话中重新准备发布预览。</p>}
-      <div className="pub-conv-device-scroll" data-device={device} aria-label={device === 'mobile' ? '移动端内容预览' : 'PC 内容预览'}>
+      <div className="pub-conv-device-scroll" data-device={device} aria-label={device === 'mobile' ? '移动端平台分享预览' : 'PC 平台分享预览'}>
         {displaySource && <SourceDocumentPreview source={displaySource} imageUrl={sourceImageUrl} showUnusedImages={activeView === 'source'}
           imagePresentation={candidate && activeView !== 'source' && candidate.contentType === 'image-note' ? 'gallery' : 'inline'}/>}
       </div>
@@ -339,18 +373,14 @@ export function ConversationPreview({ sessionId, useTabInfo, onPublish }: PropsR
         {activeView !== 'master' && (candidate.warnings?.[activeView] ?? []).map((warning, index) =>
           <div className="pub-conv-error" role="status" key={`${activeView}-${index}`}>{warning}</div>)}
       </div>}
-      {candidate ? <p className="pub-conv-note">{activeView === 'source' ? '原始 MD 内容预览。' : '发布候选预览；各平台最终呈现请以平台后台为准。'}</p>
-        : !candidateStale && <p className="pub-conv-note">明确要求发布并准备目标平台后，才会出现发布候选。</p>}
-      {(candidate || candidateStale) && <div className="pub-conv-footer"><button type="button" disabled={!canPublish || publishing} onClick={() => { void publish() }}>
-        {publishing ? '正在准备发布…' : '发布'}
-      </button></div>}
+      {candidate ? <p className="pub-conv-note">{activeView === 'source' ? '原始 MD 预览。' : '发布候选预览；各平台最终呈现请以平台后台为准。'}</p>
+        : !candidateStale && <p className="pub-conv-note">点击“多平台发布”可将当前原稿带入文章草稿；选择账号和提交方式后再发布。</p>}
     </>}
     {!source && content && <>
-      <div className="pub-conv-device-scroll" aria-label={device === 'mobile' ? '移动端内容预览' : 'PC 内容预览'}>
+      <div className="pub-conv-device-scroll" aria-label={device === 'mobile' ? '移动端平台分享预览' : 'PC 平台分享预览'}>
         <PublisherContentPreview content={content} device={device}/>
       </div>
       <p className="pub-conv-note">这是旧会话草稿的预览；各平台实际显示以发布后的页面为准。</p>
-      <div className="pub-conv-footer"><button type="button" disabled={!canPublish} onClick={() => { void publish() }}>发布</button></div>
     </>}
   </div>
 }
@@ -385,5 +415,5 @@ export function ConversationPreviewAction({ sessionId, openPreview }: PropsRunti
     return () => { controller.abort(); window.clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility) }
   }, [sessionId, openPreview])
   if (availability?.sessionId !== sessionId || !availability.showAction) return null
-  return <button type="button" title="打开当前会话的内容预览" onClick={openPreview} style={{ cursor: 'pointer', border: 0, borderRadius: 8, padding: '5px 8px', background: 'transparent', color: 'inherit', font: 'inherit' }}>内容预览</button>
+  return <button type="button" title="打开当前会话的平台分享预览" onClick={openPreview} style={{ cursor: 'pointer', border: 0, borderRadius: 8, padding: '5px 8px', background: 'transparent', color: 'inherit'}}>平台分享预览</button>
 }

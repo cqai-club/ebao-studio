@@ -7,15 +7,27 @@ import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
   ARTICLE_THEMES, CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORMS, TITLE_MAX,
-  type Platform, type PublisherAsset, type PublisherContent, type PublisherContentType,
+  type Platform, type PublisherAsset, type PublisherContent, type PublisherContentCard,
+  type PublisherContentQueryRequest, type PublisherContentQueryResult, type PublisherContentType,
   type PublisherPlatformVariant, type PublisherVideoSource,
 } from './protocol.ts'
+import { discardEmptyProjectWorkspace, ensureProjectWorkspace } from './project-workspace.ts'
 
 export const CONTENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 export const MAX_BODY_BYTES = 2 * 1024 * 1024
 export const MAX_ASSET_BYTES = 20 * 1024 * 1024
 export const MAX_ASSETS = 20
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024
+const CONTENT_QUERY_PAGE_SIZE = 20
+const CONTENT_QUERY_MAX_LENGTH = 200
+
+interface ContentQueryCursor {
+  version: 1
+  contentType: PublisherContentType
+  queryDigest: string
+  updatedAt: string
+  id: string
+}
 
 export function contentsRoot(env: NodeJS.ProcessEnv = process.env): string {
   return join(resolveDshHome(undefined, env), 'publisher', 'contents')
@@ -41,7 +53,8 @@ function validVideoSource(value: unknown): value is PublisherVideoSource {
     && typeof source.bytes === 'number' && Number.isSafeInteger(source.bytes) && source.bytes > 0
 }
 
-function directoryFor(id: string, env: NodeJS.ProcessEnv = process.env): string {
+/** Resolve a draft directory after rejecting symlinks and paths outside the content root. */
+export function directoryFor(id: string, env: NodeJS.ProcessEnv = process.env): string {
   requireId(id)
   const root = contentsRoot(env)
   if (!existsSync(root)) throw new Error('草稿不存在')
@@ -126,6 +139,72 @@ export function listContents(env: NodeJS.ProcessEnv = process.env): PublisherCon
   }).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 }
 
+function compareContentQueryKey(
+  left: Pick<PublisherContent, 'updatedAt' | 'id'>,
+  right: Pick<PublisherContent, 'updatedAt' | 'id'>,
+): number {
+  if (left.updatedAt !== right.updatedAt) return left.updatedAt > right.updatedAt ? -1 : 1
+  if (left.id !== right.id) return left.id > right.id ? -1 : 1
+  return 0
+}
+
+function parseContentQueryCursor(
+  encoded: string | undefined, contentType: PublisherContentType, queryDigest: string,
+): ContentQueryCursor | undefined {
+  if (encoded === undefined) return undefined
+  if (typeof encoded !== 'string' || encoded.length === 0 || encoded.length > 512
+    || !/^[A-Za-z0-9_-]+$/u.test(encoded)) throw new Error('草稿查询游标无效')
+  try {
+    const raw: unknown = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'))
+    if (Buffer.from(encoded, 'base64url').toString('base64url') !== encoded
+      || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('invalid')
+    const value = raw as Record<string, unknown>
+    if (Object.keys(value).sort().join(',') !== 'contentType,id,queryDigest,updatedAt,version'
+      || value.version !== 1 || value.contentType !== contentType || value.queryDigest !== queryDigest
+      || typeof value.updatedAt !== 'string' || value.updatedAt.length > 128
+      || typeof value.id !== 'string' || !CONTENT_ID.test(value.id)) throw new Error('invalid')
+    return value as unknown as ContentQueryCursor
+  } catch { throw new Error('草稿查询游标无效') }
+}
+
+/** A stable keyset query that returns card metadata without article bodies or asset lists. */
+export function queryContents(
+  input: PublisherContentQueryRequest, env: NodeJS.ProcessEnv = process.env,
+): PublisherContentQueryResult {
+  if (!input || !['article', 'image-note', 'video'].includes(input.contentType)) throw new Error('内容类型无效')
+  if (typeof input.query !== 'string' || input.query.length > CONTENT_QUERY_MAX_LENGTH) throw new Error('搜索关键词无效')
+  const query = input.query.trim().toLowerCase()
+  const queryDigest = createHash('sha256').update(query).digest('hex')
+  const cursor = parseContentQueryCursor(input.cursor, input.contentType, queryDigest)
+  const matches = listContents(env).filter(content => {
+    if (content.contentType !== input.contentType) return false
+    const searched = content.contentType === 'article' ? content.summary
+      : content.contentType === 'image-note' ? content.body : content.description ?? ''
+    return !query || content.title.toLowerCase().includes(query) || searched.toLowerCase().includes(query)
+  }).sort(compareContentQueryKey)
+  const afterCursor = cursor ? matches.filter(content => compareContentQueryKey(content, cursor) > 0) : matches
+  const page = afterCursor.slice(0, CONTENT_QUERY_PAGE_SIZE)
+  const items: PublisherContentCard[] = page.map(content => {
+    const excerpt = content.contentType === 'article' ? content.summary
+      : content.contentType === 'image-note' ? content.body : content.description ?? ''
+    const coverAssetId = content.contentType === 'video' ? undefined : content.coverAssetId ?? content.assets[0]?.id
+    return {
+      id: content.id, contentType: content.contentType, revision: content.revision,
+      updatedAt: content.updatedAt, title: content.title,
+      excerpt: excerpt.replace(/\s+/gu, ' ').trim().slice(0, 240),
+      ...(coverAssetId ? { coverAssetId } : {}),
+      ...(content.contentType === 'video' && content.videoSource ? { videoSource: content.videoSource } : {}),
+    }
+  })
+  const last = page.at(-1)
+  const nextCursor = afterCursor.length > CONTENT_QUERY_PAGE_SIZE && last
+    ? Buffer.from(JSON.stringify({
+      version: 1, contentType: input.contentType, queryDigest, updatedAt: last.updatedAt, id: last.id,
+    } satisfies ContentQueryCursor)).toString('base64url')
+    : null
+  return { items, nextCursor }
+}
+
 export function createContent(contentType: PublisherContentType, env: NodeJS.ProcessEnv = process.env): PublisherContent {
   if (!['article', 'image-note', 'video'].includes(contentType)) throw new Error('内容类型无效')
   const root = contentsRoot(env)
@@ -133,17 +212,24 @@ export function createContent(contentType: PublisherContentType, env: NodeJS.Pro
   const id = randomUUID()
   const directory = join(realpathSync(root), id)
   mkdirSync(directory, { mode: 0o700 })
-  mkdirSync(join(directory, 'assets'), { mode: 0o700 })
-  const now = new Date().toISOString()
-  const content: PublisherContent = {
-    id, contentType, revision: 1, createdAt: now, updatedAt: now,
-    title: '', body: '', summary: '', tags: [], creativeStatement: 'none',
-    ...(contentType === 'article' ? { articleTheme: 'editorial' as const } : {}),
-    assets: [], platformFields: {}, platformVariants: {},
-    ...(contentType === 'video' ? { description: '', shortTitle: '' } : {}),
+  try {
+    mkdirSync(join(directory, 'assets'), { mode: 0o700 })
+    const now = new Date().toISOString()
+    const content: PublisherContent = {
+      id, contentType, revision: 1, createdAt: now, updatedAt: now,
+      title: '', body: '', summary: '', tags: [], creativeStatement: 'none',
+      // The source document preview uses the same classic reader layout.
+      ...(contentType === 'article' ? { articleTheme: 'classic' as const } : {}),
+      assets: [], platformFields: {}, platformVariants: {},
+      ...(contentType === 'video' ? { description: '', shortTitle: '' } : {}),
+    }
+    writeManifest(directory, content)
+    ensureProjectWorkspace(id, env)
+    return content
+  } catch (cause) {
+    rmSync(directory, { recursive: true, force: true })
+    throw cause
   }
-  writeManifest(directory, content)
-  return content
 }
 
 export interface SaveContentInput {
@@ -295,6 +381,7 @@ export function duplicateContent(id: string, env: NodeJS.ProcessEnv = process.en
     writeManifest(target, copy)
     return copy
   } catch (error) {
+    try { discardEmptyProjectWorkspace(created.id, env) } catch { /* Preserve the copy failure. */ }
     rmSync(target, { recursive: true, force: true })
     throw error
   }
@@ -347,6 +434,48 @@ export function addAsset(
       // An explicit platform subset is a deliberate selection; new images remain unselected there.
       platformVariants: content.platformVariants,
       ...(options.setAsCover || content.contentType === 'article' && !content.coverAssetId ? { coverAssetId: asset.id } : {}),
+    }
+    writeManifest(directory, next)
+    return next
+  } catch (error) {
+    rmSync(file, { force: true })
+    throw error
+  }
+}
+
+/** Import an Agent image and insert its managed reference in one draft revision. */
+export function insertArticleImage(
+  id: string, expectedRevision: number, name: string, data: Buffer, expectedMime: PublisherAsset['mime'],
+  bodyWithMarker: string, alt: string, env: NodeJS.ProcessEnv = process.env,
+): PublisherContent {
+  const directory = directoryFor(id, env)
+  const current = readManifest(directory)
+  if (current.contentType !== 'article') throw new Error('当前 Agent 只支持编辑文章草稿')
+  if (current.revision !== expectedRevision) throw new Error('草稿已在其他页面更新，请重新读取后再插图')
+  if (current.assets.length >= MAX_ASSETS) throw new Error(`每份内容最多 ${MAX_ASSETS} 个素材`)
+  if (data.length < 1 || data.length > MAX_ASSET_BYTES) throw new Error('单张图片不能超过 20MB')
+  const mime = imageType(data)
+  if (!mime || mime !== expectedMime) throw new Error('图片实际格式与附件引用不一致')
+  const safeName = basename(name).slice(0, 160)
+  if (!safeName || safeName === '.' || safeName === '..') throw new Error('素材名称无效')
+  if (typeof bodyWithMarker !== 'string' || bodyWithMarker.split('{{PUBLISHER_IMAGE}}').length !== 2) {
+    throw new Error('正文中需要恰好一个图片插入标记')
+  }
+  if (typeof alt !== 'string' || alt.length > 100 || /[\[\]()\r\n]/u.test(alt)) throw new Error('图片说明无效')
+  const safeAlt = alt.replace(/\\/gu, ' ')
+  const asset: PublisherAsset = {
+    id: randomUUID(), name: safeName, mime, bytes: data.length,
+    sha256: createHash('sha256').update(data).digest('hex'),
+  }
+  const body = bodyWithMarker.replace('{{PUBLISHER_IMAGE}}', `![${safeAlt}](ebao-asset://${asset.id})`)
+  if (Buffer.byteLength(body, 'utf8') > MAX_BODY_BYTES) throw new Error('文章正文过大')
+  const file = join(directory, 'assets', asset.id)
+  writeFileSync(file, data, { flag: 'wx', mode: 0o600 })
+  try {
+    const next: PublisherContent = {
+      ...current, revision: current.revision + 1, updatedAt: new Date().toISOString(),
+      body, assets: [...current.assets, asset],
+      ...(current.coverAssetId ? {} : { coverAssetId: asset.id }),
     }
     writeManifest(directory, next)
     return next

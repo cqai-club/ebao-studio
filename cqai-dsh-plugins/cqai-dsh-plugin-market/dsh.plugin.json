@@ -4,7 +4,7 @@
   "main": "./lib/index.js",
   "description": "CQAI branding and curated policy for the DSH Community Market",
   "engines": {
-    "dsh": ">=0.1.5-rc.1"
+    "dsh": ">=0.1.7-rc.2"
   },
   "client": {
     "main": "./lib/client.js"

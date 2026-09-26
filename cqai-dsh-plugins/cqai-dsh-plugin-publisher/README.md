@@ -31,7 +31,7 @@
 - “打开平台后台”复用该账号同一 Chromium session。
 - 不支持定时、非 MP4 本地视频、自动结果核验或自动重试。
 - 文章平台及小红书图文沿用已有适配器，但尚未完成全部真实平台验收；页面变化、权限和风控可能使任务失败或结果不明确，须到账号后台确认。抖音、快手图文适配器已准备内容填入路径，但由于草稿保存结果未确认，不对外开放提交能力。文章中的平台格式差异会在预览或提交前提示；提交时只调整目标平台副本，原始 MD 和本地编辑稿保留。有调整的“立即发布”会转存平台草稿供核对。头条和百家号支持已上传的正文插图，无法使用的图片引用会从平台副本移除；标签写入未验收，提交时跳过标签；头条还会跳过独立摘要。掘金、B站专栏只上传一张封面，不支持的正文插图和其余图片会从平台副本移除。掘金分类未填时使用默认“前端”。B站富文本粘贴及公众号主题的真实后台呈现仍需以平台草稿核对。
-- 非 macOS 返回 `publisher-not-supported`；不再回退旧 Windows CLI。
+- macOS 和 Windows 使用各自随包的 Publisher Worker；缺少对应 Worker 时返回 `publisher-worker-missing`，Linux 返回 `publisher-not-supported`。Windows 请直接添加账号并登录；旧 MatrixMedia 账号导入只在 macOS 开放。
 - 微信公众号与已有的视频号是两个独立账号目标。公众号文章使用官方 `stable_token`、素材上传、草稿箱和 `freepublish` 接口；需在账号管理输入 AppID/AppSecret，并在微信公众平台确认接口权限及本机出口 IP 白名单。AppSecret 通过 Electron `safeStorage` 在 Worker 本地加密保存，不进入公开账号响应。文章上传 WebP 时会先在本机转为 JPEG（透明区域填白）；既有 WebP 正文素材会在公众号平台副本中省略。公众号接口只接收 JPEG/PNG 图片，仍需至少一张小于 10MB 的可用封面；提交时会自动选择可用封面、截短超过 64 字的标题或 120 字的摘要，并省略不兼容或大于等于 1MB 的正文插图。标签写入暂不支持，提交时会跳过标签。立即发布是公众号“发布”能力，并非群发给粉丝。发布状态不明确时不自动重试，请到公众号后台核对。
 - 账号状态检查若显示微信错误码 `40164`，需把实际调用微信 API 的公网出口 IP 加入该公众号的接口 IP 白名单。桌面端直连时通常是当前网络的出口 IP；更换网络、VPN 或代理后可能变化。Worker 只提取微信响应中的合法 IPv4 地址用于提示，不显示原始错误消息或密钥。
 
@@ -46,6 +46,8 @@
 ## 构建与测试
 
 macOS 开发运行前需使用当前 MatrixMedia 源码重新构建 Universal Helper；旧 Helper 的能力矩阵不会因前端重新构建而变化。测试时可将独立构建放在被 Git 忽略的 `matrixmedia-publisher/build/publisher-worker-open/mac-universal/MatrixMedia Publisher Worker.app`，Desktop dev 会优先使用它，不覆盖正在运行的默认 Helper。正式打包仍使用 `matrixmedia-publisher/build/publisher-worker/mac-universal/MatrixMedia Publisher Worker.app`，打包前必须重新构建该标准产物。
+
+Windows x64 使用 `matrixmedia-publisher/build/publisher-worker/win-unpacked/` 中的完整 Electron Helper。需在 Windows 上以 Node 20 构建，再运行 Desktop 的 Windows 打包命令；构建步骤见 [`UPSTREAM.md`](./UPSTREAM.md)。
 
 ```bash
 corepack yarn workspace cqai-dsh-plugin-publisher build

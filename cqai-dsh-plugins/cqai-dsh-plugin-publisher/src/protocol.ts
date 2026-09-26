@@ -69,6 +69,11 @@ export interface PublisherSubmission {
   }>
 }
 
+/** Result of opening one submission target in its own platform account session. */
+export interface PublisherOpenTargetResult {
+  kind: 'draft' | 'draft-list' | 'content-list' | 'backend' | 'review-window'
+}
+
 export interface PublisherPlatformCapability {
   platform: Platform
   contentTypes: PublisherContentType[]
@@ -129,6 +134,29 @@ export interface PublisherContent {
   platformVariants?: Partial<Record<Platform, PublisherPlatformVariant>>
 }
 
+/** Compact metadata used by the paginated draft gallery. */
+export interface PublisherContentCard {
+  id: string
+  contentType: PublisherContentType
+  revision: number
+  updatedAt: string
+  title: string
+  excerpt: string
+  coverAssetId?: string
+  videoSource?: PublisherVideoSource
+}
+
+export interface PublisherContentQueryRequest {
+  contentType: PublisherContentType
+  query: string
+  cursor?: string
+}
+
+export interface PublisherContentQueryResult {
+  items: PublisherContentCard[]
+  nextCursor: string | null
+}
+
 export function resolveArticleTheme(content: Pick<PublisherContent, 'articleTheme'>): ArticleTheme {
   return content.articleTheme ?? 'classic'
 }
@@ -162,6 +190,8 @@ export interface PublisherSessionContent {
 export interface PublisherCapability {
   supported: boolean
   running: boolean
+  /** Legacy MatrixMedia account import has a platform-specific safety gate. */
+  legacyAccountImportSupported?: boolean
   reason?: 'publisher-not-supported' | 'publisher-worker-missing'
   message?: string
 }

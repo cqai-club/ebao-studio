@@ -20,5 +20,6 @@
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },
+  "files": ["src/client/assets.d.ts"],
   "include": ["src/*.ts"]
 }

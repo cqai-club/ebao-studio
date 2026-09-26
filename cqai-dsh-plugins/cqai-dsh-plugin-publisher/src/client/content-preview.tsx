@@ -47,9 +47,7 @@ function VideoContentPreview({ content, videoSourceName, videoPreviewUrl }: {
   videoPreviewUrl?: string
 }) {
   const [failed, setFailed] = useState(false)
-  return <div className="pub-content-preview-shell pub-content-preview-video" aria-label="视频内容预览">
-    <h2 className="pub-content-preview-title">{content.title || '未填写标题'}</h2>
-    {videoSourceName && <p className="pub-content-preview-video-source">视频来源：{videoSourceName}</p>}
+  return <div className="pub-content-preview-shell pub-content-preview-video" aria-label="视频平台分享预览">
     {videoPreviewUrl && !failed
       ? <video key={videoPreviewUrl} className="pub-content-preview-video-player" src={videoPreviewUrl} controls playsInline preload="metadata" onError={() => setFailed(true)}>当前环境无法播放此视频。</video>
       : <p className="pub-content-preview-video-error" role="status">{failed
@@ -57,6 +55,8 @@ function VideoContentPreview({ content, videoSourceName, videoPreviewUrl }: {
           ? '本地视频无法读取。文件可能已移动、删除或发生变化，请重新选择文件。'
           : 'e剪宝成片无法播放，请检查作品文件或重新选择。'
         : '选择视频来源后即可预览。'}</p>}
+    <h2 className="pub-content-preview-title">{content.title || '未填写标题'}</h2>
+    {videoSourceName && <p className="pub-content-preview-video-source">视频来源：{videoSourceName}</p>}
     <p className="pub-content-preview-text">{content.description || '暂无视频描述'}</p>
     {content.tags.length > 0 && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
   </div>
@@ -77,7 +77,7 @@ export function PublisherContentPreview({ content, platform, device, videoSource
   const { renderedBody, embeddedAssets, cover, remainingAssets, articleTheme } = previewContentModel(content, platform)
   const imageNote = content.contentType === 'image-note'
   if (platform === 'wxmp' && !imageNote) {
-    return <div className="pub-content-preview-shell pub-content-preview-wechat" data-device={device} data-theme={articleTheme} aria-label="微信公众号文章内容预览">
+    return <div className="pub-content-preview-shell pub-content-preview-wechat" data-device={device} data-theme={articleTheme} aria-label="微信公众号文章平台分享预览">
       <div className="pub-wechat-preview-bar"><span className="pub-wechat-preview-mark" aria-hidden="true"/>微信公众号 · 移动端排版预览</div>
       <article className="pub-wechat-preview-article">
         <h2 className="pub-wechat-preview-title">{content.title || '未填写标题'}</h2>
@@ -101,7 +101,7 @@ export function PublisherContentPreview({ content, platform, device, videoSource
       </section>
     </div>
   }
-  return <div className={`pub-content-preview-shell${imageNote ? '' : ' ebao-article-reader'}`} data-device={device} data-theme={imageNote ? undefined : platform ? 'native' : articleTheme} aria-label={`${imageNote ? '图文' : '文章'}内容预览`}>
+  return <div className={`pub-content-preview-shell${imageNote ? '' : ' ebao-article-reader'}`} data-device={device} data-theme={imageNote ? undefined : platform ? 'native' : articleTheme} aria-label={`${imageNote ? '图文' : '文章'}平台分享预览`}>
     {imageNote && <ImageNoteCarousel contentId={content.id} assets={content.assets} renderImage={asset =>
       <AssetPreviewImage src={assetUrl(asset.id)} alt={asset.name}/>}/>}
     {!imageNote && <div className="pub-content-preview-kicker">{platform ? `${PLATFORM_LABELS[platform]} · 内容结构预览` : '主稿 · 阅读排版预览'}</div>}

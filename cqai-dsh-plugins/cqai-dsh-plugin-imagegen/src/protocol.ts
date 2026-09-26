@@ -6,6 +6,8 @@
 
 /** Settings namespace this plugin owns (host settings seam + bridge). */
 export const IMAGEGEN_SETTINGS_NAMESPACE = 'dsh-imagegen'
+/** Loader entry id used by rc.2 Config-derived settings forms. */
+export const IMAGEGEN_PROFILE_ENTRY_ID = 'cqai-imagegen'
 
 /** Same-origin route family (loopback-only, mirroring the dsh-ssh fence). */
 export const SETTINGS_API = {

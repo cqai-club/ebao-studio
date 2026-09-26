@@ -1,8 +1,7 @@
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { describe, expect, it, vi } from 'vitest'
 import { DSH_1024STORE_ADAPTER_ID, DSH_1024STORE_KEY, DSH_1024STORE_PROVIDER_ID } from '../src/adapters/dsh-1024store.js'
 import { initializeMarketDefaultSource } from '../src/catalog/default-source.js'
-import type { MarketSettingsDocument } from '../src/catalog/source-store.js'
+import { MemoryMarketStateStore } from '../src/catalog/state-store.js'
 import type { CatalogSourceManifest, LocalSourceRecord } from '../src/contracts/index.js'
 import { createMarketSourceMutator } from '../src/host/routes.js'
 import { CommunityMarketPolicyRegistry } from '../src/policy.js'
@@ -50,15 +49,16 @@ function marketPolicies(): CommunityMarketPolicyRegistry {
   return policies
 }
 
-function memoryScope(initial: MarketSettingsDocument) {
-  let document = initial
-  const update = vi.fn(async (patch: Partial<MarketSettingsDocument>) => {
-    document = { ...document, ...patch }
-  })
+function memoryState(initial: { readonly sources: readonly LocalSourceRecord[]; readonly defaultSourceApplied?: boolean }) {
+  const state = new MemoryMarketStateStore(initial)
+  const setSources = vi.spyOn(state, 'setSources')
   return {
-    scope: { get: () => document, update } as unknown as SettingsScope<MarketSettingsDocument>,
-    update,
-    document: () => document,
+    state,
+    setSources,
+    document: () => ({
+      sources: state.getSources(),
+      ...(state.getDefaultSourceApplied() ? { defaultSourceApplied: true } : {}),
+    }),
   }
 }
 
@@ -86,12 +86,12 @@ describe('product default catalog source', () => {
   })
 
   it('validates, stores, and selects the product source for a fresh empty configuration', async () => {
-    const settings = memoryScope({ sources: [] })
+    const settings = memoryState({ sources: [] })
     const readManifest = vi.fn(async () => manifest)
     const signal = new AbortController().signal
 
     await expect(initializeMarketDefaultSource(
-      settings.scope,
+      settings.state,
       marketPolicies(),
       signal,
       readManifest,
@@ -113,11 +113,11 @@ describe('product default catalog source', () => {
   })
 
   it('preserves an existing source and records that the product default was considered', async () => {
-    const settings = memoryScope({ sources: [existingSource] })
+    const settings = memoryState({ sources: [existingSource] })
     const readManifest = vi.fn(async () => manifest)
 
     await expect(initializeMarketDefaultSource(
-      settings.scope,
+      settings.state,
       marketPolicies(),
       new AbortController().signal,
       readManifest,
@@ -128,13 +128,13 @@ describe('product default catalog source', () => {
   })
 
   it('does not seed again after an explicit source removal', async () => {
-    const settings = memoryScope({ sources: [existingSource] })
-    const mutate = createMarketSourceMutator(settings.scope)
+    const settings = memoryState({ sources: [existingSource] })
+    const mutate = createMarketSourceMutator(settings.state)
     await mutate({ action: 'remove', sourceRecordId: existingSource.sourceRecordId }, new AbortController().signal)
     const readManifest = vi.fn(async () => manifest)
 
     await expect(initializeMarketDefaultSource(
-      settings.scope,
+      settings.state,
       marketPolicies(),
       new AbortController().signal,
       readManifest,
@@ -145,32 +145,32 @@ describe('product default catalog source', () => {
   })
 
   it('waits for a product policy instead of marking an empty configuration', async () => {
-    const settings = memoryScope({ sources: [] })
+    const settings = memoryState({ sources: [] })
     const readManifest = vi.fn(async () => manifest)
 
     await expect(initializeMarketDefaultSource(
-      settings.scope,
+      settings.state,
       new CommunityMarketPolicyRegistry(),
       new AbortController().signal,
       readManifest,
     )).resolves.toBe('not-configured')
 
     expect(readManifest).not.toHaveBeenCalled()
-    expect(settings.update).not.toHaveBeenCalled()
+    expect(settings.setSources).not.toHaveBeenCalled()
   })
 
   it('leaves the one-time marker unset when manifest validation fails', async () => {
-    const settings = memoryScope({ sources: [] })
+    const settings = memoryState({ sources: [] })
     const readManifest = vi.fn(async () => { throw new Error('manifest unavailable') })
 
     await expect(initializeMarketDefaultSource(
-      settings.scope,
+      settings.state,
       marketPolicies(),
       new AbortController().signal,
       readManifest,
     )).rejects.toThrow('manifest unavailable')
 
     expect(settings.document()).toEqual({ sources: [] })
-    expect(settings.update).not.toHaveBeenCalled()
+    expect(settings.setSources).not.toHaveBeenCalled()
   })
 })

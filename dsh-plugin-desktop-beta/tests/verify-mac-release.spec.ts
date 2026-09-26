@@ -52,13 +52,18 @@ describe('macOS release artifact verification', () => {
         command: 'lipo',
         args: [join(appPath, 'Contents', 'MacOS', '易宝工坊 Beta'), '-verify_arch', 'arm64'],
       },
-      ...MACOS_UNIVERSAL_NATIVE_ENTRIES.map(entry => ({
-        command: 'lipo',
-        args: [
-          join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', entry.path),
-          '-verify_arch', entry.arch,
-        ],
-      })),
+      ...MACOS_UNIVERSAL_NATIVE_ENTRIES.flatMap(entry => {
+        const nativePath = join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', entry.path)
+        return [
+          { command: 'lipo', args: [nativePath, '-verify_arch', entry.arch] },
+          ...(entry.path.endsWith('/bin/uv') ? [
+            { command: '/bin/test', args: ['-x', nativePath] },
+            ...(entry.arch === (process.arch === 'x64' ? 'x86_64' : process.arch)
+              ? [{ command: nativePath, args: ['--version'] }]
+              : []),
+          ] : []),
+        ]
+      }),
       ...PUBLISHER_HELPER_UNIVERSAL_ENTRIES.flatMap(entry => [
         {
           command: 'lipo',

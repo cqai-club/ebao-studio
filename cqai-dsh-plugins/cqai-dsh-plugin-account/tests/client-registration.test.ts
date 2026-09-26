@@ -1,18 +1,36 @@
 // @vitest-environment jsdom
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import { act, createElement, type ReactElement } from 'react'
+import { act, createElement, type ReactElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const rpc = vi.hoisted(() => ({ call: vi.fn() }))
 
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
-  Button: () => null,
-  Modal: () => null,
-  StateDot: () => null,
-  Tag: () => null,
-}))
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
+  const { createElement } = await import('react')
+  return {
+    Button: () => null,
+    IconSettingsOutlineMedium: () => null,
+    IconUserOutlineMedium: () => null,
+    Menu: ({ open, anchor, items, onSelect }: {
+      open: boolean
+      anchor: ReactNode
+      items: readonly ({ id: string; label: ReactNode } | { type: 'label'; id: string; text: string })[]
+      onSelect: (id: string) => void
+    }) => createElement('div', null, anchor, open ? items.map(item => 'type' in item
+      ? createElement('span', { key: item.id }, item.text)
+      : createElement('button', {
+        key: item.id,
+        type: 'button',
+        'data-menu-id': item.id,
+        onClick: () => { onSelect(item.id) },
+      }, item.label)) : null),
+    Modal: () => null,
+    StateDot: () => null,
+    Tag: () => null,
+  }
+})
 vi.mock('../src/client/rpc.ts', () => ({ rpcCall: rpc.call }))
 
 import { apply } from '../src/client/index.tsx'
@@ -73,6 +91,178 @@ describe('CQAI account client registration', () => {
         order: -50,
       }),
     ]))
+  })
+
+  it('uses the account launcher for sign-in, settings, and sign-out', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: true })
+    const { ctx, registrations } = clientHarness()
+    const signedOut = { state: 'signed-out' }
+    const signedIn = {
+      state: 'signed-in',
+      account: { userId: 1, platform: 'cqai', displayName: 'Alice' },
+      refreshedAt: Date.now(),
+      stale: false,
+    }
+    let current: object = signedOut
+    rpc.call.mockImplementation(async (_ctx: ClientContext, endpoint: string) => {
+      if (endpoint === 'snapshot/get') return current
+      if (endpoint === 'authorization/start') {
+        current = signedIn
+        return current
+      }
+      if (endpoint === 'session/logout') {
+        current = signedOut
+        return { snapshot: signedOut, remoteRevoked: true }
+      }
+      throw new Error(`unexpected RPC: ${endpoint}`)
+    })
+    apply(ctx)
+    const launcher = registrations.find(registration => registration.options.name === 'settings.launcher')
+    if (launcher === undefined) throw new Error('CQAI launcher registration is missing')
+    expect(registrations.find(registration => registration.options.id === 'cqaiclub-dsn-account')?.options.order).toBe(-20)
+    const inject = launcher.options.inject as () => Record<string, unknown>
+    const openSettings = vi.fn()
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+
+    await act(async () => {
+      root!.render(createElement(launcher.render, {
+        ...inject(), wide: true, settingsOpen: false, openSettings,
+        openOnboarding: vi.fn(), t: (key: string) => key,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    const trigger = () => container!.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!
+    await act(async () => { trigger().click() })
+    await act(async () => { container!.querySelector<HTMLButtonElement>('[data-menu-id="login"]')!.click() })
+    expect(rpc.call).toHaveBeenCalledWith(ctx, 'authorization/start', {})
+    expect(trigger().textContent).toContain('Alice')
+
+    await act(async () => { trigger().click() })
+    expect(container!.textContent).toContain('launcherOpenSettings')
+    await act(async () => { container!.querySelector<HTMLButtonElement>('[data-menu-id="open-settings"]')!.click() })
+    expect(openSettings).toHaveBeenCalledOnce()
+
+    await act(async () => { trigger().click() })
+    await act(async () => { container!.querySelector<HTMLButtonElement>('[data-menu-id="logout"]')!.click() })
+    expect(rpc.call).toHaveBeenCalledWith(ctx, 'session/logout', {})
+    expect(trigger().textContent).toContain('launcherSignIn')
+  })
+
+  it('keeps cancel and retry available during an interrupted browser sign-in', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: true })
+    const { ctx, registrations } = clientHarness()
+    let current: object = { state: 'signed-out' }
+    const authorizing = {
+      state: 'authorizing', attemptId: 'attempt-1',
+      authorizationUrl: 'https://auth.example.test/authorize', expiresAt: Date.now() + 60_000,
+      message: 'Finish login',
+    }
+    rpc.call.mockImplementation(async (_ctx: ClientContext, endpoint: string) => {
+      if (endpoint === 'snapshot/get') return current
+      if (endpoint === 'authorization/start') {
+        current = authorizing
+        return current
+      }
+      if (endpoint === 'authorization/cancel') {
+        current = { state: 'signed-out' }
+        return current
+      }
+      throw new Error(`unexpected RPC: ${endpoint}`)
+    })
+    apply(ctx)
+    const launcher = registrations.find(registration => registration.options.name === 'settings.launcher')!
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(createElement(launcher.render, {
+        ...(launcher.options.inject as () => Record<string, unknown>)(),
+        wide: true, settingsOpen: false, openSettings: vi.fn(), openOnboarding: vi.fn(),
+        t: (key: string) => key,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    const trigger = () => container!.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!
+    await act(async () => { trigger().click() })
+    await act(async () => { container!.querySelector<HTMLButtonElement>('[data-menu-id="login"]')!.click() })
+    expect(trigger().textContent).toContain('authorizing')
+
+    await act(async () => { trigger().click() })
+    expect(container!.querySelector('[data-menu-id="open-login"]')).not.toBeNull()
+    await act(async () => { container!.querySelector<HTMLButtonElement>('[data-menu-id="cancel-login"]')!.click() })
+    expect(rpc.call).toHaveBeenCalledWith(ctx, 'authorization/cancel', { attemptId: 'attempt-1' })
+
+    current = { state: 'error', code: 'DSN_LOGIN_EXPIRED', message: 'Login expired', retryable: true }
+    await act(async () => { trigger().click(); await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(trigger().textContent).toContain('launcherNeedsAttention')
+    expect(container!.textContent).toContain('Login expired')
+    await act(async () => { container!.querySelector<HTMLButtonElement>('[data-menu-id="login"]')!.click() })
+    expect(rpc.call.mock.calls.filter(([, endpoint]) => endpoint === 'authorization/start')).toHaveLength(2)
+    expect(trigger().textContent).toContain('authorizing')
+  })
+
+  it('lets Stable/Beta native setup own automatic first-run login but keeps explicit entry', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: true })
+    rpc.call.mockResolvedValue({ state: 'signed-out' })
+    const { ctx, registrations } = clientHarness()
+    apply(ctx)
+    const onboarding = registrations.find(registration => registration.options.id === 'cqaiclub-account')
+    if (onboarding === undefined) throw new Error('CQAI onboarding registration is missing')
+    const inject = onboarding.options.inject as () => Record<string, unknown>
+    const complete = vi.fn()
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+
+    await act(async () => {
+      root!.render(createElement(onboarding.render, {
+        ...inject(), complete, explicit: false, openSection: vi.fn(),
+        stepId: 'cqaiclub-account', t: (key: string) => key,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    expect(complete).toHaveBeenCalledOnce()
+    expect(rpc.call).not.toHaveBeenCalled()
+
+    await act(async () => {
+      root!.render(createElement(onboarding.render, {
+        ...inject(), complete, explicit: true, openSection: vi.fn(),
+        stepId: 'cqaiclub-account', t: (key: string) => key,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    expect(rpc.call).toHaveBeenCalledWith(ctx, 'snapshot/get', {}, expect.any(AbortSignal))
+  })
+
+  it('preserves automatic account onboarding on Next', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('dshDesktopSetup', {})
+    vi.stubGlobal('desktopNext', {})
+    rpc.call.mockResolvedValue({ state: 'signed-out' })
+    const { ctx, registrations } = clientHarness()
+    apply(ctx)
+    expect(registrations.some(registration => registration.options.name === 'settings.launcher')).toBe(false)
+    const onboarding = registrations.find(registration => registration.options.id === 'cqaiclub-account')
+    if (onboarding === undefined) throw new Error('CQAI onboarding registration is missing')
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    const complete = vi.fn()
+    await act(async () => {
+      root!.render(createElement(onboarding.render, {
+        ...(onboarding.options.inject as () => Record<string, unknown>)(),
+        complete, explicit: false, openSection: vi.fn(),
+        stepId: 'cqaiclub-account', t: (key: string) => key,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    expect(complete).not.toHaveBeenCalled()
+    expect(rpc.call).toHaveBeenCalledWith(ctx, 'snapshot/get', {}, expect.any(AbortSignal))
   })
 
   it('continues to DeepSeek onboarding when the account Host RPC is unavailable', async () => {

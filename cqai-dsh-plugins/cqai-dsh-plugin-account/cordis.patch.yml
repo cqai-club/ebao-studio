@@ -2,8 +2,6 @@
 # Authorization Code + PKCE. Allow the loopback redirect below with any port:
 # http://127.0.0.1/cqaiclub-dsn-account/oauth/callback
 - insert:
-    - id: authorization
-      name: '@deepseek-ai/dsh-authorization'
     - id: cqaiclub-dsn-account
       name: '@cqaiclub/dsn-account'
       config:
