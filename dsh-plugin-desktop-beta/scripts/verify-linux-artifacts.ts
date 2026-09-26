@@ -131,9 +131,9 @@ export function verifyLinuxArtifacts(
   options: LinuxArtifactVerificationOptions = defaultOptions(),
 ): LinuxArtifacts {
   const distDir = join(options.desktopRoot, 'dist')
-  const appImagePath = join(distDir, `DSH-Desktop-Beta-${options.version}-x86_64.AppImage`)
-  const debPath = join(distDir, `DSH-Desktop-Beta-${options.version}-amd64.deb`)
-  const applicationPath = join(distDir, 'linux-unpacked', 'dsh-desktop-beta')
+  const appImagePath = join(distDir, `易宝工坊-Beta-${options.version}-x86_64.AppImage`)
+  const debPath = join(distDir, `易宝工坊-Beta-${options.version}-amd64.deb`)
+  const applicationPath = join(distDir, 'linux-unpacked', 'ebao-studio-beta')
 
   assertAppImage(appImagePath, 'Linux AppImage')
   assertDebArchive(debPath, 'Linux Debian package')

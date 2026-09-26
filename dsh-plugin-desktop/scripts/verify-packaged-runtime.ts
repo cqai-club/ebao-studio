@@ -16,7 +16,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, parse } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { extractFile, getRawHeader } from '@electron/asar'
+import { extractFile, getRawHeader, listPackage } from '@electron/asar'
 import {
   FORBIDDEN_MACOS_UNIVERSAL_ENTRIES,
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
@@ -985,6 +985,39 @@ export function verifyPackagedAgentsAnywhere(
   }
 }
 
+/** Bounded evidence for a Windows AA packaging failure, without changing verification. */
+function reportAgentsAnywherePackagingDiagnostics(context: PackagedRuntimeContext): void {
+  if (context.electronPlatformName !== 'win32') return
+  const desktopRoot = context.packager.projectDir ?? DESKTOP_PACKAGE_ROOT
+  const source = join(desktopRoot, 'node_modules', '@agents-anywhere', 'dsh-bridge-next')
+  const sourceType = existsSync(source)
+    ? lstatSync(source).isSymbolicLink() ? 'symlink' : 'directory'
+    : 'missing'
+  const sourceEntries = sourceType === 'missing' ? [] : readdirSync(source).sort()
+  const archive = resolvePackagedAsarPath(context)
+  let archiveEntries: string[] = []
+  let archiveState = 'missing'
+  if (existsSync(archive)) {
+    try {
+      archiveEntries = listPackage(archive, { isPack: false })
+        .filter(path => path.includes('agents-anywhere') || path.includes('dsh-bridge-next'))
+      archiveState = 'readable'
+    } catch {
+      archiveState = 'unreadable'
+    }
+  }
+  process.stderr.write(`dsh-plugin-desktop: AA packaging diagnostics: ${JSON.stringify({
+    sourceType,
+    sourceEntries: sourceEntries.slice(0, 12),
+    sourceEntryCount: sourceEntries.length,
+    sourceManifest: existsSync(join(source, 'package.json')),
+    sourceIndex: existsSync(join(source, 'lib', 'index.js')),
+    archiveState,
+    archiveAaEntryCount: archiveEntries.length,
+    archiveAaEntries: archiveEntries.slice(0, 16),
+  })}\n`)
+}
+
 /**
  * Run the static packaged-runtime check as Electron Builder's afterPack hook.
  * @param context - Electron Builder's afterPack context.
@@ -997,7 +1030,16 @@ export async function afterPack(
   verifyAa: typeof verifyPackagedAgentsAnywhere = verifyPackagedAgentsAnywhere,
 ): Promise<void> {
   const summary = verify(context)
-  verifyAa(context)
+  try {
+    verifyAa(context)
+  } catch (error) {
+    try {
+      reportAgentsAnywherePackagingDiagnostics(context)
+    } catch {
+      process.stderr.write('dsh-plugin-desktop: AA packaging diagnostics unavailable\n')
+    }
+    throw error
+  }
   report(summary)
 }
 
