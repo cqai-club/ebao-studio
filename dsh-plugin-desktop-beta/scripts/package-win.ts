@@ -194,7 +194,6 @@ export function packageWindowsArtifact(
       'never',
       '--config.win.signExecutable=false',
       '--config.npmRebuild=false',
-      '--config.electronFuses.onlyLoadAppFromAsar=false',
       ...(compression === undefined ? [] : [`--config.win.compression=${compression}`]),
     ],
     options.desktopRoot,

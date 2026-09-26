@@ -72,7 +72,6 @@ describe('Windows x64 installer packaging', () => {
         'never',
         '--config.win.signExecutable=false',
         '--config.npmRebuild=false',
-        '--config.electronFuses.onlyLoadAppFromAsar=false',
       ],
       cwd: 'C:\\repo\\dsh-plugin-desktop',
       env: {
@@ -112,7 +111,6 @@ describe('Windows x64 installer packaging', () => {
       'never',
       '--config.win.signExecutable=false',
       '--config.npmRebuild=false',
-      '--config.electronFuses.onlyLoadAppFromAsar=false',
     ])
     expect(calls[2]?.args).toEqual([
       'C:\\repo\\dsh-plugin-desktop\\scripts\\verify-win-portable.ts',
@@ -155,7 +153,6 @@ describe('Windows x64 installer packaging', () => {
       'never',
       '--config.win.signExecutable=false',
       '--config.npmRebuild=false',
-      '--config.electronFuses.onlyLoadAppFromAsar=false',
     ])
     expect(logs).toEqual([
       'Building an unsigned Windows x64 installer; Authenticode is a separate release step.',
