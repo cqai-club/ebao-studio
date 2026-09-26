@@ -877,7 +877,11 @@ describe('published package surface', () => {
       'cordis.patch.yml',
       'lib/**',
       'package.json',
-      'node_modules/@agents-anywhere/dsh-bridge-next/**',
+      {
+        from: 'node_modules/@agents-anywhere/dsh-bridge-next',
+        to: 'node_modules/@agents-anywhere/dsh-bridge-next',
+        filter: ['**/*'],
+      },
       '!node_modules/node-pty/build/**',
       '!node_modules/fs-ext/build/**',
     ])

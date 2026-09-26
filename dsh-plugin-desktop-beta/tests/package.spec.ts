@@ -924,7 +924,11 @@ describe('published package surface', () => {
       'cordis.patch.yml',
       'lib/**',
       'package.json',
-      'node_modules/@agents-anywhere/dsh-bridge-next/**',
+      {
+        from: 'node_modules/@agents-anywhere/dsh-bridge-next',
+        to: 'node_modules/@agents-anywhere/dsh-bridge-next',
+        filter: ['**/*'],
+      },
       '!node_modules/node-pty/build/**',
       '!node_modules/fs-ext/build/**',
     ])
@@ -995,25 +999,30 @@ describe('published package surface', () => {
     expect(manifest.scripts?.['dist:mac-smoke']).toBe('node scripts/package-mac.ts')
     expect(manifest.scripts?.['dist:win']).toBe('node scripts/package-win.ts')
     expect(manifest.scripts?.['dist:win-portable']).toBe('node scripts/package-win-portable.ts')
-    expect(manifest.scripts?.['check:win-package']).toContain('yarn workspace dsh-community-market build')
-    expect(manifest.scripts?.['check:win-package']).toContain('yarn run build')
+    expect(manifest.scripts?.['check:win-package']).toContain('verify:publisher-worker:win')
+    expect(manifest.scripts?.['check:win-package']).toContain('check:win-package:platform')
     expect(manifest.scripts?.['check:win-package']).toContain('yarn run typecheck')
-    expect(manifest.scripts?.['check:win-package']).toContain('tests/package-win.spec.ts')
-    expect(manifest.scripts?.['check:win-package']).toContain('tests/desktop-installer-quit.spec.ts')
-    expect(manifest.scripts?.['check:win-package']).toContain('tests/installer-nsh.spec.ts')
-    expect(manifest.scripts?.['check:win-package']).toContain('tests/verify-win-portable.spec.ts')
-    expect(manifest.scripts?.['check:win-package']).toContain('tests/update-checker.spec.ts')
-    expect(manifest.scripts?.['check:win-package']).toContain('tests/electron-auto-updater.spec.ts')
-    expect(manifest.scripts?.['check:win-package']).toContain('tests/windows-volume-diagnostics.spec.ts')
-    expect(manifest.scripts?.['check:win-package']).not.toContain('verify:win-minimal-pty')
-    expect(manifest.scripts?.['check:win-package']).toContain('yarn run verify:closure')
-    expect(manifest.scripts?.['check:mac-package']).toContain('yarn workspace dsh-community-market build')
-    expect(manifest.scripts?.['check:mac-package']).toContain('yarn run build')
+    const windowsGate = String(manifest.scripts?.['check:win-package:platform'])
+    expect(windowsGate).toContain('yarn workspace dsh-community-market build')
+    expect(windowsGate).toContain('yarn run build')
+    expect(windowsGate).toContain('tests/package-win.spec.ts')
+    expect(windowsGate).toContain('tests/desktop-installer-quit.spec.ts')
+    expect(windowsGate).toContain('tests/installer-nsh.spec.ts')
+    expect(windowsGate).toContain('tests/verify-win-portable.spec.ts')
+    expect(windowsGate).toContain('tests/update-checker.spec.ts')
+    expect(windowsGate).toContain('tests/electron-auto-updater.spec.ts')
+    expect(windowsGate).toContain('tests/windows-volume-diagnostics.spec.ts')
+    expect(windowsGate).not.toContain('verify:win-minimal-pty')
+    expect(windowsGate).toContain('yarn run verify:closure')
+    expect(manifest.scripts?.['check:mac-package']).toContain('check:mac-package:platform')
     expect(manifest.scripts?.['check:mac-package']).toContain('yarn run typecheck')
-    expect(manifest.scripts?.['check:mac-package']).toContain('tests/package-mac.spec.ts')
-    expect(manifest.scripts?.['check:mac-package']).toContain('tests/verify-mac-smoke.spec.ts')
-    expect(manifest.scripts?.['check:mac-package']).toContain('tests/mac-universal.spec.ts')
-    expect(manifest.scripts?.['check:mac-package']).toContain('yarn run verify:closure')
+    const macGate = String(manifest.scripts?.['check:mac-package:platform'])
+    expect(macGate).toContain('yarn workspace dsh-community-market build')
+    expect(macGate).toContain('yarn run build')
+    expect(macGate).toContain('tests/package-mac.spec.ts')
+    expect(macGate).toContain('tests/verify-mac-smoke.spec.ts')
+    expect(macGate).toContain('tests/mac-universal.spec.ts')
+    expect(macGate).toContain('yarn run verify:closure')
     expect(manifest.scripts?.['verify:cli']).toBe('node scripts/verify-cli-runtime.mjs')
     expect(manifest.scripts?.check).toContain('yarn run verify:cli')
     expect(workspaceManifest.scripts?.['dist:mac:beta'])

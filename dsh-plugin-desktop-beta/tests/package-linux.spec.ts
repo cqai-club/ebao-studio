@@ -40,6 +40,8 @@ describe('Linux packaging orchestration', () => {
     expect(order[1]).toContain('--publish')
     expect(order[1]).toContain('never')
     expect(order[1]).toContain('--config.npmRebuild=false')
+    // The package manifest keeps OnlyLoadAppFromAsar enabled for this ASAR build.
+    expect(order[1]).not.toContain('--config.electronFuses.onlyLoadAppFromAsar=')
     expect(order[2]).toContain('verify-linux-artifacts.ts')
     expect(prepareRuntime).toHaveBeenCalledOnce()
   })

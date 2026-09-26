@@ -147,7 +147,6 @@ export function packageLinuxArtifacts(
       '--publish',
       'never',
       '--config.npmRebuild=false',
-      '--config.electronFuses.onlyLoadAppFromAsar=false',
     ],
     options.desktopRoot,
     electronBuilderEnvironment({

@@ -296,7 +296,7 @@ try {
       `Market choices retain their stylesheet ${stage}`)
   }
   await assertMarketStyles('on initial load')
-  await communityChoice.getByText('DSH Desktop 内置的开放插件市场，支持添加和选择自定义插件数据源。').waitFor()
+  await communityChoice.getByText('易宝工坊 内置的开放插件市场，支持添加和选择自定义插件数据源。').waitFor()
   assert.equal(await dshChoice.getByRole('link', { name: 'awesome-dsh-plugin', exact: true }).count(), 1)
   const waitSelected = async choice => {
     await page.waitForFunction(selector => {
@@ -598,7 +598,7 @@ try {
   assert.equal(controlCommands.at(-1).type, 'restart-recovery')
   await page.getByRole('button', { name: /^(桌面设置|Desktop settings)$/ }).click()
   const settings = page.locator('[data-next-desktop-settings]')
-  await settings.getByRole('heading', { name: /^(DSH Desktop 设置|DSH Desktop Settings)$/ }).waitFor()
+  await settings.getByRole('heading', { name: /^(易宝工坊 设置|易宝工坊 settings)$/ }).waitFor()
   const pluginNotice = settings.locator('[data-next-plugin-settings-notice]')
   await pluginNotice.getByText('插件市场和远程控制设置已移至插件页面。', { exact: true }).waitFor()
   await page.screenshot({ path: join(screenshots, 'desktop-plugin-settings-notice.png'), animations: 'disabled' })
@@ -609,7 +609,7 @@ try {
   assert.equal(await context.pages().length, 1, 'Leaving Settings for Plugins must reuse the main window')
   await openSettingsPanel()
   await page.getByRole('button', { name: /^(桌面设置|Desktop settings)$/ }).click()
-  await settings.getByRole('heading', { name: /^(DSH Desktop 设置|DSH Desktop Settings)$/ }).waitFor()
+  await settings.getByRole('heading', { name: /^(易宝工坊 设置|易宝工坊 settings)$/ }).waitFor()
   assert.equal(await settings.locator('nav').count(), 0)
   const updateSection = settings.locator('[data-next-updates]')
   await updateSection.getByRole('button', { name: /检查更新|Check for updates/ }).click()
