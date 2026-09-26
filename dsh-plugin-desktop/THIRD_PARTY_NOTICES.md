@@ -456,7 +456,7 @@ records the public repository, branch, exact source commit, build command, and l
 | diff | 9.0.0 | BSD-3-Clause |
 | dijkstrajs | 1.0.3 | MIT |
 | dsh-community-market | 0.1.0-dev.0 | MIT |
-| dshmarket | 1.66.0 | MIT |
+| dshmarket | 1.66.1 | MIT |
 | ecdsa-sig-formatter | 1.0.11 | Apache-2.0 |
 | electron-updater | 6.8.9 | MIT |
 | emoji-regex | 8.0.0 | MIT |
@@ -506,6 +506,7 @@ records the public repository, branch, exact source commit, build command, and l
 | jsonfile | 6.2.1 | MIT |
 | jwa | 2.0.1 | MIT |
 | jws | 4.0.1 | MIT |
+| katex | 0.16.47 | MIT |
 | koffi | 3.1.5 | MIT |
 | lazy-val | 1.0.5 | MIT |
 | linkify-it | 5.0.2 | MIT |
