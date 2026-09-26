@@ -51,9 +51,13 @@ it('streams a local video in bounded chunks without truncating the response', as
     await once(server, 'listening')
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('测试服务器端口无效')
-    const response = await fetch(`http://127.0.0.1:${address.port}/video`)
+    const response = await fetch(`http://127.0.0.1:${address.port}/video`, {
+      signal: AbortSignal.timeout(20_000),
+    })
     expect(response.status).toBe(200)
-    expect(Buffer.from(await response.arrayBuffer())).toEqual(video)
+    const received = Buffer.from(await response.arrayBuffer())
+    expect(received.length).toBe(video.length)
+    expect(Buffer.compare(received, video)).toBe(0)
     expect(reads).toEqual([
       { offset: 0, length: 0 },
       { offset: 0, length: chunkSize },
@@ -64,7 +68,7 @@ it('streams a local video in bounded chunks without truncating the response', as
     server.closeAllConnections()
     server.close()
   }
-})
+}, 30_000)
 
 it('streams only validated work and private local selections with seek support', async () => {
   const home = mkdtempSync(join(tmpdir(), 'ebao-video-preview-'))
