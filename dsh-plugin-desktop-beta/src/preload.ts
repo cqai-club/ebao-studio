@@ -33,11 +33,10 @@ if (process.platform === 'darwin') {
   }))
 }
 
-// Upstream client plugins recognize the Desktop renderer by this carrier. Version 1
-// without `updates` or `browser` keeps upstream update badges and the embedded
-// browser tab on their Web fallbacks, and turns on the DeepSeek account entry whose
-// Platform sign-in the Host hands to the native shell (src/platform-login.ts).
-contextBridge.exposeInMainWorld('dshDesktop', Object.freeze({ protocolVersion: 1 }))
+// Upstream client plugins recognize the Desktop renderer by this carrier. The
+// product flag selects CQAI Club's primary login in Stable/Beta only; Next and
+// other renderers retain their own account entry and onboarding.
+contextBridge.exposeInMainWorld('dshDesktop', Object.freeze({ protocolVersion: 1, cqaiPrimaryLogin: true }))
 
 contextBridge.exposeInMainWorld('dshDesktopSetup', {
   read: () => ipcRenderer.invoke(SETUP_ONBOARDING_CHANNEL, { action: 'read' }),

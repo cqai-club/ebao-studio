@@ -19,7 +19,13 @@ it('keeps Next installer topology, native modules, fuses and Composer source ali
   expect(next.version).toBe('2.0.15-next')
   expect(next.build.appId).toBe('ai.deepseek.dsh.desktop.next')
   expect(next.build.asar).toBe(false)
-  expect(next.build.electronFuses).toEqual(beta.build.electronFuses)
+  // Next ships unpacked (asar=false), so its integrity and asar-only fuses
+  // must stay off even though the other Desktop fuses follow Beta.
+  expect(next.build.electronFuses).toEqual({
+    ...beta.build.electronFuses,
+    enableEmbeddedAsarIntegrityValidation: false,
+    onlyLoadAppFromAsar: false,
+  })
   const archFiles = (value: string) => value.split('{')[1]?.split('}')[0]?.split(',') ?? []
   expect(archFiles(next.build.mac.x64ArchFiles)).toEqual(expect.arrayContaining(archFiles(beta.build.mac.x64ArchFiles)))
   expect(archFiles(next.build.mac.x64ArchFiles)).toEqual(expect.arrayContaining([

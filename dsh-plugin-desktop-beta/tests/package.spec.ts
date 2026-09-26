@@ -231,7 +231,7 @@ describe('published package surface', () => {
       'cqai-dsh-plugin-market': '0.1.0',
       'cqai-dsh-plugin-publisher': '0.1.0',
       'dsh-community-market': '0.1.0-dev.0',
-      dshmarket: '1.66.0',
+      dshmarket: '1.66.1',
       'react-dom': '18.3.1',
     })
     expect(manifest.optionalDependencies ?? {}).not.toHaveProperty('dshmarket')

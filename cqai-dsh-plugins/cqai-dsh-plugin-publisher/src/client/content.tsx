@@ -523,7 +523,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
           selectContentView('master')
           setPreview(false)
           await onToggleAgent(current)
-        })}>Agent 编辑主稿</Button>}
+        })}>Agent 辅助编辑</Button>}
         <Button size="sm" variant="outline" disabled={editorLocked || !draft} onClick={duplicate}>复制</Button>
         <Button size="sm" variant="outline" className="pub-danger-action" disabled={editorLocked || !draft} onClick={remove}>删除</Button>
         <Button size="sm" variant="primary" disabled={editorLocked || !draft} onClick={() => setPublishOpen(true)}>发布</Button>

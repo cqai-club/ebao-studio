@@ -66,7 +66,7 @@ diff --git a/lib/client.js b/lib/client.js
 +		}
 +		function DesktopOnboardingEntry(props) {
 +			const account = props.useAccount((value) => value);
-+			const renderNext = () => (0, react_jsx_runtime.jsx)(OfficialDesktopOnboardingEntry, props);
++			const renderNext = () => globalThis.dshDesktop?.cqaiPrimaryLogin === true ? null : (0, react_jsx_runtime.jsx)(OfficialDesktopOnboardingEntry, props);
 +			const renderLoading = () => (0, react_jsx_runtime.jsx)(OnboardingSurface, { children: (0, react_jsx_runtime.jsx)("div", {
 +				role: "status", children: props.t("onboardingLoading")
 +			}) });
@@ -142,6 +142,18 @@ diff --git a/lib/client.js b/lib/client.js
  					inject: () => ({
 +						openDesktopLogin: () => operations.showLogin(true),
  						hooks: {
+@@ -4390,9 +4443,9 @@
+ 				})
+ 			}, AccountPlatformHost));
+-			ctx.slots.inject("settings.launcher", () => ctx.slots.register({
++			if (globalThis.dshDesktop?.cqaiPrimaryLogin !== true) ctx.slots.inject("settings.launcher", () => ctx.slots.register({
+ 				name: "settings.launcher",
+ 				locale: "settings.account",
+ 				inject: () => operations
+ 			}, AccountMenu));
+-			ctx.slots.inject("settings.section", () => {
++			if (globalThis.dshDesktop?.cqaiPrimaryLogin !== true) ctx.slots.inject("settings.section", () => {
+ 				let unregister;
 diff --git a/lib/types/client/index.d.ts b/lib/types/client/index.d.ts
 --- a/lib/types/client/index.d.ts
 +++ b/lib/types/client/index.d.ts

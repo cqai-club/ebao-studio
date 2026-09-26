@@ -1455,7 +1455,7 @@ async function start(): Promise<void> {
       )
     }
     // Desktop setup has its own per-Profile trigger, independent of account state.
-    // The official page checks that trigger before showing its own account flow.
+    // The CQAI Club continuation uses the completed setup marker for this Profile.
     const setupWizardState = safeModePaths === undefined
       ? readDesktopSetupWizardState(marketUserDataDir, prepared.profile.dir) : undefined
     let setupPending = safeModePaths === undefined
@@ -1517,7 +1517,7 @@ async function start(): Promise<void> {
           await completeOrSkipDesktopSetupWizard(marketUserDataDir, prepared.profile.dir,
             selection === undefined ? 'skipped' : 'completed', setupWizardVersions)
           setupPending = false
-          // Keep the current renderer/Host alive for official login and onboarding.
+          // Keep the current renderer/Host alive for CQAI Club login.
           // Preferences are applied on the next launch, requested explicitly afterwards.
           setupRestartPending = selection !== undefined
         } finally { setupSaving = false }

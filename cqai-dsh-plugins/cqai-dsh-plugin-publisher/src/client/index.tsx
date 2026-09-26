@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { ILayout, MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { Platform, PublisherContent, PublisherContentType } from '../protocol.ts'
@@ -61,6 +61,10 @@ function workspaceContainsSession(workspaces: IWorkspaces, sessionId: SessionId,
     && workspace.sessionIds.includes(sessionId))
 }
 
+function isMainSession(sessions: ISessions, sessionId: SessionId): boolean {
+  return (sessions.retainInfo(sessionId).getSnapshot().retainedBy.mainView ?? 0) > 0
+}
+
 function waitForWorkspaceSession(workspaces: IWorkspaces, workspaceId: WorkspaceId, sessionId: SessionId): Promise<void> {
   return new Promise((resolve, reject) => {
     let unsubscribe = () => {}
@@ -99,7 +103,7 @@ function handleTabKeyDown(event: KeyboardEvent<HTMLElement>) {
   tabs[next]?.click()
 }
 
-function PublisherPage({ sessions, workspaces, uiWorkspace }: { sessions: ISessions; workspaces: IWorkspaces; uiWorkspace: UiWorkspace }) {
+function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions: ISessions; workspaces: IWorkspaces; uiWorkspace: UiWorkspace; layout: ILayout }) {
   const [tab, setTab] = useState<PublisherTab>('publish')
   const pageTitleRef = useRef<HTMLHeadingElement>(null)
   const [editingIds, setEditingIds] = useState<Partial<Record<PublisherContentType, string>>>(() => {
@@ -154,7 +158,8 @@ function PublisherPage({ sessions, workspaces, uiWorkspace }: { sessions: ISessi
     const open = agentDrawerRef.current
     if (!open) return
     const list = sessions.list.getSnapshot()
-    if (list.current !== open.sessionId || (list.phase === 'ready' && !list.ids.includes(open.sessionId as SessionId))) void closeAgent()
+    if (!isMainSession(sessions, open.sessionId as SessionId)
+      || (list.phase === 'ready' && !list.ids.includes(open.sessionId as SessionId))) void closeAgent()
   }), [sessions, closeAgent])
   useEffect(() => workspaces.list.subscribe(() => {
     const open = agentDrawerRef.current
@@ -221,8 +226,11 @@ function PublisherPage({ sessions, workspaces, uiWorkspace }: { sessions: ISessi
     }
     if (!stillCurrent()) return
     uiWorkspace.openSession(sessionId)
+    // The conversation in the Agent drawer reads the selected Session, but
+    // openSession also reveals the ordinary Conversation as the main panel.
+    layout.selectPanel(PUBLISHER_PANEL)
     const binding = await api<Omit<AgentDrawerBinding, 'workspaceId'>>('agent-draft-bind', { sessionId, contentId: content.id })
-    if (!stillCurrent() || sessions.list.getSnapshot().current !== sessionId) {
+    if (!stillCurrent() || !isMainSession(sessions, sessionId)) {
       await api('agent-draft-bind', { sessionId, contentId: null, bindingToken: binding.bindingToken })
       return
     }
@@ -357,7 +365,7 @@ export function apply(ctx: Context): void {
   // This package also builds its Host entry, whose `sessions` property is a
   // different service. The client injection above guarantees this face here.
   const { sessions, workspaces, uiWorkspace } = ctx as unknown as { sessions: ISessions; workspaces: IWorkspaces; uiWorkspace: UiWorkspace }
-  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PUBLISHER_PANEL }, () => <PublisherPage sessions={sessions} workspaces={workspaces} uiWorkspace={uiWorkspace}/>))
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PUBLISHER_PANEL }, () => <PublisherPage sessions={sessions} workspaces={workspaces} uiWorkspace={uiWorkspace} layout={ctx.layout}/>))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PUBLISHER_PANEL, order: 42, label: '多平台发布' }, ({ size }: PropsRuntime<'sidebar.panellist'>) => <PublishIcon size={size}/>))
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: PREVIEW_ID,

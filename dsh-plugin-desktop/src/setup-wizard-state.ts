@@ -284,7 +284,7 @@ export async function beginDesktopSetupWizard(userDataDir: string, profileDir: s
   await writeFileAtomic(`${path}.pending`, 'pending\n', { mode: STATE_FILE_MODE, dirMode: STATE_DIRECTORY_MODE })
 }
 
-/** Resume the optional official login entry after applying Desktop preferences. */
+/** Resume the optional CQAI Club login entry after applying Desktop preferences. */
 export function desktopSetupAccountPending(userDataDir: string, profileDir: string): boolean {
   const path = desktopSetupWizardStatePath(userDataDir, profileDir)
   if (readDesktopSetupWizardState(userDataDir, profileDir) === undefined) return false

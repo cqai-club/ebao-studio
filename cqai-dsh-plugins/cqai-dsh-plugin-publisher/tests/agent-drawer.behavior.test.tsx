@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from 'react'
+import { act, useSyncExternalStore, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { PublisherContent } from '../src/protocol.ts'
@@ -63,7 +63,7 @@ function deferred<T>() {
 }
 
 function fakeSessions(workspaces: ReturnType<typeof fakeWorkspaces>) {
-  let current: string | undefined = 'unrelated-session'
+  let mainViewSessionId: string | undefined = 'unrelated-session'
   let ids = ['unrelated-session']
   let byId: Record<string, { id: string; parentId?: string; origin?: string }> = {
     'unrelated-session': { id: 'unrelated-session' },
@@ -74,9 +74,15 @@ function fakeSessions(workspaces: ReturnType<typeof fakeWorkspaces>) {
   const notify = () => listeners.forEach(listener => listener())
   return {
     list: {
-      getSnapshot: () => ({ current, currentAddress: undefined, ids, byId, phase }),
+      getSnapshot: () => ({ ids, byId, phase }),
       subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener) },
     },
+    retainInfo: (id: string) => ({
+      getSnapshot: () => ({
+        referenceCount: mainViewSessionId === id ? 1 : 0,
+        retainedBy: mainViewSessionId === id ? { mainView: 1 } : {},
+      }),
+    }),
     create: vi.fn(async (options: { workspaceId?: string } = {}) => {
       const id = `new-session-${++created}`
       ids = [...ids, id]
@@ -86,8 +92,8 @@ function fakeSessions(workspaces: ReturnType<typeof fakeWorkspaces>) {
       return id
     }),
     refresh: vi.fn(async () => {}),
-    open: vi.fn((id: string) => { current = id; notify() }),
-    changeCurrent: (id: string) => { current = id; notify() },
+    open: vi.fn((id: string) => { mainViewSessionId = id; notify() }),
+    changeCurrent: (id: string) => { mainViewSessionId = id; notify() },
     add: (id: string, details: { parentId?: string; origin?: string } = {}) => {
       ids = [...ids, id]
       byId = { ...byId, [id]: { id, ...details } }
@@ -98,7 +104,7 @@ function fakeSessions(workspaces: ReturnType<typeof fakeWorkspaces>) {
       const next = { ...byId }
       delete next[id]
       byId = next
-      if (current === id) current = undefined
+      if (mainViewSessionId === id) mainViewSessionId = undefined
       notify()
     },
     setPhase: (value: 'pending' | 'ready') => { phase = value; notify() },
@@ -169,11 +175,21 @@ async function renderPublisher(mode: 'compatibility' | 'extended') {
   frame.append(container)
   const workspaces = fakeWorkspaces()
   const sessions = fakeSessions(workspaces)
+  let activePanel: string | null = 'cqai-publisher'
+  const panelListeners = new Set<() => void>()
+  const layout = {
+    selectPanel: vi.fn((panel: string | null) => {
+      activePanel = panel
+      panelListeners.forEach(listener => listener())
+    }),
+    subscribe: (listener: () => void) => { panelListeners.add(listener); return () => { panelListeners.delete(listener) } },
+    getSnapshot: () => activePanel,
+  }
   let Page: (() => ReactNode) | undefined
   const ctx = {
     sessions,
     workspaces,
-    uiWorkspace: { openSession: sessions.open },
+    uiWorkspace: { openSession: (id: string) => { sessions.open(id); layout.selectPanel(null) } },
     slots: {
       inject: (_slot: string, callback: () => void) => callback(),
       register: (options: { name: string; key?: string }, renderer: () => ReactNode) => {
@@ -184,14 +200,18 @@ async function renderPublisher(mode: 'compatibility' | 'extended') {
     effect: (callback: () => void) => callback(),
     sidebarRightTabs: { register: () => () => {} },
     sidebarRight: { active: () => undefined, openTab: vi.fn() },
-    layout: { selectPanel: vi.fn() },
+    layout,
   }
   apply(ctx as never)
   if (!Page) throw new Error('Publisher main panel was not registered')
   root = createRoot(container)
   const RegisteredPage = Page as () => ReactNode
-  await act(async () => { root!.render(<RegisteredPage/>) })
-  return { sessions, workspaces }
+  function Panel() {
+    const panel = useSyncExternalStore(layout.subscribe, layout.getSnapshot)
+    return panel === 'cqai-publisher' ? <RegisteredPage/> : <div>普通对话</div>
+  }
+  await act(async () => { root!.render(<Panel/>) })
+  return { sessions, workspaces, layout }
 }
 
 async function click(label: string) {
@@ -231,7 +251,7 @@ describe('Publisher Agent drawer binding', () => {
     const listener = (event: Event) => events.push((event as CustomEvent).detail)
     window.addEventListener(DRAWER_EVENT, listener)
     try {
-      const { sessions, workspaces } = await renderPublisher('extended')
+      const { sessions, workspaces, layout } = await renderPublisher('extended')
       await click('打开文章草稿')
       await click('打开 Agent')
       expect(queryApi).toHaveBeenCalledWith('agent-draft-session/article-1')
@@ -240,6 +260,10 @@ describe('Publisher Agent drawer binding', () => {
       expect(sessions.create).toHaveBeenCalledOnce()
       expect(sessions.create).toHaveBeenCalledWith({ workspaceId: 'publisher-workspace' })
       expect(sessions.open).toHaveBeenCalledWith('new-session-1')
+      expect(sessions.list.getSnapshot()).not.toHaveProperty('current')
+      expect(layout.selectPanel.mock.calls).toEqual([[null], ['cqai-publisher']])
+      expect(layout.getSnapshot()).toBe('cqai-publisher')
+      expect(container!.textContent).not.toContain('普通对话')
       expect(workspaces.list.getSnapshot().items[0]?.sessionIds).toContain('new-session-1')
       expect(queryApi).toHaveBeenCalledWith('agent-draft-bind', { sessionId: 'new-session-1', contentId: 'article-1' })
       expect(queryApi).not.toHaveBeenCalledWith('agent-draft-bind', { sessionId: 'unrelated-session', contentId: 'article-1' })
