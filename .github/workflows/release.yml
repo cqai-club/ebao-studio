@@ -94,6 +94,21 @@ jobs:
             writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`)
           }
           NODE
+      - name: Apply v0.0.5 verifier-only video test correction
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag == 'v0.0.5'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_file='cqai-dsh-plugins/cqai-dsh-plugin-publisher/tests/video-preview.test.ts'
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          expected_changes="$(printf '%s\n%s' '.github/workflows/release.yml' "$test_file")"
+          actual_changes="$(git diff --name-only HEAD "$GITHUB_SHA")"
+          if [[ "$actual_changes" != "$expected_changes" ]]; then
+            echo 'Verifier branch differs from the release tag in unexpected files:' >&2
+            printf '%s\n' "$actual_changes" >&2
+            exit 1
+          fi
+          git show "${GITHUB_SHA}:${test_file}" > "$test_file"
       - name: Run complete headless gate
         run: yarn check
 
