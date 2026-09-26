@@ -66,7 +66,10 @@ async function verify() {
     assert.equal(contents.getLastWebPreferences().nodeIntegration, false)
     assert.equal(contents.getLastWebPreferences().webviewTag, false)
     mark('guest top-level navigation')
-    await window.webContents.executeJavaScript(`document.querySelector('webview').loadURL(${JSON.stringify(`${origin}/first`)})`)
+    // executeJavaScript adopts a returned Promise; webview.loadURL may keep that
+    // Promise pending. The guest URL, loading state, and page assertions below
+    // are the navigation gate, so only await dispatching the call here.
+    await window.webContents.executeJavaScript(`void document.querySelector('webview').loadURL(${JSON.stringify(`${origin}/first`)})`)
     mark('guest top-level load')
     await wait(() => contents.getURL() === `${origin}/first` && !contents.isLoading())
     mark('guest page content')
