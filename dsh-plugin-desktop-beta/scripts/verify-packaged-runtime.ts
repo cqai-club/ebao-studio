@@ -14,7 +14,7 @@ import {
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, parse } from 'node:path'
+import { dirname, join, normalize, parse } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { extractFile, getRawHeader, listPackage } from '@electron/asar'
 import {
@@ -968,7 +968,7 @@ export function verifyPackagedAgentsAnywhere(
   context: PackagedRuntimeContext,
   readInstalled: (path: string) => Buffer = readFileSync,
   readPackaged: (path: string) => Buffer = path => usesAsarLayout(context)
-    ? extractFile(resolvePackagedAsarPath(context), path)
+    ? extractFile(resolvePackagedAsarPath(context), normalize(path))
     : readFileSync(join(resolvePackagedApplicationRoot(context), path)),
 ): void {
   if (context.electronPlatformName === 'darwin') {
