@@ -1,7 +1,7 @@
 /** Real Electron guests against pages with anti-framing headers; Linux Xvfb only, never opens the user's desktop. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
@@ -27,9 +27,16 @@ async function verify() {
   })
   let window
   let code = 0
-  const deadline = setTimeout(() => { console.error('Native Browser check timed out'); app.exit(1) }, 45_000)
+  let stage = 'Electron ready'
+  const mark = next => { stage = next; writeSync(2, `Native Browser stage: ${stage}\n`) }
+  const deadline = setTimeout(() => {
+    writeSync(2, `Native Browser check timed out during ${stage}\n`)
+    app.exit(1)
+  }, 45_000)
   try {
+    mark('Electron ready')
     await app.whenReady()
+    mark('fixture server listen')
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
     const origin = `http://127.0.0.1:${server.address().port}`
     // The Host origin is withheld from guests; this fixture deliberately is not it.
@@ -37,34 +44,49 @@ async function verify() {
     window = new BrowserWindow({ show: false,
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: true } })
     guests.bind(window)
+    mark('application cookie setup')
     await window.webContents.session.cookies.set({ url: origin, name: 'app-secret', value: 'app-only' })
+    mark('iframe fixture load')
     await window.loadURL(`${origin}/embed`)
+    mark('iframe isolation probe')
     assert.equal(await window.webContents.executeJavaScript("document.querySelector('iframe').contentDocument?.querySelector('#native-proof')?.textContent ?? null"), null,
       'The fixture must actually refuse iframe embedding')
 
+    mark('guest lease acquisition')
     const first = guests.acquire(window.webContents, '/workspace/one')
     const attached = new Promise(resolve => { window.webContents.once('did-attach-webview', (_event, guest) => resolve(guest)) })
+    mark('webview mount')
     await mountGuest(window, first)
+    mark('webview attachment')
     const contents = await attached
+    mark('guest blank document')
     await wait(() => contents.getURL().startsWith('about:blank#'))
     assert.equal(contents.getLastWebPreferences().webSecurity, true)
     assert.equal(contents.getLastWebPreferences().sandbox, true)
     assert.equal(contents.getLastWebPreferences().nodeIntegration, false)
     assert.equal(contents.getLastWebPreferences().webviewTag, false)
+    mark('guest top-level navigation')
     await window.webContents.executeJavaScript(`document.querySelector('webview').loadURL(${JSON.stringify(`${origin}/first`)})`)
+    mark('guest top-level load')
     await wait(() => contents.getURL() === `${origin}/first` && !contents.isLoading())
+    mark('guest page content')
     assert.equal(await contents.executeJavaScript("document.querySelector('#native-proof').textContent"), 'Loaded native page',
       'A guest loads a top-level page that refuses iframe embedding')
+    mark('guest API isolation')
     assert.deepEqual(await contents.executeJavaScript('[typeof window.desktopNext, typeof window.dshDesktop, typeof require, typeof process]'),
       ['undefined', 'undefined', 'undefined', 'undefined'])
+    mark('guest cookie isolation')
     assert.equal((await contents.session.cookies.get({ url: origin })).some(cookie => cookie.name === 'app-secret'), false,
       'Guest storage is partitioned away from the application session')
 
     // A real click carries user activation; without it Chromium replaces the current history
     // entry instead of pushing one, so Back below would have nothing to return to.
+    mark('guest history click')
     await contents.executeJavaScript("document.querySelector('a').click()", true)
+    mark('guest forward history')
     await wait(() => contents.getURL() === `${origin}/second` && contents.navigationHistory.canGoBack())
     contents.navigationHistory.goBack()
+    mark('guest backward history')
     await wait(() => contents.getURL() === `${origin}/first` && contents.navigationHistory.canGoForward())
 
     // A second Workspace gets its own storage account; the same one is reused.
@@ -74,6 +96,7 @@ async function verify() {
     assert.notEqual(otherWorkspace.partition, first.partition)
 
     // Only the issued lease and partition may attach; a forged pair is refused.
+    mark('forged guest rejection')
     const forged = await window.webContents.executeJavaScript(`new Promise(resolve => {
       const element = document.createElement('webview')
       element.setAttribute('partition', ${JSON.stringify(first.partition)})
@@ -85,17 +108,24 @@ async function verify() {
     assert.equal(forged, 'refused', 'An unissued lease must never attach a guest')
 
     const destroyed = new Promise(resolve => { contents.once('destroyed', resolve) })
+    mark('guest release request')
     await guests.release(window.webContents, first.lease)
+    mark('guest destruction event')
     await destroyed
     assert.equal(contents.isDestroyed(), true)
     console.log('Native sidebar Browser passed: lease-gated attachment, forged leases refused, fixed guest preferences, partitioned storage, top-level load of an anti-framing page, native history and release teardown.')
   } catch (error) {
     code = 1; console.error(error)
   } finally {
-    clearTimeout(deadline)
+    mark('window cleanup')
     window?.destroy()
+    mark('fixture server cleanup')
+    server.closeAllConnections()
     await new Promise(resolve => server.close(resolve))
+    mark('temporary files cleanup')
     rmSync(home, { recursive: true, force: true })
+    clearTimeout(deadline)
+    mark('Electron exit')
     app.exit(code)
   }
 }
