@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-llm'
-import type {} from '@cqaiclub/dsn-account'
+import type { DsnAccountService } from '@cqaiclub/dsn-account'
 import { isChatModel, isImageGenerationModel, isVideoCatalogEntry, isVideoModel } from '@cqaiclub/dsn-account'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -274,6 +274,7 @@ export function validateSubtitleSrt(srt: string, duration: number): void {
 }
 
 export function apply(ctx: Context): void {
+  const dsnAccount = (ctx as Context & { dsnAccount: DsnAccountService }).dsnAccount
   const root = join(resolveDshHome(), 'short-video')
   const jobsRoot = join(root, 'jobs')
   const runtime = physicalRuntime()
@@ -332,10 +333,10 @@ export function apply(ctx: Context): void {
     return next
   }
   const catalog = async () => {
-    const status=await ctx.dsnAccount.getStatus()
+    const status=await dsnAccount.getStatus()
     if (status.state !== 'signed-in') return {signedIn:false,text:[],image:[],video:[],warning:'请先登录 CQAI Club'}
-    const models=await ctx.dsnAccount.listModels()
-    const defaults=await ctx.dsnAccount.getCategoryDefaultModels()
+    const models=await dsnAccount.listModels()
+    const defaults=await dsnAccount.getCategoryDefaultModels()
     return {
       signedIn:true, text:models.models.filter(isChatModel).map(m=>({id:m.id,name:m.name || m.id})),
       image:models.models.filter(isImageGenerationModel).map(m=>({id:m.id,name:m.name || m.id})),
@@ -435,7 +436,7 @@ export function apply(ctx: Context): void {
     const available=await catalog()
     if (!available.image.some(m=>m.id===model)) throw new Error('CQAI Club 图片模型已不可用')
     const body=model==='dall-e-3'?{...payload,model}:{...payload,model,response_format:'b64_json'}
-    const response=await ctx.dsnAccount.fetchAi('/v1/images/generations',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
+    const response=await dsnAccount.fetchAi('/v1/images/generations',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
     const result=await response.json() as Record<string,unknown>
     if(!response.ok)throw new Error(`CQAI Club 图片生成失败 (HTTP ${response.status}): ${JSON.stringify(result).slice(0,500)}`)
     return result
@@ -493,7 +494,7 @@ export function apply(ctx: Context): void {
           if(event.type==='llm_request')respond(await llmCall(job.textModel,String(event.prompt)))
           else if(event.type==='image_request')respond(await imageCall(job.imageModel,event.payload as Record<string,unknown>))
           else if (job.materialPreviewJobId) respond(undefined,'已复用视频素材，禁止再次提交付费镜头')
-          else respond(await createVideoMaterial({account:ctx.dsnAccount,job,storageRoot:join(root,'storage','tasks'),save,request:validateVideoMaterialRequest(event),signal:videoAbort.signal}))
+          else respond(await createVideoMaterial({account:dsnAccount,job,storageRoot:join(root,'storage','tasks'),save,request:validateVideoMaterialRequest(event),signal:videoAbort.signal}))
         }catch(e){respond(undefined,e instanceof Error?e.message:String(e))}})()
       }else if(event.type==='progress' && isRecord(event.state)){
         job.state=event.state;job.progress=Number(event.state.progress)||0;void save(job)
