@@ -48,6 +48,7 @@ export class JobStore {
   }
   collect(job: Job): void {
     job.artifacts = OUTPUTS.flatMap(file => {
+      if (file === 'final_video.mp4' && job.stages.render !== 'completed') return []
       const path = join(this.dir(job.id), file)
       return existsSync(path) ? [{file, name: file.split('/').pop()!, size: statSync(path).size}] : []
     })
