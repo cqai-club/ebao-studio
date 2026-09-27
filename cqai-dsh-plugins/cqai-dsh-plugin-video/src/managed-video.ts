@@ -4,7 +4,7 @@
 export type AccountRequest = (path: `/v1/${string}`, init?: RequestInit, signal?: AbortSignal) => Promise<Response>
 const BASE = '/v1/ejianbao' as const
 const ID = /^[A-Za-z0-9_-]{1,128}$/
-export interface VideoQuote {id: string; amount: number; unit: string; expiresAt: string; displayAmount?: string}
+export interface VideoQuote {id: string; amount: number; unit: string; expiresAt: string; displayAmount?: string; estimatedSeconds?: number; pricingSource?: 'relay'}
 export interface ManagedRun {
   id: string
   status: 'queued' | 'generating' | 'completed' | 'failed' | 'cancelled'
@@ -27,7 +27,9 @@ function failure(status: number, code?: unknown): ManagedVideoError {
   if (code === 'VIDEO_PREPARATION_INTERRUPTED') return new ManagedVideoError('interrupted', '服务端素材准备已中断，请联系管理员检查当前任务')
   if (code === 'VIDEO_SUBMISSION_REJECTED') return new ManagedVideoError('rejected', '平台未受理生成任务，请联系管理员检查服务配置')
   if (code === 'VIDEO_UPLOAD_FAILED') return new ManagedVideoError('upload', '云端素材上传失败，请联系管理员检查素材格式或平台素材容量')
+  if (code === 'VIDEO_QUOTE_CHANGED') return new ManagedVideoError('quote', '报价已变化，请重新获取并确认')
   if (code === 'VIDEO_QUOTE_EXPIRED') return new ManagedVideoError('quote', '报价已过期或文案已变化，请重新获取报价')
+  if (code === 'VIDEO_QUOTE_UNAVAILABLE') return new ManagedVideoError('service', '暂时无法获取实时价格，请稍后重试')
   if (status === 401) return new ManagedVideoError('auth', '请先登录 CQAI Club，或重新登录后继续')
   if (status === 402) return new ManagedVideoError('quota', '账户额度不足，请充值后再试')
   if (status === 403) return new ManagedVideoError('forbidden', '当前账户无权访问此视频任务')
@@ -71,7 +73,9 @@ export class ManagedVideoProvider {
     if (typeof data.unit !== 'string' || data.unit.length > 24 || !data.unit.trim()
       || typeof data.expiresAt !== 'string' || !Number.isFinite(Date.parse(data.expiresAt)) || Date.parse(data.expiresAt) <= Date.now()) return protocol()
     return {id: id(data.id), amount: amount(data.amount), unit: data.unit, expiresAt: data.expiresAt,
-      ...(typeof data.displayAmount === 'string' && /^(?:[¥$]\d+\.\d{4}|\d+\.\d{4} 积分)$/.test(data.displayAmount) ? {displayAmount: data.displayAmount} : {})}
+      ...(typeof data.displayAmount === 'string' && /^(?:[¥$]\d+\.\d{4}|\d+\.\d{4} 积分)$/.test(data.displayAmount) ? {displayAmount: data.displayAmount} : {}),
+      ...(data.estimatedSeconds === undefined ? {} : {estimatedSeconds: amount(data.estimatedSeconds)}),
+      ...(data.pricingSource === 'relay' ? {pricingSource: 'relay' as const} : {})}
   }
   async create(input: {requestId: string; quoteId: string; script: string; avatar: Blob; voice: Blob; avatarName: string; voiceName: string}, signal?: AbortSignal): Promise<ManagedRun> {
     const form = new FormData()

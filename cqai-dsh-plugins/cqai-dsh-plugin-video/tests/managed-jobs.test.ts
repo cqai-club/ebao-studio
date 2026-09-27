@@ -44,7 +44,7 @@ it('resumes a lost submission acknowledgement with the same request key, then do
     expect(job.cloud?.submissionStarted).toBe(true)
     const resumed = new JobStore(root, root).get(job.id)
     await managed.generate(resumed, new AbortController().signal)
-    expect(keys).toEqual([job.id, job.id])
+    expect(keys).toEqual([`${job.id}_quote1`, `${job.id}_quote1`])
     expect(resumed.cloud?.runId).toBe('run1')
     expect(readFileSync(join(dir, 'digital_human/video.mp4'), 'utf8')).toBe('fixture-video')
     const calls = request.mock.calls.length

@@ -42,7 +42,8 @@ export class ManagedJobs {
       const script = readFileSync(join(dir, 'script.txt'), 'utf8')
       job.cloud.submissionStarted = true; this.store.save(job)
       try {
-        const created = await this.provider.create({requestId: job.id, quoteId: job.cloud.quote.id, script,
+        // Requotes get a new key; retries of one quote keep the same key.
+        const created = await this.provider.create({requestId: `${job.id}_${job.cloud.quote.id}`, quoteId: job.cloud.quote.id, script,
           avatar: await openAsBlob(join(dir, avatar.file)), voice: await openAsBlob(join(dir, voice.file)), avatarName: avatar.name, voiceName: voice.name}, signal)
         job.cloud.runId = created.id; this.store.save(job)
       } catch (error) {
