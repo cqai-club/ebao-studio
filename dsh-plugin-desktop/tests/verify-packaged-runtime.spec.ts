@@ -17,6 +17,7 @@ import {
   FORBIDDEN_UNPACKED_RUNTIME_ENTRIES,
   indexPackagedAsarHeader,
   listDesktopRuntimeEntries,
+  MAX_DATAIKU_UV_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_FILES,
   MAX_UNPACKED_RUNTIME_BYTES,
@@ -567,8 +568,30 @@ describe('packaged desktop runtime verification', () => {
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/fs-ext')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/node-pty')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@dataiku/uv-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@vscode/ripgrep-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@img/sharp-')
+  })
+
+  it('allows reviewed uv binaries on macOS and Windows within a per-package budget', () => {
+    const files = [
+      { path: 'node_modules/@dataiku/uv-darwin-arm64/uv', bytes: 40 * 1024 * 1024 },
+      { path: 'node_modules/@dataiku/uv-darwin-x64/uv', bytes: 48 * 1024 * 1024 },
+      { path: 'node_modules/@dataiku/uv-win32-arm64/uv.exe', bytes: 40 * 1024 * 1024 },
+      { path: 'node_modules/@dataiku/uv-win32-x64/uv.exe', bytes: 48 * 1024 * 1024 },
+    ]
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex(files.map(file => file.path)),
+      '/build/resources/app.asar.unpacked',
+      files,
+    )).not.toThrow()
+
+    const oversized = 'node_modules/@dataiku/uv-win32-x64/uv.exe'
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([oversized]),
+      '/build/resources/app.asar.unpacked',
+      [{ path: oversized, bytes: MAX_DATAIKU_UV_SMART_UNPACK_BYTES + 1 }],
+    )).toThrow('@dataiku/uv smart-unpack budget')
   })
 
   it('accepts pnpm as an indivisible smart-unpacked package with native helpers', () => {
