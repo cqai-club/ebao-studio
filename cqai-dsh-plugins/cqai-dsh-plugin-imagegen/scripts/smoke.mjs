@@ -3382,6 +3382,23 @@ await check('E1 client apply registers and renders the official image studio (js
     assert.equal(view.querySelector('h2')?.textContent, 'e图宝', 'panel header uses the e图宝 product name')
     const connectionStatus = view.querySelector('[data-connected]')
     assert.equal(connectionStatus?.getAttribute('data-connected'), 'true', 'the signed-in immutable CQAI Provider is connected without a browser-side key')
+    assert.equal(view.querySelector('[aria-label="Image Provider"]'), null, 'image model selection has no separate Provider step')
+    const modelTrigger = view.querySelector('button[aria-haspopup="listbox"]')
+    assert.ok(modelTrigger !== null, 'the image model menu is directly available')
+    modelTrigger.click()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const modelGroups = [...view.querySelectorAll('[role="listbox"] [role="group"]')]
+    assert.deepEqual(modelGroups.map(group => group.getAttribute('aria-label')), ['CQAI Club', 'Default'], 'models from both routes share one grouped menu')
+    assert.equal(modelGroups[0].querySelector('[role="option"]')?.textContent?.trim(), 'gpt-image-2')
+    assert.equal(modelGroups[1].querySelector('[role="option"]')?.textContent?.trim(), 'gpt-image-2')
+    modelGroups[1].querySelector('[role="option"]')?.click()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(view.querySelector('[data-connected]')?.getAttribute('data-connected'), 'false', 'choosing a custom model changes its internal route')
+    modelTrigger.click()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    view.querySelector('[role="listbox"] [role="group"][aria-label="CQAI Club"] [role="option"]')?.click()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(view.querySelector('[data-connected]')?.getAttribute('data-connected'), 'true', 'choosing the CQAI model restores the account route')
 
     // Gallery and infinite canvas use the full workspace without the legacy
     // history rail. Ecommerce temporarily keeps its project-history rail.

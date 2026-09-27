@@ -516,16 +516,16 @@ describe('desktop Host plugin', () => {
     expect(JSON.parse(body)).toEqual({ allowed: false })
   })
 
-  it.each(['win32', 'linux'] as const)(
-    'keeps the full-size application icon on %s',
-    (platform) => {
-      const harness = createHarness(platform)
+  it.each([
+    ['win32', 'app-icon.ico'],
+    ['linux', 'app-icon.png'],
+  ] as const)('uses the native application icon on %s', (platform, icon) => {
+    const harness = createHarness(platform)
 
-      apply(harness.ctx, config)
+    apply(harness.ctx, config)
 
-      expect(harness.shell()?.iconPath.endsWith(join('build', 'app-icon.png'))).toBe(true)
-    },
-  )
+    expect(harness.shell()?.iconPath.endsWith(join('build', icon))).toBe(true)
+  })
 
   it('requests one orderly restart after the settings scope commits another mode', async () => {
     vi.useFakeTimers()

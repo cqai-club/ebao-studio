@@ -241,7 +241,7 @@ export function apply(ctx: Context, config: Config): void {
   lanHttps.attach(ctx.webServer.port)
   const iconFilename = runtime.platform === 'darwin'
     ? 'app-icon-mac.png'
-    : 'app-icon.png'
+    : runtime.platform === 'win32' ? 'app-icon.ico' : 'app-icon.png'
   const iconPath = fileURLToPath(new URL(`../build/${iconFilename}`, import.meta.url))
   const trayIcons = {
     templatePath: fileURLToPath(new URL('../build/tray-iconTemplate.png', import.meta.url)),

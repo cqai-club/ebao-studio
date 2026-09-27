@@ -23,6 +23,7 @@ import { AGENT_IMAGE_API } from '../protocol.ts'
 import type { ImageGenConfig, ImageGenScope } from './settings-scope.ts'
 import { normalizeImageModels } from '../image-models.ts'
 import { describeModel, promptCharLimit } from '../model-catalog.ts'
+import { imageModelChoiceKey, imageModelGroups } from './image-model-groups.ts'
 import { CHAT_IMAGE_EVENT, type ChatImageEventDetail, type ConversationService } from './conversation-sync.ts'
 import css from './panel.module.css'
 
@@ -569,6 +570,7 @@ export function ImageGenPanel(props: {
   const modeModels = tab === 'edit'
     ? imageModels.filter(candidate => describeModel(candidate).supportsEdit)
     : imageModels
+  const availableModelGroups = imageModelGroups(cqaiProvider, customChannels, tab === 'edit')
   const automaticModel = providerId === 'cqai'
     ? (cqaiProvider.defaultModel !== undefined && modeModels.includes(cqaiProvider.defaultModel)
         ? cqaiProvider.defaultModel
@@ -1515,6 +1517,15 @@ export function ImageGenPanel(props: {
   // the button locks — the engine would fast-fail anyway, but the user sees
   // why before spending a click.
   const activeModel = modeModels.includes(model) ? model : automaticModel
+  const activeModelKey = activeModel === '' ? '' : imageModelChoiceKey(providerId, activeModel)
+  const chooseImageModel = (nextProviderId: string, nextModel: string): void => {
+    if (nextProviderId !== providerId) {
+      setProviderId(nextProviderId)
+      setCompareModels([])
+    }
+    setModel(nextModel)
+    setModelOpen(false)
+  }
   const promptLimit = promptCharLimit(activeModel)
   const promptOverLimit = promptLimit !== null && prompt.trim().length >= promptLimit
 
@@ -2267,7 +2278,24 @@ export function ImageGenPanel(props: {
                 </div>
                 <div className={css.ecommerceSection}>
                   <h3>{tt('ecommerce.generation')}</h3>
-                  <select value={modeModels.includes(model) ? model : automaticModel} aria-label={tt('model.label')} onChange={event => setModel(event.target.value)}><option value="" disabled>{tt('model.label')}</option>{modeModels.map(option => <option key={option} value={option}>{option}</option>)}</select>
+                  <select
+                    value={activeModelKey}
+                    aria-label={tt('model.label')}
+                    onChange={event => {
+                      const choice = availableModelGroups.flatMap(group => group.models.map(item => ({ providerId: group.providerId, model: item })))
+                        .find(item => imageModelChoiceKey(item.providerId, item.model) === event.target.value)
+                      if (choice !== undefined) chooseImageModel(choice.providerId, choice.model)
+                    }}
+                  >
+                    <option value="" disabled>{tt('model.label')}</option>
+                    {availableModelGroups.map(group => (
+                      <optgroup key={group.providerId} label={group.name}>
+                        {group.models.map(item => (
+                          <option key={item} value={imageModelChoiceKey(group.providerId, item)}>{item}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
                   <div className={css.optionRow}>{QUALITIES.map(option => <Pill key={option} active={quality === option} onClick={() => { setQuality(option) }} className={css.optionPill}>{tt(`quality.${option}` as const)}</Pill>)}</div>
                 </div>
                 <input
@@ -2473,30 +2501,6 @@ export function ImageGenPanel(props: {
               </div>
             ) : null}
             {isGeneration ? <label className={css.modelWrap}>
-              <span className={css.modelLabel}>Provider</span>
-              <select
-                value={providerId}
-                aria-label="Image Provider"
-                disabled={submitting}
-                onChange={event => {
-                  setProviderId(event.target.value)
-                  setModel('')
-                  setCompareModels([])
-                }}
-              >
-                <option value="cqai">CQAI（默认）</option>
-                {customChannels.map(channel => (
-                  <option key={channel.id} value={channel.id}>{channel.name || channel.id}</option>
-                ))}
-              </select>
-              {providerId === 'cqai' && cqaiProvider.state !== 'signed-in'
-                ? <small>{cqaiProvider.message ?? (cqaiProvider.state === 'reauth-required' ? '登录已失效，请重新登录 CQAI Club' : '请先登录 CQAI Club')}</small>
-                : null}
-              {providerId === 'cqai' && cqaiProvider.state === 'signed-in' && cqaiModels.length > 1 && cqaiProvider.defaultModel === undefined && model === ''
-                ? <small>请选择本次使用的图像模型</small>
-                : null}
-            </label> : null}
-            {isGeneration ? <label className={css.modelWrap}>
               <span className={css.modelLabel}>{tt('model.label')}</span>
               <span ref={modelMenuRef} className={css.modelMenu} data-open={modelOpen ? 'true' : 'false'}>
                 <button
@@ -2507,27 +2511,36 @@ export function ImageGenPanel(props: {
                   aria-expanded={modelOpen}
                   onClick={() => { setModelOpen(open => !open) }}
                 >
-                  <span>{activeModel || tt('model.noEditModels')}</span>
+                  <span>{activeModel || tt(availableModelGroups.length > 0 ? 'model.label' : 'model.noEditModels')}</span>
                   <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 10.5L4 6h8z"/></svg>
                 </button>
                 {modelOpen ? (
                   <div className={css.modelMenuList} role="listbox" aria-label={tt('model.label')}>
-                    {modeModels.map(option => (
-                      <button
-                        key={option}
-                        type="button"
-                        role="option"
-                        aria-selected={activeModel === option}
-                        className={css.modelMenuItem}
-                        data-selected={activeModel === option ? '' : undefined}
-                        onClick={() => { setModel(option); setModelOpen(false) }}
-                      >
-                        {option}
-                      </button>
-                    ))}
+                    {availableModelGroups.map(group => <div key={group.providerId} role="group" aria-label={group.name}>
+                      {availableModelGroups.length > 1 ? <div className={css.modelMenuGroupLabel}>{group.name}</div> : null}
+                      {group.models.map(option => (
+                        <button
+                          key={option}
+                          type="button"
+                          role="option"
+                          aria-selected={providerId === group.providerId && activeModel === option}
+                          className={css.modelMenuItem}
+                          data-selected={providerId === group.providerId && activeModel === option ? '' : undefined}
+                          onClick={() => { chooseImageModel(group.providerId, option) }}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>)}
                   </div>
                 ) : null}
               </span>
+              {providerId === 'cqai' && cqaiProvider.state !== 'signed-in'
+                ? <small>{cqaiProvider.message ?? (cqaiProvider.state === 'reauth-required' ? '登录已失效，请重新登录 CQAI Club' : '请先登录 CQAI Club')}</small>
+                : null}
+              {providerId === 'cqai' && cqaiProvider.state === 'signed-in' && cqaiModels.length > 1 && cqaiProvider.defaultModel === undefined && model === ''
+                ? <small>请选择本次使用的图像模型</small>
+                : null}
             </label> : null}
             {isGeneration ? <div className={css.compareControl}>
               <label className={css.compareToggle}>
