@@ -698,6 +698,7 @@
     "check:layout": "yarn test:market-release && yarn test:aa-release && yarn check:bilingual-docs && yarn test:release-assets && yarn check:architecture && yarn check:vendored-runtime && yarn check:desktop-variants && yarn icons:check && node scripts/verify-layout.mjs",
     "check": "yarn check:layout && yarn test:aa-connector && yarn workspace dsh-community-fabric check && yarn workspace dsh-community-market check && yarn build:cqai-plugins && yarn workspace dsh-plugin-desktop check && yarn workspace dsh-plugin-desktop-beta check && yarn workspace dsh-desktop-next check && yarn typecheck:cqai-plugins && yarn test:cqai-plugins",
     "dev": "yarn market:prepare && yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn build:cqai-plugins && yarn workspace dsh-plugin-desktop dev",
+    "dev:short-video": "node scripts/dev-short-video.mjs",
     "start": "yarn market:prepare && yarn workspace dsh-plugin-desktop start",
     "package:dir": "yarn market:prepare && yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn build:cqai-plugins && yarn workspace dsh-plugin-desktop package:dir",
     "dist:mac": "yarn market:prepare && yarn aa:prepare-release && yarn workspace dsh-community-market build && yarn build:cqai-plugins && yarn workspace dsh-plugin-desktop dist:mac",

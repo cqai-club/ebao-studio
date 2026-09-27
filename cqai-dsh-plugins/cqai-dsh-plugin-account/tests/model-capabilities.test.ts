@@ -5,6 +5,7 @@ import {
   isChatModel,
   isImageGenerationModel,
   isModelInCategory,
+  isVideoCatalogEntry,
   isVideoModel,
   isVisionChatModel,
   type DsnModel,
@@ -53,6 +54,22 @@ describe('model capability predicates', () => {
     expect(isImageGenerationModel(image)).toBe(true)
     expect(isVideoModel(video)).toBe(true)
     expect(isAudioModel(audio)).toBe(true)
+  })
+
+  it('recognizes Wan video aliases when the catalog omits output modalities', () => {
+    const wan = model({
+      id: 'wan3.0-video-480p',
+      categories: ['other'],
+      supportedEndpointTypes: ['openai-video'],
+      architecture: { inputModalities: ['text'], outputModalities: [] },
+    })
+
+    expect(isVideoModel(wan)).toBe(true)
+    expect(isVideoCatalogEntry(wan)).toBe(true)
+    expect(isModelInCategory(wan, 'video')).toBe(true)
+    expect(isVideoCatalogEntry({ ...wan, supportedEndpointTypes: [] })).toBe(true)
+    expect(isVideoModel({ ...wan, supportedEndpointTypes: [] })).toBe(false)
+    expect(isVideoModel({ ...wan, architecture: { inputModalities: ['text'], outputModalities: ['text'] } })).toBe(false)
   })
 
   it('falls back to one legacy category only when architecture is absent', () => {
