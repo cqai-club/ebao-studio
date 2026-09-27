@@ -5,6 +5,7 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type {
   DesktopLocale,
   DesktopNotification,
+  DesktopNotificationAction,
   DesktopTrayItem,
   DesktopTrayItemRegistration,
   DesktopUpdateAdapter,
@@ -79,6 +80,7 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
   private readonly stateReady: Promise<void>
   private readonly registration: DesktopTrayItemRegistration
   private readonly stableRegistration: DesktopTrayItemRegistration | undefined
+  private notificationActionRelease: (() => void) | undefined
 
   constructor(private readonly options: DesktopUpdateLifecycleOptions) {
     this.stateReady = this.loadState()
@@ -89,7 +91,7 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
       label: () => this.trayLabel(),
       invoke: () => this.checkNow(),
     })
-    this.stableRegistration = options.adapter.releaseChannel === 'beta'
+    this.stableRegistration = options.adapter.releaseChannel === 'beta' && options.adapter.canDownload
       ? options.registerTrayItem({
           group: 'status',
           order: 11,
@@ -109,6 +111,8 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
     if (this.requestTimer !== undefined) clearTimeout(this.requestTimer)
     this.requestController?.abort()
     this.downloadController?.abort()
+    this.notificationActionRelease?.()
+    this.notificationActionRelease = undefined
     this.registration.dispose()
     this.stableRegistration?.dispose()
     // Native dialogs are not cancellable. Await only file state and the abortable version request.
@@ -163,10 +167,28 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
 
   private async announceBackgroundUpdate(version: string): Promise<void> {
     await this.stateReady
-    if (this.disposed || this.state.lastNotifiedVersion === version) return
+    if (this.disposed) return
+    this.registerNotificationAction()
+    if (this.state.lastNotifiedVersion === version) return
     this.state = { version: 3, lastNotifiedVersion: version }
     await this.persistState()
     if (!this.disposed) this.options.adapter.notify(updateAvailableNotification(this.options.locale(), version))
+  }
+
+  private registerNotificationAction(): void {
+    if (this.disposed || this.notificationActionRelease !== undefined) return
+    const register = this.options.adapter.registerNotificationAction
+    if (typeof register !== 'function') return
+    try {
+      this.notificationActionRelease = register.call(
+        this.options.adapter,
+        'open-update' satisfies DesktopNotificationAction,
+        () => this.runManualCheck(),
+      )
+    } catch {
+      // A notification can still focus the application when the optional action
+      // bridge is unavailable. Manual tray checking remains the fallback.
+    }
   }
 
   private startCheck(
@@ -254,9 +276,9 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
       this.registration.refresh()
       try {
         if (this.options.adapter.releaseChannel === undefined && channel === 'stable') {
-          await this.options.adapter.downloadAndOpen(version, controller.signal)
+          await this.options.adapter.downloadAndInstall(version, controller.signal)
         } else {
-          await this.options.adapter.downloadAndOpen(version, controller.signal, channel)
+          await this.options.adapter.downloadAndInstall(version, controller.signal, channel)
         }
       } catch {
         // Network, filesystem, and installer-opening failures are deliberately silent.
@@ -278,6 +300,7 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
   }
 
   private runManualCheck(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
     this.manualTask ??= (async () => {
       if (this.availableVersion !== undefined) {
         await this.offerDownload(this.availableVersion)
@@ -355,8 +378,8 @@ function parseState(text: string): ParsedUpdateState {
 
 function updateAvailableNotification(locale: DesktopLocale, version: string): DesktopNotification {
   return locale === 'zh'
-    ? { title: '易宝工坊 有可用更新', body: `版本 ${version} 已可下载。打开 易宝工坊 即可继续。` }
-    : { title: '易宝工坊 Update Available', body: `Version ${version} is ready to download. Open 易宝工坊 to continue.` }
+    ? { title: '易宝工坊 有可用更新', body: `版本 ${version} 已可下载。点击通知即可确认升级。`, action: 'open-update' }
+    : { title: '易宝工坊 Update Available', body: `Version ${version} is ready to download. Click this notification to review the update.`, action: 'open-update' }
 }
 
 async function readState(filename: string): Promise<string> {

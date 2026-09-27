@@ -38,7 +38,7 @@ corepack yarn workspace cqai-dsh-plugin-video typecheck
 corepack yarn workspace cqai-dsh-plugin-video test
 ```
 
-插件已加入稳定版与 Beta 桌面默认组件。单独安装到普通 Web profile 时可使用 DSH 标准本地包安装流程；需要 DSH 0.1.5-rc.1 兼容的官方 UI 插槽。插件以本机服务为使用边界，不对局域网远程浏览器开放任务执行 API。
+插件已加入稳定版与 Beta 桌面默认组件。单独安装到普通 Web profile 时可使用 DSH 标准本地包安装流程；需要 DSH 0.1.7-rc.2 兼容的官方 UI 插槽。插件以本机服务为使用边界，不对局域网远程浏览器开放任务执行 API。
 
 ## 验证范围
 

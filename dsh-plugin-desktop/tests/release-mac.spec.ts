@@ -62,17 +62,29 @@ describe('macOS release command boundary', () => {
     expect(resetOutput).toHaveBeenCalledOnce()
     expect(prepareRuntime).toHaveBeenCalledOnce()
     expect(identityEnvironments).toEqual([{ PATH: '/usr/bin', SAFE_BUILD_VALUE: 'kept' }])
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(5)
     expect(calls[0]).toEqual({
+      command: process.execPath,
+      args: ['scripts/prepare-agents-anywhere-release.mjs', '--verify-release'],
+      cwd: resolve('/repo/dsh-plugin-desktop', '..'),
+      env: { PATH: '/usr/bin', SAFE_BUILD_VALUE: 'kept' },
+    })
+    expect(calls[1]).toEqual({
+      command: process.execPath,
+      args: ['scripts/prepare-dsh-market.mjs', '--check'],
+      cwd: resolve('/repo/dsh-plugin-desktop', '..'),
+      env: { PATH: '/usr/bin', SAFE_BUILD_VALUE: 'kept' },
+    })
+    expect(calls[2]).toEqual({
       command: 'yarn',
       args: ['run', 'check'],
       cwd: resolve('/repo/dsh-plugin-desktop', '..'),
       env: { PATH: '/usr/bin', SAFE_BUILD_VALUE: 'kept' },
     })
-    expect(calls[1]).toEqual({
+    expect(calls[3]).toEqual({
       command: 'yarn',
       args: [
-        'exec', 'electron-builder', '--mac', 'dmg', '--universal',
+        'exec', 'electron-builder', '--mac', 'dmg', 'zip', '--universal', '--publish', 'never',
         '--config.forceCodeSigning=true', '--config.mac.notarize=true',
         '--config.npmRebuild=false',
         '--config.directories.output=/repo/dsh-plugin-desktop/dist/mac-release',
@@ -87,7 +99,7 @@ describe('macOS release command boundary', () => {
         DSH_ELECTRON_BUILDER_TRAVERSAL_ONLY: '1',
       },
     })
-    expect(calls[2]).toEqual({
+    expect(calls[4]).toEqual({
       command: process.execPath,
       args: [
         'scripts/verify-mac-release.ts',
@@ -99,6 +111,25 @@ describe('macOS release command boundary', () => {
     expect(logs).toHaveLength(1)
     expect(logs[0]).toContain('signing via keychain; notarization via apple-id')
     expect(logs[0]).not.toContain(appPassword)
+  })
+
+  it('skips the repeated full check only after CI has completed its verified gate', () => {
+    const calls: CommandCall[] = []
+    const logs: string[] = []
+
+    releaseMac(baseOptions({
+      PATH: '/usr/bin',
+      DSH_PACKAGE_CHECK_ALREADY_RAN: '1',
+      APPLE_ID: 'developer@example.test',
+      APPLE_APP_SPECIFIC_PASSWORD: 'notary-password',
+      APPLE_TEAM_ID: 'TEAM123456',
+    }, calls, [], logs))
+
+    expect(calls).toHaveLength(4)
+    expect(calls[0]?.args).toContain('--verify-release')
+    expect(calls[1]?.args).toContain('--check')
+    expect(calls[2]?.args).toContain('electron-builder')
+    expect(logs).toContain('Skipping the macOS release preflight; the verified CI gate already passed.')
   })
 
   it('adapts the existing P12 variables only for electron-builder', () => {
@@ -122,15 +153,15 @@ describe('macOS release command boundary', () => {
 
     releaseMac(options)
 
-    expect(calls).toHaveLength(3)
-    expect(calls[0]?.env).toEqual({ PATH: '/usr/bin' })
-    expect(calls[1]?.env.CSC_LINK).toBe(`data:application/x-pkcs12;base64,${p12}`)
-    expect(calls[1]?.env.CSC_NAME).toBe('Mengxin Yang (TEAM123456)')
-    expect(calls[1]?.env.CSC_KEY_PASSWORD).toBe(p12Password)
-    expect(calls[1]?.env.MAC_CERT_P12_BASE64).toBeUndefined()
-    expect(calls[1]?.env.MACOS_SIGN_IDENTITY).toBeUndefined()
-    expect(calls[1]?.env.DSH_ELECTRON_BUILDER_TRAVERSAL_ONLY).toBe('1')
+    expect(calls).toHaveLength(5)
     expect(calls[2]?.env).toEqual({ PATH: '/usr/bin' })
+    expect(calls[3]?.env.CSC_LINK).toBe(`data:application/x-pkcs12;base64,${p12}`)
+    expect(calls[3]?.env.CSC_NAME).toBe('Mengxin Yang (TEAM123456)')
+    expect(calls[3]?.env.CSC_KEY_PASSWORD).toBe(p12Password)
+    expect(calls[3]?.env.MAC_CERT_P12_BASE64).toBeUndefined()
+    expect(calls[3]?.env.MACOS_SIGN_IDENTITY).toBeUndefined()
+    expect(calls[3]?.env.DSH_ELECTRON_BUILDER_TRAVERSAL_ONLY).toBe('1')
+    expect(calls[4]?.env).toEqual({ PATH: '/usr/bin' })
   })
 
   it('rejects development signing before running any command', () => {
@@ -144,7 +175,7 @@ describe('macOS release command boundary', () => {
     expect(calls).toEqual([])
   })
 
-  it('does not invoke electron-builder after a failed credential-free check', () => {
+  it('does not clear output or build when AA freshness verification fails', () => {
     const calls: CommandCall[] = []
     const resetOutput = vi.fn()
     const options: MacReleaseOptions = {
@@ -154,13 +185,13 @@ describe('macOS release command boundary', () => {
       resetOutput,
       run: (command, args, cwd, commandEnv) => {
         calls.push({ command, args: [...args], cwd, env: { ...commandEnv } })
-        throw new Error('headless check failed')
+        throw new Error('AA release check failed')
       },
     }
 
-    expect(() => releaseMac(options)).toThrow('headless check failed')
+    expect(() => releaseMac(options)).toThrow('AA release check failed')
     expect(calls).toHaveLength(1)
-    expect(calls[0]?.args).toEqual(['run', 'check'])
+    expect(calls[0]?.args).toEqual(['scripts/prepare-agents-anywhere-release.mjs', '--verify-release'])
     expect(calls[0]?.cwd).toBe(resolve('/repo/dsh-plugin-desktop', '..'))
     expect(resetOutput).not.toHaveBeenCalled()
   })

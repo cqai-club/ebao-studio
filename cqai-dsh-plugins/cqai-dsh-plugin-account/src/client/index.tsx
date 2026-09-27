@@ -5,7 +5,16 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button, Modal, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button,
+  IconSettingsOutlineMedium,
+  IconUserOutlineMedium,
+  Menu,
+  Modal,
+  StateDot,
+  Tag,
+  type MenuEntry,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   type DsnAccountSnapshot,
   type DsnTopUpHistory,
@@ -28,6 +37,11 @@ import {
 import { rpcCall } from './rpc.ts'
 
 const NS = 'cqaiclub-dsn-account' as const
+
+function isCqaiPrimaryDesktop(): boolean {
+  return (globalThis as typeof globalThis & { dshDesktop?: { cqaiPrimaryLogin?: unknown } })
+    .dshDesktop?.cqaiPrimaryLogin === true
+}
 
 const zh = {
   tab: 'CQAI Club',
@@ -81,6 +95,11 @@ const zh = {
   refresh: '刷新账号',
   refreshing: '刷新中…',
   logout: '退出登录',
+  launcherMenu: 'CQAI Club 账号菜单',
+  launcherSignIn: '登录 CQAI Club',
+  launcherOpenSettings: '打开设置',
+  launcherAccountUnavailable: '账号状态暂时不可用',
+  launcherNeedsAttention: '账号需要处理',
   accountTab: '账户',
   billingTab: '充值',
   configurationError: '当前插件尚未完成管理员配置。',
@@ -149,6 +168,11 @@ const en: Record<keyof typeof zh, string> = {
   refresh: 'Refresh account',
   refreshing: 'Refreshing…',
   logout: 'Sign out',
+  launcherMenu: 'CQAI Club account menu',
+  launcherSignIn: 'Sign in to CQAI Club',
+  launcherOpenSettings: 'Open settings',
+  launcherAccountUnavailable: 'Account status is temporarily unavailable',
+  launcherNeedsAttention: 'Account needs attention',
   accountTab: 'Account',
   billingTab: 'Add funds',
   configurationError: 'The administrator has not finished configuring this plugin.',
@@ -175,6 +199,9 @@ type AccountSettingsSectionProps = PropsRuntime<'settings.section'> & PropsLocal
   readonly accountContext: ClientContext
 }
 type AccountOnboardingProps = PropsRuntime<'settings.onboarding'> & PropsLocale<typeof NS> & {
+  readonly accountContext: ClientContext
+}
+type AccountLauncherProps = PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & {
   readonly accountContext: ClientContext
 }
 type AccountTranslator = AccountSettingsSectionProps['t']
@@ -499,7 +526,7 @@ function statusPresentation(snapshot: DsnAccountSnapshot | undefined): {
 
 const ignoreOnboardingDismiss = (): void => {}
 
-function CqaiAccountOnboarding({ complete, t, accountContext: ctx }: AccountOnboardingProps) {
+function CqaiAccountOnboarding({ complete, explicit, t, accountContext: ctx }: AccountOnboardingProps) {
   const [snapshot, setSnapshot] = useState<DsnAccountSnapshot>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
@@ -517,6 +544,12 @@ function CqaiAccountOnboarding({ complete, t, accountContext: ctx }: AccountOnbo
   }, [complete])
 
   useEffect(() => {
+    // Stable/Beta complete account setup in their native first-run flow. Keep
+    // this slot for explicit re-entry and for Web/Next, which own other flows.
+    if (!explicit && isCqaiPrimaryDesktop()) {
+      completeStep()
+      return
+    }
     const controller = new AbortController()
     void rpcCall<DsnAccountSnapshot>(ctx, 'snapshot/get', {}, controller.signal).then((next) => {
       if (!controller.signal.aborted) setSnapshot(next)
@@ -526,7 +559,7 @@ function CqaiAccountOnboarding({ complete, t, accountContext: ctx }: AccountOnbo
       if (!controller.signal.aborted) completeStep()
     })
     return () => { controller.abort() }
-  }, [completeStep, ctx])
+  }, [completeStep, ctx, explicit])
 
   useEffect(() => {
     if (snapshot?.state !== 'authorizing') return
@@ -691,6 +724,136 @@ function CqaiAccountOnboarding({ complete, t, accountContext: ctx }: AccountOnbo
         </div>
       </div>
     </Modal>
+  )
+}
+
+/** The sidebar owns no credential state; every action goes through the account Host RPC. */
+function CqaiAccountLauncher({
+  wide, settingsOpen, settingsShortcut, openSettings, t, accountContext: ctx,
+}: AccountLauncherProps) {
+  const [snapshot, setSnapshot] = useState<DsnAccountSnapshot>()
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  const trigger = useRef<HTMLButtonElement>(null)
+  const busyRef = useRef(false)
+  const requestVersion = useRef(0)
+  const settingsWasOpen = useRef(false)
+
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    if (busyRef.current) return
+    const version = ++requestVersion.current
+    try {
+      const next = await rpcCall<DsnAccountSnapshot>(ctx, 'snapshot/get', {}, signal)
+      if (!signal?.aborted && version === requestVersion.current) {
+        setSnapshot(next)
+        setError(undefined)
+      }
+    } catch (cause) {
+      if (!signal?.aborted && version === requestVersion.current) {
+        setError(cause instanceof Error ? cause.message : t('launcherAccountUnavailable'))
+      }
+    }
+  }, [ctx, t])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void refresh(controller.signal)
+    const interval = window.setInterval(() => { void refresh(controller.signal) }, snapshot?.state === 'authorizing' ? 500 : 5000)
+    return () => { controller.abort(); window.clearInterval(interval) }
+  }, [refresh, snapshot?.state])
+
+  useEffect(() => {
+    if (settingsOpen && !settingsWasOpen.current) void refresh()
+    settingsWasOpen.current = settingsOpen
+  }, [refresh, settingsOpen])
+
+  const run = async (endpoint: string, payload: unknown, unwrap: (result: unknown) => DsnAccountSnapshot) => {
+    if (busyRef.current) return
+    busyRef.current = true
+    requestVersion.current += 1
+    setBusy(true)
+    setError(undefined)
+    try {
+      const result = await rpcCall<unknown>(ctx, endpoint, payload)
+      setSnapshot(unwrap(result))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t('launcherAccountUnavailable'))
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }
+
+  const signedIn = snapshot?.state === 'signed-in'
+  const authorizing = snapshot?.state === 'authorizing'
+  const accountName = signedIn
+    ? snapshot.account.displayName ?? snapshot.account.username ?? snapshot.account.email ?? 'CQAI Club'
+    : undefined
+  const feedback = error ?? (snapshot?.state === 'error' ? snapshot.message
+    : snapshot?.state === 'reauth-required' ? snapshot.reason : undefined)
+  const label = accountName ?? (feedback === undefined
+    ? authorizing ? t('authorizing') : t('launcherSignIn')
+    : t('launcherNeedsAttention'))
+  const items: MenuEntry[] = []
+  if (feedback !== undefined) items.push({ type: 'label', id: 'account-feedback', text: feedback })
+  if (authorizing) {
+    items.push({ id: 'open-login', label: t('openLogin'), icon: <IconUserOutlineMedium size={16} /> })
+    items.push({ id: 'cancel-login', label: t('cancel'), disabled: busy })
+  } else if (!signedIn) {
+    items.push({ id: 'login', label: t('launcherSignIn'), icon: <IconUserOutlineMedium size={16} />, disabled: busy })
+  }
+  items.push({
+    id: 'open-settings', label: t('launcherOpenSettings'),
+    icon: <IconSettingsOutlineMedium size={16} />,
+    ...(settingsShortcut === undefined ? {} : { shortcut: settingsShortcut }),
+  })
+  if (signedIn) items.push({ id: 'logout', label: t('logout'), danger: true, disabled: busy })
+
+  return (
+    <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+      <Menu
+        open={open}
+        side="top"
+        portal
+        autoFocus
+        anchor={(
+          <button
+            ref={trigger}
+            type="button"
+            aria-label={`${t('launcherMenu')}: ${label}${feedback === undefined ? '' : `. ${feedback}`}`}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            title={!wide ? `${label}${feedback === undefined ? '' : `: ${feedback}`}` : undefined}
+            onClick={() => { setOpen(value => !value); if (!open) void refresh() }}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: wide ? 'flex-start' : 'center',
+              gap: 8, width: wide ? 180 : 36, height: wide ? 42 : 36,
+              padding: wide ? '0 8px' : 0, boxSizing: 'border-box', border: 0,
+              borderRadius: 12, background: 'transparent', color: 'var(--dsw-alias-label-primary)',
+              font: 'inherit', fontSize: 14, cursor: 'pointer', textAlign: 'left',
+            }}
+          >
+            <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flex: 'none', width: 24, height: 24, borderRadius: '50%', background: 'var(--dsw-alias-bg-skeleton, #e6e9ee)', color: 'var(--dsw-alias-label-primary, #18202a)', fontSize: 10, fontWeight: 750 }}>CQ</span>
+            {wide ? <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span> : null}
+          </button>
+        )}
+        items={items}
+        onClose={() => { setOpen(false) }}
+        onSelect={(id) => {
+          setOpen(false)
+          if (id === 'open-settings') { trigger.current?.focus(); openSettings() }
+          else if (id === 'login') void run('authorization/start', {}, result => result as DsnAccountSnapshot)
+          else if (id === 'cancel-login' && snapshot?.state === 'authorizing') {
+            void run('authorization/cancel', { attemptId: snapshot.attemptId }, result => result as DsnAccountSnapshot)
+          } else if (id === 'open-login' && snapshot?.state === 'authorizing') {
+            void window.open(snapshot.authorizationUrl, '_blank', 'noopener,noreferrer')
+          } else if (id === 'logout') {
+            void run('session/logout', {}, result => (result as { snapshot: DsnAccountSnapshot }).snapshot)
+          }
+        }}
+      />
+    </div>
   )
 }
 
@@ -897,10 +1060,18 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'cqaiclub-dsn-account: dictionaries')
 
+  if (isCqaiPrimaryDesktop()) {
+    ctx.slots.inject('settings.launcher', () => ctx.slots.register({
+      name: 'settings.launcher',
+      locale: NS,
+      inject: () => ({ accountContext: ctx }),
+    }, (props) => <CqaiAccountLauncher {...props} />))
+  }
+
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: NS,
-    order: 30,
+    order: isCqaiPrimaryDesktop() ? -20 : 30,
     label: () => t('tab'),
     locale: NS,
     inject: () => ({ accountContext: ctx }),

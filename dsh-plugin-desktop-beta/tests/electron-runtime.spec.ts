@@ -4,43 +4,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopShellSpec } from '../src/runtime.ts'
 import { desktopTrayLabel } from '../src/tray-locale.ts'
 import { DESKTOP_FRAME_HEIGHT } from '../src/window-chrome.ts'
+import { DESKTOP_RELEASE_CHANNEL } from '../src/product-identity.ts'
+import type { DesktopReleaseChannel } from '../src/update-checker.ts'
+import type { DesktopPublisherRuntime } from '../src/publisher-runtime.ts'
 
 const terminal = vi.hoisted(() => ({ open: vi.fn() }))
 const diagnostics = vi.hoisted(() => ({ export: vi.fn() }))
-const updater = vi.hoisted(() => ({
-  download: vi.fn(),
-  filename: vi.fn(),
-  pending: vi.fn(),
-  record: vi.fn(),
-  resolve: vi.fn(),
+const electronUpdater = vi.hoisted(() => ({
+  autoDownload: true,
+  autoInstallOnAppQuit: true,
+  autoRunAppAfterInstall: false,
+  allowPrerelease: false,
+  allowDowngrade: true,
+  disableDifferentialDownload: false,
+  disableWebInstaller: false,
+  checkForUpdates: vi.fn(),
+  downloadUpdate: vi.fn(),
+  quitAndInstall: vi.fn(),
 }))
-const childProcess = vi.hoisted(() => {
-  type Listener = (...args: unknown[]) => void
-  const listeners = new Map<string, Listener[]>()
-  const child = {
-    once: vi.fn((event: string, listener: Listener) => {
-      listeners.set(event, [...(listeners.get(event) ?? []), listener])
-      return child
-    }),
-    off: vi.fn((event: string, listener: Listener) => {
-      listeners.set(event, (listeners.get(event) ?? []).filter(candidate => candidate !== listener))
-      return child
-    }),
-    unref: vi.fn(),
-  }
-  return {
-    child,
-    emit(event: string, ...args: unknown[]) {
-      const current = [...(listeners.get(event) ?? [])]
-      listeners.delete(event)
-      for (const listener of current) listener(...args)
-    },
-    reset() { listeners.clear() },
-    spawn: vi.fn(() => child),
-  }
-})
 
 const MAIN_WINDOW_STATE_PATH = '/tmp/dsh-desktop-user-data/main-window-state.json'
+function isStableProductRelease(channel: DesktopReleaseChannel): boolean {
+  return channel === 'stable'
+}
 const PRODUCT_VERSION = (JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
 ) as { readonly version: string }).version
@@ -63,18 +49,7 @@ vi.mock('../src/diagnostic-export.ts', () => ({
 }))
 
 
-vi.mock('../src/update-download.ts', () => ({
-  desktopUpdateFilename: updater.filename,
-  downloadDesktopUpdate: updater.download,
-  pendingDesktopUpdateArtifact: updater.pending,
-  recordDesktopUpdateArtifact: updater.record,
-  resolveDesktopUpdateArtifact: updater.resolve,
-}))
-
-vi.mock('node:child_process', async (importOriginal) => ({
-  ...await importOriginal<typeof import('node:child_process')>(),
-  spawn: childProcess.spawn,
-}))
+vi.mock('electron-updater', () => ({ default: { autoUpdater: electronUpdater } }))
 
 const electron = vi.hoisted(() => {
   const browserWindowOptions: unknown[] = []
@@ -130,6 +105,8 @@ const electron = vi.hoisted(() => {
     focus: vi.fn(),
     isDestroyed: vi.fn(() => false),
     close: vi.fn(),
+    ipc: { handle: vi.fn(), removeHandler: vi.fn() },
+    mainFrame: { url: 'http://127.0.0.1:41234/' },
     loadURL,
   }
   const chromeWebContents = {
@@ -183,6 +160,7 @@ const electron = vi.hoisted(() => {
     readonly restore = vi.fn()
     readonly show = vi.fn()
     readonly hide = vi.fn()
+    readonly minimize = vi.fn()
     readonly focus = vi.fn()
     readonly on = browserWindowOn
     readonly off = browserWindowOff
@@ -368,19 +346,22 @@ describe('Electron desktop runtime', () => {
     electron.applicationMenuTemplates.length = 0
     electron.menuTemplates.length = 0
     electron.notifications.length = 0
-    childProcess.reset()
     vi.clearAllMocks()
-    updater.download.mockReset()
-    updater.filename.mockReset()
-    updater.filename.mockImplementation((platform: string, version: string) => (
-      `易宝工坊-${version}-${platform === 'darwin' ? 'mac.dmg' : 'windows.exe'}`
-    ))
-    updater.pending.mockReset()
-    updater.pending.mockResolvedValue(undefined)
-    updater.record.mockReset()
-    updater.record.mockResolvedValue(undefined)
-    updater.resolve.mockReset()
-    updater.resolve.mockResolvedValue(undefined)
+    electronUpdater.checkForUpdates.mockReset()
+    electronUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: { version: '2.1.0' },
+    })
+    electronUpdater.downloadUpdate.mockReset()
+    electronUpdater.downloadUpdate.mockResolvedValue(['/private/cache/eBao-Studio-2.1.0.zip'])
+    electronUpdater.quitAndInstall.mockReset()
+    electronUpdater.autoDownload = true
+    electronUpdater.autoInstallOnAppQuit = true
+    electronUpdater.autoRunAppAfterInstall = false
+    electronUpdater.allowPrerelease = false
+    electronUpdater.allowDowngrade = true
+    electronUpdater.disableDifferentialDownload = false
+    electronUpdater.disableWebInstaller = false
     diagnostics.export.mockReset()
     electron.loadURL.mockReset()
     electron.loadURL.mockResolvedValue(undefined)
@@ -389,7 +370,6 @@ describe('Electron desktop runtime', () => {
     electron.app.getPreferredSystemLanguages.mockReturnValue(['en-US'])
     electron.dialog.showMessageBox.mockResolvedValue({ response: 0, checkboxChecked: false })
     electron.dialog.showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] })
-    electron.dialog.showSaveDialog.mockResolvedValue({ canceled: true, filePath: undefined })
     electron.shell.openPath.mockResolvedValue('')
     electron.nativeTheme.themeSource = 'system'
     electron.resetZoomLevel()
@@ -470,6 +450,42 @@ describe('Electron desktop runtime', () => {
     await release()
     expect(electron.browserWindowOff).toHaveBeenCalledWith('page-title-updated', titleListener)
     expect(electron.trays[0]?.off).toHaveBeenCalledWith('click', expect.any(Function))
+  })
+
+  it('limits setup persistence to the active renderer main frame and releases its handler', async () => {
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const bridge = { read: vi.fn(async () => null), finish: vi.fn(async () => {}), dismissAccount: vi.fn(async () => {}), applyPending: vi.fn(async () => {}) }
+    runtime.setupOnboarding = bridge
+    const applySetupSettings = vi.fn(async () => {})
+    const release = runtime.schedule({ ...spec, applySetupSettings })
+    await runtime.mountScheduled()
+    const handler = electron.webContents.ipc.handle.mock.calls.find(([name]) => name === 'dsh-desktop:setup-onboarding')?.[1]
+    expect(handler).toBeTypeOf('function')
+    const previousUrl = electron.webContents.mainFrame.url
+    electron.webContents.mainFrame.url = spec.url
+    const sender = { sender: electron.webContents, senderFrame: electron.webContents.mainFrame }
+    await expect(handler(sender, { action: 'read' })).resolves.toBeNull()
+    await expect(handler({ ...sender, senderFrame: { url: sender.senderFrame.url } }, { action: 'read' })).rejects.toThrow('Untrusted')
+    await expect(handler(sender, { action: 'finish', profile: 'desktop', selection: { market: 'disabled' } })).rejects.toThrow('Invalid setup selection')
+    expect(bridge.finish).not.toHaveBeenCalled()
+    await handler(sender, { action: 'finish', profile: 'desktop' })
+    expect(bridge.finish).toHaveBeenCalledExactlyOnceWith('desktop', undefined, expect.any(Function))
+    // Setup saves through the renderer generation's own settings writer.
+    const settings = { mode: 'extended' }
+    await ((bridge.finish.mock.calls[0] as unknown[])[2] as (value: unknown) => Promise<void>)(settings)
+    expect(applySetupSettings).toHaveBeenCalledExactlyOnceWith(settings)
+    await expect(handler({ ...sender, senderFrame: { url: spec.url } }, { action: 'dismiss-account', profile: 'desktop' })).rejects.toThrow('Untrusted')
+    await handler(sender, { action: 'dismiss-account', profile: 'desktop' })
+    expect(bridge.dismissAccount).toHaveBeenCalledExactlyOnceWith('desktop')
+    await expect(handler({ ...sender, senderFrame: { url: spec.url } }, { action: 'apply-pending', profile: 'desktop' })).rejects.toThrow('Untrusted')
+    expect(bridge.applyPending).not.toHaveBeenCalled()
+    await handler(sender, { action: 'apply-pending', profile: 'desktop' })
+    expect(bridge.applyPending).toHaveBeenCalledExactlyOnceWith('desktop')
+    await release()
+    expect(electron.webContents.ipc.removeHandler).toHaveBeenCalledWith('dsh-desktop:setup-onboarding')
+    await expect(handler(sender, { action: 'read' })).rejects.toThrow('Untrusted')
+    electron.webContents.mainFrame.url = previousUrl
   })
 
   it('attaches the renderer capability to same-origin HTTP and WebSocket requests only', async () => {
@@ -836,11 +852,39 @@ describe('Electron desktop runtime', () => {
     await release()
   })
 
+  it('routes the macOS native flow through a trusted renderer and a parented Electron dialog', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    electron.dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/Users/test/Work'] })
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+    await runtime.mountScheduled()
+
+    const handler = electron.webContents.ipc.handle.mock.calls
+      .find(([name]) => name === 'dsh-desktop:native-directory-picker')?.[1]
+    expect(handler).toEqual(expect.any(Function))
+    const frame = electron.webContents.mainFrame
+    const previousUrl = frame.url
+    frame.url = spec.url
+    try {
+      await expect(handler({ sender: electron.webContents, senderFrame: frame })).resolves.toBe('/Users/test/Work')
+      expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(
+        electron.browserWindows[0],
+        { title: 'Select Workspace Directory', properties: ['openDirectory', 'dontAddToRecent'] },
+      )
+      await expect(handler({ sender: electron.webContents, senderFrame: { url: spec.url } }))
+        .rejects.toThrow('untrusted directory picker sender')
+    } finally {
+      frame.url = previousUrl
+      await release()
+    }
+  })
+
   it('blocks unsupported workspace volumes without returning a risky path', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const query = vi.fn(() => ({ root: 'E:\\', fileSystem: 'EXFAT', driveType: 2 }))
-    const logger = { error: vi.fn(), errorCause: vi.fn() }
+    const logger = { error: vi.fn(), errorCause: vi.fn(), info: vi.fn() }
     const runtime = new ElectronDesktopRuntime(async () => {}, undefined, logger, query)
 
     await expect(runtime.validateDirectory('E:\\repo')).resolves.toBe(false)
@@ -858,7 +902,7 @@ describe('Electron desktop runtime', () => {
     electron.dialog.showMessageBox.mockResolvedValue({ response: 1, checkboxChecked: false })
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const query = vi.fn(() => ({ root: 'E:\\', fileSystem: 'NTFS', driveType: 2 }))
-    const logger = { error: vi.fn(), errorCause: vi.fn() }
+    const logger = { error: vi.fn(), errorCause: vi.fn(), info: vi.fn() }
     const runtime = new ElectronDesktopRuntime(async () => {}, undefined, logger, query)
 
     await expect(runtime.validateDirectory('E:\\repo')).resolves.toBe(false)
@@ -875,10 +919,77 @@ describe('Electron desktop runtime', () => {
     expect(logger.error).toHaveBeenCalledWith('dsh-plugin-desktop: workspace volume decision=confirmed path=E:\\repo')
   })
 
+  it('offers restart first when the supervised Host is gone, and names the exit code', async () => {
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const restart = vi.fn(async () => {})
+    const runtime = new ElectronDesktopRuntime(restart)
+
+    await runtime.showHostStoppedRecovery({ exitCode: 0 })
+
+    expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      buttons: ['Restart 易宝工坊', 'Open DSH Terminal', 'Dismiss'],
+      defaultId: 0,
+      cancelId: 2,
+      detail: expect.stringContaining('0 / 0x00000000'),
+    }))
+    // Response 0 walks the existing restart confirmation before relaunching.
+    expect(restart).toHaveBeenCalledOnce()
+  })
+
+  it('opens the terminal instead of restarting when the reader wants the logs first', async () => {
+    electron.dialog.showMessageBox.mockResolvedValue({ response: 1, checkboxChecked: false })
+    Object.defineProperty(process.versions, 'electron', { configurable: true, value: '43.4.0' })
+    try {
+      const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+      const restart = vi.fn(async () => {})
+      const runtime = new ElectronDesktopRuntime(restart)
+      const userDataPath = electron.app.getPath('userData')
+      runtime.configureTerminal({
+        profileName: 'desktop',
+        profileDir: join(userDataPath, 'profiles', 'desktop'),
+        homeDir: userDataPath,
+      })
+
+      await runtime.showHostStoppedRecovery({ exitCode: 3 })
+
+      expect(terminal.open).toHaveBeenCalledOnce()
+      expect(restart).not.toHaveBeenCalled()
+    } finally {
+      delete (process.versions as { electron?: string }).electron
+    }
+  })
+
+  it('shows one Host recovery dialog no matter how many failures land on it', async () => {
+    electron.dialog.showMessageBox.mockResolvedValue({ response: 2, checkboxChecked: false })
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const restart = vi.fn(async () => {})
+    const runtime = new ElectronDesktopRuntime(restart)
+
+    await Promise.all([
+      runtime.showHostStoppedRecovery({ exitCode: 0 }),
+      runtime.showHostStoppedRecovery({ exitCode: 0 }),
+      runtime.showHostStoppedRecovery({ exitCode: 0 }),
+    ])
+
+    expect(electron.dialog.showMessageBox).toHaveBeenCalledOnce()
+    expect(restart).not.toHaveBeenCalled()
+  })
+
+  it('stays silent about a Host exit that is part of quitting', async () => {
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+
+    runtime.prepareToQuit()
+    await runtime.showHostStoppedRecovery({ exitCode: 0 })
+
+    expect(electron.dialog.showMessageBox).not.toHaveBeenCalled()
+  })
+
   it('logs renderer crashes with the Windows exception code', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const logger = { error: vi.fn(), errorCause: vi.fn() }
+    const logger = { error: vi.fn(), errorCause: vi.fn(), info: vi.fn() }
     const runtime = new ElectronDesktopRuntime(async () => {}, undefined, logger)
     const release = runtime.schedule(spec)
     await runtime.mountScheduled()
@@ -898,7 +1009,7 @@ describe('Electron desktop runtime', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const onRendererBoot = vi.fn(() => true)
-    const logger = { error: vi.fn(), errorCause: vi.fn() }
+    const logger = { error: vi.fn(), errorCause: vi.fn(), info: vi.fn() }
     const runtime = new ElectronDesktopRuntime(async () => {}, onRendererBoot, logger)
     const release = runtime.schedule(spec)
     const rendererBoot = runtime.beginRendererBootMonitoring({ commitHealthy: async () => {} })
@@ -1025,7 +1136,7 @@ describe('Electron desktop runtime', () => {
       vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
       const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
       const restart = vi.fn(async () => {})
-      const logger = { error: vi.fn(), errorCause: vi.fn() }
+      const logger = { error: vi.fn(), errorCause: vi.fn(), info: vi.fn() }
       const runtime = new ElectronDesktopRuntime(restart, undefined, logger)
       const release = runtime.schedule(spec)
       const commitHealthy = vi.fn(async () => {})
@@ -1133,19 +1244,62 @@ describe('Electron desktop runtime', () => {
       electron.webContents.executeJavaScript.mockResolvedValue(null)
     })
 
-    it('replaces a persistently unresponsive renderer without waiting for it to exit itself', async () => {
-      const { release, window, gone } = await mountHealthyRenderer()
+    it('replaces a persistently unresponsive renderer and reloads once its exit lands', async () => {
+      const { release, window, gone, logger } = await mountHealthyRenderer()
       window.isVisible.mockReturnValue(true)
       electron.webContents.executeJavaScript.mockImplementation(() => new Promise(() => {}))
-      electron.webContents.forcefullyCrashRenderer.mockImplementationOnce(() => {
-        gone({}, { reason: 'crashed', exitCode: 9 })
-      })
       await vi.advanceTimersByTimeAsync(30_001)
+      // forcefullyCrashRenderer() returns before the process is gone. A reload
+      // issued in the same turn goes to a RenderFrameHost that is already being
+      // torn down, and Chromium cancels it along with the process.
       expect(electron.webContents.forcefullyCrashRenderer).toHaveBeenCalledOnce()
+      expect(electron.webContents.reloadIgnoringCache).not.toHaveBeenCalled()
+      expect(logger.error).toHaveBeenCalledWith(
+        'dsh-plugin-desktop: terminating unresponsive renderer; the crash dump it produces is deliberate',
+      )
+      gone({}, { reason: 'killed', exitCode: -536870904 })
       expect(electron.webContents.reloadIgnoringCache).toHaveBeenCalledOnce()
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('unresponsive renderer replaced'))
       expect(electron.dialog.showMessageBox).not.toHaveBeenCalled()
       await release()
       electron.webContents.executeJavaScript.mockResolvedValue(null)
+    })
+
+    it('reloads anyway when a forced termination never reports its exit', async () => {
+      const { release, window, logger } = await mountHealthyRenderer()
+      window.isVisible.mockReturnValue(true)
+      electron.webContents.executeJavaScript.mockImplementation(() => new Promise(() => {}))
+      await vi.advanceTimersByTimeAsync(30_001)
+      expect(electron.webContents.forcefullyCrashRenderer).toHaveBeenCalledOnce()
+      expect(electron.webContents.reloadIgnoringCache).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(electron.webContents.reloadIgnoringCache).toHaveBeenCalledOnce()
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('reported no exit within the deadline'),
+      )
+      await release()
+      electron.webContents.executeJavaScript.mockResolvedValue(null)
+    })
+
+    it('keeps a native reload reachable and clears an exhausted recovery through it', async () => {
+      const { runtime, release, exhaust, healthy, window } = await mountHealthyRenderer()
+      electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+      await exhaust()
+      expect(electron.dialog.showMessageBox).toHaveBeenCalledOnce()
+      const reloads = electron.webContents.reloadIgnoringCache.mock.calls.length
+      const item = (electron.menuTemplates.at(-1) as Array<{ label?: string, click?: () => void }>)
+        .find(entry => entry.label === 'Reload Interface')
+      expect(item?.click).toBeTypeOf('function')
+      item!.click!()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(electron.webContents.reloadIgnoringCache).toHaveBeenCalledTimes(reloads + 1)
+      healthy()
+      // A recovered generation must not re-arm the degraded prompt on reveal.
+      window.isVisible.mockReturnValue(false)
+      runtime.show()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(electron.dialog.showMessageBox).toHaveBeenCalledOnce()
+      await release()
     })
 
     it('retries a failed main-frame load but ignores subframe errors and aborted navigation', async () => {
@@ -1364,7 +1518,7 @@ describe('Electron desktop runtime', () => {
   it('keeps external window links deny-by-default with a narrow protocol allowlist', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const logger = { error: vi.fn(), errorCause: vi.fn() }
+    const logger = { error: vi.fn(), errorCause: vi.fn(), info: vi.fn() }
     const runtime = new ElectronDesktopRuntime(async () => {}, undefined, logger)
     const release = runtime.schedule(spec)
 
@@ -1479,6 +1633,36 @@ describe('Electron desktop runtime', () => {
     close(quittingCloseEvent)
     expect(quittingCloseEvent.preventDefault).not.toHaveBeenCalled()
     expect(window?.hide).toHaveBeenCalledOnce()
+
+    await release()
+  })
+
+  // `new Tray()` succeeds on Linux desktops that render no status area at all,
+  // so hiding the window there can strand a running Host with no way back.
+  it('minimizes instead of hiding when a Linux window is closed', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+    const release = runtime.schedule(spec)
+
+    await runtime.mountScheduled()
+
+    const window = electron.browserWindows[0]
+    const close = electron.browserWindowOn.mock.calls.find(([event]) => event === 'close')?.[1]
+    expect(close).toEqual(expect.any(Function))
+
+    const closeEvent = { preventDefault: vi.fn() }
+    close(closeEvent)
+    expect(closeEvent.preventDefault).toHaveBeenCalledOnce()
+    expect(window?.minimize).toHaveBeenCalledOnce()
+    expect(window?.hide).not.toHaveBeenCalled()
+
+    // Quitting still tears the window down instead of leaving it minimized.
+    runtime.prepareToQuit()
+    const quittingCloseEvent = { preventDefault: vi.fn() }
+    close(quittingCloseEvent)
+    expect(quittingCloseEvent.preventDefault).not.toHaveBeenCalled()
+    expect(window?.minimize).toHaveBeenCalledOnce()
 
     await release()
   })
@@ -1847,7 +2031,7 @@ describe('Electron desktop runtime', () => {
 
     const labels = (electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label)
     expect(labels).toEqual([
-      'Open 易宝工坊', undefined,
+      'Open 易宝工坊', 'Reload Interface', undefined,
       'Earlier Tool', 'Later Tool', undefined,
       'Check for Updates…', undefined,
       'Mode: Compatibility Mode', undefined,
@@ -2117,7 +2301,7 @@ describe('Electron desktop runtime', () => {
   it('logs the renderer boot failure details for diagnostics', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const logger = { error: vi.fn(), errorCause: vi.fn() }
+    const logger = { error: vi.fn(), errorCause: vi.fn(), info: vi.fn() }
     const runtime = new ElectronDesktopRuntime(async () => {}, () => {}, logger)
     const rendererBoot = runtime.beginRendererBootMonitoring({ commitHealthy: async () => {} })
 
@@ -2348,18 +2532,17 @@ describe('Electron desktop runtime', () => {
     expect(restart).toHaveBeenLastCalledWith('safe-mode')
   })
 
-  it('uses Electron networking and confirmation-gated macOS update handoff', async () => {
+  it('uses Electron Updater after a confirmation-gated stable update check', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     const response = Response.json({ version: '2.1.0' })
     electron.net.fetch.mockResolvedValueOnce(response)
-    updater.download.mockResolvedValueOnce('/tmp/易宝工坊-2.1.0-mac.dmg')
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
     const release = runtime.schedule(spec)
     await runtime.mountScheduled()
     const activeWindow = electron.browserWindows[0]
 
-    await expect(runtime.updates.request('https://www.dshdesktop.cn/api/desktop/version', { method: 'GET' }))
+    await expect(runtime.updates.request('https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json', { method: 'GET' }))
       .resolves.toBe(response)
     expect(runtime.updates).toMatchObject({
       isPackaged: false,
@@ -2368,7 +2551,7 @@ describe('Electron desktop runtime', () => {
       statePath: join('/tmp/dsh-desktop-user-data', 'updates', 'state.json'),
     })
     electron.app.isPackaged = true
-    expect(runtime.updates).toMatchObject({ isPackaged: true, canDownload: true })
+    expect(runtime.updates.canDownload).toBe(isStableProductRelease(DESKTOP_RELEASE_CHANNEL))
 
     await runtime.updates.showManualCheckResult({
       status: 'up-to-date',
@@ -2395,43 +2578,36 @@ describe('Electron desktop runtime', () => {
 
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
     await expect(runtime.updates.confirmDownload('2.1.0')).resolves.toBe(false)
-    expect(updater.download).not.toHaveBeenCalled()
+    expect(electronUpdater.downloadUpdate).not.toHaveBeenCalled()
 
-    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
-    await expect(runtime.updates.confirmDownload('2.1.0')).resolves.toBe(true)
-    const controller = new AbortController()
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePath: '/tmp/Downloads/易宝工坊-2.1.0-mac.dmg',
-    })
-    await runtime.updates.downloadAndOpen('2.1.0', controller.signal)
-    expect(electron.dialog.showSaveDialog).toHaveBeenCalledWith(
-      activeWindow,
-      expect.objectContaining({
-        defaultPath: join('/tmp/Downloads', '易宝工坊-2.1.0-mac.dmg'),
-        filters: [{ name: 'Disk Image', extensions: ['dmg'] }],
-      }),
-    )
-    expect(updater.download).toHaveBeenCalledWith({
-      platform: 'darwin',
-      version: '2.1.0',
-      destinationPath: '/tmp/Downloads/易宝工坊-2.1.0-mac.dmg',
-      request: expect.any(Function),
-      signal: controller.signal,
-    })
-    expect(electron.shell.openPath).toHaveBeenCalledWith('/tmp/易宝工坊-2.1.0-mac.dmg')
-    expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
-      platform: 'darwin',
-      version: '2.1.0',
-      path: '/tmp/易宝工坊-2.1.0-mac.dmg',
-    })
-    expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
-      activeWindow,
-      expect.objectContaining({
-        title: '易宝工坊 Update Downloaded',
-        buttons: ['OK'],
-      }),
-    )
+    if (isStableProductRelease(DESKTOP_RELEASE_CHANNEL)) {
+      electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+      await expect(runtime.updates.confirmDownload('2.1.0')).resolves.toBe(true)
+      await runtime.updates.downloadAndInstall('2.1.0', new AbortController().signal)
+      expect(electronUpdater).toMatchObject({
+        autoDownload: false,
+        autoInstallOnAppQuit: false,
+        autoRunAppAfterInstall: true,
+        allowPrerelease: true,
+        allowDowngrade: false,
+        disableDifferentialDownload: true,
+        disableWebInstaller: true,
+      })
+      expect(electronUpdater.checkForUpdates).toHaveBeenCalledOnce()
+      expect(electronUpdater.downloadUpdate).toHaveBeenCalledWith(expect.objectContaining({ cancelled: false }))
+      expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
+        activeWindow,
+        expect.objectContaining({
+          title: '易宝工坊 Update Downloaded',
+          buttons: ['Restart and Update', 'Later'],
+        }),
+      )
+      expect(electronUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
+    } else {
+      await expect(runtime.updates.downloadAndInstall('2.1.0', new AbortController().signal))
+        .rejects.toThrow('only to the stable Desktop edition')
+      expect(electronUpdater.downloadUpdate).not.toHaveBeenCalled()
+    }
 
     runtime.updates.notify({
       title: 'Profile Recovered',
@@ -2449,191 +2625,51 @@ describe('Electron desktop runtime', () => {
     expect(activeWindow?.show).toHaveBeenCalledTimes(2)
     expect(activeWindow?.focus).toHaveBeenCalledTimes(2)
 
+    const updateAction = vi.fn()
+    const releaseUpdateAction = runtime.updates.registerNotificationAction('open-update', updateAction)
+    runtime.updates.notify({
+      title: '易宝工坊 Update Available',
+      body: 'Click to review the update.',
+      action: 'open-update',
+    })
+    const updateNotification = electron.notifications[1]
+    const updateClick = updateNotification?.once.mock.calls.find(([event]) => event === 'click')?.[1]
+    updateClick()
+    await vi.waitFor(() => { expect(updateAction).toHaveBeenCalledOnce() })
+    expect(activeWindow?.show).toHaveBeenCalledTimes(3)
+    expect(activeWindow?.focus).toHaveBeenCalledTimes(3)
+    releaseUpdateAction()
+
     await release()
   })
 
-  it('starts the downloaded Windows installer visibly before requesting orderly exit', async () => {
+  it('keeps a downloaded stable update staged when the user chooses Later', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    updater.download.mockResolvedValueOnce('C:\\Updates\\易宝工坊-2.1.0-windows.exe')
-    const requestQuit = vi.fn()
-    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const runtime = new ElectronDesktopRuntime(async () => {})
-    runtime.schedule({ ...spec, requestQuit })
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePath: 'C:\\Updates\\易宝工坊-2.1.0-windows.exe',
-    })
-
-    const pending = runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
-    await vi.waitFor(() => { expect(childProcess.spawn).toHaveBeenCalledOnce() })
-    expect(childProcess.spawn).toHaveBeenCalledWith(
-      'C:\\Updates\\易宝工坊-2.1.0-windows.exe',
-      ['--updated', '--force-run'],
-      {
-        detached: true,
-        stdio: 'ignore',
-        shell: false,
-        windowsHide: false,
-      },
-    )
-    expect(requestQuit).not.toHaveBeenCalled()
-    childProcess.emit('spawn')
-    await pending
-
-    expect(childProcess.child.unref).toHaveBeenCalledOnce()
-    expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
-      platform: 'win32',
-      version: '2.1.0',
-      path: 'C:\\Updates\\易宝工坊-2.1.0-windows.exe',
-    })
-    expect(requestQuit).toHaveBeenCalledWith(0)
-  })
-
-  it('does not exit when the downloaded Windows installer fails to spawn', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    updater.download.mockResolvedValueOnce('C:\\Updates\\易宝工坊-2.1.0-windows.exe')
-    const requestQuit = vi.fn()
-    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const runtime = new ElectronDesktopRuntime(async () => {})
-    runtime.schedule({ ...spec, requestQuit })
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePath: 'C:\\Updates\\易宝工坊-2.1.0-windows.exe',
-    })
-
-    const pending = runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
-    await vi.waitFor(() => { expect(childProcess.spawn).toHaveBeenCalledOnce() })
-    childProcess.emit('error', new Error('blocked'))
-
-    await expect(pending).rejects.toThrow('blocked')
-    expect(updater.record).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', {
-      platform: 'win32',
-      version: '2.1.0',
-      path: 'C:\\Updates\\易宝工坊-2.1.0-windows.exe',
-    })
-    expect(updater.resolve).not.toHaveBeenCalled()
-    expect(childProcess.child.unref).not.toHaveBeenCalled()
-    expect(requestQuit).not.toHaveBeenCalled()
-  })
-
-  it('keeps a downloaded Windows installer idle when installation is deferred', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    updater.download.mockResolvedValueOnce('C:\\Updates\\易宝工坊-2.1.0-windows.exe')
+    if (!isStableProductRelease(DESKTOP_RELEASE_CHANNEL)) return
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePath: 'C:\\Updates\\易宝工坊-2.1.0-windows.exe',
-    })
 
-    await runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
+    await runtime.updates.downloadAndInstall('2.1.0', new AbortController().signal)
 
-    expect(childProcess.spawn).not.toHaveBeenCalled()
-    expect(updater.record).toHaveBeenCalledOnce()
+    expect(electronUpdater.downloadUpdate).toHaveBeenCalledOnce()
+    expect(electronUpdater.quitAndInstall).not.toHaveBeenCalled()
   })
 
-  it('continues the update handoff when cleanup tracking cannot be persisted', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    updater.download.mockResolvedValueOnce('C:\\Updates\\易宝工坊-2.1.0-windows.exe')
-    updater.record.mockRejectedValueOnce(new Error('read-only user data'))
-    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePath: 'C:\\Updates\\易宝工坊-2.1.0-windows.exe',
-    })
-    const logger = { error: vi.fn(), errorCause: vi.fn() }
-    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const runtime = new ElectronDesktopRuntime(async () => {}, undefined, logger)
-
-    await expect(runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal))
-      .resolves.toBeUndefined()
-
-    expect(logger.error).toHaveBeenCalledWith(
-      'dsh-plugin-desktop: failed to remember update installer for cleanup: read-only user data',
-    )
-    expect(childProcess.spawn).not.toHaveBeenCalled()
-  })
-
-  it('does not download when the update destination picker is cancelled', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const runtime = new ElectronDesktopRuntime(async () => {})
-
-    await runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal)
-
-    expect(electron.dialog.showSaveDialog).toHaveBeenCalledOnce()
-    expect(updater.download).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    [0, true],
-    [1, false],
-  ])('resolves the post-install artifact choice response=%s remove=%s', async (response, remove) => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const artifact = {
-      platform: 'win32' as const,
-      version: '2.0.1',
-      path: 'C:\\Updates\\易宝工坊-2.0.1-windows.exe',
-    }
-    updater.pending.mockResolvedValueOnce(artifact)
-    electron.dialog.showMessageBox.mockResolvedValueOnce({ response, checkboxChecked: false })
-    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const runtime = new ElectronDesktopRuntime(async () => {})
-    runtime.schedule(spec)
-
-    await runtime.mountScheduled()
-    await vi.waitFor(() => { expect(updater.resolve).toHaveBeenCalledOnce() })
-
-    expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(
-      electron.browserWindows[0],
-      expect.objectContaining({
-        title: 'Remove Update Installer',
-        detail: expect.stringContaining(artifact.path),
-        buttons: ['Delete Installer', 'Keep Installer'],
-      }),
-    )
-    expect(updater.resolve).toHaveBeenCalledWith('/tmp/dsh-desktop-user-data', artifact, remove)
-  })
-
-  it('rejects a macOS handoff when the operating system cannot open the DMG', async () => {
+  it('rejects a release feed that disagrees with the manifest-confirmed version', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
-    updater.download.mockResolvedValueOnce('/tmp/易宝工坊-2.1.0-mac.dmg')
-    electron.shell.openPath.mockResolvedValueOnce('Launch Services rejected the image')
+    if (!isStableProductRelease(DESKTOP_RELEASE_CHANNEL)) return
+    electronUpdater.checkForUpdates.mockResolvedValueOnce({
+      isUpdateAvailable: true,
+      updateInfo: { version: '2.2.0' },
+    })
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePath: '/tmp/易宝工坊-2.1.0-mac.dmg',
-    })
 
-    await expect(runtime.updates.downloadAndOpen('2.1.0', new AbortController().signal))
-      .rejects.toThrow('Launch Services rejected the image')
-    expect(electron.dialog.showMessageBox).not.toHaveBeenCalled()
-  })
-
-  it('does not show macOS completion after the update generation is cancelled', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
-    updater.download.mockResolvedValueOnce('/tmp/易宝工坊-2.1.0-mac.dmg')
-    let finishOpen!: (result: string) => void
-    electron.shell.openPath.mockImplementationOnce(async () => new Promise<string>(resolve => {
-      finishOpen = resolve
-    }))
-    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const runtime = new ElectronDesktopRuntime(async () => {})
-    const controller = new AbortController()
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePath: '/tmp/易宝工坊-2.1.0-mac.dmg',
-    })
-
-    const pending = runtime.updates.downloadAndOpen('2.1.0', controller.signal)
-    await vi.waitFor(() => { expect(electron.shell.openPath).toHaveBeenCalledOnce() })
-    controller.abort()
-    finishOpen('')
-
-    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
-    expect(electron.dialog.showMessageBox).not.toHaveBeenCalled()
+    await expect(runtime.updates.downloadAndInstall('2.1.0', new AbortController().signal))
+      .rejects.toThrow('does not match confirmed 2.1.0')
+    expect(electronUpdater.downloadUpdate).not.toHaveBeenCalled()
+    expect(electronUpdater.quitAndInstall).not.toHaveBeenCalled()
   })
 
   it('uses advanced macOS material options and offers compatibility mode', async () => {
@@ -2674,35 +2710,7 @@ describe('Electron desktop runtime', () => {
     expect(electron.nativeTheme.themeSource).toBe('light')
   })
 
-  it('refreshes the Windows Mica backdrop after a live advanced theme change', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    electron.nativeTheme.themeSource = 'light'
-    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
-    const runtime = new ElectronDesktopRuntime(async () => {})
-    const release = runtime.schedule({
-      ...spec,
-      mode: 'advanced',
-      material: 'mica',
-      windowsBuild: 22_631,
-      readThemeSource: () => 'light',
-    })
-
-    runtime.setThemeSource('dark')
-    expect(electron.nativeTheme.themeSource).toBe('light')
-    await runtime.mountScheduled()
-
-    const window = electron.browserWindows[0]
-    window?.setBackgroundMaterial.mockClear()
-    runtime.setThemeSource('dark')
-
-    expect(electron.nativeTheme.themeSource).toBe('dark')
-    expect(window?.setBackgroundMaterial).toHaveBeenCalledOnce()
-    expect(window?.setBackgroundMaterial).toHaveBeenCalledWith('mica')
-
-    await release()
-  })
-
-  it('keeps an extended Windows 10 window opaque when material is off', async () => {
+  it('keeps an extended Windows window opaque', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     electron.nativeTheme.themeSource = 'light'
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
@@ -2711,7 +2719,6 @@ describe('Electron desktop runtime', () => {
       ...spec,
       mode: 'extended',
       material: 'off',
-      windowsBuild: 19_045,
       readThemeSource: () => 'dark',
     })
 
@@ -2731,7 +2738,7 @@ describe('Electron desktop runtime', () => {
     await release()
   })
 
-  it('does not install a native backdrop when Windows material is off', async () => {
+  it('never installs a native backdrop on Windows, even after a live theme change', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     electron.nativeTheme.themeSource = 'light'
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
@@ -2740,7 +2747,6 @@ describe('Electron desktop runtime', () => {
       ...spec,
       mode: 'extended',
       material: 'off',
-      windowsBuild: 22_621,
       readThemeSource: () => 'dark',
     })
 
@@ -2782,5 +2788,28 @@ describe('Electron desktop runtime', () => {
     expect(electron.webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(null)
     await expect(release()).rejects.toThrow('renderer unavailable')
     expect(electron.nativeTheme.themeSource).toBe('light')
+  })
+
+  it('warns before quitting while the Publisher Worker has an active task', async () => {
+    const publisherRequest = vi.fn(async () => ({ busy: true }))
+    const publisher: DesktopPublisherRuntime = {
+      status: () => ({ supported: true, running: true }),
+      selectLocalVideo: async () => null,
+      readLocalVideoChunk: async () => ({ ok: false, code: 'video-selection-expired', message: 'missing' }),
+      request: publisherRequest as DesktopPublisherRuntime['request'],
+    }
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(
+      async () => {}, undefined, undefined, undefined, undefined, undefined, publisher,
+    )
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    await expect(runtime.confirmPublisherQuit()).resolves.toBe(false)
+    expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'warning',
+      defaultId: 1,
+      cancelId: 1,
+    }))
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+    await expect(runtime.confirmPublisherQuit()).resolves.toBe(true)
   })
 })

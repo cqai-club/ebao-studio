@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { prepareFsExtForElectron } from './prepare-fs-ext.ts'
 import { electronBuilderEnvironment } from './electron-builder-environment.ts'
+import { verifyWindowsPublisherHelper } from './publisher-helper.ts'
 
 const WINDOWS_SIGNING_KEYS = [
   'CSC_IDENTITY_AUTO_DISCOVERY',
@@ -15,6 +16,29 @@ const WINDOWS_SIGNING_KEYS = [
   'WIN_CSC_KEY_PASSWORD',
   'WIN_CSC_LINK',
 ] as const
+
+const WINDOWS_COMPRESSION_LEVELS = new Set(['store', 'normal', 'maximum'])
+
+/**
+ * Read an optional electron-builder compression override for unsigned CI
+ * artifacts. Compression dominates the Windows job while the smoke artifacts
+ * are never published, so CI may select `store`; release builds leave the
+ * variable unset and keep `build.win.compression`.
+ * @param environment - Environment of the packaging process.
+ * @returns The override, or `undefined` to keep the package configuration.
+ */
+export function windowsCompressionOverride(
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  const value = environment.DSH_WINDOWS_PACKAGE_COMPRESSION
+  if (value === undefined || value === '') return undefined
+  if (!WINDOWS_COMPRESSION_LEVELS.has(value)) {
+    throw new Error(
+      `DSH_WINDOWS_PACKAGE_COMPRESSION must be store, normal, or maximum; received ${JSON.stringify(value)}`,
+    )
+  }
+  return value
+}
 
 /** Injectable native Windows packaging boundary used by focused tests. */
 export interface WindowsPackageOptions {
@@ -36,6 +60,8 @@ export interface WindowsPackageOptions {
   readonly builderCli: string
   /** Prepare platform-specific native runtime dependencies before packaging. */
   readonly prepareRuntime: () => void
+  /** Validate the separately built Windows Publisher Worker before Desktop builds. */
+  readonly verifyPublisherWorker: () => void
   /** Absolute packaged-installer verification script. */
   readonly verifier: string
   /** Node executable used to run package-local scripts. */
@@ -100,6 +126,7 @@ export function createWindowsPackageOptions(verifier = './verify-win-installer.t
     prepareRuntime: () => {
       prepareFsExtForElectron({ platform: 'win32', arch: 'x64', desktopRoot })
     },
+    verifyPublisherWorker: () => { verifyWindowsPublisherHelper(workspaceRoot) },
     verifier: fileURLToPath(new URL(verifier, import.meta.url)),
     nodeExecutable: process.execPath,
     run,
@@ -132,9 +159,14 @@ export function packageWindowsArtifact(
   artifact: 'installer' | 'portable archive',
 ): void {
   assertWindowsPackageHost(options, artifact)
+  options.verifyPublisherWorker()
+  const compression = windowsCompressionOverride(options.env)
 
   const cleanEnvironment = withoutWindowsSigningSecrets(options.env)
   options.log(`Building an unsigned Windows x64 ${artifact}; Authenticode is a separate release step.`)
+  if (compression !== undefined) {
+    options.log(`Packaging the ${artifact} with ${compression} compression.`)
+  }
   if (options.env.DSH_PACKAGE_CHECK_ALREADY_RAN !== '1') {
     options.run(
       options.commandShell,
@@ -162,6 +194,7 @@ export function packageWindowsArtifact(
       'never',
       '--config.win.signExecutable=false',
       '--config.npmRebuild=false',
+      ...(compression === undefined ? [] : [`--config.win.compression=${compression}`]),
     ],
     options.desktopRoot,
     electronBuilderEnvironment({

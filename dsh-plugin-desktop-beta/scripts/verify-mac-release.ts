@@ -6,9 +6,15 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MACOS_UNIVERSAL_NATIVE_ENTRIES } from './mac-universal.ts'
+import {
+  PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH,
+  PUBLISHER_HELPER_UNIVERSAL_ENTRIES,
+} from './publisher-helper.ts'
 
 /** Injectable filesystem and command boundaries for release verification. */
 export interface MacReleaseVerificationOptions {
+  /** Native inventory for shells which do not load legacy-only modules. */
+  readonly nativeEntries?: readonly { readonly arch: string; readonly path: string }[]
   /** Directory containing exactly one release DMG. */
   readonly distDir: string
   /** Installed application name inside the mounted image. */
@@ -80,9 +86,27 @@ export function verifyMacRelease(
     options.run('lipo', [executablePath, '-verify_arch', 'x86_64'])
     options.run('lipo', [executablePath, '-verify_arch', 'arm64'])
     const unpackedRoot = join(appPath, 'Contents', 'Resources', 'app.asar.unpacked')
-    for (const entry of MACOS_UNIVERSAL_NATIVE_ENTRIES) {
+    for (const entry of options.nativeEntries ?? MACOS_UNIVERSAL_NATIVE_ENTRIES) {
       options.run('lipo', [join(unpackedRoot, entry.path), '-verify_arch', entry.arch])
+      if (entry.path.endsWith('/bin/uv')) {
+        options.run('/bin/test', ['-x', join(unpackedRoot, entry.path)])
+        if (entry.arch === (process.arch === 'x64' ? 'x86_64' : process.arch)) {
+          options.run(join(unpackedRoot, entry.path), ['--version'])
+        }
+      }
     }
+    const publisherHelperPath = join(appPath, PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH)
+    for (const entry of PUBLISHER_HELPER_UNIVERSAL_ENTRIES) {
+      const nativePath = join(publisherHelperPath, entry)
+      options.run('lipo', [nativePath, '-verify_arch', 'x86_64'])
+      options.run('lipo', [nativePath, '-verify_arch', 'arm64'])
+    }
+    // electron-osx-sign walks nested bundles depth-first before sealing the outer
+    // application. Verify the Helper independently so an outer --deep check cannot
+    // hide a missing or invalid nested signature.
+    options.run('codesign', [
+      '--verify', '--deep', '--strict', '--verbose=2', publisherHelperPath,
+    ])
     options.run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath])
     options.run('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath])
     options.run('xcrun', ['stapler', 'validate', appPath])
@@ -117,7 +141,7 @@ if (invokedPath !== undefined && resolve(invokedPath) === fileURLToPath(import.m
     const verified = verifyMacRelease()
     console.log(`macOS release verification passed: ${verified.dmgPath}`)
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error))
+    console.error(error)
     process.exitCode = 1
   }
 }

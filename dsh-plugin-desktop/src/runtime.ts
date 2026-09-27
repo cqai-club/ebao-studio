@@ -4,11 +4,14 @@ import type { RendererBootReport } from './renderer-boot-contract.ts'
 import type { DesktopReleaseChannel, UpdateCheckResult, UpdateRequest } from './update-checker.ts'
 import type { DesktopInstallationId } from './desktop-installation-id.ts'
 import type { ProfileCreateWindowOptions } from './profile-create-window.ts'
+import type { DesktopPublisherRuntime } from './publisher-runtime.ts'
+import type { DesktopPlatformLoginRequest } from './platform-login.ts'
 import type {
   DesktopWindowMaterial,
   MacosWindowMaterial,
   PersistedWindowsWindowMaterial,
 } from './window-material.ts'
+import type { DesktopSetupWizardSettings } from './setup-wizard-settings.ts'
 
 /** Electron platforms supported by the 易宝工坊 native adapter. */
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
@@ -93,18 +96,23 @@ export interface DesktopTrayItemRegistration {
 }
 
 /** Native notification shown by a desktop-owned Host plugin. */
+export type DesktopNotificationAction = 'open-update'
+
+/** Native notification shown by a desktop-owned Host plugin. */
 export interface DesktopNotification {
   /** Notification heading. */
   title: string
   /** Concise user-facing status. */
   body: string
+  /** Optional serializable action invoked when this notification is clicked. */
+  action?: DesktopNotificationAction
 }
 
 /** Electron capabilities used by the headless update plugin. */
 export interface DesktopUpdateAdapter {
   /** Whether the running executable came from an Electron package. */
   readonly isPackaged: boolean
-  /** Whether this platform has a fixed installer download endpoint. */
+  /** Whether this packaged product can perform an in-place stable update. */
   readonly canDownload: boolean
   /** Installed desktop product version. */
   readonly currentVersion: string
@@ -120,8 +128,13 @@ export interface DesktopUpdateAdapter {
   confirmDownload(version: string, channel?: DesktopReleaseChannel): Promise<boolean>
   /** Present the outcome of a user-triggered version check. */
   showManualCheckResult(result: UpdateCheckResult | null): Promise<void>
-  /** Download and hand one confirmed update to the platform installer. */
-  downloadAndOpen(version: string, signal: AbortSignal, channel?: DesktopReleaseChannel): Promise<void>
+  /** Download one confirmed update and stage it for an explicit restart. */
+  downloadAndInstall(version: string, signal: AbortSignal, channel?: DesktopReleaseChannel): Promise<void>
+  /** Register a serializable native-notification action for the current Host generation. */
+  registerNotificationAction(
+    action: DesktopNotificationAction,
+    handler: () => void | Promise<void>,
+  ): () => void
   /** Present a native status notification without blocking the Host tree. */
   notify(notification: DesktopNotification): void
 }
@@ -138,10 +151,8 @@ export interface DesktopTerminalSpec {
 
 /** Values the desktop-shell plugin hands to the Electron adapter. */
 export interface DesktopShellSpec extends DesktopWindowConfig {
-  /** Actual material after platform and Windows-build capability gating. */
+  /** Actual material after platform capability gating. */
   material: DesktopWindowMaterial
-  /** Windows build used for material capability reporting, when applicable. */
-  windowsBuild?: number
   /** Unmodified Web root served by the active DSH profile. */
   url: string
   /** Official one-time launch URL used to mint this Electron session's browser cookie. */
@@ -164,6 +175,12 @@ export interface DesktopShellSpec extends DesktopWindowConfig {
   requestQuit(code: number): void
   /** Persist another mode through the registered desktop settings scope. */
   requestModeChange(mode: DesktopShellMode): Promise<void>
+  /**
+   * Persist first-run Setup choices through the registered settings scopes, the
+   * same Profile patch layer the mode picker writes. The running generation keeps
+   * its presentation; Setup's own continuation offers the restart that applies it.
+   */
+  applySetupSettings?(settings: DesktopSetupWizardSettings): Promise<void>
   readRemoteControl?(): Promise<boolean>
   enableRemoteControl?(): Promise<void>
 }
@@ -173,17 +190,17 @@ export interface DesktopRuntime {
   /** Current Electron platform. */
   readonly platform: DesktopPlatform
 
-  /** NT build number used to gate system backdrop materials. */
-  readonly windowsBuild: number | undefined
-
   /** Locale currently used for native tray contributions. */
   readonly locale: DesktopLocale
 
   /** Fixed, credential-free URL that activates the app after browser login. */
   readonly loginCompletionUrl?: string
 
-  /** Native network, update-download, and notification adapter. */
+  /** Native network, update staging, and notification adapter. */
   readonly updates: DesktopUpdateAdapter
+
+  /** Isolated MatrixMedia Publisher Worker adapter owned by Electron main. */
+  readonly publisher: DesktopPublisherRuntime
 
   /**
    * Register one shell generation while the Cordis profile is activating.
@@ -233,6 +250,12 @@ export interface DesktopRuntime {
 
   /** Open the isolated native Profile creator, focusing an existing instance. */
   openProfileCreateWindow(options: Omit<ProfileCreateWindowOptions, 'locale'>): void
+
+  /**
+   * Open a DeepSeek Platform sign-in page, or settle the page after its attempt ended.
+   * @param request - validated request from the Host's account watcher.
+   */
+  platformLogin(request: DesktopPlatformLoginRequest): void
 
   /** Confirm that one renderer-selected workspace is safe to persist. */
   validateDirectory(path: string): Promise<boolean>

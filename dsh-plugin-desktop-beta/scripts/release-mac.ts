@@ -12,6 +12,7 @@ import {
 import { prepareInstalledMacUniversalRuntime } from './mac-universal.ts'
 import { prepareFsExtForElectron } from './prepare-fs-ext.ts'
 import { electronBuilderEnvironment } from './electron-builder-environment.ts'
+import { verifyPublisherHelper } from './publisher-helper.ts'
 
 /** Injectable release boundary used by focused tests. */
 export interface MacReleaseOptions {
@@ -62,6 +63,7 @@ function run(command: string, args: readonly string[], cwd: string, env: NodeJS.
 
 function defaultReleaseOptions(): MacReleaseOptions {
   const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const workspaceRoot = resolve(desktopRoot, '..')
   const outputDir = resolve(desktopRoot, 'dist', 'mac-release')
   return {
     env: process.env,
@@ -73,6 +75,7 @@ function defaultReleaseOptions(): MacReleaseOptions {
     run,
     log: message => console.log(message),
     prepareRuntime: () => {
+      verifyPublisherHelper(workspaceRoot)
       prepareFsExtForElectron({ platform: 'darwin', arch: 'arm64', desktopRoot })
       prepareFsExtForElectron({ platform: 'darwin', arch: 'x64', desktopRoot })
       prepareInstalledMacUniversalRuntime(desktopRoot)
@@ -98,6 +101,13 @@ export function releaseMac(options: MacReleaseOptions = defaultReleaseOptions())
 
   // The workspace check includes the package build and repository-layout gate. Signing
   // material is withheld from every build, test, Loader smoke, and layout subprocess.
+  options.run(
+    process.execPath,
+    ['scripts/prepare-agents-anywhere-release.mjs', '--verify-release'],
+    resolve(options.desktopRoot, '..'),
+    buildEnvironment,
+  )
+  options.run(process.execPath, ['scripts/prepare-dsh-market.mjs', '--check'], resolve(options.desktopRoot, '..'), buildEnvironment)
   options.run('yarn', ['run', 'check'], resolve(options.desktopRoot, '..'), buildEnvironment)
   options.resetOutput()
   options.prepareRuntime()

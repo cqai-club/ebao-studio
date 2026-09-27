@@ -68,6 +68,7 @@ describe('macOS DMG smoke packaging', () => {
         '/repo/node_modules/electron-builder/cli.js',
         '--mac',
         'dmg',
+        'zip',
         '--universal',
         '--publish',
         'never',
@@ -115,6 +116,7 @@ describe('macOS DMG smoke packaging', () => {
       '/repo/node_modules/electron-builder/cli.js',
       '--mac',
       'dmg',
+      'zip',
       '--universal',
       '--publish',
       'never',
@@ -126,6 +128,38 @@ describe('macOS DMG smoke packaging', () => {
       'Building an unsigned macOS DMG smoke; signing and notarization are release-only steps.',
       'Skipping the macOS package preflight; the package gate already passed.',
     ])
+  })
+
+  it('packages one CPU without the universal merge when requested', () => {
+    const calls: CommandCall[] = []
+    const logs: string[] = []
+    const value = {
+      ...options(calls, logs),
+      env: {
+        ...options(calls).env,
+        DSH_PACKAGE_CHECK_ALREADY_RAN: '1',
+        DSH_MAC_SMOKE_ARCH: 'arm64',
+      },
+    }
+
+    packageMacSmoke(value)
+
+    expect(calls).toHaveLength(2)
+    expect(calls[0]?.args).toContain('--arm64')
+    expect(calls[0]?.args).not.toContain('--universal')
+    expect(calls[1]?.env.DSH_MAC_SMOKE_ARCH).toBe('arm64')
+    expect(logs).toContain('Packaging only the arm64 application; the universal merge is skipped.')
+  })
+
+  it('rejects an unknown smoke architecture before running commands', () => {
+    const calls: CommandCall[] = []
+    const value = {
+      ...options(calls),
+      env: { ...options(calls).env, DSH_MAC_SMOKE_ARCH: 'ia32' },
+    }
+
+    expect(() => packageMacSmoke(value)).toThrow('DSH_MAC_SMOKE_ARCH must be universal, arm64, or x64')
+    expect(calls).toEqual([])
   })
 
   it.each([

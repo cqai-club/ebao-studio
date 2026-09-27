@@ -5,7 +5,16 @@ import { existsSync, mkdtempSync, readdirSync, rmdirSync, statSync } from 'node:
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MACOS_UNIVERSAL_NATIVE_ENTRIES } from './mac-universal.ts'
+import {
+  MACOS_UNIVERSAL_NATIVE_ENTRIES,
+  macSmokeArchitecture,
+  macSmokeExecutableSlices,
+  type MacUniversalArch,
+} from './mac-universal.ts'
+import {
+  PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH,
+  PUBLISHER_HELPER_UNIVERSAL_ENTRIES,
+} from './publisher-helper.ts'
 
 /** Injectable filesystem and command boundaries for smoke verification. */
 export interface MacSmokeVerificationOptions {
@@ -13,6 +22,8 @@ export interface MacSmokeVerificationOptions {
   readonly distDir: string
   /** Installed application name inside the mounted image. */
   readonly productName: string
+  /** Mach-O slices the main executable must contain; defaults to both CPUs. */
+  readonly executableSlices?: readonly MacUniversalArch[]
   /** Return regular DMG files in the distribution directory. */
   readonly listDmgs: (distDir: string) => readonly string[]
   /** Create a private empty mount point. */
@@ -53,6 +64,7 @@ function defaultOptions(): MacSmokeVerificationOptions {
       ? join(packageRoot, 'dist', 'mac-smoke')
       : resolve(process.argv[2]),
     productName: '易宝工坊',
+    executableSlices: macSmokeExecutableSlices(macSmokeArchitecture(process.env)),
     listDmgs,
     makeMountPoint: () => mkdtempSync(join(tmpdir(), 'dsh-desktop-dmg-smoke-')),
     run,
@@ -114,8 +126,9 @@ export function verifyMacSmoke(
     ) {
       throw new Error(`packaged application has an invalid main executable: ${executablePath}`)
     }
-    options.run('lipo', [executablePath, '-verify_arch', 'x86_64'])
-    options.run('lipo', [executablePath, '-verify_arch', 'arm64'])
+    for (const slice of options.executableSlices ?? macSmokeExecutableSlices('universal')) {
+      options.run('lipo', [executablePath, '-verify_arch', slice])
+    }
 
     const appAsarPath = join(appPath, 'Contents', 'Resources', 'app.asar')
     if (!options.exists(appAsarPath)) {
@@ -136,10 +149,24 @@ export function verifyMacSmoke(
       if (!nativeStat.isFile || nativeStat.size === 0) {
         throw new Error(`universal application has an invalid native file: ${nativePath}`)
       }
-      if (entry.path.endsWith('/spawn-helper') && (nativeStat.mode & 0o111) === 0) {
-        throw new Error(`universal application has a non-executable node-pty helper: ${nativePath}`)
+      if ((entry.path.endsWith('/spawn-helper') || entry.path.endsWith('/bin/uv')) && (nativeStat.mode & 0o111) === 0) {
+        throw new Error(`universal application has a non-executable native helper: ${nativePath}`)
       }
       options.run('lipo', [nativePath, '-verify_arch', entry.arch])
+    }
+
+    const publisherHelperPath = join(appPath, PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH)
+    for (const entry of PUBLISHER_HELPER_UNIVERSAL_ENTRIES) {
+      const nativePath = join(publisherHelperPath, entry)
+      if (!options.exists(nativePath)) {
+        throw new Error(`Universal Publisher Worker is missing ${nativePath}`)
+      }
+      const nativeStat = options.stat(nativePath)
+      if (!nativeStat.isFile || nativeStat.size === 0) {
+        throw new Error(`Universal Publisher Worker has an invalid native file: ${nativePath}`)
+      }
+      options.run('lipo', [nativePath, '-verify_arch', 'x86_64'])
+      options.run('lipo', [nativePath, '-verify_arch', 'arm64'])
     }
   } catch (cause) {
     failure = cause

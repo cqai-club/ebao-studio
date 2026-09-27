@@ -6,6 +6,17 @@
 
 首次启动时，应用会准备默认 profile，并在本机启动官方 DSH Web surface。关闭窗口通常只会隐藏窗口；可以从托盘重新打开，选择 **退出** 才会结束应用和 Host 进程。
 
+## 用文件夹启动
+
+除了在界面里选择目录，还可以在启动时直接指定一个文件夹。该文件夹会被注册为工作区并自动打开；如果它已经是工作区，则直接打开，不会重复创建。
+
+- **Windows 拖放**：把文件夹拖到桌面快捷方式或开始菜单里的 **DSH Desktop** 图标上。应用没运行时会先启动，已经在运行时会抬到前台并打开这个工作区。
+- **命令行**：稳定版运行 `dsh-desktop <文件夹>`，Beta 运行 `dsh-desktop-beta <文件夹>`。相对路径按当前目录解析。安装后的 EXE 同样接受一个文件夹参数。
+
+路径不存在、指向的是文件，或者位于 exFAT、FAT32、网络盘等不受支持的存储上时，应用会弹出原生提示并且不注册该工作区。用文件夹启动是一次性的：之后由设置触发的重启不会再次打开它。
+
+已知限制：Windows 任务栏上固定的图标暂不接受拖放（需要注册文件夹关联，后续版本处理）；Linux 只支持命令行；macOS 暂不支持这两种方式。
+
 ## Profile
 
 Profile 是一组 DSH bundle、依赖和 patch 的组合。托盘中的 **Profile** 菜单会列出现有 profile，以及可按需创建的 `desktop` 和 `web` 默认 profile。
@@ -20,7 +31,7 @@ Profile 是一组 DSH bundle、依赖和 patch 的组合。托盘中的 **Profil
 - **扩展窗口**：安装 Desktop 自有 layout 与 sidebar surface，并在其中承载官方 sidebar、conversation 和 details occupant。36 像素顶部 frame 与左侧 sidebar surface 组成一个带圆角内拐角的倒 L 材质区域。
 - **增强模式**：保留独立 root registration 与紧凑内部 caption；macOS 使用 20 像素内容 inset 和 32 像素拖动区域，Windows 使用 32 像素 caption row，不复用扩展窗口的独立 frame。
 
-macOS 自定义窗口模式可以打开或关闭透明材质。Windows 可关闭材质；仅 Windows 11 build 22621 及以上在支持时显示 Mica。旧版 Windows 亚克力偏好会安全地按关闭处理，并在设置文件可写时自动迁移。切换模式或材质都会重启应用，不会在正在运行的 renderer 中热替换 root slot 或窗口材质。Linux 只提供兼容模式。
+macOS 自定义窗口模式可以打开或关闭透明材质。Windows 不提供材质选项，始终使用不透明窗口。旧版 Windows 亚克力和 Mica 偏好都会安全地按关闭处理，其中亚克力还会在设置文件可写时自动迁移。切换模式或材质都会重启应用，不会在正在运行的 renderer 中热替换 root slot 或窗口材质。Linux 只提供兼容模式。
 
 ## 本地 Web 端口
 
@@ -63,11 +74,11 @@ dsh plugin update
 
 ## 更新
 
-打包后的 macOS/Windows 应用会在后台检查 `https://www.dshdesktop.cn/api/desktop/version`。后台检查不阻塞启动；网络错误、非 200、非法版本或服务端版本不新时保持静默。发现新版本时，应用会更新托盘并且每个版本只发送一次非阻塞系统通知，不会自动弹出下载确认；点击通知会显示 Desktop。
+打包后的 macOS/Windows 应用会在后台检查仓库清单 `https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json`。后台检查不阻塞启动；网络错误、非 200、超大响应、非法版本或服务端版本不新时保持静默。发现新版本时，应用会更新托盘，并且每个版本只发送一次非阻塞系统通知，不会自动下载；点击通知会聚焦 Desktop，并打开现有的升级确认流程。
 
-托盘中的 **Check for Updates…** 是当前发行通道的手动检查：稳定版只接收稳定更新，Beta 只接收 Beta 更新。即使已经是当前版本，也会显示结果；检查失败会提示稍后重试。Beta 还提供 **安装稳定版…**，它会在保留 Beta 的同时安装稳定版。用户取消不会访问计数下载入口。
+托盘中的 **Check for Updates…** 是当前发行通道的手动检查：稳定版只接收稳定更新。即使已经是当前版本，也会显示结果；检查失败会提示稍后重试。当前只有稳定版具备应用内升级资产，Beta 仍可检查版本但不会下载或替换自身。用户取消确认不会开始下载。
 
-确认下载后，应用会先打开原生的“保存更新安装包”对话框，默认建议保存到 Downloads；你可以改用其他目录和文件名，取消对话框则不会开始下载。保存后应用才会请求当前平台的固定下载地址，并记录安装包位置。macOS 会打开 DMG，由用户把应用替换到 Applications；Windows 会准备 NSIS 安装器，再询问是否退出并启动安装。升级完成并重新启动后，应用会询问是否删除安装包以释放磁盘空间，也可以选择保留。下载和安装失败不会破坏当前版本，托盘仍可重试。
+确认下载后，稳定版会重新检查仓库清单，并使用 Electron Updater 从匹配的 GitHub Release 读取 `latest.yml`（Windows）或 `latest-mac.yml`（macOS）。下载目标必须与已确认的版本相同；更新元数据中的 SHA-512 必须匹配完整的 NSIS 安装器或 macOS ZIP。下载保存在应用自己的更新缓存中，不显示保存位置，也不会把 DMG 或 EXE 暴露给用户。校验、网络、取消或安装失败都不会破坏当前版本，并可从托盘重试。下载完成后会显示 **重启并更新**；只有选择它才会退出应用并由平台更新助手安装和重新打开新版本。macOS 自动升级仅适用于 Developer ID 签名并经 Apple 公证的官方构件；Windows 安装器尚未签名时仍可能显示 SmartScreen 提示。GitHub Release 同时提供 `SHA256SUMS`，供手动下载者独立核验。
 
 ## 排查
 

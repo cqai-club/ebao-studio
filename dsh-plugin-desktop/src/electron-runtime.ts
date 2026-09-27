@@ -1,5 +1,6 @@
 /** Electron implementation of the launcher-provided desktop runtime capability. */
 
+import { spawn } from 'node:child_process'
 import {
   app,
   dialog,
@@ -8,7 +9,6 @@ import {
   Notification,
   shell,
 } from 'electron'
-import { spawn } from 'node:child_process'
 import { RemoteControlOffer, remoteControlOfferCopy } from './remote-control-offer.ts'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -17,9 +17,13 @@ import { desktopTerminalStateDirectory, openDesktopTerminal } from './desktop-te
 import { showDesktopMessageBox } from './desktop-dialog-window.ts'
 import { packagedDependencyPath } from './packaged-runtime-path.ts'
 import { ElectronShellGeneration } from './electron-shell-generation.ts'
+import { isPlatformLoginDestination, type DesktopPlatformLoginRequest } from './platform-login.ts'
+import { PLATFORM_LOGIN_TITLE, platformLoginUrl } from './platform-login-window.ts'
+import type { DesktopOpenWorkspaceDelivery } from './launch-workspace-contract.ts'
 import { electronPlatformStrategy, type ElectronPlatformStrategy } from './electron-platform.ts'
 import type {
   DesktopNotification,
+  DesktopNotificationAction,
   DesktopLocale,
   DesktopPlatform,
   DesktopRuntime,
@@ -38,7 +42,7 @@ import {
   type RendererHealthFailureReason,
   type RendererHealthVerdict,
 } from './renderer-health.ts'
-import type { DesktopLogger } from './desktop-logger.ts'
+import { formatDesktopExitCode, type DesktopLogger } from './desktop-logger.ts'
 import { exportDesktopDiagnostics } from './diagnostic-export.ts'
 import {
   desktopDiagnosticsPrivacyCopy,
@@ -47,14 +51,14 @@ import {
   desktopTrayLabel,
   rendererRecoveryCopy,
 } from './tray-locale.ts'
+// electron-updater is CommonJS. Its `autoUpdater` export is installed with a
+// runtime getter, which Node's ESM named-export detection cannot see. Import
+// the CommonJS default namespace so the packaged ESM main process can start.
+import electronUpdater from 'electron-updater'
 import {
-  desktopUpdateFilename,
-  downloadDesktopUpdate,
-  pendingDesktopUpdateArtifact,
-  recordDesktopUpdateArtifact,
-  resolveDesktopUpdateArtifact,
-  type DesktopUpdateArtifact,
-} from './update-download.ts'
+  configureElectronAutoUpdater,
+  downloadElectronDesktopUpdate,
+} from './electron-auto-updater.ts'
 import type { UpdateCheckResult } from './update-checker.ts'
 import type { DesktopInstallationId } from './desktop-installation-id.ts'
 import { DESKTOP_RELEASE_CHANNEL } from './product-identity.ts'
@@ -64,13 +68,16 @@ import {
 } from './windows-volume-diagnostics.ts'
 import { ElectronWorkspaceAdmission } from './workspace-admission.ts'
 import { ProfileCreateWindow, type ProfileCreateWindowOptions } from './profile-create-window.ts'
-import { windowsBuildNumber } from './window-material.ts'
 import { desktopNativeCopy } from './native-dialog-copy.ts'
 import {
   FileMainWindowStateStore,
   type MainWindowStateStore,
 } from './main-window-state.ts'
 import { DESKTOP_LOGIN_COMPLETION_URL } from './desktop-protocol.ts'
+import { PublisherSupervisor } from './publisher-supervisor.ts'
+import type { DesktopPublisherRuntime } from './publisher-runtime.ts'
+
+const { autoUpdater } = electronUpdater
 
 /**
  * Read the desktop package version instead of Electron's development-app version.
@@ -91,17 +98,20 @@ export function desktopPreloadPath(moduleUrl: string = import.meta.url): string 
 }
 
 const PRODUCT_VERSION = desktopProductVersion()
+const AUTO_UPDATE_RELEASE_CHANNEL = DESKTOP_RELEASE_CHANNEL as DesktopReleaseChannel
 
 /** Main-process deadline for one Renderer generation to settle its client Loader. */
 export const RENDERER_BOOT_TIMEOUT_MS = 30_000
 
 /** Native adapter used by the 易宝工坊 launcher and owned by its Cordis shell plugin. */
 export class ElectronDesktopRuntime implements DesktopRuntime {
+  setupOnboarding?: import('./setup-onboarding-bridge.ts').DesktopOnboardingBridge
   readonly platform: DesktopPlatform
-  readonly windowsBuild: number | undefined
   readonly loginCompletionUrl = DESKTOP_LOGIN_COMPLETION_URL
   private readonly platformStrategy: ElectronPlatformStrategy
   readonly updates: DesktopUpdateAdapter
+  readonly publisher: DesktopPublisherRuntime
+  private readonly publisherSupervisor: PublisherSupervisor | undefined
 
   private generation: ElectronShellGeneration | undefined
   private currentLocale: DesktopLocale = 'en'
@@ -112,11 +122,12 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   private terminalSpec: DesktopTerminalSpec | undefined
   private diagnosticExport: Promise<void> | undefined
   private readonly workspaceAdmission: ElectronWorkspaceAdmission
-  private updateCleanupTask: Promise<void> | undefined
   private rendererHealthGate: DesktopRendererHealthGate | undefined
   private rendererBootHealthy = false
   private profileCreateWindow: ProfileCreateWindow | undefined
   private restartRequest: Promise<void> | undefined
+  private readonly notificationActions = new Map<DesktopNotificationAction, () => void | Promise<void>>()
+  private hostStoppedRecovery: Promise<void> | undefined
 
   constructor(
     private readonly restart: (target?: 'recovery' | 'safe-mode') => Promise<void>,
@@ -125,10 +136,29 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     workspaceVolumeQuery: WindowsVolumeQuery | undefined = undefined,
     private readonly mainWindowState: MainWindowStateStore = new FileMainWindowStateStore(app.getPath('userData')),
     installationId?: DesktopInstallationId,
+    publisher?: DesktopPublisherRuntime,
   ) {
     this.platformStrategy = electronPlatformStrategy()
     this.platform = this.platformStrategy.platform
-    this.windowsBuild = this.platform === 'win32' ? windowsBuildNumber() : undefined
+    this.publisherSupervisor = publisher === undefined
+      ? new PublisherSupervisor({
+          platform: process.platform,
+          resourcesPath: (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath ?? '',
+          userDataPath: app.getPath('userData'),
+          pickLocalVideo: async () => {
+            const options: Electron.OpenDialogOptions = {
+              title: '选择本地视频', properties: ['openFile'],
+              filters: [{ name: 'MP4 视频', extensions: ['mp4'] }],
+            }
+            const result = this.generation === undefined
+              ? await dialog.showOpenDialog(options)
+              : await this.generation.showOpenDialog(options)
+            return result.canceled ? undefined : result.filePaths[0]
+          },
+          ...(logger === undefined ? {} : { logger }),
+        })
+      : undefined
+    this.publisher = publisher ?? this.publisherSupervisor!
     const platformStrategy = this.platformStrategy
     this.workspaceAdmission = new ElectronWorkspaceAdmission({
       platform: this.platform,
@@ -143,7 +173,11 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     })
     this.updates = {
       get isPackaged() { return app.isPackaged },
-      get canDownload() { return app.isPackaged && platformStrategy.updateDownloadPlatform !== undefined },
+      get canDownload() {
+        return app.isPackaged
+          && AUTO_UPDATE_RELEASE_CHANNEL === 'stable'
+          && platformStrategy.updateDownloadPlatform !== undefined
+      },
       get currentVersion() { return PRODUCT_VERSION },
       get releaseChannel() { return DESKTOP_RELEASE_CHANNEL },
       get statePath() { return join(app.getPath('userData'), 'updates', 'state.json') },
@@ -151,9 +185,41 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       request: (url, init) => net.fetch(url, init),
       confirmDownload: (version, channel) => this.confirmUpdateDownload(version, channel),
       showManualCheckResult: result => this.showManualUpdateCheckResult(result),
-      downloadAndOpen: (version, signal, channel) => this.downloadAndOpenUpdate(version, signal, channel),
+      downloadAndInstall: (version, signal, channel) => this.downloadAndInstallUpdate(version, signal, channel),
+      registerNotificationAction: (action, handler) => this.registerNotificationAction(action, handler),
       notify: notification => { this.showNotification(notification) },
     }
+  }
+
+  /** Stop the separately packaged Publisher Worker during final app teardown. */
+  async shutdownPublisher(): Promise<void> {
+    await this.publisherSupervisor?.shutdown()
+  }
+
+  /** Warn before an explicit quit can interrupt an in-flight platform upload. */
+  async confirmPublisherQuit(): Promise<boolean> {
+    if (!this.publisher.status().supported || !this.publisher.status().running) return true
+    try {
+      const health = await this.publisher.request<{ busy?: unknown }>('system.health')
+      if (health.busy !== true) return true
+    } catch {
+      // A crashed or unreachable Worker cannot have a confirmable active task.
+      return true
+    }
+    const zh = this.currentLocale === 'zh'
+    const result = await this.showDesktopMessageBox({
+      type: 'warning',
+      title: zh ? '发布任务仍在执行' : 'Publishing is still in progress',
+      message: zh ? '现在退出会中断当前平台上传' : 'Quitting now will interrupt the active platform upload.',
+      detail: zh
+        ? '中断后的任务不会自动重发，以避免重复发布。建议先返回应用并稍后到平台后台确认。'
+        : 'Interrupted work is never retried automatically. Return to the app and confirm in the platform dashboard later.',
+      buttons: zh ? ['退出并中断', '继续运行'] : ['Quit and interrupt', 'Keep running'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    })
+    return result.response === 0
   }
 
   /** Log an Electron-scope error to the sink, falling back to stderr without a logger. */
@@ -245,6 +311,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
         platform: this.platformStrategy,
         spec,
         preloadPath: desktopPreloadPath(),
+        pickDirectory: () => this.pickDirectory(),
         buildApplicationMenuItems: () => this.buildApplicationMenuItems(),
         isQuitting: () => this.quitting,
         buildTrayTemplate: () => this.buildTrayTemplate(spec),
@@ -255,6 +322,8 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
         rendererRecoveryCopy: () => rendererRecoveryCopy[this.currentLocale],
         logError: message => { this.logError(message) },
         mainWindowState: this.mainWindowState,
+        platformLoginTitle: () => PLATFORM_LOGIN_TITLE[this.currentLocale],
+        setupOnboarding: this.setupOnboarding,
         chromeActions: {
           ...(remoteOffer ? { remoteControl: {
             read: () => remoteOffer.read(),
@@ -274,6 +343,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
           restartToRecovery: () => this.requestRecoveryRestart(),
           reload: () => { this.reloadRenderer() },
           developerTools: () => { this.toggleDeveloperTools() },
+          exportDiagnostics: () => this.exportDiagnostics(),
           checkForUpdates: async () => {
             const command = [...this.trayItems.values()].find(item => item.id === 'check-for-updates')
             if (command === undefined || command.enabled?.() === false) throw new Error('Desktop update check is unavailable')
@@ -284,9 +354,6 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       this.generation = generation
       this.mountTask = generation.mount(beforeInteractive).then(() => {
         this.rendererHealthGate?.acceptNativeMount()
-        void this.offerUpdateArtifactCleanup().catch((cause: unknown) => {
-          this.logError(`dsh-plugin-desktop: failed to resolve update installer cleanup: ${cause instanceof Error ? cause.message : String(cause)}`)
-        })
       }).catch((cause: unknown) => {
         if (this.generation === generation) this.generation = undefined
         throw cause
@@ -320,6 +387,30 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   }
 
   /** @inheritdoc */
+  platformLogin(request: DesktopPlatformLoginRequest): void {
+    if (this.quitting) return
+    if (request.action === 'close') {
+      this.generation?.closePlatformLogin()
+      if (request.focus) this.show()
+      return
+    }
+    if (!isPlatformLoginDestination(request.url)) {
+      this.logError('dsh-plugin-desktop: refused a platform sign-in page outside HTTPS or loopback HTTP')
+      return
+    }
+    const url = platformLoginUrl(request.url, nativeTheme.shouldUseDarkColors)
+    // A system browser reaches the Host's loopback callback only while browser access is on;
+    // otherwise the built-in window replays the callback with the renderer's credentials.
+    if (request.external) {
+      void shell.openExternal(url).catch((cause: unknown) => {
+        this.logError(`dsh-plugin-desktop: failed to open the platform sign-in page: ${cause instanceof Error ? cause.message : String(cause)}`)
+      })
+      return
+    }
+    this.generation?.openPlatformLogin(url)
+  }
+
+  /** @inheritdoc */
   async pickDirectory(): Promise<string | null> {
     return await this.workspaceAdmission.pickDirectory()
   }
@@ -327,6 +418,31 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   /** @inheritdoc */
   async validateDirectory(path: string): Promise<boolean> {
     return await this.workspaceAdmission.validateDirectory(path)
+  }
+
+  /**
+   * Apply native policy to a folder named by a launch.
+   *
+   * Launch hand-offs stay off the Host runtime contract: the path is native
+   * input that the main process already owns, and nothing in the Host needs to
+   * be able to ask for it.
+   * @param path - absolute folder the launch asked Desktop to open.
+   * @returns whether the folder may be registered as a workspace.
+   */
+  async admitWorkspacePath(path: string): Promise<boolean> {
+    return await this.workspaceAdmission.admitWorkspacePath(path)
+  }
+
+  /**
+   * Hand one admitted launch folder to the mounted Host page.
+   * @param path - absolute folder already admitted by native policy.
+   * @returns how the page took the folder, or `'unavailable'` before a shell
+   *   generation is mounted.
+   */
+  async openWorkspacePath(path: string): Promise<DesktopOpenWorkspaceDelivery | 'unavailable'> {
+    const generation = this.generation
+    if (generation === undefined) return 'unavailable'
+    return await generation.openWorkspacePath(path)
   }
 
   /** @inheritdoc */
@@ -493,10 +609,6 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   setThemeSource(source: DesktopThemeSource): void {
     if (this.platform !== 'linux' && this.generation !== undefined) {
       nativeTheme.themeSource = source
-      // Windows can retain the preceding DWM Mica palette until the window is
-      // recomposed (for example after minimize/restore). Reapplying the active
-      // material invalidates the backdrop immediately after a live theme change.
-      this.generation.refreshThemeMaterial()
     }
   }
 
@@ -552,11 +664,46 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   prepareToQuit(): void {
     this.quitting = true
     this.generation?.stopRendererRecovery()
+    this.generation?.closePlatformLogin()
     this.stopRendererBootMonitoring()
   }
 
   private failRendererBoot(reason: RendererHealthFailureReason, error: string): void {
     this.rendererHealthGate?.fail(reason, error)
+  }
+
+  /**
+   * Offer an in-app way out after the supervised Host exits on its own. Kept off
+   * the shared `DesktopRuntime` contract on purpose: only the Electron main
+   * process supervises the Host, and the Host must never be able to ask for this.
+   * @param exit - the reported exit code, shown so a report can name it.
+   */
+  async showHostStoppedRecovery(exit: { readonly exitCode: number }): Promise<void> {
+    if (this.quitting) return
+    // A Host death arrives once, but the renderer keeps failing against the
+    // gone endpoint afterwards. One dialog per death, never a stack of them.
+    if (this.hostStoppedRecovery !== undefined) return await this.hostStoppedRecovery
+    const request = this.confirmHostStopped(exit).finally(() => {
+      if (this.hostStoppedRecovery === request) this.hostStoppedRecovery = undefined
+    })
+    this.hostStoppedRecovery = request
+    await request
+  }
+
+  private async confirmHostStopped(exit: { readonly exitCode: number }): Promise<void> {
+    const copy = desktopNativeCopy(this.currentLocale)
+    const result = await this.showDesktopMessageBox({
+      type: 'error',
+      title: copy.hostStoppedTitle,
+      message: copy.hostStoppedMessage,
+      detail: `${copy.hostStoppedDetail(formatDesktopExitCode(exit.exitCode))}\n\n${copy.hostStoppedInstructions}`,
+      buttons: [copy.restart, copy.openTerminal, copy.dismiss],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    })
+    if (result.response === 0) await this.requestRestart()
+    else if (result.response === 1) this.openTerminal()
   }
 
   private async showRendererBootRecovery(report: Extract<RendererBootReport, { status: 'failed' }>): Promise<void> {
@@ -622,8 +769,29 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       title: notification.title,
       body: notification.body,
     })
-    nativeNotification.once('click', () => { this.show() })
+    nativeNotification.once('click', () => {
+      this.show()
+      if (notification.action === undefined) return
+      const handler = this.notificationActions.get(notification.action)
+      if (handler === undefined) return
+      void Promise.resolve().then(handler).catch((cause: unknown) => {
+        this.logError(`dsh-plugin-desktop: notification action failed: ${cause instanceof Error ? cause.message : String(cause)}`)
+      })
+    })
     nativeNotification.show()
+  }
+
+  private registerNotificationAction(
+    action: DesktopNotificationAction,
+    handler: () => void | Promise<void>,
+  ): () => void {
+    this.notificationActions.set(action, handler)
+    let active = true
+    return () => {
+      if (!active) return
+      active = false
+      if (this.notificationActions.get(action) === handler) this.notificationActions.delete(action)
+    }
   }
 
   private async showUpdateMessageBox(options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
@@ -634,12 +802,6 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     return this.generation === undefined
       ? await showDesktopMessageBox(options)
       : await this.generation.showMessageBox(options)
-  }
-
-  private async showUpdateSaveDialog(options: Electron.SaveDialogOptions): Promise<Electron.SaveDialogReturnValue> {
-    return this.generation === undefined
-      ? await dialog.showSaveDialog(options)
-      : await this.generation.showSaveDialog(options)
   }
 
   /** Ask before making the fixed download endpoint's counted request. */
@@ -703,151 +865,41 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     })
   }
 
-  /** Download a confirmed installer and hand it to the native installation flow. */
-  private async downloadAndOpenUpdate(
+  /** Download a confirmed release through Electron Updater and offer an explicit restart. */
+  private async downloadAndInstallUpdate(
     version: string,
     signal: AbortSignal,
     channel: DesktopReleaseChannel = 'stable',
   ): Promise<void> {
-    const copy = desktopNativeCopy(this.currentLocale)
-    const platform = this.platformStrategy.updateDownloadPlatform
-    if (platform === undefined) {
+    if (channel !== 'stable' || AUTO_UPDATE_RELEASE_CHANNEL !== 'stable') {
+      throw new Error('dsh-plugin-desktop: automatic updates are available only to the stable Desktop edition')
+    }
+    if (this.platformStrategy.updateDownloadPlatform === undefined) {
       throw new Error(`dsh-plugin-desktop: updates are unavailable on ${this.platform}`)
     }
-    const destinationPath = await this.chooseUpdateDestination(version, channel)
-    if (destinationPath === undefined) return
     signal.throwIfAborted()
-    const artifactPath = await downloadDesktopUpdate({
-      platform,
-      version,
-      ...(channel === 'stable' ? {} : { channel }),
-      destinationPath,
-      request: (url, init) => net.fetch(url, init),
-      signal,
-    })
+    configureElectronAutoUpdater(autoUpdater)
+    await downloadElectronDesktopUpdate(autoUpdater, version, signal)
     signal.throwIfAborted()
-    const artifact: DesktopUpdateArtifact = { platform, version, path: artifactPath }
-    try {
-      await recordDesktopUpdateArtifact(app.getPath('userData'), artifact)
-    } catch (cause) {
-      this.logError(`dsh-plugin-desktop: failed to remember update installer for cleanup: ${cause instanceof Error ? cause.message : String(cause)}`)
-    }
 
-    if (platform === 'darwin') {
-      const openError = await shell.openPath(artifactPath)
-      if (openError !== '') throw new Error(`dsh-plugin-desktop: failed to open update disk image: ${openError}`)
-      signal.throwIfAborted()
-      await this.showUpdateMessageBox({
-        type: 'info',
-        title: copy.updateDownloadedTitle,
-        message: copy.updateReady(version),
-        detail: copy.macInstallInstructions,
-        buttons: [copy.ok],
-        defaultId: 0,
-        noLink: true,
-      })
-      return
-    }
-
+    const copy = desktopNativeCopy(this.currentLocale)
     const result = await this.showUpdateMessageBox({
       type: 'info',
       title: copy.updateDownloadedTitle,
       message: copy.updateReady(version),
-      detail: copy.windowsInstallQuestion,
-      buttons: [copy.restartAndInstall, copy.later],
-      defaultId: 1,
+      detail: copy.restartToUpdateQuestion,
+      buttons: [copy.restartAndUpdate, copy.later],
+      defaultId: 0,
       cancelId: 1,
       noLink: true,
     })
     if (result.response !== 0) return
 
-    const spec = this.scheduled
-    if (spec === undefined) throw new Error('dsh-plugin-desktop: no active shell can exit for update installation')
     signal.throwIfAborted()
-    await this.launchWindowsUpdateInstaller(artifactPath)
+    // Electron Updater starts its helper before it asks Electron to quit. The
+    // normal before-quit guard then performs the existing Host teardown.
     this.quitting = true
-    spec.requestQuit(0)
-  }
-
-  private async chooseUpdateDestination(
-    version: string,
-    channel: DesktopReleaseChannel = 'stable',
-  ): Promise<string | undefined> {
-    if (this.platform !== 'darwin' && this.platform !== 'win32') return undefined
-    const copy = desktopNativeCopy(this.currentLocale)
-    const filename = desktopUpdateFilename(this.platform, version, channel)
-    const extension = this.platform === 'darwin' ? 'dmg' : 'exe'
-    const result = await this.showUpdateSaveDialog({
-      title: copy.saveInstallerTitle,
-      defaultPath: join(app.getPath('downloads'), filename),
-      buttonLabel: copy.saveAndDownload,
-      filters: [{
-        name: this.platform === 'darwin'
-          ? copy.diskImage
-          : copy.windowsInstaller,
-        extensions: [extension],
-      }],
-      properties: ['createDirectory', 'showOverwriteConfirmation', 'dontAddToRecent'],
-    })
-    return result.canceled ? undefined : result.filePath
-  }
-
-  private offerUpdateArtifactCleanup(): Promise<void> {
-    if (this.updateCleanupTask !== undefined) return this.updateCleanupTask
-    const task = this.performUpdateArtifactCleanup().finally(() => {
-      if (this.updateCleanupTask === task) this.updateCleanupTask = undefined
-    })
-    this.updateCleanupTask = task
-    return task
-  }
-
-  private async performUpdateArtifactCleanup(): Promise<void> {
-    if (this.platform !== 'darwin' && this.platform !== 'win32') return
-    const userDataPath = app.getPath('userData')
-    const artifact = await pendingDesktopUpdateArtifact(userDataPath, PRODUCT_VERSION, this.platform)
-    if (artifact === undefined) return
-    const copy = desktopNativeCopy(this.currentLocale)
-    const result = await this.showUpdateMessageBox({
-      type: 'question',
-      title: copy.removeInstallerTitle,
-      message: copy.updateInstalled(artifact.version),
-      detail: copy.removeInstallerQuestion(artifact.path),
-      buttons: [copy.deleteInstaller, copy.keepInstaller],
-      defaultId: 1,
-      cancelId: 1,
-      noLink: true,
-    })
-    await resolveDesktopUpdateArtifact(userDataPath, artifact, result.response === 0)
-  }
-
-  /** Start the downloaded NSIS installer visibly before releasing the current process. */
-  private async launchWindowsUpdateInstaller(installerPath: string): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      let child: ReturnType<typeof spawn>
-      try {
-        child = spawn(installerPath, ['--updated', '--force-run'], {
-          detached: true,
-          stdio: 'ignore',
-          shell: false,
-          // UV_PROCESS_WINDOWS_HIDE also applies SW_HIDE to GUI processes,
-          // which leaves an interactive NSIS installer running invisibly.
-          windowsHide: false,
-        })
-      } catch (cause) {
-        reject(cause)
-        return
-      }
-      const fail = (cause: Error): void => { reject(cause) }
-      child.once('error', fail)
-      child.once('spawn', () => {
-        child.off('error', fail)
-        child.once('error', cause => {
-          this.logError(`dsh-plugin-desktop: update installer failed after launch: ${cause.message}`)
-        })
-        child.unref()
-        resolve()
-      })
-    })
+    autoUpdater.quitAndInstall(false, true)
   }
 
   /** Keep native-terminal launch failures visible in a packaged GUI process. */
@@ -897,8 +949,19 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     const tools = this.contributedTrayItems('tools')
     const profiles = this.contributedTrayItems('profiles')
     const status = this.contributedTrayItems('status')
+    // The in-app "Reload interface" control lives inside the renderer, so it is
+    // gone exactly when it is needed. This native twin keeps one restore path
+    // reachable after the window has stopped drawing anything.
+    const reloadRenderer = (): void => {
+      try {
+        this.generation?.requestRendererReload()
+      } catch (cause) {
+        this.logError(`dsh-plugin-desktop: failed to reload the renderer from the tray: ${cause instanceof Error ? cause.message : String(cause)}`)
+      }
+    }
     const template: Electron.MenuItemConstructorOptions[] = [
       { label: desktopTrayLabel(this.locale, 'openDesktop', spec.productName), click: show },
+      { label: desktopTrayLabel(this.locale, 'reloadRenderer'), click: reloadRenderer },
     ]
     if (tools.length > 0) template.push({ type: 'separator' }, ...tools)
     if (profiles.length > 0) template.push({ type: 'separator' }, ...profiles)

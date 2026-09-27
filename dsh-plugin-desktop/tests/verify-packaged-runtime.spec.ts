@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -6,7 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -17,21 +18,28 @@ import {
   FORBIDDEN_UNPACKED_RUNTIME_ENTRIES,
   indexPackagedAsarHeader,
   listDesktopRuntimeEntries,
+  MAX_DATAIKU_UV_SMART_UNPACK_BYTES,
+  MAX_LIBREOFFICE_KIT_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_FILES,
+  MAX_SHERPA_ONNX_SMART_UNPACK_BYTES,
   MAX_UNPACKED_RUNTIME_BYTES,
   MAX_UNPACKED_RUNTIME_FILES,
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
+  REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
   REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
   REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_MACOS_UNIVERSAL_ENTRIES,
+  REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES,
   REQUIRED_POSIX_FS_EXT_ENTRIES,
   REQUIRED_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
+  REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES,
   REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
+  resolvePackagedApplicationRoot,
   resolvePackagedAsarPath,
   resolvePackagedExecutablePath,
   resolvePackagedUnpackedRoot,
@@ -39,6 +47,7 @@ import {
   smokePackagedElectronRuntime,
   summarizeUnpackedRuntime,
   verifyPackagedRuntime,
+  verifyPackagedAgentsAnywhere,
   verifySelectiveUnpackedRuntime,
   type ArchiveHeaderReader,
   type FileProbe,
@@ -62,7 +71,7 @@ function context(
     ...(arch === undefined ? {} : { arch }),
     packager: {
       ...(executableName === undefined ? {} : { executableName }),
-      appInfo: { productFilename: '易宝工坊' },
+      appInfo: { productFilename: '易宝工坊 Beta' },
     },
   }
 }
@@ -167,18 +176,59 @@ function requiredPhysicalEntries(runtimeContext: PackagedRuntimeContext): string
   return [...desktopAssets]
 }
 
+interface PhysicalBundle {
+  files: UnpackedRuntimeFile[]
+  exists: FileProbe
+  paths: string[]
+  /** Files landed by `extraResources` beside app.asar, not below it. */
+  externalPaths: string[]
+}
+
+/**
+ * The real probe answers for both halves of the packaged runtime: the
+ * smart-unpacked dependency tree below app.asar.unpacked, and the Windows
+ * `extraResources` payload that lands beside app.asar.
+ */
+function bundleFixture(
+  runtimeContext: PackagedRuntimeContext,
+  options: { missing?: string; extra?: readonly string[] } = {},
+): PhysicalBundle {
+  const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
+  const externalRoot = dirname(resolvePackagedAsarPath(runtimeContext))
+  const under = (root: string, filename: string): string | undefined => {
+    const prefix = `${root}${sep}`
+    return filename.startsWith(prefix) ? relative(root, filename).replaceAll('\\', '/') : undefined
+  }
+  const paths = [...requiredPhysicalEntries(runtimeContext), ...(options.extra ?? [])]
+    .filter(entry => entry !== options.missing)
+  const externalPaths = requiredExternalEntries(runtimeContext).filter(entry => entry !== options.missing)
+  return {
+    files: paths.map(path => ({ path, bytes: 1 })),
+    paths,
+    externalPaths,
+    exists: filename => {
+      const unpacked = under(unpackedRoot, filename)
+      if (unpacked !== undefined) return paths.includes(unpacked)
+      const external = under(externalRoot, filename)
+      return external !== undefined && externalPaths.includes(external)
+    },
+  }
+}
+
+function requiredExternalEntries(runtimeContext: PackagedRuntimeContext): string[] {
+  return runtimeContext.electronPlatformName === 'darwin'
+    ? [...REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES]
+    : runtimeContext.electronPlatformName === 'win32'
+      ? [...REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES]
+      : []
+}
+
 function physicalFixture(
   runtimeContext: PackagedRuntimeContext,
   options: { missing?: string; extra?: readonly string[] } = {},
 ): { exists: FileProbe; files: UnpackedRuntimeFile[]; paths: string[] } {
-  const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
-  const paths = [...requiredPhysicalEntries(runtimeContext), ...(options.extra ?? [])]
-    .filter(entry => entry !== options.missing)
-  return {
-    files: paths.map(path => ({ path, bytes: 1 })),
-    exists: filename => paths.includes(relative(unpackedRoot, filename).replaceAll('\\', '/')),
-    paths,
-  }
+  const bundle = bundleFixture(runtimeContext, options)
+  return { files: bundle.files, exists: bundle.exists, paths: bundle.paths }
 }
 
 describe('packaged desktop runtime verification', () => {
@@ -210,6 +260,8 @@ describe('packaged desktop runtime verification', () => {
   it('keeps stable root files explicit without hand-listing desktop lib output', () => {
     expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain('package.json')
     expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain('cordis.patch.yml')
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain('node_modules/electron-updater/out/main.js')
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain('node_modules/builder-util-runtime/out/CancellationToken.js')
     expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES.some(entry => entry.startsWith('lib/'))).toBe(false)
     expect(DESKTOP_RUNTIME_ENTRIES).toContain('lib/main.js')
     expect(DESKTOP_RUNTIME_ENTRIES).toContain('lib/native-ui/setup-wizard.html')
@@ -217,8 +269,7 @@ describe('packaged desktop runtime verification', () => {
 
   it('keeps the shipped PTC preset present and integrity-protected in app.asar', () => {
     expect(REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES).toEqual([
-      'node_modules/@deepseek-ai/dsh-agent-presets/presets/ptc/agent.cordis.yml',
-      'node_modules/@deepseek-ai/dsh-agent-presets/presets/ptc/preset.yml',
+      'node_modules/@deepseek-ai/dsh-web-app/presets/ptc.patch.yml',
     ])
     for (const entry of REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES) {
       expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
@@ -237,6 +288,82 @@ describe('packaged desktop runtime verification', () => {
       expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
     }
   })
+
+  it('keeps the default 一稿多发 bundle present in app.asar', () => {
+    expect(REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES).toEqual([
+      'node_modules/cqai-dsh-plugin-publisher/package.json',
+      'node_modules/cqai-dsh-plugin-publisher/cordis.patch.yml',
+      'node_modules/cqai-dsh-plugin-publisher/lib/index.js',
+      'node_modules/cqai-dsh-plugin-publisher/lib/client.js',
+    ])
+    for (const entry of REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES) {
+      expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
+    }
+  })
+
+  it('requires the macOS-only MatrixMedia Publisher Helper beside app.asar', () => {
+    expect(REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES).toEqual([
+      'publisher/MatrixMedia Publisher Worker.app/Contents/Info.plist',
+      'publisher/MatrixMedia Publisher Worker.app/Contents/MacOS/MatrixMedia Publisher Worker',
+      'publisher/MatrixMedia Publisher Worker.app/Contents/Resources/app.asar',
+      'publisher/MatrixMedia Publisher Worker.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework',
+      'publisher/LICENSE',
+      'publisher/SOURCE.json',
+    ])
+    for (const entry of REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES) {
+      expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).not.toContain(entry)
+    }
+  })
+
+  it.each(REQUIRED_MACOS_PUBLISHER_RUNTIME_ENTRIES)(
+    'fails loud when extraResources entry %s is absent',
+    (missing) => {
+      const runtimeContext = context('/build', 'darwin', 4)
+      const bundle = bundleFixture(runtimeContext, { missing })
+
+      expect(() => verifyPackagedRuntime(
+        runtimeContext,
+        headerReader(completeArchiveEntries(), bundle.paths),
+        bundle.exists,
+        () => bundle.files,
+      )).toThrow(`missing required extraResources entries: ${missing}`)
+    },
+  )
+
+  it('requires the Windows MatrixMedia Helper and its source notices beside app.asar', () => {
+    expect(REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES).toEqual([
+      'publisher/MatrixMedia Publisher Worker.exe',
+      'publisher/resources/app.asar',
+      'publisher/icudtl.dat',
+      'publisher/v8_context_snapshot.bin',
+      'publisher/chrome_100_percent.pak',
+      'publisher/libEGL.dll',
+      'publisher/LICENSE',
+      'publisher/SOURCE.json',
+    ])
+    const runtimeContext = context('/build', 'win32')
+    const bundle = bundleFixture(runtimeContext)
+    expect(() => verifyPackagedRuntime(
+      runtimeContext,
+      headerReader(completeArchiveEntries(), bundle.paths),
+      bundle.exists,
+      () => bundle.files,
+    )).not.toThrow()
+  })
+
+  it.each(REQUIRED_WINDOWS_PUBLISHER_RUNTIME_ENTRIES)(
+    'fails Windows packaging when Publisher Helper entry %s is absent',
+    (missing) => {
+      const runtimeContext = context('/build', 'win32')
+      const bundle = bundleFixture(runtimeContext, { missing })
+      expect(() => verifyPackagedRuntime(
+        runtimeContext,
+        headerReader(completeArchiveEntries(), bundle.paths),
+        bundle.exists,
+        () => bundle.files,
+      )).toThrow(`missing required extraResources entries: ${missing}`)
+    },
+  )
 
   it('recursively derives every non-map desktop runtime file from the completed build', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-runtime-list-'))
@@ -291,9 +418,47 @@ describe('packaged desktop runtime verification', () => {
         expect(received).toBe(summary)
         calls.push('report')
       },
+      () => { calls.push('aa') },
     )
 
-    expect(calls).toEqual(['static', 'report'])
+    expect(calls).toEqual(['static', 'aa', 'report'])
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects a 0644 packaged uv before signing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-packaged-uv-'))
+    try {
+      const base = context(root, 'darwin', 4)
+      const target: PackagedRuntimeContext = {
+        ...base, packager: { ...base.packager, platformSpecificBuildOptions: { asar: false } },
+      }
+      const files = ['arm64', 'x64'].map(arch => join(
+        resolvePackagedApplicationRoot(target), 'node_modules', '@dataiku', `uv-darwin-${arch}`, 'bin', 'uv',
+      ))
+      for (const path of files) {
+        mkdirSync(join(path, '..'), { recursive: true })
+        writeFileSync(path, 'uv fixture')
+        chmodSync(path, 0o644)
+      }
+      const read = (path: string): Buffer => Buffer.from(path.endsWith('package.json') ? '{"version":"1.0.0"}' : 'same AA')
+      expect(() => verifyPackagedAgentsAnywhere(target, read, read)).toThrow()
+      for (const path of files) chmodSync(path, 0o755)
+      expect(() => verifyPackagedAgentsAnywhere(target, read, read)).not.toThrow()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a stale AA version or entry copied into the installation payload', () => {
+    const installed = (path: string): Buffer => path.endsWith('package.json')
+      ? Buffer.from(JSON.stringify({ version: '0.1.0-dev.desktop.c123' }))
+      : Buffer.from('prepared AA entry')
+    expect(() => verifyPackagedAgentsAnywhere(context('/build', 'win32'), installed, installed)).not.toThrow()
+    expect(() => verifyPackagedAgentsAnywhere(context('/build', 'win32'), installed, path =>
+      path.endsWith('package.json') ? Buffer.from('{"version":"0.1.0-old"}') : installed(path),
+    )).toThrow('Packaged AA version mismatch')
+    expect(() => verifyPackagedAgentsAnywhere(context('/build', 'win32'), installed, path =>
+      path.endsWith('lib/index.js') ? Buffer.from('stale AA entry') : installed(path),
+    )).toThrow('Packaged AA entry differs')
   })
 
   it('tracks ripgrep and the ConPTY native surface required on Windows', () => {
@@ -309,13 +474,13 @@ describe('packaged desktop runtime verification', () => {
   it.each([
     [
       'darwin',
-      join('/build', '易宝工坊.app', 'Contents', 'Resources', 'app.asar'),
-      join('/build', '易宝工坊.app', 'Contents', 'MacOS', '易宝工坊'),
+      join('/build', '易宝工坊 Beta.app', 'Contents', 'Resources', 'app.asar'),
+      join('/build', '易宝工坊 Beta.app', 'Contents', 'MacOS', '易宝工坊 Beta'),
     ],
     [
       'win32',
       join('/build', 'resources', 'app.asar'),
-      join('/build', '易宝工坊.exe'),
+      join('/build', '易宝工坊 Beta.exe'),
     ],
   ])('inspects the %s selective ASAR layout', (platform, expectedPath, expectedExecutable) => {
     const runtimeContext = context('/build', platform)
@@ -333,8 +498,31 @@ describe('packaged desktop runtime verification', () => {
     expect(listUnpacked).toHaveBeenCalledWith(`${expectedPath}.unpacked`)
   })
 
+  it.each(['win32', 'darwin', 'linux'] as const)('verifies a plain %s app and refuses an accidental ASAR entry', platform => {
+    const base = context('/build', platform, 1)
+    const runtimeContext: PackagedRuntimeContext = {
+      ...base, packager: { ...base.packager, platformSpecificBuildOptions: { asar: false } },
+    }
+    const appRoot = resolvePackagedApplicationRoot(runtimeContext)
+    const paths = [...new Set([
+      ...REQUIRED_PACKAGED_RUNTIME_ENTRIES, ...DESKTOP_RUNTIME_ENTRIES,
+      ...requiredPhysicalEntries(runtimeContext),
+    ])]
+    const files = paths.map(path => ({ path, bytes: 1 }))
+    const readHeader = vi.fn<ArchiveHeaderReader>(headerReader([]))
+    const externalRoot = dirname(resolvePackagedAsarPath(runtimeContext))
+    const externalPaths = requiredExternalEntries(runtimeContext)
+    const exists = (filename: string) => paths.includes(relative(appRoot, filename).replaceAll('\\', '/'))
+      || externalPaths.includes(relative(externalRoot, filename).replaceAll('\\', '/'))
+    expect(() => verifyPackagedRuntime(runtimeContext, readHeader, exists, () => files)).not.toThrow()
+    expect(readHeader).not.toHaveBeenCalled()
+    expect(() => verifyPackagedRuntime(runtimeContext, readHeader,
+      filename => filename === resolvePackagedAsarPath(runtimeContext) || exists(filename),
+      () => files)).toThrow('unexpectedly contains app.asar')
+  })
+
   it('uses LinuxPackager executableName instead of appInfo.productFilename', () => {
-    const runtimeContext = context('/build', 'linux', 1, 'dsh-plugin-desktop')
+    const runtimeContext = context('/build', 'linux', 1, 'dsh-plugin-desktop-beta')
     const expectedPath = join('/build', 'resources', 'app.asar')
     const fixture = physicalFixture(runtimeContext)
 
@@ -347,7 +535,7 @@ describe('packaged desktop runtime verification', () => {
 
     expect(resolvePackagedAsarPath(runtimeContext)).toBe(expectedPath)
     expect(resolvePackagedExecutablePath(runtimeContext))
-      .toBe(join('/build', 'dsh-plugin-desktop'))
+      .toBe(join('/build', 'dsh-plugin-desktop-beta'))
   })
 
   it('rejects an unsupported platform instead of guessing a package layout', () => {
@@ -564,11 +752,30 @@ describe('packaged desktop runtime verification', () => {
   })
 
   it('keeps the reviewed smart-unpack surface explicit', () => {
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-arm64')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-x64')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-win32-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/fs-ext')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/node-pty')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@vscode/ripgrep-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@img/sharp-')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@deepseek-ai/libreoffice-kit-')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/sherpa-onnx-')
+  })
+
+  it('caps each office and speech native architecture inside the expanded ASAR budget', () => {
+    for (const [path, budget, prefix] of [
+      ['node_modules/@deepseek-ai/libreoffice-kit-darwin-arm64/native.dat', MAX_LIBREOFFICE_KIT_SMART_UNPACK_BYTES, 'node_modules/@deepseek-ai/libreoffice-kit-'],
+      ['node_modules/sherpa-onnx-darwin-arm64/native.node', MAX_SHERPA_ONNX_SMART_UNPACK_BYTES, 'node_modules/sherpa-onnx-'],
+    ] as const) {
+      expect(() => verifySelectiveUnpackedRuntime(
+        asarIndex([path]), '/build/resources/app.asar.unpacked', [{ path, bytes: budget }],
+      )).not.toThrow()
+      expect(() => verifySelectiveUnpackedRuntime(
+        asarIndex([path]), '/build/resources/app.asar.unpacked', [{ path, bytes: budget + 1 }],
+      )).toThrow(`${prefix} smart-unpack budget ${String(budget)} bytes`)
+    }
   })
 
   it('accepts pnpm as an indivisible smart-unpacked package with native helpers', () => {
@@ -581,6 +788,20 @@ describe('packaged desktop runtime verification', () => {
       '/build/resources/app.asar.unpacked',
       files,
     )).not.toThrow()
+  })
+
+  it('accepts the reviewed bundled uv executable with a per-platform size ceiling', () => {
+    const path = 'node_modules/@dataiku/uv-darwin-arm64/bin/uv'
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([path]),
+      '/build/resources/app.asar.unpacked',
+      [{ path, bytes: MAX_DATAIKU_UV_SMART_UNPACK_BYTES }],
+    )).not.toThrow()
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([path]),
+      '/build/resources/app.asar.unpacked',
+      [{ path, bytes: MAX_DATAIKU_UV_SMART_UNPACK_BYTES + 1 }],
+    )).toThrow(`@dataiku/uv smart-unpack budget ${String(MAX_DATAIKU_UV_SMART_UNPACK_BYTES)} bytes`)
   })
 
   it('caps pnpm smart-unpack independently of the full physical payload budget', () => {
@@ -649,7 +870,6 @@ describe('packaged desktop runtime verification', () => {
     'lib/diagnostic-export-worker.js',
     'lib/packaged-runtime-smoke.js',
     'lib/pnpm.js',
-    'lib/update-download.js',
     ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
     ...REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
     'node_modules/open/index.js',
@@ -703,7 +923,7 @@ describe('packaged desktop runtime verification', () => {
     ['linux', 3, REQUIRED_POSIX_FS_EXT_ENTRIES.linux.arm64],
   ] as const)('requires the %s architecture %s fs-ext binding', (platform, arch, missing) => {
     const runtimeContext = context('/build', platform, arch, platform === 'linux'
-      ? 'dsh-plugin-desktop'
+      ? 'dsh-plugin-desktop-beta'
       : undefined)
     const fixture = physicalFixture(runtimeContext, { missing })
     expect(() => verifyPackagedRuntime(
@@ -719,7 +939,7 @@ describe('packaged desktop runtime verification', () => {
       '/build',
       process.platform,
       process.platform === 'darwin' ? 4 : undefined,
-      process.platform === 'linux' ? 'dsh-plugin-desktop' : undefined,
+      process.platform === 'linux' ? 'dsh-plugin-desktop-beta' : undefined,
     )
     const dshVersion = JSON.parse(readFileSync(
       new URL('../node_modules/@deepseek-ai/dsh/package.json', import.meta.url),
@@ -786,5 +1006,28 @@ describe('packaged desktop runtime verification', () => {
 
     expect(() => smokePackagedElectronRuntime(context('/build', process.platform), run))
       .toThrow('status null; signal=SIGTERM')
+  })
+
+  // `prepare-fs-ext.ts` names its output after the ABI of whichever Electron is
+  // actually installed (`electron.abi${abi}.node`), but the manifests above spell that
+  // number out. Bumping the Electron pin across an ABI boundary therefore makes the two
+  // disagree, and nothing fails until a packaging job goes looking for a file that was
+  // never built — on macOS that surfaced only as "universal macOS runtime is missing 2
+  // native file(s)" at the very end of a 14-minute job. Reading electron's own
+  // `abi_version` here turns that into an immediate, every-platform unit failure.
+  it('pins fs-ext ABI manifests to the ABI of the installed Electron', () => {
+    const abi = readFileSync(
+      fileURLToPath(new URL('../node_modules/electron/abi_version', import.meta.url)),
+      'utf8',
+    ).trim()
+    expect(abi).toMatch(/^\d+$/)
+
+    const manifestPaths = [
+      ...Object.values(REQUIRED_POSIX_FS_EXT_ENTRIES).flatMap(byArch => Object.values(byArch)),
+      ...REQUIRED_MACOS_UNIVERSAL_ENTRIES,
+    ].filter(path => path.includes('/fs-ext/'))
+
+    expect(manifestPaths.length).toBeGreaterThan(0)
+    expect(manifestPaths.filter(path => !path.endsWith(`/electron.abi${abi}.node`))).toEqual([])
   })
 })
