@@ -1,10 +1,11 @@
 import { createRequire } from 'node:module'
+import { createServer, type Server } from 'node:http'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 interface DesktopOperationHandle {
   readonly stdout: NodeJS.ReadableStream
@@ -39,11 +40,31 @@ interface MarketCommandRuntime {
 
 type MarketRoute = (request: object, response: object) => void | Promise<void>
 
-const originalFetch = globalThis.fetch
 const temporaryProfiles: string[] = []
+let registryServer: Server
+let registryUrl: string
+
+beforeAll(async () => {
+  registryServer = createServer((request, response) => {
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify({ version: request.url?.includes('modlens') ? '3.18.1' : '9999.0.0' }))
+  })
+  await new Promise<void>(resolve => registryServer.listen(0, '127.0.0.1', resolve))
+  const address = registryServer.address()
+  if (address === null || typeof address === 'string') throw new Error('test npm registry did not bind')
+  registryUrl = `http://127.0.0.1:${address.port}`
+})
+
+beforeEach(() => {
+  vi.stubEnv('DSHM_NPM_MIRROR', registryUrl)
+  for (const name of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'npm_config_https_proxy', 'npm_config_proxy']) vi.stubEnv(name, '')
+})
+
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => registryServer.close(error => error ? reject(error) : resolve()))
+})
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
   for (const profile of temporaryProfiles.splice(0)) rmSync(profile, { recursive: true, force: true })
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
@@ -141,13 +162,6 @@ async function invokeUpdate(route: MarketRoute, compatVersion?: string, name = '
 
 describe('dsh-market Desktop install compatibility', () => {
   it('offers the host-provided market update when the Profile omits dshmarket', async () => {
-    for (const name of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']) {
-      vi.stubEnv(name, '')
-    }
-    globalThis.fetch = vi.fn(async () => new Response(
-      JSON.stringify({ version: '9999.0.0' }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ))
 
     const profileDir = mkdtempSync(join(tmpdir(), 'dshmarket-desktop-self-update-'))
     temporaryProfiles.push(profileDir)
@@ -207,13 +221,6 @@ describe('dsh-market Desktop install compatibility', () => {
     '@liustack/modlens',
     '@liustack/modlens@latest',
   ])('resolves npm latest target %s and enters the external Market install boundary', async (target) => {
-    for (const name of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']) {
-      vi.stubEnv(name, '')
-    }
-    globalThis.fetch = vi.fn(async () => new Response(
-      JSON.stringify({ version: '3.18.1' }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ))
     const runPlugin = vi.fn(() => completedHandle())
     const runExternalMarketPluginInstall = vi.fn((
       _args: readonly string[],
@@ -290,10 +297,6 @@ describe('dsh-market Desktop install compatibility', () => {
   })
 
   it.each([undefined, '9999.0.0'])('does not reject a host-provided market update for a pre-existing missing bundle (compatVersion=%s)', async (compatVersion) => {
-    globalThis.fetch = vi.fn(async () => new Response(
-      JSON.stringify({ version: '9999.0.0' }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ))
     const profileDir = mkdtempSync(join(tmpdir(), 'dshmarket-trial-baseline-'))
     temporaryProfiles.push(profileDir)
     vi.stubEnv('DSH_HOME', join(profileDir, 'empty-home'))
@@ -403,10 +406,6 @@ describe('dsh-market Desktop install compatibility', () => {
   })
 
   it('restores dependencies and the bundle stack when an update introduces a trial failure', async () => {
-    globalThis.fetch = vi.fn(async () => new Response(
-      JSON.stringify({ version: '9999.0.0' }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ))
     const profileDir = mkdtempSync(join(tmpdir(), 'dshmarket-trial-rollback-'))
     temporaryProfiles.push(profileDir)
     vi.stubEnv('DSH_HOME', join(profileDir, 'empty-home'))

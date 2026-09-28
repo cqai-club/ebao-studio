@@ -206,6 +206,8 @@ describe('published package surface', () => {
       'cqai-dsh-plugin-market': '0.1.0',
       'cqai-dsh-plugin-publisher': '0.1.0',
       'dsh-community-market': '0.1.0-dev.0',
+      'dsh-ppt': '0.1.1-rc.2',
+      'dsh-ppt-composer': 'file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz',
       dshmarket: expect.stringMatching(/^\d+\.\d+\.\d+/),
       'react-dom': '18.3.1',
     })
@@ -821,7 +823,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.6')
+    expect(manifest.version).toBe('0.0.8')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
@@ -836,6 +838,7 @@ describe('published package surface', () => {
       'build/tray-iconTemplate.png',
       'build/tray-iconTemplate@2x.png',
       'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**',
+      'node_modules/cqai-dsh-plugin-short-video/runtime/**',
     ])
     const windowsIcons = [
       'build/app-icon.png',
@@ -851,8 +854,8 @@ describe('published package surface', () => {
       'build/tray-icon-blue@1.5x.png',
       'build/tray-icon-blue@2x.png',
     ]
-    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**'])
-    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**'])
+    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**'])
+    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**'])
     expect(manifest.build?.electronFuses).toEqual({
       enableEmbeddedAsarIntegrityValidation: true,
       onlyLoadAppFromAsar: true,
@@ -995,6 +998,7 @@ describe('published package surface', () => {
       artifactName: 'eBao-Studio-${version}-${arch}.${ext}',
       x64ArchFiles: expect.stringContaining('node-pty/prebuilds/darwin-*'),
     }))
+    expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
     expect(manifest.build?.files).toContain('!node_modules/node-pty/build/**')
     expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
     expect(manifest.devDependencies?.['@electron/asar']).toBe('3.4.1')

@@ -28,6 +28,7 @@ import {
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
+  REQUIRED_DSH_PPT_RUNTIME_ENTRIES,
   REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
   REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES,
   REQUIRED_PACKAGED_RUNTIME_ENTRIES,
@@ -297,6 +298,12 @@ describe('packaged desktop runtime verification', () => {
       'node_modules/cqai-dsh-plugin-publisher/lib/client.js',
     ])
     for (const entry of REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES) {
+      expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
+    }
+  })
+
+  it('keeps the default PPT composer, core Skill, and previews present in app.asar', () => {
+    for (const entry of REQUIRED_DSH_PPT_RUNTIME_ENTRIES) {
       expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
     }
   })
@@ -756,9 +763,11 @@ describe('packaged desktop runtime verification', () => {
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-arm64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-win32-x64')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/cqai-dsh-plugin-short-video')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/fs-ext')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/node-pty')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@dataiku/uv-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@vscode/ripgrep-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@img/sharp-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@deepseek-ai/libreoffice-kit-')
@@ -777,6 +786,27 @@ describe('packaged desktop runtime verification', () => {
         asarIndex([path]), '/build/resources/app.asar.unpacked', [{ path, bytes: budget + 1 }],
       )).toThrow(`${prefix} smart-unpack budget ${String(budget)} bytes`)
     }
+  })
+
+  it('allows reviewed uv binaries on macOS and Windows within a per-package budget', () => {
+    const files = [
+      { path: 'node_modules/@dataiku/uv-darwin-arm64/uv', bytes: 40 * 1024 * 1024 },
+      { path: 'node_modules/@dataiku/uv-darwin-x64/uv', bytes: 48 * 1024 * 1024 },
+      { path: 'node_modules/@dataiku/uv-win32-arm64/uv.exe', bytes: 40 * 1024 * 1024 },
+      { path: 'node_modules/@dataiku/uv-win32-x64/uv.exe', bytes: 48 * 1024 * 1024 },
+    ]
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex(files.map(file => file.path)),
+      '/build/resources/app.asar.unpacked',
+      files,
+    )).not.toThrow()
+
+    const oversized = 'node_modules/@dataiku/uv-win32-x64/uv.exe'
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([oversized]),
+      '/build/resources/app.asar.unpacked',
+      [{ path: oversized, bytes: MAX_DATAIKU_UV_SMART_UNPACK_BYTES + 1 }],
+    )).toThrow('@dataiku/uv smart-unpack budget')
   })
 
   it('accepts pnpm as an indivisible smart-unpacked package with native helpers', () => {

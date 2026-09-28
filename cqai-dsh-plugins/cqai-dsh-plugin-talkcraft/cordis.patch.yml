@@ -1,0 +1,4 @@
+- insert:
+    - id: cqai-talkcraft
+      name: cqai-dsh-plugin-talkcraft
+      disabled: false

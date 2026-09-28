@@ -14,9 +14,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@agents-anywhere/dsh-bridge-next@file:vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
-  version: 0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1
-  resolution: "@agents-anywhere/dsh-bridge-next@file:vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1.tgz#vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1.tgz::hash=10f43a&locator=deepseek-harness-desktop%40workspace%3A."
+"@agents-anywhere/dsh-bridge-next@file:vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.1-desktop.c873f4ae93bb3.r1188e1a1.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 2.0.1-desktop.c873f4ae93bb3.r1188e1a1
+  resolution: "@agents-anywhere/dsh-bridge-next@file:vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.1-desktop.c873f4ae93bb3.r1188e1a1.tgz#vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.1-desktop.c873f4ae93bb3.r1188e1a1.tgz::hash=0a7cc6&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@dataiku/uv": "npm:0.12.0"
     clsx: "npm:2.1.1"
@@ -29,13 +29,13 @@ __metadata:
     "@deepseek-ai/dsh-typert-protocol": 0.1.7-rc.2
     "@deepseek-ai/schemastery": 3.18.4
     react: ^18.3.1
-  checksum: 10c0/18ecb072ce9607c38420dbf0b2bc14c287cba7ed9dd138017e8c7e68821ed53e33fa6f4a2599769813e710a8388f5ece4d9027480ed1a136b07904a4ebd6df1b
+  checksum: 10c0/1005c43b0e7fb1a86d8685e9041b37d086919b73a701f65034dfdb1edae4a8458d4be60779c59d9f4c2af317586059d1851edf30263f7a0c97b87be3471ad76a
   languageName: node
   linkType: hard
 
-"@agents-anywhere/dsh-bridge-next@patch:@agents-anywhere/dsh-bridge-next@file%3Avendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1.tgz#./patches/agents-anywhere-connector-httpx.patch::locator=deepseek-harness-desktop%40workspace%3A.":
-  version: 0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1
-  resolution: "@agents-anywhere/dsh-bridge-next@patch:@agents-anywhere/dsh-bridge-next@file%3Avendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1.tgz%23vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1.tgz%3A%3Ahash=10f43a&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/agents-anywhere-connector-httpx.patch::version=0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1&hash=a0dfbd&locator=deepseek-harness-desktop%40workspace%3A."
+"@agents-anywhere/dsh-bridge-next@patch:@agents-anywhere/dsh-bridge-next@file%3Avendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.1-desktop.c873f4ae93bb3.r1188e1a1.tgz#./patches/agents-anywhere-connector-httpx.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 2.0.1-desktop.c873f4ae93bb3.r1188e1a1
+  resolution: "@agents-anywhere/dsh-bridge-next@patch:@agents-anywhere/dsh-bridge-next@file%3Avendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.1-desktop.c873f4ae93bb3.r1188e1a1.tgz%23vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.1-desktop.c873f4ae93bb3.r1188e1a1.tgz%3A%3Ahash=0a7cc6&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/agents-anywhere-connector-httpx.patch::version=2.0.1-desktop.c873f4ae93bb3.r1188e1a1&hash=a0dfbd&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@dataiku/uv": "npm:0.12.0"
     clsx: "npm:2.1.1"
@@ -48,7 +48,22 @@ __metadata:
     "@deepseek-ai/dsh-typert-protocol": 0.1.7-rc.2
     "@deepseek-ai/schemastery": 3.18.4
     react: ^18.3.1
-  checksum: 10c0/1eb9cf5edb3b434c6d1dbb19bf64ba33af0f00aa5679fbf60143439d247e8c3c273d70e9fb4d3b08c1fed9509362ad387d904d8005236f9bfae320d20170fa89
+  checksum: 10c0/a231a7b5a038d61453453d52f700de83f8c8eb62de4986f05c1d277b50bdc300b58cce177d84ed05e804a826dd93af76c58a3fd9c266f11f6264a914da23eec3
+  languageName: node
+  linkType: hard
+
+"@aiden0z/pptx-renderer@npm:1.2.4":
+  version: 1.2.4
+  resolution: "@aiden0z/pptx-renderer@npm:1.2.4"
+  dependencies:
+    echarts: "npm:^6.0.0"
+    jszip: "npm:^3.10.1"
+  peerDependencies:
+    pdfjs-dist: ">=5 <7"
+  peerDependenciesMeta:
+    pdfjs-dist:
+      optional: true
+  checksum: 10c0/48629f1a9097b861e2237dac5705bd774339ce87869180ce37c40ad676745d28a3bca7b7dbd05a0eb703286c2bb319d8093dc5092d165de79465e718c576bc69
   languageName: node
   linkType: hard
 
@@ -1213,7 +1228,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@cqaiclub/dsn-account@npm:0.1.1, @cqaiclub/dsn-account@workspace:^, @cqaiclub/dsn-account@workspace:cqai-dsh-plugins/cqai-dsh-plugin-account":
+"@cqaiclub/dsn-account@npm:0.1.1, @cqaiclub/dsn-account@npm:^0.1.0, @cqaiclub/dsn-account@workspace:^, @cqaiclub/dsn-account@workspace:cqai-dsh-plugins/cqai-dsh-plugin-account":
   version: 0.0.0-use.local
   resolution: "@cqaiclub/dsn-account@workspace:cqai-dsh-plugins/cqai-dsh-plugin-account"
   dependencies:
@@ -1482,7 +1497,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@deepseek-ai/cosmokit@npm:~1.8.5":
+"@deepseek-ai/cosmokit@npm:^1.8.3, @deepseek-ai/cosmokit@npm:~1.8.5":
   version: 1.8.5
   resolution: "@deepseek-ai/cosmokit@npm:1.8.5"
   checksum: 10c0/b7c8c2f1b6c08e3e6ce3bc0804d77ef43035229811afb89a43a680e0c198ed93cd0f2bb1cfbf30c8626ac839e1eaf58f655a31c577c69cd7b0bf3237278e156e
@@ -2254,12 +2269,12 @@ __metadata:
 
 "@deepseek-ai/dsh-client-ui-conversation@patch:@deepseek-ai/dsh-client-ui-conversation@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz#./patches/dsh-client-ui-conversation@0.1.7-rc.2.patch::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.1.7-rc.2
-  resolution: "@deepseek-ai/dsh-client-ui-conversation@patch:@deepseek-ai/dsh-client-ui-conversation@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%23vendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%3A%3Ahash=3ee421&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-conversation@0.1.7-rc.2.patch::version=0.1.7-rc.2&hash=e2b410&locator=deepseek-harness-desktop%40workspace%3A."
+  resolution: "@deepseek-ai/dsh-client-ui-conversation@patch:@deepseek-ai/dsh-client-ui-conversation@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%23vendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%3A%3Ahash=3ee421&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-conversation@0.1.7-rc.2.patch::version=0.1.7-rc.2&hash=3eafcc&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@deepseek-ai/schemastery": "npm:~3.18.4"
   peerDependencies:
     "@deepseek-ai/cordis": ~4.0.4
-  checksum: 10c0/81e5f7b16710169c9b016c00447230157b539f60da8ae2b2af65376ce303a6addfd3218c087802cd452826ee9d4cf208ec66b1c4a9a71975ef4f2b4d4a866094
+  checksum: 10c0/3a13d760d19006f723ae23eb9fa0ab7f6f88c2b5ad24278375d65dc1ed912a262a7f743d2670d1e4159dbde86f546e625e9e60a6366f0f54ca054d771b19a0ee
   languageName: node
   linkType: hard
 
@@ -6412,6 +6427,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@deepseek-ai/schemastery@npm:3.18.2":
+  version: 3.18.2
+  resolution: "@deepseek-ai/schemastery@npm:3.18.2"
+  dependencies:
+    "@deepseek-ai/cosmokit": "npm:^1.8.3"
+    "@standard-schema/spec": "npm:^1.1.0"
+  checksum: 10c0/699651803c2cec6512ec648c31e0b4fcf07451b0adbf7c6bfb8462b6fa84f97584372b00a31ec8f1248c283f8e91819aa143432c28271347de5568ef9ea46421
+  languageName: node
+  linkType: hard
+
 "@deepseek-ai/schemastery@npm:3.18.4, @deepseek-ai/schemastery@npm:^3.18.2, @deepseek-ai/schemastery@npm:^3.18.4, @deepseek-ai/schemastery@npm:~3.18.4":
   version: 3.18.4
   resolution: "@deepseek-ai/schemastery@npm:3.18.4"
@@ -9324,6 +9349,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:^22.8.1":
+  version: 22.20.4
+  resolution: "@types/node@npm:22.20.4"
+  dependencies:
+    undici-types: "npm:~6.21.0"
+  checksum: 10c0/3a17e19f7b7b7a6d6c695ef8b0a34b70f84829a1539f57d338487bc3b51ddd4ca86ffbcbcc4f1307a41de83d02c1b7dfbb16e8cb6a9c3a8360b4306ccf9ead2d
+  languageName: node
+  linkType: hard
+
 "@types/node@npm:^24.9.0":
   version: 24.13.3
   resolution: "@types/node@npm:24.13.3"
@@ -11313,6 +11347,78 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"cqai-dsh-plugin-short-video@npm:^0.1.0, cqai-dsh-plugin-short-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-short-video":
+  version: 0.0.0-use.local
+  resolution: "cqai-dsh-plugin-short-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-short-video"
+  dependencies:
+    "@cqaiclub/dsn-account": "npm:^0.1.0"
+    "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-primitives": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-home-paths": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-host-webserver": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-llm": "npm:^0.1.7-rc.2"
+    "@types/node": "npm:^22.20.0"
+    "@types/react": "npm:~18.3.1"
+    react: "npm:^18.3.1"
+    tsdown: "npm:0.22.2"
+    typescript: "npm:~5.7.2"
+    vitest: "npm:4.1.8"
+  peerDependencies:
+    "@cqaiclub/dsn-account": ^0.1.0
+    "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-client-ui-layout": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-renderer": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-home-paths": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-host-webserver": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-llm": ^0.1.7-rc.2
+    react: ^18.3.1
+  languageName: unknown
+  linkType: soft
+
+"cqai-dsh-plugin-talkcraft@npm:0.1.0, cqai-dsh-plugin-talkcraft@workspace:cqai-dsh-plugins/cqai-dsh-plugin-talkcraft":
+  version: 0.0.0-use.local
+  resolution: "cqai-dsh-plugin-talkcraft@workspace:cqai-dsh-plugins/cqai-dsh-plugin-talkcraft"
+  dependencies:
+    "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-primitives": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-credentials": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-home-paths": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-host-webserver": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-jobs": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-system-prompt": "npm:^0.1.7-rc.2"
+    "@types/node": "npm:^22.20.0"
+    "@types/react": "npm:~18.3.1"
+    react: "npm:^18.3.1"
+    tsdown: "npm:0.22.2"
+    typescript: "npm:~5.7.2"
+    vitest: "npm:4.1.8"
+  peerDependencies:
+    "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-client-ui-layout": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-renderer": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-credentials": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-home-paths": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-host-webserver": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-jobs": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-system-prompt": ^0.1.7-rc.2
+    react: ^18.3.1
+  languageName: unknown
+  linkType: soft
+
 "cqai-dsh-plugin-video@npm:^0.1.0, cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video"
@@ -12392,7 +12498,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dsh-desktop-next@workspace:dsh-desktop-next"
   dependencies:
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1.tgz"
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.1-desktop.c873f4ae93bb3.r1188e1a1.tgz"
     "@base-ui/react": "npm:^1.7.0"
     "@deepseek-ai/cordis": "npm:4.0.4"
     "@deepseek-ai/cordis-plugin-group": "npm:1.0.4"
@@ -12568,7 +12674,7 @@ __metadata:
     clsx: "npm:^2.1.1"
     diff: "npm:^9.0.0"
     dsh-community-market: "npm:0.1.0-dev.0"
-    dshmarket: "npm:1.66.1"
+    dshmarket: "npm:1.66.3"
     electron: "npm:44.0.0"
     electron-builder: "npm:26.15.7"
     immer: "npm:^10.1.1"
@@ -12610,7 +12716,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dsh-plugin-desktop-beta@workspace:dsh-plugin-desktop-beta"
   dependencies:
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1.tgz"
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.1-desktop.c873f4ae93bb3.r1188e1a1.tgz"
     "@base-ui/react": "npm:^1.7.0"
     "@cqaiclub/dsn-account": "npm:0.1.1"
     "@deepseek-ai/cordis": "npm:4.0.4"
@@ -12790,9 +12896,13 @@ __metadata:
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     cqai-dsh-plugin-publisher: "npm:0.1.0"
+    cqai-dsh-plugin-short-video: "npm:^0.1.0"
+    cqai-dsh-plugin-talkcraft: "npm:0.1.0"
     cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
-    dshmarket: "npm:1.66.1"
+    dsh-ppt: "npm:0.1.1-rc.2"
+    dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz"
+    dshmarket: "npm:1.66.3"
     electron: "npm:44.0.0"
     electron-builder: "npm:26.15.7"
     electron-updater: "npm:6.8.9"
@@ -12833,7 +12943,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dsh-plugin-desktop@workspace:dsh-plugin-desktop"
   dependencies:
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-0.1.0-dev.0.desktop.c3b71979f7ac8.r1188e1a1.tgz"
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.1-desktop.c873f4ae93bb3.r1188e1a1.tgz"
     "@base-ui/react": "npm:^1.7.0"
     "@cqaiclub/dsn-account": "npm:0.1.1"
     "@deepseek-ai/cordis": "npm:4.0.4"
@@ -13013,9 +13123,13 @@ __metadata:
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     cqai-dsh-plugin-publisher: "npm:0.1.0"
+    cqai-dsh-plugin-short-video: "npm:^0.1.0"
+    cqai-dsh-plugin-talkcraft: "npm:0.1.0"
     cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
-    dshmarket: "npm:1.66.1"
+    dsh-ppt: "npm:0.1.1-rc.2"
+    dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz"
+    dshmarket: "npm:1.66.3"
     electron: "npm:44.0.0"
     electron-builder: "npm:26.15.7"
     electron-updater: "npm:6.8.9"
@@ -13052,28 +13166,70 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"dshmarket@npm:1.66.1":
-  version: 1.66.1
-  resolution: "dshmarket@npm:1.66.1"
+"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop":
+  version: 0.1.1-rc.2
+  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::hash=b9be66&locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop"
   dependencies:
-    js-yaml: "npm:^4.1.0"
-    undici: "npm:^7.29.0"
+    "@deepseek-ai/schemastery": "npm:3.18.2"
+    dsh-ppt: "npm:0.1.1-rc.2"
   peerDependencies:
-    "@deepseek-ai/cordis": ^4.0.1
-    "@deepseek-ai/dsh-settings": ^0.1.0-rc.7 || ^0.1.1-rc.2 || ^0.1.2-alpha.2
-    "@deepseek-ai/schemastery": ^3.18.1
-  peerDependenciesMeta:
-    "@deepseek-ai/dsh-settings":
-      optional: true
-    "@deepseek-ai/schemastery":
-      optional: true
-  checksum: 10c0/9d8070bf3a22b3e37c5ac938d66cbe07d77e5b0cc3baad1b3a4b21e19103f90a197ed8d6e989ac1c217b96f40eeac3c912da19ae4b7415b630f9c32ae91c957d
+    "@deepseek-ai/cordis": ~4.0.4
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+  checksum: 10c0/82f7f39f304ac626c09856e857b29fff48d082037c4d836cc2d8035b008669145c4b55eeedce3809b9c1c688a3ed567db978a15a9d03f7a09fde4c7f673d56fc
   languageName: node
   linkType: hard
 
-"dshmarket@patch:dshmarket@npm%3A1.66.1#./.yarn/patches/dshmarket-desktop.patch::locator=deepseek-harness-desktop%40workspace%3A.":
-  version: 1.66.1
-  resolution: "dshmarket@patch:dshmarket@npm%3A1.66.1#./.yarn/patches/dshmarket-desktop.patch::version=1.66.1&hash=73c33a&locator=deepseek-harness-desktop%40workspace%3A."
+"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta":
+  version: 0.1.1-rc.2
+  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::hash=b9be66&locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta"
+  dependencies:
+    "@deepseek-ai/schemastery": "npm:3.18.2"
+    dsh-ppt: "npm:0.1.1-rc.2"
+  peerDependencies:
+    "@deepseek-ai/cordis": ~4.0.4
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+  checksum: 10c0/82f7f39f304ac626c09856e857b29fff48d082037c4d836cc2d8035b008669145c4b55eeedce3809b9c1c688a3ed567db978a15a9d03f7a09fde4c7f673d56fc
+  languageName: node
+  linkType: hard
+
+"dsh-ppt@file:vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 0.1.1-rc.2
+  resolution: "dsh-ppt@file:vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#vendor/ppt-runtime/dsh-ppt-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::hash=65d04a&locator=deepseek-harness-desktop%40workspace%3A."
+  dependencies:
+    "@aiden0z/pptx-renderer": "npm:1.2.4"
+    "@deepseek-ai/schemastery": "npm:3.18.2"
+    fflate: "npm:^0.8.3"
+    js-yaml: "npm:^4.2.0"
+    jsdom: "npm:29.1.1"
+    pptxgenjs: "npm:^4.0.1"
+    sharp: "npm:^0.35.3"
+    typescript: "npm:^6.0.3"
+    zod: "npm:^4.4.3"
+  peerDependencies:
+    "@deepseek-ai/cordis": ~4.0.4
+    "@deepseek-ai/dsh-agent": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-brand": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-connection": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-locale": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-conversation": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-llm": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-session": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-skill": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-system-prompt": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    "@deepseek-ai/dsh-tools": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
+    react: ^18.2.0
+  bin:
+    dsh-pptd: ./lib/bin.js
+  checksum: 10c0/8d0e0f066316cfcfc076e8bc2c744f745d63cabdaf5af5b965d84aba3371d42b442baf5a6ddf1b24c2c8da882508d7d09f7ae3cfaff088271556fbdd68bf4669
+  languageName: node
+  linkType: hard
+
+"dshmarket@npm:1.66.3":
+  version: 1.66.3
+  resolution: "dshmarket@npm:1.66.3"
   dependencies:
     js-yaml: "npm:^4.1.0"
     undici: "npm:^7.29.0"
@@ -13086,7 +13242,26 @@ __metadata:
       optional: true
     "@deepseek-ai/schemastery":
       optional: true
-  checksum: 10c0/3bc9ce0d99e5fd404b431510193cea28cc0c1a8e3df04c7226285806cce27684415c84fae66fc3b30509313bf35e6b5fbd565c05e4727ddeabb5251e29fd1a5d
+  checksum: 10c0/f0415517111bd29c507bc60e05ae072cf1dc58d750e7db3500910cc447f896a6c3e3ce53d655a887fd4c8553c1a2ef833fc6a84f0f64f6d1b3adba105779f8d3
+  languageName: node
+  linkType: hard
+
+"dshmarket@patch:dshmarket@npm%3A1.66.3#./.yarn/patches/dshmarket-desktop.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 1.66.3
+  resolution: "dshmarket@patch:dshmarket@npm%3A1.66.3#./.yarn/patches/dshmarket-desktop.patch::version=1.66.3&hash=73c33a&locator=deepseek-harness-desktop%40workspace%3A."
+  dependencies:
+    js-yaml: "npm:^4.1.0"
+    undici: "npm:^7.29.0"
+  peerDependencies:
+    "@deepseek-ai/cordis": ^4.0.1
+    "@deepseek-ai/dsh-settings": ^0.1.0-rc.7 || ^0.1.1-rc.2 || ^0.1.2-alpha.2
+    "@deepseek-ai/schemastery": ^3.18.1
+  peerDependenciesMeta:
+    "@deepseek-ai/dsh-settings":
+      optional: true
+    "@deepseek-ai/schemastery":
+      optional: true
+  checksum: 10c0/09f677a0a22f2fc6cfb9370e2eab1d99766a18718716621ae1f6a12be3930450033857e0e6db067768e78e232c8808a161822ebd09dde8adb3b0e49a25ec3474
   languageName: node
   linkType: hard
 
@@ -13128,6 +13303,16 @@ __metadata:
   dependencies:
     safe-buffer: "npm:^5.0.1"
   checksum: 10c0/ebfbf19d4b8be938f4dd4a83b8788385da353d63307ede301a9252f9f7f88672e76f2191618fd8edfc2f24679236064176fab0b78131b161ee73daa37125408c
+  languageName: node
+  linkType: hard
+
+"echarts@npm:^6.0.0":
+  version: 6.1.0
+  resolution: "echarts@npm:6.1.0"
+  dependencies:
+    tslib: "npm:2.3.0"
+    zrender: "npm:6.1.0"
+  checksum: 10c0/a0911a9d75969ff946d0bce998e95e1924cdec7f5ca6be13ded376e2a47067c70b264ee8d04ba84345aa7895363e202f54c87d2bae114859bd154d565babc09c
   languageName: node
   linkType: hard
 
@@ -13665,7 +13850,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fflate@npm:^0.8.2":
+"fflate@npm:^0.8.2, fflate@npm:^0.8.3":
   version: 0.8.3
   resolution: "fflate@npm:0.8.3"
   checksum: 10c0/eab181ca37f5348ae76d4b6f840e0026e30220e33153289ac942222d8b9638237d486507dbcc09878d724095bd354993a2ee48bbee99c8f2c6440d4448719aa7
@@ -14297,6 +14482,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"https@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "https@npm:1.0.0"
+  checksum: 10c0/e36eb4c38f09264bb273925b2d658c38bb8dda655cdff679b75dc45ccac26b1520fadcf00be677ccc4432a62f44a408b522f66cfc802ce30f4effe75decfd554
+  languageName: node
+  linkType: hard
+
 "human-signals@npm:^2.1.0":
   version: 2.1.0
   resolution: "human-signals@npm:2.1.0"
@@ -14333,6 +14525,24 @@ __metadata:
   version: 5.3.2
   resolution: "ignore@npm:5.3.2"
   checksum: 10c0/f9f652c957983634ded1e7f02da3b559a0d4cc210fca3792cb67f1b153623c9c42efdc1c4121af171e295444459fc4a9201101fb041b1104a3c000bccb188337
+  languageName: node
+  linkType: hard
+
+"image-size@npm:^1.2.1":
+  version: 1.2.1
+  resolution: "image-size@npm:1.2.1"
+  dependencies:
+    queue: "npm:6.0.2"
+  bin:
+    image-size: bin/image-size.js
+  checksum: 10c0/f8b3c19d4476513f1d7e55c3e6db80997b315444743e2040d545cbcaee59be03d2eb40c46be949a8372697b7003fdb0c04925d704390a7f606bc8181e25c0ed4
+  languageName: node
+  linkType: hard
+
+"immediate@npm:~3.0.5":
+  version: 3.0.6
+  resolution: "immediate@npm:3.0.6"
+  checksum: 10c0/f8ba7ede69bee9260241ad078d2d535848745ff5f6995c7c7cb41cfdc9ccc213f66e10fa5afb881f90298b24a3f7344b637b592beb4f54e582770cdce3f1f039
   languageName: node
   linkType: hard
 
@@ -14840,6 +15050,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"jszip@npm:^3.10.1":
+  version: 3.10.2
+  resolution: "jszip@npm:3.10.2"
+  dependencies:
+    lie: "npm:~3.3.0"
+    pako: "npm:~1.0.2"
+    readable-stream: "npm:~2.3.6"
+    setimmediate: "npm:^1.0.5"
+  checksum: 10c0/c51b1473062bb7ac81c0c76047d99a2b56a062f2427ac989e28b46b31ecab636a440f137d15ff6320a961b7e1048c802f0bed83a2e10ed0ba9c2cfd84e818bc6
+  languageName: node
+  linkType: hard
+
 "jwa@npm:^2.0.1":
   version: 2.0.1
   resolution: "jwa@npm:2.0.1"
@@ -14988,6 +15210,15 @@ __metadata:
     typescript:
       optional: true
   checksum: 10c0/a9a6d8d18b74c87759886653ad77705d0ba417f38ee065cc623b7e3ca3b663c21b89314b393d8323ee01e7108676e697a4c07be22522f3743355a751dda16d0f
+  languageName: node
+  linkType: hard
+
+"lie@npm:~3.3.0":
+  version: 3.3.0
+  resolution: "lie@npm:3.3.0"
+  dependencies:
+    immediate: "npm:~3.0.5"
+  checksum: 10c0/56dd113091978f82f9dc5081769c6f3b947852ecf9feccaf83e14a123bc630c2301439ce6182521e5fbafbde88e88ac38314327a4e0493a1bea7e0699a7af808
   languageName: node
   linkType: hard
 
@@ -16754,6 +16985,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pako@npm:~1.0.2":
+  version: 1.0.11
+  resolution: "pako@npm:1.0.11"
+  checksum: 10c0/86dd99d8b34c3930345b8bbeb5e1cd8a05f608eeb40967b293f72fe469d0e9c88b783a8777e4cc7dc7c91ce54c5e93d88ff4b4f060e6ff18408fd21030d9ffbe
+  languageName: node
+  linkType: hard
+
 "parent-module@npm:^1.0.0":
   version: 1.0.1
   resolution: "parent-module@npm:1.0.1"
@@ -17055,6 +17293,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pptxgenjs@npm:^4.0.1":
+  version: 4.0.1
+  resolution: "pptxgenjs@npm:4.0.1"
+  dependencies:
+    "@types/node": "npm:^22.8.1"
+    https: "npm:^1.0.0"
+    image-size: "npm:^1.2.1"
+    jszip: "npm:^3.10.1"
+  checksum: 10c0/b849e5fb7de9f97c7a38ad1878d39418d9347a44cf39dc17b1dcac96e4abcece50ea06ab0d2b01b860a54f978dbe83aca36f53cf23f54e655ebe04de7d91af96
+  languageName: node
+  linkType: hard
+
 "prettier@npm:^3.2.5":
   version: 3.9.6
   resolution: "prettier@npm:3.9.6"
@@ -17265,6 +17515,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"queue@npm:6.0.2":
+  version: 6.0.2
+  resolution: "queue@npm:6.0.2"
+  dependencies:
+    inherits: "npm:~2.0.3"
+  checksum: 10c0/cf987476cc72e7d3aaabe23ccefaab1cd757a2b5e0c8d80b67c9575a6b5e1198807ffd4f0948a3f118b149d1111d810ee773473530b77a5c606673cac2c9c996
+  languageName: node
+  linkType: hard
+
 "quick-lru@npm:^5.1.1":
   version: 5.1.1
   resolution: "quick-lru@npm:5.1.1"
@@ -17339,7 +17598,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"readable-stream@npm:^2.0.2":
+"readable-stream@npm:^2.0.2, readable-stream@npm:~2.3.6":
   version: 2.3.8
   resolution: "readable-stream@npm:2.3.8"
   dependencies:
@@ -17996,6 +18255,13 @@ __metadata:
   version: 2.0.0
   resolution: "set-blocking@npm:2.0.0"
   checksum: 10c0/9f8c1b2d800800d0b589de1477c753492de5c1548d4ade52f57f1d1f5e04af5481554d75ce5e5c43d4004b80a3eb714398d6907027dc0534177b7539119f4454
+  languageName: node
+  linkType: hard
+
+"setimmediate@npm:^1.0.5":
+  version: 1.0.5
+  resolution: "setimmediate@npm:1.0.5"
+  checksum: 10c0/5bae81bfdbfbd0ce992893286d49c9693c82b1bcc00dcaaf3a09c8f428fdeacf4190c013598b81875dfac2b08a572422db7df779a99332d0fce186d15a3e4d49
   languageName: node
   linkType: hard
 
@@ -18941,6 +19207,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"tslib@npm:2.3.0":
+  version: 2.3.0
+  resolution: "tslib@npm:2.3.0"
+  checksum: 10c0/a845aed84e7e7dbb4c774582da60d7030ea39d67307250442d35c4c5dd77e4b44007098c37dd079e100029c76055f2a362734b8442ba828f8cc934f15ed9be61
+  languageName: node
+  linkType: hard
+
 "tslib@npm:^1.9.3":
   version: 1.14.1
   resolution: "tslib@npm:1.14.1"
@@ -19005,7 +19278,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:6.0.3, typescript@npm:^6.0.0":
+"typescript@npm:6.0.3, typescript@npm:^6.0.0, typescript@npm:^6.0.3":
   version: 6.0.3
   resolution: "typescript@npm:6.0.3"
   bin:
@@ -19025,7 +19298,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^6.0.0#optional!builtin<compat/typescript>":
+"typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^6.0.0#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^6.0.3#optional!builtin<compat/typescript>":
   version: 6.0.3
   resolution: "typescript@patch:typescript@npm%3A6.0.3#optional!builtin<compat/typescript>::version=6.0.3&hash=5786d5"
   bin:
@@ -20003,6 +20276,15 @@ __metadata:
   version: 4.6.5
   resolution: "zod@npm:4.6.5"
   checksum: 10c0/32eb6c5e98becbe045675b2141c3611451c16ba567f9779231d79af41c4d651ca1c22f154aef7e6c6e77b929f23e43f1154ca05b82e119e922353725d6776af5
+  languageName: node
+  linkType: hard
+
+"zrender@npm:6.1.0":
+  version: 6.1.0
+  resolution: "zrender@npm:6.1.0"
+  dependencies:
+    tslib: "npm:2.3.0"
+  checksum: 10c0/bfdb5e2ccd70893a9e2c7f33959749a6a1abc8912c2b1af301a05593d677a2f6f6087cdc4f0bf73883b99eea2f2d11d1922c71c3bf0bd4e9e5b362fd32129bce
   languageName: node
   linkType: hard
 

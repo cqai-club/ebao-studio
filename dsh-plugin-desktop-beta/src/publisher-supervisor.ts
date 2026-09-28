@@ -237,8 +237,10 @@ export class PublisherSupervisor implements DesktopPublisherRuntime {
         || extname(selected.file).toLowerCase() !== '.mp4'
         || typeof selected.size !== 'number' || !Number.isSafeInteger(selected.size) || selected.size < 1
         || typeof selected.mtimeMs !== 'number' || !Number.isFinite(selected.mtimeMs)
-        || typeof selected.dev !== 'number' || !Number.isSafeInteger(selected.dev)
-        || typeof selected.ino !== 'number' || !Number.isSafeInteger(selected.ino)) return undefined
+        // Node reports Windows file IDs as numbers that may exceed MAX_SAFE_INTEGER.
+        // Compare the persisted numeric values with a fresh stat below.
+        || typeof selected.dev !== 'number' || !Number.isInteger(selected.dev) || selected.dev < 0
+        || typeof selected.ino !== 'number' || !Number.isInteger(selected.ino) || selected.ino < 0) return undefined
       const result = selected as unknown as SelectedVideo
       this.localVideos.set(id, result)
       return result

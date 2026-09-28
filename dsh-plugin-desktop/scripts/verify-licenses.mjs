@@ -23,6 +23,10 @@ const publisherSource = JSON.parse(readFileSync(join(workspaceRoot, 'vendor/matr
 /** Licenses accepted for redistribution inside the desktop installers. */
 const ALLOWED_LICENSES = new Set([
   'MIT',
+  // PPT transitive packages use MIT-0, an MIT dual-license option, or MIT with Zlib.
+  'MIT-0',
+  '(MIT OR GPL-3.0-or-later)',
+  '(MIT AND Zlib)',
   'Apache-2.0',
   'BSD-2-Clause',
   'BSD-3-Clause',

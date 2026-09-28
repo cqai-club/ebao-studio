@@ -26,6 +26,7 @@ interface SettledJobFixture {
   readonly id: JobId
   readonly kind: string
   readonly label: string
+  readonly owner?: SessionId
   readonly status: string
   readonly detail?: string
   readonly output?: string
@@ -54,6 +55,7 @@ function createHarness(available: readonly OptionalService[] = ['jobs', 'session
   const stopSessions = vi.fn()
   const jobFilters: unknown[] = []
   const enabled = new Set(available)
+  const sessions = new Map<string, Session>()
   const injections = new Map<OptionalService, (ctx: Context) => void>()
   const disposers = new Map<OptionalService, Array<() => void>>()
   let activeService: OptionalService | undefined
@@ -100,6 +102,9 @@ function createHarness(available: readonly OptionalService[] = ['jobs', 'session
         },
       },
     },
+    get: (service: string) => service === 'sessions' && enabled.has('sessions')
+      ? { get: (id: SessionId) => sessions.get(String(id)) }
+      : undefined,
     on: (
       event: string,
       listener: typeof sessionListener | typeof sessionDisposedListener | (() => void),
@@ -152,8 +157,8 @@ function createHarness(available: readonly OptionalService[] = ['jobs', 'session
     stopSessions,
     async jobSettled(job) { await jobListener?.({ type: 'settled', job, cause: 'natural', awaited: false }) },
     async jobEvent(event) { await jobListener?.(event) },
-    async sessionEvent(session, event) { await sessionListener?.(session, event) },
-    async sessionDisposed(session) { await sessionDisposedListener?.(session) },
+    async sessionEvent(session, event) { sessions.set(String(session.header.id), session); await sessionListener?.(session, event) },
+    async sessionDisposed(session) { sessions.delete(String(session.header.id)); await sessionDisposedListener?.(session) },
     async updateSettings(next) {
       currentSettings = next
       for (const listener of [...volatileListeners]) await listener()
@@ -251,6 +256,25 @@ describe('desktop notifications Host plugin', () => {
       [{ title: 'Background Job Failed', body: 'A background job could not finish. Open 易宝工坊 for details.' }],
     ])
     expect(JSON.stringify(harness.notifyAttention.mock.calls)).not.toMatch(/Users|private|secret|session-123/u)
+  })
+
+  it('keeps internal Agent command completions silent while notifying for direct jobs', async () => {
+    const harness = createHarness()
+    const internal = session('talkcraft-agent', 'subagent')
+    const direct = session('direct-user')
+    await harness.sessionEvent(internal, event('turn/start', { turn: 1 }, 1))
+    await harness.sessionEvent(direct, event('turn/start', { turn: 1 }, 2))
+
+    await harness.jobSettled({ ...job('pwsh-1', 'completed'), owner: internal.header.id })
+    await harness.jobSettled({ ...job('pwsh-2', 'failed'), owner: internal.header.id })
+    expect(harness.notifyAttention).not.toHaveBeenCalled()
+
+    await harness.jobSettled({ ...job('pwsh-3', 'completed'), owner: direct.header.id })
+    expect(harness.notifyAttention).toHaveBeenCalledOnce()
+    expect(harness.notifyAttention).toHaveBeenCalledWith({
+      title: 'Background Job Completed',
+      body: 'A background job has finished.',
+    })
   })
 
   it('ignores the non-terminal events sharing the job stream', async () => {
