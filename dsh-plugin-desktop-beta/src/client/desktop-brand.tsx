@@ -45,12 +45,27 @@ export function DesktopBrandName(_props: SidebarBrandNameOwnerProps) {
   />
 }
 
+/** Compatibility mode does not mount Desktop's full shell stylesheet. */
+export function installDesktopBrandStyles(): () => void {
+  const style = document.createElement('style')
+  style.dataset.dshDesktopBrand = ''
+  style.textContent = `
+.dshDesktopBrandMark { display: block; flex: 0 0 auto; }
+.dshDesktopBrandName { display: block; flex: 0 1 auto; width: auto; max-width: 100%; height: 24px; object-fit: contain; }
+body[data-ds-dark-theme] .dshDesktopBrandMark,
+body[data-ds-dark-theme] .dshDesktopBrandName { filter: invert(1); }
+`
+  document.head.appendChild(style)
+  return () => { style.remove() }
+}
+
 /**
  * Register product branding only after each upstream host declares its slot.
  * This keeps the desktop plugin load-order independent from the UI packages.
  * @param ctx - browser Cordis context.
  */
 export function applyDesktopBrand(ctx: ClientContext): void {
+  ctx.effect(() => installDesktopBrandStyles(), 'dsh-plugin-desktop: brand styles')
   ctx.slots.inject('sidebar.brand.mark', () =>
     ctx.slots.inject('sidebar.brand.name', function* () {
       yield ctx.slots.register({

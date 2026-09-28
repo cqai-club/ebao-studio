@@ -814,10 +814,9 @@ export function verifySelectiveUnpackedRuntime(
     )
   }
   const oversizedUv = summary.groups.find(group => (
-    group.root === 'node_modules/@dataiku/uv-darwin-arm64'
-    || group.root === 'node_modules/@dataiku/uv-darwin-x64'
-    || group.root === 'node_modules/@dataiku/uv-win32-x64'
-  ) && group.bytes > MAX_DATAIKU_UV_SMART_UNPACK_BYTES)
+    group.root.startsWith('node_modules/@dataiku/uv-')
+    && group.bytes > MAX_DATAIKU_UV_SMART_UNPACK_BYTES
+  ))
   if (oversizedUv !== undefined) {
     throw new Error(
       `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds @dataiku/uv smart-unpack budget `

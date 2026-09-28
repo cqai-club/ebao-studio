@@ -1051,6 +1051,7 @@ describe('published package surface', () => {
       target: ['dir'],
       x64ArchFiles: expect.stringContaining('node-pty/prebuilds/darwin-*'),
     }))
+    expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
     expect(manifest.build?.npmRebuild).toBe(false)
     expect(manifest.build?.mac?.x64ArchFiles).toContain('fs-ext/prebuilds/darwin-*')
     expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
