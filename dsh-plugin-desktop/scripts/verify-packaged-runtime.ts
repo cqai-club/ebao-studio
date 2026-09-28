@@ -91,6 +91,8 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
   'node_modules/@dataiku/uv-darwin-arm64',
   'node_modules/@dataiku/uv-darwin-x64',
   'node_modules/@dataiku/uv-win32-x64',
+  // The Short Video package carries explicitly unpacked runtime executables.
+  'node_modules/cqai-dsh-plugin-short-video',
   'node_modules/fs-ext',
   'node_modules/koffi',
   'node_modules/node-addon-require-builtin',
