@@ -1,6 +1,6 @@
 # 口播视频制作插件（基于 TalkCraft）
 
-这是 DSH Desktop 的独立插件。Stable/Beta 开发版默认加载，可在插件管理中禁用。它有自己的侧栏、Host API、Agent 任务、`$DSH_HOME/talkcraft/jobs/<id>` 和 Credentials 记录；不调用 e剪宝。
+这是 DSH Desktop 的独立插件。Stable/Beta 开发版默认加载；当前默认插件尚不能通过界面启停。它有自己的侧栏、Host API、Agent 任务、`$DSH_HOME/talkcraft/jobs/<id>` 和 Credentials 记录；不调用 e剪宝。
 
 ## Windows 开发版准备
 

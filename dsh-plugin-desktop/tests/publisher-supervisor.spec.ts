@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createConnection } from 'node:net'
 import { join } from 'node:path'
@@ -366,6 +366,25 @@ describe('PublisherSupervisor', () => {
     expect(await second.supervisor.readLocalVideoChunk(id, 0, 4))
       .toMatchObject({ ok: false, code: 'video-file-changed' })
     expect(second.workers).toHaveLength(0)
+  })
+
+  it('accepts persisted Windows file IDs above the safe integer limit and still verifies the file', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'publisher-large-ino-'))
+    roots.push(directory)
+    const file = join(directory, 'clip.mp4')
+    writeFileSync(file, 'sample-video')
+    const first = fixture(() => { throw new Error('preview must not start the Worker') }, {
+      userDataPath: directory, pickLocalVideo: async () => file,
+    })
+    const selection = await first.supervisor.selectLocalVideo()
+    const registry = join(directory, 'publisher', 'local-videos', `${selection!.id}.json`)
+    const persisted = JSON.parse(readFileSync(registry, 'utf8')) as Record<string, unknown>
+    persisted.ino = Number.MAX_SAFE_INTEGER + 10001
+    writeFileSync(registry, JSON.stringify(persisted))
+
+    const second = fixture(() => { throw new Error('preview must not start the Worker') }, { userDataPath: directory })
+    expect(await second.supervisor.readLocalVideoChunk(selection!.id, 0, 1))
+      .toMatchObject({ ok: false, code: 'video-file-changed' })
   })
 
   it('treats a cancelled picker as no change and refuses non-MP4 files', async () => {

@@ -73,5 +73,3 @@ props: hostSrc
 - 不属于本卡的：背景（demo 已去掉渐变与暗角，纯白）、标题/副标文案与字体、人物剪影的画法（demo 用 host-placeholder 的灰阶版，实拍来自抠像）、字幕、235px 与 430px 这两个绝对值（按画幅折算）。
 - 迁移接口：字色改 `.bt-title` 的 `color`（默认墨色 #1d1d1f）与 `.bt-sub` 的辅助灰 #8a8a8a；时序在 `CONFIG`（`titleIn`/`riseFrom`/`trackFrom`/`trackTo`/`driftPx`/`driftPeriod`/`subDelay`）；换尺寸时字号按**屏高 40%+**折算、`riseFrom` 与 `driftPx` 同比缩放（`driftPeriod` 不缩放，它是呼吸感的绝对时间）；遮挡量调 `.bt-host` 的 width/height 或换成真实抠像层，务必让头顶吃进标题下缘 ≥25%。
 - 底色要求：白底即可，前提是**标题、人物、底三者明度要分得开**——本卡的效果全靠"字被人挡住"这个层次读出来。白底上人物剪影用浅灰（#e3e3e6/#ececef）、字用墨色即成立；实拍落地时人物层是抠像素材，标题色需与人物主色拉开对比，否则遮挡边界看不出来，效果退化成普通标题。
-
-
