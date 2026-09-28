@@ -470,6 +470,7 @@ records the public repository, branch, exact source commit, build command, and l
 | cqai-dsh-plugin-market | 0.1.0 | MIT |
 | cqai-dsh-plugin-publisher | 0.1.0 | MIT |
 | cqai-dsh-plugin-short-video | 0.1.0 | MIT |
+| cqai-dsh-plugin-talkcraft | 0.1.0 | SEE LICENSE IN LICENSE |
 | cqai-dsh-plugin-video | 0.1.0 | MIT |
 | cross-spawn | 7.0.6 | MIT |
 | css-tree | 3.2.1 | MIT |

@@ -2,6 +2,8 @@
 
 这是 DSH Desktop 的独立插件。Stable/Beta 开发版默认加载；当前默认插件尚不能通过界面启停。它有自己的侧栏、Host API、Agent 任务、`$DSH_HOME/talkcraft/jobs/<id>` 和 Credentials 记录；不调用 e剪宝。
 
+上游 TalkCraft 采用 [PolyForm Noncommercial 1.0.0](LICENSE)；个人非商用可以使用，商业使用需取得上游作者授权。安装包随插件附带完整许可证和版权声明。
+
 ## Windows 开发版准备
 
 在仓库根目录执行：
