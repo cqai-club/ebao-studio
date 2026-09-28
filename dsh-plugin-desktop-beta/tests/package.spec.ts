@@ -89,7 +89,7 @@ const dshResolution = (name: string): unknown =>
 describe('published package surface', () => {
   it('keeps the private workspace version-neutral and versions the Beta package', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.6-beta.1')
+    expect(manifest.version).toBe('0.0.7-beta.1')
   })
 
   it('runs all desktop editions and community market typechecks from the root command', () => {
@@ -233,7 +233,7 @@ describe('published package surface', () => {
       'dsh-community-market': '0.1.0-dev.0',
       'dsh-ppt': '0.1.1-rc.2',
       'dsh-ppt-composer': 'file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz',
-      dshmarket: '1.66.1',
+      dshmarket: '1.66.3',
       'react-dom': '18.3.1',
     })
     expect(manifest.optionalDependencies ?? {}).not.toHaveProperty('dshmarket')
@@ -863,7 +863,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.6-beta.1')
+    expect(manifest.version).toBe('0.0.7-beta.1')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
