@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {} from '../src/client/index.js'
+import { MarketAccountAction } from '../src/client/MarketAccountAction.js'
 import { MarketLauncher, type MarketLauncherProps } from '../src/client/MarketLauncher.js'
 import { createMarketViewStore } from '../src/client/market-view-store.js'
 
@@ -54,5 +55,35 @@ describe('community market launcher', () => {
     rerender(<MarketLauncher {...props} wide />)
     expect(button.getAttribute('data-wide')).toBe('true')
     expect(button.textContent).toContain('tab')
+  })
+
+  it('opens the same storefront through the account-menu action', () => {
+    const instance = createMarketViewStore().create()
+    const useStore = <T,>(selector: (state: { open: boolean }) => T): T => useSyncExternalStore(
+      instance.subscribe,
+      () => selector(instance.getSnapshot()),
+    )
+    const dispose = vi.fn()
+    let action: { label: () => string; onSelect: () => void } | undefined
+    const registerAction = vi.fn((next: typeof action) => { action = next; return dispose })
+    const props = {
+      wide: true,
+      actions: instance.actions,
+      useStore,
+      t,
+      useSessions: (() => undefined) as MarketLauncherProps['useSessions'],
+      useSessionStatus: (() => undefined) as MarketLauncherProps['useSessionStatus'],
+      useSessionRetainInfo: (() => undefined) as MarketLauncherProps['useSessionRetainInfo'],
+      useWorkspaces: (() => undefined) as MarketLauncherProps['useWorkspaces'],
+      usePanelInfo: (select => select({ activePanelId: null })) as MarketLauncherProps['usePanelInfo'],
+      registerAction,
+    }
+    const view = render(<MarketAccountAction {...props} />)
+    expect(registerAction).toHaveBeenCalledOnce()
+    expect(action?.label()).toBe('tab')
+    action?.onSelect()
+    expect(instance.getSnapshot().open).toBe(true)
+    view.unmount()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 })

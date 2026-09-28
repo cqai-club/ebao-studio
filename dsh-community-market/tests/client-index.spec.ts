@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
   const component = () => null
@@ -34,6 +34,8 @@ interface TestContext {
   readonly registrations: Array<{ spec: Record<string, unknown>; component: unknown }>
   readonly context: Parameters<typeof apply>[0]
 }
+
+afterEach(() => { vi.unstubAllGlobals() })
 
 function testContext(): TestContext {
   const effects: TestContext['effects'] = []
@@ -112,5 +114,22 @@ describe('community market client registration', () => {
     expect(typeof launcher?.label).toBe('function')
     expect(launcher?.store).toBe(overlay?.store)
     expect(typeof overlay?.inject).toBe('function')
+  })
+
+  it('moves the launcher into the CQAI account menu on Stable and Beta', () => {
+    vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: true })
+    const test = testContext()
+    apply(test.context)
+    expect(test.injections.map(value => value.name)).toEqual([
+      'settings.plugins.tab',
+      'cqaiclub.account.menu.action',
+      'shell.overlay',
+    ])
+    test.injections.forEach(value => { value.factory() })
+    const [, menuAction, overlay] = test.registrations.map(value => value.spec)
+    expect(menuAction).toEqual(expect.objectContaining({
+      name: 'cqaiclub.account.menu.action', id: 'community-market', locale: NS,
+    }))
+    expect(menuAction?.store).toBe(overlay?.store)
   })
 })

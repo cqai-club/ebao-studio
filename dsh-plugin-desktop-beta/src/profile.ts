@@ -100,6 +100,7 @@ const DEFAULT_PRODUCT_BUNDLES = [
   CQAI_IMAGEGEN_PACKAGE,
   'cqai-dsh-plugin-video',
   'cqai-dsh-plugin-short-video',
+  'cqai-dsh-plugin-talkcraft',
   CQAI_PUBLISHER_PACKAGE,
   CQAI_MARKET_PACKAGE,
   PPT_COMPOSER_PACKAGE,

@@ -114,7 +114,11 @@ export function apply(ctx: Context, config: DesktopNotificationConfig): void {
 
   ctx.inject(['jobs'], (jobsCtx) => {
     jobsCtx.effect(
-      () => observeDesktopJobOutcomes(jobsCtx, (outcome) => { notifyJob(jobsCtx.desktopRuntime, settings, outcome) }),
+      () => observeDesktopJobOutcomes(jobsCtx, (outcome, owner) => {
+        // Internal Agent commands settle individually; their parent project reports progress.
+        if (owner !== undefined && jobsCtx.get('sessions')?.get(owner)?.header.origin === 'subagent') return
+        notifyJob(jobsCtx.desktopRuntime, settings, outcome)
+      }),
       'dsh-plugin-desktop: background job attention',
     )
   })

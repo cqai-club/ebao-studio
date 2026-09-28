@@ -1,0 +1,9 @@
+numpy==2.4.6
+soundfile==0.14.0
+sherpa-onnx==1.13.8
+pypinyin==0.55.0
+zhconv==1.4.3
+requests==2.34.2
+python-dotenv==1.2.3
+imageio==2.37.4
+edge-tts==7.2.7

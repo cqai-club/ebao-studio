@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   Button,
   IconSettingsOutlineMedium,
@@ -193,6 +193,21 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     'cqaiclub-dsn-account': keyof typeof zh
   }
+
+  interface SlotMap {
+    'cqaiclub.account.menu.action': {
+      kind: 'list'
+      scope: 'root'
+      owner: { registerAction: (action: AccountMenuAction) => () => void }
+    }
+  }
+}
+
+interface AccountMenuAction {
+  readonly id: string
+  readonly label: () => string
+  readonly icon?: ReactNode
+  readonly onSelect: () => void
 }
 
 type AccountSettingsSectionProps = PropsRuntime<'settings.section'> & PropsLocale<typeof NS> & {
@@ -201,7 +216,7 @@ type AccountSettingsSectionProps = PropsRuntime<'settings.section'> & PropsLocal
 type AccountOnboardingProps = PropsRuntime<'settings.onboarding'> & PropsLocale<typeof NS> & {
   readonly accountContext: ClientContext
 }
-type AccountLauncherProps = PropsRuntime<'settings.launcher'> & PropsLocale<typeof NS> & {
+type AccountLauncherProps = PropsRuntime<'settings.launcher'> & PropsRenderSlots<'cqaiclub.account.menu.action'> & PropsLocale<typeof NS> & {
   readonly accountContext: ClientContext
 }
 type AccountTranslator = AccountSettingsSectionProps['t']
@@ -729,16 +744,22 @@ function CqaiAccountOnboarding({ complete, explicit, t, accountContext: ctx }: A
 
 /** The sidebar owns no credential state; every action goes through the account Host RPC. */
 function CqaiAccountLauncher({
-  wide, settingsOpen, settingsShortcut, openSettings, t, accountContext: ctx,
+  wide, settingsOpen, settingsShortcut, openSettings, renderSlot, t, accountContext: ctx,
 }: AccountLauncherProps) {
   const [snapshot, setSnapshot] = useState<DsnAccountSnapshot>()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const [menuActions, setMenuActions] = useState<readonly AccountMenuAction[]>([])
   const trigger = useRef<HTMLButtonElement>(null)
   const busyRef = useRef(false)
   const requestVersion = useRef(0)
   const settingsWasOpen = useRef(false)
+
+  const registerMenuAction = useCallback((action: AccountMenuAction) => {
+    setMenuActions(current => [...current.filter(item => item.id !== action.id), action])
+    return () => setMenuActions(current => current.filter(item => item !== action))
+  }, [])
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     if (busyRef.current) return
@@ -803,6 +824,7 @@ function CqaiAccountLauncher({
   } else if (!signedIn) {
     items.push({ id: 'login', label: t('launcherSignIn'), icon: <IconUserOutlineMedium size={16} />, disabled: busy })
   }
+  items.push(...menuActions.map(action => ({ id: action.id, label: action.label(), icon: action.icon })))
   items.push({
     id: 'open-settings', label: t('launcherOpenSettings'),
     icon: <IconSettingsOutlineMedium size={16} />,
@@ -812,6 +834,7 @@ function CqaiAccountLauncher({
 
   return (
     <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+      {renderSlot('cqaiclub.account.menu.action', { registerAction: registerMenuAction })}
       <Menu
         open={open}
         side="top"
@@ -850,6 +873,8 @@ function CqaiAccountLauncher({
             void window.open(snapshot.authorizationUrl, '_blank', 'noopener,noreferrer')
           } else if (id === 'logout') {
             void run('session/logout', {}, result => (result as { snapshot: DsnAccountSnapshot }).snapshot)
+          } else {
+            menuActions.find(action => action.id === id)?.onSelect()
           }
         }}
       />
@@ -1065,6 +1090,7 @@ export function apply(ctx: ClientContext): void {
       name: 'settings.launcher',
       locale: NS,
       inject: () => ({ accountContext: ctx }),
+      children: { 'cqaiclub.account.menu.action': { kind: 'list', scope: 'root' } },
     }, (props) => <CqaiAccountLauncher {...props} />))
   }
 
