@@ -12,9 +12,10 @@ const commit = 'a'.repeat(40)
 const version = '0.1.0-dev.0.desktop.caaaaaaaaaaaa.r12345678'
 const artifact = `agents-anywhere-dsh-bridge-next-${version}.tgz`
 
-function fixture(t) {
+function fixture(t, releaseVersion = version) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-aa-policy-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
+  const releaseArtifact = `agents-anywhere-dsh-bridge-next-${releaseVersion}.tgz`
   const write = (path, data) => {
     mkdirSync(dirname(join(root, path)), { recursive: true })
     writeFileSync(join(root, path), JSON.stringify(data))
@@ -25,20 +26,20 @@ function fixture(t) {
     write(path, data)
   }
   const runtimePeers = Object.fromEntries(AA_PEERS.map(name => [name, '0.1.5-rc.2 || 0.1.6-alpha.2']))
-  write('package.json', { resolutions: { [AA_PACKAGE]: aaConnectorResolution(artifact) } })
+  write('package.json', { resolutions: { [AA_PACKAGE]: aaConnectorResolution(releaseArtifact) } })
   for (const [index, workspace] of AA_WORKSPACES.entries()) {
     write(`${workspace}/package.json`, {
       dependencies: {
-        [AA_PACKAGE]: `file:../vendor/agents-anywhere/${artifact}`,
+        [AA_PACKAGE]: `file:../vendor/agents-anywhere/${releaseArtifact}`,
         ...Object.fromEntries(AA_PEERS.map(name => [name, index === 0 ? '0.1.5-rc.2' : '0.1.6-alpha.2'])),
       },
     })
-    write(`${workspace}/node_modules/${AA_PACKAGE}/package.json`, { version, peerDependencies: runtimePeers })
+    write(`${workspace}/node_modules/${AA_PACKAGE}/package.json`, { version: releaseVersion, peerDependencies: runtimePeers })
   }
-  write(`vendor/agents-anywhere/${artifact}`, 'prepared AA bytes')
+  write(`vendor/agents-anywhere/${releaseArtifact}`, 'prepared AA bytes')
   write('vendor/agents-anywhere/provenance.json', {
-    repository: AA_REPOSITORY, commit, artifact, desktopVersion: version, runtimePeers,
-    sha256: createHash('sha256').update(readFileSync(join(root, 'vendor/agents-anywhere', artifact))).digest('hex'),
+    repository: AA_REPOSITORY, commit, artifact: releaseArtifact, desktopVersion: releaseVersion, runtimePeers,
+    sha256: createHash('sha256').update(readFileSync(join(root, 'vendor/agents-anywhere', releaseArtifact))).digest('hex'),
   })
   return { root, patch }
 }
@@ -46,6 +47,12 @@ function fixture(t) {
 test('accepts the latest AA across Stable, Beta and Next runtime peers', t => {
   const { root } = fixture(t)
   assert.equal(assertPreparedAaRelease(root, commit).commit, commit)
+})
+
+test('accepts a stable upstream version with a desktop commit marker', t => {
+  const stableVersion = '2.0.1-desktop.caaaaaaaaaaaa.r12345678'
+  const { root } = fixture(t, stableVersion)
+  assert.equal(assertPreparedAaRelease(root, commit).desktopVersion, stableVersion)
 })
 
 test('rejects a compatibility patch pinned to a previous AA artifact', t => {

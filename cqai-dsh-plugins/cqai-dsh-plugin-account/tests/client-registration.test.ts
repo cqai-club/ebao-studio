@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import { act, createElement, type ReactElement, type ReactNode } from 'react'
+import { act, createElement, useEffect, type ReactElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -130,7 +130,7 @@ describe('CQAI account client registration', () => {
     await act(async () => {
       root!.render(createElement(launcher.render, {
         ...inject(), wide: true, settingsOpen: false, openSettings,
-        openOnboarding: vi.fn(), t: (key: string) => key,
+        openOnboarding: vi.fn(), renderSlot: () => null, t: (key: string) => key,
       }))
       await new Promise(resolve => setTimeout(resolve, 0))
     })
@@ -182,6 +182,7 @@ describe('CQAI account client registration', () => {
       root!.render(createElement(launcher.render, {
         ...(launcher.options.inject as () => Record<string, unknown>)(),
         wide: true, settingsOpen: false, openSettings: vi.fn(), openOnboarding: vi.fn(),
+        renderSlot: () => null,
         t: (key: string) => key,
       }))
       await new Promise(resolve => setTimeout(resolve, 0))
@@ -203,6 +204,44 @@ describe('CQAI account client registration', () => {
     await act(async () => { container!.querySelector<HTMLButtonElement>('[data-menu-id="login"]')!.click() })
     expect(rpc.call.mock.calls.filter(([, endpoint]) => endpoint === 'authorization/start')).toHaveLength(2)
     expect(trigger().textContent).toContain('authorizing')
+  })
+
+  it('shows a loaded market action in the account menu and opens it', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: true })
+    rpc.call.mockResolvedValue({ state: 'signed-out' })
+    const { ctx, registrations } = clientHarness()
+    apply(ctx)
+    const launcher = registrations.find(registration => registration.options.name === 'settings.launcher')!
+    expect(launcher.options.children).toEqual({
+      'cqaiclub.account.menu.action': { kind: 'list', scope: 'root' },
+    })
+    const openMarket = vi.fn()
+    const MarketAction = ({ registerAction }: {
+      registerAction: (action: { id: string; label: () => string; onSelect: () => void }) => () => void
+    }) => {
+      useEffect(() => registerAction({
+        id: 'community-market', label: () => 'CQAI 插件市场', onSelect: openMarket,
+      }), [registerAction])
+      return null
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(createElement(launcher.render, {
+        ...(launcher.options.inject as () => Record<string, unknown>)(),
+        wide: true, settingsOpen: false, openSettings: vi.fn(), openOnboarding: vi.fn(),
+        renderSlot: (_name: string, props: Record<string, unknown>) => createElement(MarketAction, props as Parameters<typeof MarketAction>[0]),
+        t: (key: string) => key,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    await act(async () => { container!.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click() })
+    const market = container!.querySelector<HTMLButtonElement>('[data-menu-id="community-market"]')
+    expect(market?.textContent).toBe('CQAI 插件市场')
+    await act(async () => { market!.click() })
+    expect(openMarket).toHaveBeenCalledOnce()
   })
 
   it('lets Stable/Beta native setup own automatic first-run login but keeps explicit entry', async () => {

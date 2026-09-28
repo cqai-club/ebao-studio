@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { MarketLocaleKey } from './locales.js'
+import { MarketAccountAction } from './MarketAccountAction.js'
 import { MarketLauncher } from './MarketLauncher.js'
 import { MarketOverlay } from './MarketOverlay.js'
 import { MarketSettingsTab } from './MarketSettingsTab.js'
@@ -24,6 +25,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const inject = ['slots', 'locale']
 export const NS = 'community-market'
 
+function isCqaiPrimaryDesktop(): boolean {
+  return (globalThis as typeof globalThis & { dshDesktop?: { cqaiPrimaryLogin?: unknown } })
+    .dshDesktop?.cqaiPrimaryLogin === true
+}
+
 export function apply(ctx: ClientContext): void {
   const marketView = createMarketViewStore()
   const readLocale = () => ctx.locale.getLocale().active
@@ -37,14 +43,24 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({ readLocale }),
   }, MarketSettingsTab))
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'community-market',
-    order: 10,
-    label: () => ctx.locale.bind(NS)('tab'),
-    locale: NS,
-    store: marketView,
-  }, MarketLauncher))
+  if (isCqaiPrimaryDesktop()) {
+    ctx.slots.inject('cqaiclub.account.menu.action', () => ctx.slots.register({
+      name: 'cqaiclub.account.menu.action',
+      id: 'community-market',
+      order: 10,
+      locale: NS,
+      store: marketView,
+    }, MarketAccountAction))
+  } else {
+    ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+      name: 'sidebar.footer.action',
+      id: 'community-market',
+      order: 10,
+      label: () => ctx.locale.bind(NS)('tab'),
+      locale: NS,
+      store: marketView,
+    }, MarketLauncher))
+  }
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'community-market',

@@ -6,12 +6,12 @@
  * `JobSnapshot` projection in favour of one filtered event stream:
  * `jobs.events.subscribe(filter, listener)` delivers `registered`, `progress`,
  * `stopping`, `settled`, `removed`, and `output` events carrying a `JobView`.
- * Desktop only ever wanted terminal states, so the adapter narrows the stream
- * to the same shape stable's completion listener hands out.
+ * Desktop uses terminal states and their owner to keep internal Agent work
+ * out of system notifications.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-jobs'
+import type { JobView } from '@deepseek-ai/dsh-jobs'
 
 /** Terminal state of one background job, narrowed to what Desktop notifies on. */
 export type DesktopJobOutcome = 'completed' | 'failed' | 'other'
@@ -30,10 +30,10 @@ function desktopJobOutcome(status: string): DesktopJobOutcome {
  */
 export function observeDesktopJobOutcomes(
   ctx: Context,
-  listener: (outcome: DesktopJobOutcome) => void,
+  listener: (outcome: DesktopJobOutcome, owner: JobView['owner']) => void,
 ): () => void {
   return ctx.jobs.events.subscribe({ owners: 'scope' }, (event) => {
     if (event.type !== 'settled') return
-    listener(desktopJobOutcome(event.job.status))
+    listener(desktopJobOutcome(event.job.status), event.job.owner)
   })
 }
