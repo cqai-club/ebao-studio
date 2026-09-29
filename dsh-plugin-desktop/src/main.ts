@@ -1742,14 +1742,13 @@ async function start(): Promise<void> {
             openTerminal: () => { runtime.openTerminal() },
             requestRestart: () => runtime.requestRestart(),
           })
-          if (prepared.market.effective === 'community-market') {
-            await hostCtx.plugin(DesktopPluginsService, {
-              profileName: activeProfileName,
-              homeDir,
-              statePath: pluginManagementStatePath,
-              installAnchor: desktopInstallAnchor(),
-            })
-          }
+          await hostCtx.plugin(DesktopPluginsService, {
+            profileName: activeProfileName,
+            homeDir,
+            statePath: pluginManagementStatePath,
+            installAnchor: desktopInstallAnchor(),
+            loadedPackageNames: prepared.profile.layers.map(layer => layer.packageName),
+          })
           if (logSink !== undefined) {
             fileExporter = new FileExporter(logSink)
             hostCtx.logger.exporter(fileExporter)

@@ -1,12 +1,15 @@
 export const DEFAULT_ISSUER = 'https://auth.cqaiclub.asia/oidc'
 export const DEFAULT_RESOURCE = 'https://account.cqaiclub.asia'
 export const DEFAULT_ACCOUNT_SERVICE_URL = 'https://account.cqaiclub.asia'
+export const DEFAULT_CLUB_PORTAL_RESOURCE = 'https://cqaiclub.asia/'
+export const DEFAULT_CLUB_PORTAL_URL = 'https://cqaiclub.asia'
 export const DEFAULT_SCOPES = [
   'openid',
   'offline_access',
   'profile',
   'email',
   'ai:invoke',
+  'activity:publish',
 ] as const
 
 export const RPC_CHANNEL = '/cqaiclub-dsn-account'
@@ -276,13 +279,14 @@ export type DsnAccountConfig = {
   clientId: string
   resource: string
   accountServiceUrl: string
+  clubPortalResource: string
+  clubPortalUrl: string
   scopes: readonly string[]
   requestTimeoutMs: number
   modelCatalogCacheTtlMs: number
 }
 
-export type GrantPayload = {
-  version: 1
+type AccountGrantPayload = {
   issuer: string
   clientId: string
   resource: string
@@ -294,8 +298,21 @@ export type GrantPayload = {
   accountFetchedAt: number
 }
 
+export type GrantPayload = AccountGrantPayload & (
+  | { version: 1 }
+  | {
+      version: 2
+      clubPortalResource: string
+      clubPortalAccessToken?: string
+      clubPortalAccessTokenExpiresAt?: number
+    }
+)
+
+export type ClubPortalAuthorization = 'signed-out' | 'reauth-required' | 'ready'
+
 export type DsnAccountService = {
   getStatus(options?: { refreshAccount?: boolean; signal?: AbortSignal }): Promise<DsnAccountSnapshot>
+  getIdentity(): Promise<{ issuer: string; sub: string } | undefined>
   getAccount(signal?: AbortSignal): Promise<PublicAccount>
   listModels(options?: DsnModelListOptions): Promise<DsnModelCatalog>
   getDefaultModel(): Promise<DsnDefaultModelSelection>
@@ -306,6 +323,9 @@ export type DsnAccountService = {
   listTopUps(options?: DsnTopUpListOptions, signal?: AbortSignal): Promise<DsnTopUpHistory>
   createTopUp(request: DsnTopUpRequest, signal?: AbortSignal): Promise<DsnTopUpResult>
   fetchAi(path: `/v1/${string}`, init?: RequestInit, signal?: AbortSignal): Promise<Response>
+  getClubPortalAuthorization(): Promise<ClubPortalAuthorization>
+  beginClubPortalAuthorization(signal?: AbortSignal): Promise<DsnAccountSnapshot>
+  fetchClubPortal(path: `/api/v1/${string}`, init?: RequestInit, signal?: AbortSignal): Promise<Response>
 }
 
 export type LogoutResult = {

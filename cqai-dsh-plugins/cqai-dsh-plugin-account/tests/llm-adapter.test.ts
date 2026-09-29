@@ -32,6 +32,7 @@ function accountService(response: Response, models: DsnModel[] = [textModel, mul
 } {
   return {
     getStatus: vi.fn(),
+    getIdentity: vi.fn(),
     getAccount: vi.fn(),
     listModels: vi.fn(async () => ({ models, fetchedAt: Date.now(), stale: false })),
     getDefaultModel: vi.fn(),
@@ -42,6 +43,9 @@ function accountService(response: Response, models: DsnModel[] = [textModel, mul
     listTopUps: vi.fn(),
     createTopUp: vi.fn(),
     fetchAi: vi.fn(async () => response),
+    getClubPortalAuthorization: vi.fn(async () => 'signed-out' as const),
+    beginClubPortalAuthorization: vi.fn(),
+    fetchClubPortal: vi.fn(),
   }
 }
 

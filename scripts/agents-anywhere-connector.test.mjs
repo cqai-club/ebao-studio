@@ -23,7 +23,7 @@ function loadConnector(workspace, environment) {
     execFile, promisify, stripVTControlCharacters, join, setTimeout, clearTimeout,
     process: { platform: process.platform, env: environment },
     readJson$1: async () => [], writeJson: async () => {}, mkdir: async () => {},
-    materializeConnectorProject: async () => '/source',
+    materializeConnectorProject: async config => config.connectorSourceDir,
     resolveUv: async () => 'uv',
     DEFAULT_CONNECTOR_SETTINGS: { syncIntervalSeconds: 30 },
   })

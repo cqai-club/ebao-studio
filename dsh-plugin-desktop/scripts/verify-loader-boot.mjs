@@ -88,8 +88,9 @@ try {
   const productLayers = prepared.profile.layers.map(layer => layer.packageName)
   const accountLayerIndex = productLayers.indexOf('@cqaiclub/dsn-account')
   const imagegenLayerIndex = productLayers.indexOf('cqai-dsh-plugin-imagegen')
-  if (accountLayerIndex < 0 || imagegenLayerIndex !== accountLayerIndex + 1) {
-    throw new Error(`desktop profile did not mount ImageGen immediately after CQAI account: ${productLayers.join(', ')}`)
+  if (accountLayerIndex < 0 || imagegenLayerIndex !== accountLayerIndex + 1
+    || productLayers.includes('@cqaiclub/dsh-plugin-activities')) {
+    throw new Error(`desktop profile did not mount ImageGen after CQAI account without activities: ${productLayers.join(', ')}`)
   }
   const thirdPartyLink = join(prepared.profile.dir, 'node_modules', THIRD_PARTY_NAME)
   const thirdPartyDir = join(home, 'linked-plugins', THIRD_PARTY_NAME)

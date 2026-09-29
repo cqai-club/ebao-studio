@@ -236,6 +236,7 @@ describe('published package surface', () => {
       dshmarket: expect.stringMatching(/^\d+\.\d+\.\d+$/),
       'react-dom': '18.3.1',
     })
+    expect(manifest.dependencies).not.toHaveProperty('@cqaiclub/dsh-plugin-activities')
     expect(manifest.optionalDependencies ?? {}).not.toHaveProperty('dshmarket')
   })
 

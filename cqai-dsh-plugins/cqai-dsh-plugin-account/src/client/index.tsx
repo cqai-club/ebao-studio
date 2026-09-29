@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client'
@@ -37,6 +38,7 @@ import {
 import { rpcCall } from './rpc.ts'
 
 const NS = 'cqaiclub-dsn-account' as const
+const CLUB_PANEL = 'cqai-club' as MainPanelId
 
 function isCqaiPrimaryDesktop(): boolean {
   return (globalThis as typeof globalThis & { dshDesktop?: { cqaiPrimaryLogin?: unknown } })
@@ -45,6 +47,7 @@ function isCqaiPrimaryDesktop(): boolean {
 
 const zh = {
   tab: 'CQAI Club',
+  back: '返回',
   eyebrow: '账户与云服务',
   title: 'CQAI Club',
   description: '连接会员账号，在桌面端共享模型、额度与服务。',
@@ -69,6 +72,10 @@ const zh = {
   email: '邮箱',
   quota: '剩余额度',
   quotaDescription: 'CQAI Club 可用额度',
+  pointsInfo: '积分信息',
+  membershipInfo: '会员信息',
+  clubActivities: '俱乐部活动',
+  activityPluginDisabled: '活动插件未安装或未启用。请在插件管理中手动添加或启用后重启桌面端。',
   billing: '账户充值',
   billingDescription: '选择充值方式与金额，随后在系统浏览器中完成支付。',
   billingLoading: '正在读取充值方式…',
@@ -118,6 +125,7 @@ const zh = {
 
 const en: Record<keyof typeof zh, string> = {
   tab: 'CQAI Club',
+  back: 'Back',
   eyebrow: 'ACCOUNT & CLOUD',
   title: 'CQAI Club',
   description: 'Connect your membership to share models, quota, and services on desktop.',
@@ -142,6 +150,10 @@ const en: Record<keyof typeof zh, string> = {
   email: 'Email',
   quota: 'Remaining quota',
   quotaDescription: 'Available CQAI Club quota',
+  pointsInfo: 'Points',
+  membershipInfo: 'Membership',
+  clubActivities: 'Club activities',
+  activityPluginDisabled: 'The activities plugin is not installed or is disabled. Add or enable it in Plugin management, then restart the desktop app.',
   billing: 'Add funds',
   billingDescription: 'Choose a payment method and amount, then finish payment in your system browser.',
   billingLoading: 'Loading payment methods…',
@@ -195,6 +207,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 
   interface SlotMap {
+    'cqaiclub.club.activities': {
+      kind: 'list'
+      scope: 'root'
+      owner: {}
+    }
     'cqaiclub.account.menu.action': {
       kind: 'list'
       scope: 'root'
@@ -218,9 +235,48 @@ type AccountOnboardingProps = PropsRuntime<'settings.onboarding'> & PropsLocale<
 }
 type AccountLauncherProps = PropsRuntime<'settings.launcher'> & PropsRenderSlots<'cqaiclub.account.menu.action'> & PropsLocale<typeof NS> & {
   readonly accountContext: ClientContext
+  readonly openClub: () => void
 }
 type AccountTranslator = AccountSettingsSectionProps['t']
 type SignedInSnapshot = Extract<DsnAccountSnapshot, { state: 'signed-in' }>
+type ClubSection = 'points' | 'membership' | 'activities'
+
+function createClubViewState() {
+  let active: ClubSection = 'points'
+  const listeners = new Set<() => void>()
+  return {
+    getSnapshot: () => active,
+    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    select: (section: ClubSection) => {
+      if (active === section) return
+      active = section
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
+type ClubViewState = ReturnType<typeof createClubViewState>
+type ClubPageProps = PropsRuntime<'main'> & PropsLocale<typeof NS> & PropsRenderSlots<'cqaiclub.club.activities'> & {
+  readonly accountContext: ClientContext
+  readonly viewState: ClubViewState
+  readonly onBack: () => void
+}
+
+const clubPageStyles = `
+.cqai-club-shell{display:flex;width:100%;height:100%;min-width:0;min-height:0;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary)}
+.cqai-club-shell *{box-sizing:border-box}
+.cqai-club-nav{position:relative;display:flex;flex:none;flex-direction:column;gap:4px;width:184px;padding:max(60px,calc(28px + var(--dsh-frame-top-clearance,0px))) 12px 20px;border-right:1px solid var(--dsw-alias-border-l2)}
+.cqai-club-nav button{width:100%;padding:10px 14px;border:0;border-radius:var(--dsw-radius-md,8px);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;text-align:left;cursor:pointer;-webkit-app-region:no-drag}
+.cqai-club-nav .cqai-club-back{position:absolute;top:18px;left:16px;display:inline-flex;align-items:center;gap:6px;width:auto;min-height:24px;padding:2px 4px;color:var(--dsw-alias-label-primary);font-weight:500;line-height:20px}
+.cqai-club-nav button:hover,.cqai-club-nav button[aria-current=page]{background:var(--dsw-alias-interactive-bg-hover)}
+.cqai-club-nav button[aria-current=page]{color:var(--dsw-alias-label-primary);font-weight:600}
+.cqai-club-nav button:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}
+.cqai-club-content{flex:1;min-width:0;min-height:0;overflow:auto;padding:calc(20px + var(--dsh-frame-top-clearance,0px)) clamp(24px,4vw,48px) 48px}
+.cqai-club-content-inner{max-width:760px;margin:0 auto}
+.cqai-club-empty-title{margin:8px 0 0;font-size:22px;font-weight:600;line-height:1.3}
+@media(max-width:700px){.cqai-club-nav{width:150px}.cqai-club-content{padding-left:20px;padding-right:20px}}
+@media(max-width:520px){.cqai-club-nav{width:120px;padding-left:6px;padding-right:6px}.cqai-club-content{padding-left:14px;padding-right:14px}}
+`
 const panelStyle: CSSProperties = {
   display: 'grid',
   gap: 20,
@@ -744,7 +800,7 @@ function CqaiAccountOnboarding({ complete, explicit, t, accountContext: ctx }: A
 
 /** The sidebar owns no credential state; every action goes through the account Host RPC. */
 function CqaiAccountLauncher({
-  wide, settingsOpen, settingsShortcut, openSettings, renderSlot, t, accountContext: ctx,
+  wide, settingsOpen, settingsShortcut, openSettings, openClub, renderSlot, t, accountContext: ctx,
 }: AccountLauncherProps) {
   const [snapshot, setSnapshot] = useState<DsnAccountSnapshot>()
   const [open, setOpen] = useState(false)
@@ -824,6 +880,7 @@ function CqaiAccountLauncher({
   } else if (!signedIn) {
     items.push({ id: 'login', label: t('launcherSignIn'), icon: <IconUserOutlineMedium size={16} />, disabled: busy })
   }
+  items.push({ id: 'cqaiclub-open-page', label: t('title'), icon: <IconUserOutlineMedium size={16} /> })
   items.push(...menuActions.map(action => ({ id: action.id, label: action.label(), icon: action.icon })))
   items.push({
     id: 'open-settings', label: t('launcherOpenSettings'),
@@ -865,7 +922,8 @@ function CqaiAccountLauncher({
         onClose={() => { setOpen(false) }}
         onSelect={(id) => {
           setOpen(false)
-          if (id === 'open-settings') { trigger.current?.focus(); openSettings() }
+          if (id === 'cqaiclub-open-page') openClub()
+          else if (id === 'open-settings') { trigger.current?.focus(); openSettings() }
           else if (id === 'login') void run('authorization/start', {}, result => result as DsnAccountSnapshot)
           else if (id === 'cancel-login' && snapshot?.state === 'authorizing') {
             void run('authorization/cancel', { attemptId: snapshot.attemptId }, result => result as DsnAccountSnapshot)
@@ -882,7 +940,7 @@ function CqaiAccountLauncher({
   )
 }
 
-function AccountSettingsTab({ t, accountContext: ctx }: AccountSettingsSectionProps) {
+function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<AccountSettingsSectionProps, 't' | 'accountContext'> & { readonly clubView?: boolean }) {
   const [snapshot, setSnapshot] = useState<DsnAccountSnapshot>()
   const [activeSection, setActiveSection] = useState<SignedInSection>('account')
   const [busy, setBusy] = useState(false)
@@ -983,12 +1041,14 @@ function AccountSettingsTab({ t, accountContext: ctx }: AccountSettingsSectionPr
 
   return (
     <div style={panelStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, ...(clubView ? { flexWrap: 'wrap' } : {}) }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
           <div aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: 46, height: 46, flex: 'none', borderRadius: 14, background: 'linear-gradient(145deg, #1268dc, #6047c9)', color: '#fff', boxShadow: '0 8px 22px rgba(40, 91, 200, .24)', fontSize: 15, fontWeight: 750, letterSpacing: '-0.04em' }}>CQ</div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ marginBottom: 4, color: 'var(--dsw-alias-label-tertiary, #8993a1)', fontSize: 11, fontWeight: 650, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t('eyebrow')}</div>
-            <h2 style={{ margin: 0, fontSize: 22, lineHeight: 1.2, letterSpacing: '-0.02em' }}>{t('title')}</h2>
+            <div style={{ marginBottom: 4, color: 'var(--dsw-alias-label-tertiary, #8993a1)', fontSize: 11, fontWeight: 650, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{clubView ? t('title') : t('eyebrow')}</div>
+            {clubView
+              ? <h1 style={{ margin: 0, fontSize: 22, lineHeight: 1.2, letterSpacing: '-0.02em' }}>{t('pointsInfo')}</h1>
+              : <h2 style={{ margin: 0, fontSize: 22, lineHeight: 1.2, letterSpacing: '-0.02em' }}>{t('title')}</h2>}
             <p style={{ ...mutedTextStyle, margin: '5px 0 0' }}>{t('description')}</p>
           </div>
         </div>
@@ -1021,7 +1081,7 @@ function AccountSettingsTab({ t, accountContext: ctx }: AccountSettingsSectionPr
         </div>
       ) : signedIn !== undefined && activeSection === 'account' ? (
         <div style={cardStyle}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(180px, .45fr)', gap: 20, alignItems: 'stretch', padding: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: clubView ? 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))' : 'minmax(0, 1fr) minmax(180px, .45fr)', gap: 20, alignItems: 'stretch', padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 15, minWidth: 0 }}>
               <div aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: 52, height: 52, flex: 'none', borderRadius: '50%', background: 'color-mix(in srgb, var(--dsw-alias-state-business-primary, #2f6fda) 13%, var(--dsw-alias-bg-base, #fff))', color: 'var(--dsw-alias-state-business-primary, #2f6fda)', fontSize: 19, fontWeight: 700 }}>{accountName(signedIn).slice(0, 1).toUpperCase()}</div>
               <div style={{ minWidth: 0 }}>
@@ -1079,6 +1139,41 @@ function AccountSettingsTab({ t, accountContext: ctx }: AccountSettingsSectionPr
   )
 }
 
+function CqaiClubPage({ t, accountContext, viewState, onBack, renderSlot }: ClubPageProps) {
+  const active = useSyncExternalStore(viewState.subscribe, viewState.getSnapshot, viewState.getSnapshot)
+  const sections: readonly { readonly id: ClubSection; readonly label: 'pointsInfo' | 'membershipInfo' | 'clubActivities' }[] = [
+    { id: 'points', label: 'pointsInfo' },
+    { id: 'membership', label: 'membershipInfo' },
+    { id: 'activities', label: 'clubActivities' },
+  ]
+  const activeLabel = sections.find(section => section.id === active)!.label
+
+  return (
+    <div className="cqai-club-shell">
+      <style>{clubPageStyles}</style>
+      <nav className="cqai-club-nav" aria-label={t('title')}>
+        <button className="cqai-club-back" type="button" onClick={onBack}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 12H5m7 7-7-7 7-7" /></svg>
+          {t('back')}
+        </button>
+        {sections.map(section => (
+          <button className="cqai-club-section" key={section.id} type="button" aria-current={active === section.id ? 'page' : undefined}
+            onClick={() => viewState.select(section.id)}>{t(section.label)}</button>
+        ))}
+      </nav>
+      <section className="cqai-club-content" aria-label={t(activeLabel)}>
+        <div className="cqai-club-content-inner">
+          {active === 'points'
+            ? <AccountSettingsTab t={t} accountContext={accountContext} clubView />
+            : active === 'activities'
+              ? renderSlot('cqaiclub.club.activities', {}, { fallback: <><h1 className="cqai-club-empty-title">{t(activeLabel)}</h1><p>{t('activityPluginDisabled')}</p></> })
+              : <h1 className="cqai-club-empty-title">{t(activeLabel)}</h1>}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 export const inject = ['slots', 'locale', 'connection']
 
 export function apply(ctx: ClientContext): void {
@@ -1086,22 +1181,35 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'cqaiclub-dsn-account: dictionaries')
 
   if (isCqaiPrimaryDesktop()) {
-    ctx.slots.inject('settings.launcher', () => ctx.slots.register({
-      name: 'settings.launcher',
+    const viewState = createClubViewState()
+    ctx.inject(['layout'], scope => {
+      scope.slots.inject('main', () => scope.slots.register({
+        name: 'main',
+        key: CLUB_PANEL,
+        locale: NS,
+        inject: () => ({ accountContext: ctx, viewState, onBack: () => scope.layout.selectPanel(null) }),
+        children: { 'cqaiclub.club.activities': { kind: 'list', scope: 'root' } },
+      }, (props) => <CqaiClubPage {...props} />))
+      scope.slots.inject('settings.launcher', () => scope.slots.register({
+        name: 'settings.launcher',
+        locale: NS,
+        inject: () => ({
+          accountContext: ctx,
+          openClub: () => { viewState.select('points'); scope.layout.selectPanel(CLUB_PANEL) },
+        }),
+        children: { 'cqaiclub.account.menu.action': { kind: 'list', scope: 'root' } },
+      }, (props) => <CqaiAccountLauncher {...props} />))
+    })
+  } else {
+    ctx.slots.inject('settings.section', () => ctx.slots.register({
+      name: 'settings.section',
+      id: NS,
+      order: 30,
+      label: () => t('tab'),
       locale: NS,
       inject: () => ({ accountContext: ctx }),
-      children: { 'cqaiclub.account.menu.action': { kind: 'list', scope: 'root' } },
-    }, (props) => <CqaiAccountLauncher {...props} />))
+    }, (props) => <AccountSettingsTab {...props} />))
   }
-
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: NS,
-    order: isCqaiPrimaryDesktop() ? -20 : 30,
-    label: () => t('tab'),
-    locale: NS,
-    inject: () => ({ accountContext: ctx }),
-  }, (props) => <AccountSettingsTab {...props} />))
 
   ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',

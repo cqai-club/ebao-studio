@@ -8,17 +8,28 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { MarketLocaleKey } from './locales.js'
-import { MarketAccountAction } from './MarketAccountAction.js'
 import { MarketLauncher } from './MarketLauncher.js'
 import { MarketOverlay } from './MarketOverlay.js'
 import { MarketSettingsTab } from './MarketSettingsTab.js'
+import { PluginManagementMarket } from './PluginManagementMarket.js'
 import { createMarketViewStore } from './market-view-store.js'
 import { en, zh } from './locales.js'
 import { installMarketStyles } from './styles.js'
 
+export { MarketSurface } from './MarketSettingsTab.js'
+export type { MarketSurfaceProps, MarketView } from './MarketSettingsTab.js'
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     'community-market': MarketLocaleKey
+  }
+
+  interface SlotMap {
+    'cqai.pluginManagement.market': {
+      kind: 'list'
+      scope: 'root'
+      owner: { onOpenInstalled?: () => void }
+    }
   }
 }
 
@@ -44,13 +55,13 @@ export function apply(ctx: ClientContext): void {
     inject: () => ({ readLocale }),
   }, MarketSettingsTab))
   if (isCqaiPrimaryDesktop()) {
-    ctx.slots.inject('cqaiclub.account.menu.action', () => ctx.slots.register({
-      name: 'cqaiclub.account.menu.action',
+    ctx.slots.inject('cqai.pluginManagement.market', () => ctx.slots.register({
+      name: 'cqai.pluginManagement.market',
       id: 'community-market',
       order: 10,
       locale: NS,
-      store: marketView,
-    }, MarketAccountAction))
+      inject: () => ({ readLocale }),
+    }, PluginManagementMarket))
   } else {
     ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
       name: 'sidebar.footer.action',

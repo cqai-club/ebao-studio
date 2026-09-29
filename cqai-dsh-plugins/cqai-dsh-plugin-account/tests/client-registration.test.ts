@@ -47,8 +47,10 @@ let container: HTMLDivElement | undefined
 function clientHarness(): {
   readonly ctx: ClientContext
   readonly registrations: SlotRegistration[]
+  readonly selectPanel: ReturnType<typeof vi.fn>
 } {
   const registrations: SlotRegistration[] = []
+  const selectPanel = vi.fn()
   const ctx = {
     locale: {
       bind: () => (key: string) => key,
@@ -66,7 +68,15 @@ function clientHarness(): {
       },
     },
   } as unknown as ClientContext
-  return { ctx, registrations }
+  const layoutScope = Object.create(ctx) as ClientContext
+  Object.defineProperty(layoutScope, 'layout', { value: { selectPanel } })
+  Object.assign(ctx, {
+    inject: (services: readonly string[], setup: (scope: ClientContext) => unknown) => {
+      expect(services).toEqual(['layout'])
+      return setup(layoutScope)
+    },
+  })
+  return { ctx, registrations, selectPanel }
 }
 
 afterEach(async () => {
@@ -120,7 +130,7 @@ describe('CQAI account client registration', () => {
     apply(ctx)
     const launcher = registrations.find(registration => registration.options.name === 'settings.launcher')
     if (launcher === undefined) throw new Error('CQAI launcher registration is missing')
-    expect(registrations.find(registration => registration.options.id === 'cqaiclub-dsn-account')?.options.order).toBe(-20)
+    expect(registrations.some(registration => registration.options.name === 'settings.section' && registration.options.id === 'cqaiclub-dsn-account')).toBe(false)
     const inject = launcher.options.inject as () => Record<string, unknown>
     const openSettings = vi.fn()
     container = document.createElement('div')
@@ -210,7 +220,7 @@ describe('CQAI account client registration', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: true })
     rpc.call.mockResolvedValue({ state: 'signed-out' })
-    const { ctx, registrations } = clientHarness()
+    const { ctx, registrations, selectPanel } = clientHarness()
     apply(ctx)
     const launcher = registrations.find(registration => registration.options.name === 'settings.launcher')!
     expect(launcher.options.children).toEqual({
@@ -238,10 +248,72 @@ describe('CQAI account client registration', () => {
       await new Promise(resolve => setTimeout(resolve, 0))
     })
     await act(async () => { container!.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click() })
+    expect([...container!.querySelectorAll<HTMLButtonElement>('[data-menu-id]')].map(button => button.dataset.menuId)).toEqual([
+      'login', 'cqaiclub-open-page', 'community-market', 'open-settings',
+    ])
+    await act(async () => { container!.querySelector<HTMLButtonElement>('[data-menu-id="cqaiclub-open-page"]')!.click() })
+    expect(selectPanel).toHaveBeenCalledWith('cqai-club')
+
+    await act(async () => { container!.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click() })
     const market = container!.querySelector<HTMLButtonElement>('[data-menu-id="community-market"]')
     expect(market?.textContent).toBe('CQAI 插件市场')
     await act(async () => { market!.click() })
     expect(openMarket).toHaveBeenCalledOnce()
+  })
+
+  it('shows points by default and reserves the activities slot', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: true })
+    rpc.call.mockResolvedValue({
+      state: 'signed-in',
+      account: {
+        userId: 1, platform: 'cqai', displayName: 'Alice', quotaDisplayType: 'CUSTOM',
+        quotaPerUnit: 500_000, customCurrencySymbol: '积分', customCurrencyExchangeRate: 10,
+      },
+      remainingQuota: 500_000, refreshedAt: Date.now(), stale: false,
+    })
+    const { ctx, registrations, selectPanel } = clientHarness()
+    apply(ctx)
+    const page = registrations.find(registration => registration.options.name === 'main' && registration.options.key === 'cqai-club')
+    const launcher = registrations.find(registration => registration.options.name === 'settings.launcher')
+    if (page === undefined || launcher === undefined) throw new Error('CQAI Club page or launcher is missing')
+    expect(page.options.children).toEqual({ 'cqaiclub.club.activities': { kind: 'list', scope: 'root' } })
+    const labels: Record<string, string> = {
+      title: 'CQAI Club', back: '返回', pointsInfo: '积分信息', membershipInfo: '会员信息', clubActivities: '俱乐部活动',
+      activityPluginDisabled: '活动插件未启用。',
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(createElement(page.render, {
+        ...(page.options.inject as () => Record<string, unknown>)(),
+        t: (key: string) => labels[key] ?? key,
+        renderSlot: (_name: string, _owner: unknown, options: { fallback: ReactNode }) => options.fallback,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    const nav = () => container!.querySelector<HTMLElement>('nav[aria-label="CQAI Club"]')!
+    const selected = () => nav().querySelector<HTMLButtonElement>('button[aria-current="page"]')!
+    const sections = () => nav().querySelectorAll<HTMLButtonElement>('.cqai-club-section')
+    expect(nav().querySelector('.cqai-club-back')?.textContent).toBe('返回')
+    expect([...sections()].map(button => button.textContent)).toEqual(['积分信息', '会员信息', '俱乐部活动'])
+    expect(selected().textContent).toBe('积分信息')
+    expect(container!.querySelector('.cqai-club-content')?.textContent).toContain('积分 10')
+    expect(container!.querySelector('.cqai-club-content')?.textContent).toContain('Alice')
+
+    await act(async () => { sections()[1]!.click() })
+    expect(selected().textContent).toBe('会员信息')
+    expect(container!.querySelector('.cqai-club-content')?.textContent).toBe('会员信息')
+    await act(async () => { sections()[2]!.click() })
+    expect(container!.querySelector('.cqai-club-content')?.textContent).toContain('活动插件未启用。')
+
+    const openClub = (launcher.options.inject as () => { openClub: () => void })().openClub
+    await act(async () => { openClub() })
+    expect(selectPanel).toHaveBeenCalledWith('cqai-club')
+    expect(selected().textContent).toBe('积分信息')
+    await act(async () => { nav().querySelector<HTMLButtonElement>('.cqai-club-back')!.click() })
+    expect(selectPanel).toHaveBeenLastCalledWith(null)
   })
 
   it('lets Stable/Beta native setup own automatic first-run login but keeps explicit entry', async () => {
@@ -286,6 +358,8 @@ describe('CQAI account client registration', () => {
     const { ctx, registrations } = clientHarness()
     apply(ctx)
     expect(registrations.some(registration => registration.options.name === 'settings.launcher')).toBe(false)
+    expect(registrations.some(registration => registration.options.name === 'main' && registration.options.key === 'cqai-club')).toBe(false)
+    expect(registrations.find(registration => registration.options.name === 'settings.section' && registration.options.id === 'cqaiclub-dsn-account')?.options.order).toBe(30)
     const onboarding = registrations.find(registration => registration.options.id === 'cqaiclub-account')
     if (onboarding === undefined) throw new Error('CQAI onboarding registration is missing')
     container = document.createElement('div')
@@ -335,6 +409,7 @@ describe('CQAI account client registration', () => {
 
   it('stops showing an indefinite loading state when the account Host RPC fails', async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('desktopNext', {})
     rpc.call.mockRejectedValue(new Error('account host unavailable'))
     const { ctx, registrations } = clientHarness()
     apply(ctx)

@@ -1239,6 +1239,7 @@ __metadata:
     "@deepseek-ai/dsh-client-connection": "npm:0.1.7-rc.2"
     "@deepseek-ai/dsh-client-locale": "npm:0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-conversation": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-primitives": "npm:0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-renderer": "npm:0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-settings": "npm:0.1.7-rc.2"
@@ -1272,6 +1273,7 @@ __metadata:
     "@deepseek-ai/dsh-client-connection": 0.1.7-rc.2
     "@deepseek-ai/dsh-client-locale": 0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-conversation": 0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-layout": 0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-primitives": 0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-renderer": 0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-settings": 0.1.7-rc.2
@@ -2422,7 +2424,7 @@ __metadata:
 
 "@deepseek-ai/dsh-client-ui-plugin-manager@patch:@deepseek-ai/dsh-client-ui-plugin-manager@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-plugin-manager-0.1.7-rc.2.tgz#./patches/dsh-client-ui-plugin-manager@0.1.7-rc.2.patch::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.1.7-rc.2
-  resolution: "@deepseek-ai/dsh-client-ui-plugin-manager@patch:@deepseek-ai/dsh-client-ui-plugin-manager@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-plugin-manager-0.1.7-rc.2.tgz%23vendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-plugin-manager-0.1.7-rc.2.tgz%3A%3Ahash=1ece5d&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-plugin-manager@0.1.7-rc.2.patch::version=0.1.7-rc.2&hash=085ba5&locator=deepseek-harness-desktop%40workspace%3A."
+  resolution: "@deepseek-ai/dsh-client-ui-plugin-manager@patch:@deepseek-ai/dsh-client-ui-plugin-manager@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-plugin-manager-0.1.7-rc.2.tgz%23vendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-plugin-manager-0.1.7-rc.2.tgz%3A%3Ahash=1ece5d&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-plugin-manager@0.1.7-rc.2.patch::version=0.1.7-rc.2&hash=35b00b&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@deepseek-ai/dsh-timeout": "npm:0.1.7-rc.2"
     "@deepseek-ai/dsh-typert-protocol": "npm:0.1.7-rc.2"
@@ -2430,7 +2432,7 @@ __metadata:
     zod: "npm:^4.4.3"
   peerDependencies:
     "@deepseek-ai/cordis": ~4.0.4
-  checksum: 10c0/2000d562a629cec4daa0ab3b13a79b2a37cf29b14b7e801bb1eb00570df52431c4b9e71c2f51c47d7c656bb4a05d890461507468a2d8e3d58027b9b0733626f6
+  checksum: 10c0/213ee138ddd1c73bfd97f42411eae31dffdd6163da35894b7cb51d9143ecdac59c978400b515811174b915e8ec19049966969dc8555091009b9fcc794c2f2ff3
   languageName: node
   linkType: hard
 
@@ -11668,12 +11670,30 @@ __metadata:
   resolution: "cqai-dsh-plugin-market@workspace:cqai-dsh-plugins/cqai-dsh-plugin-market"
   dependencies:
     "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-api-remotes": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-locale": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-host-webserver": "npm:0.1.7-rc.2"
+    "@types/node": "npm:^22.20.0"
+    "@types/react": "npm:^18.3.0"
     dsh-community-market: "workspace:*"
+    react: "npm:18.3.1"
     tsdown: "npm:^0.22.2"
     typescript: "npm:^6.0.0"
     unrun: "npm:^0.3.1"
+    vitest: "npm:4.1.8"
   peerDependencies:
     "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-api-remotes": 0.1.7-rc.2
+    "@deepseek-ai/dsh-client-locale": 0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-layout": 0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-plugin-manager": 0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-renderer": 0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": 0.1.7-rc.2
+    "@deepseek-ai/dsh-host-webserver": 0.1.7-rc.2
     dsh-community-market: ^0.1.0-dev.0
   languageName: unknown
   linkType: soft

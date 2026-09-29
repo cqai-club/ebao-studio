@@ -117,11 +117,12 @@ function errorCode(cause: unknown): string | undefined {
 }
 
 describe('desktop direct bundle management', () => {
-  it('lists each direct bundle once and keeps only explicit product bundles immutable', async () => {
+  it('lists each direct bundle once, keeps foundations immutable, and makes shipped features toggleable', async () => {
     const root = temporaryRoot()
     const options = bootstrap(root)
     installBundle(options.homeDir, 'third-party-plugin')
     addBundle(options.homeDir, 'third-party-plugin', 2)
+    addDependency(options.homeDir, 'cqai-dsh-plugin-imagegen')
     const harness = await createHarness(options)
 
     const first = harness.service.list()
@@ -141,18 +142,55 @@ describe('desktop direct bundle management', () => {
       expect.objectContaining({ status: 'active', mutable: false }),
     )
     expect(first.find(item => item.packageName === 'cqai-dsh-plugin-cqai-club-theme')).toEqual(
-      expect.objectContaining({ status: 'active', mutable: true }),
+      expect.objectContaining({ status: 'active', mutable: true, uninstallable: false }),
     )
     expect(desktopPluginBundleMutable('dsh-plugin-desktop')).toBe(false)
-    expect(desktopPluginBundleMutable('@cqaiclub/dsn-account')).toBe(false)
-    expect(desktopPluginBundleMutable('cqai-dsh-plugin-imagegen')).toBe(false)
-    expect(desktopPluginBundleMutable('cqai-dsh-plugin-market')).toBe(false)
-    expect(desktopPluginBundleMutable('cqai-dsh-plugin-publisher')).toBe(false)
     expect(desktopPluginBundleMutable('cqai-dsh-plugin-cqai-club-theme')).toBe(true)
     expect(desktopPluginBundleMutable('dsh-plugin-desktop-beta')).toBe(false)
+    expect(desktopPluginBundleMutable('@cqaiclub/dsn-account')).toBe(false)
+    for (const feature of [
+      'cqai-dsh-plugin-imagegen',
+      'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-publisher',
+      'cqai-dsh-plugin-talkcraft',
+      'cqai-dsh-plugin-short-video',
+      'dsh-ppt-composer',
+    ]) {
+      expect(desktopPluginBundleMutable(feature)).toBe(true)
+      expect(first.find(item => item.packageName === feature)).toEqual(expect.objectContaining({
+        status: 'active', mutable: true, uninstallable: false,
+      }))
+    }
+    expect(desktopPluginBundleMutable('cqai-dsh-plugin-market')).toBe(false)
     expect(desktopPluginBundleMutable('dsh-community-market')).toBe(false)
+    expect(desktopPluginBundleMutable('dshmarket')).toBe(false)
+    expect(desktopPluginBundleMutable('@agents-anywhere/dsh-bridge-next')).toBe(false)
     expect(desktopPluginBundleMutable('../third-party-plugin')).toBe(false)
     expect(desktopPluginBundleMutable('Third-Party-Plugin')).toBe(false)
+    expect(readDesktopRecoveryBundleInventory(options)
+      .find(item => item.packageName === 'cqai-dsh-plugin-imagegen')).toEqual(
+      expect.objectContaining({ mutable: false, uninstallable: false }),
+    )
+    await harness.dispose()
+  })
+
+  it('keeps the running generation snapshot while a shipped feature is toggled for restart', async () => {
+    const root = temporaryRoot()
+    const options = { ...bootstrap(root), loadedPackageNames: ['cqai-dsh-plugin-imagegen'] }
+    ensureDesktopProfile(options.homeDir)
+    const harness = await createHarness(options)
+    const feature = harness.service.list().find(item => item.packageName === 'cqai-dsh-plugin-imagegen')
+    if (feature === undefined) throw new Error('missing feature')
+
+    expect(harness.service.loadedPackageNames()).toContain(feature.packageName)
+    await harness.service.executeDisable(harness.service.previewDisable(feature.bundleId).previewId)
+    expect(harness.service.list().find(item => item.bundleId === feature.bundleId)).toEqual(
+      expect.objectContaining({ status: 'disabled', mutable: true, uninstallable: false }),
+    )
+    expect(harness.service.loadedPackageNames()).toContain(feature.packageName)
+    await harness.service.executeEnable(harness.service.previewEnable(feature.bundleId).previewId)
+    expect(harness.service.list().find(item => item.bundleId === feature.bundleId)?.status).toBe('active')
+    expect(harness.service.loadedPackageNames()).toContain(feature.packageName)
     await harness.dispose()
   })
 
@@ -661,6 +699,9 @@ describe('pre-Host Profile bundle selection', () => {
       (cause: unknown) => selectionCode(cause) === 'invalid-target',
     )
     await expect(setDesktopProfileBundleSelected(options, '@deepseek-ai/dsh-base', false)).rejects.toSatisfy(
+      (cause: unknown) => selectionCode(cause) === 'immutable-target',
+    )
+    await expect(setDesktopProfileBundleSelected(options, 'cqai-dsh-plugin-imagegen', false)).rejects.toSatisfy(
       (cause: unknown) => selectionCode(cause) === 'immutable-target',
     )
     await expect(setDesktopProfileBundleSelected(options, 'detached-bundle', false)).rejects.toSatisfy(
