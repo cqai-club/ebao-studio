@@ -2,6 +2,7 @@
 
 import { writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 
@@ -176,7 +177,18 @@ export async function generateWindowsAppIcon(source = sourcePath, output = outpu
     throw new Error('generate-windows-app-icon: the 256px frame must use PNG encoding')
   }
 
-  await writeFile(output, encodeIco(rendered))
+  const icon = encodeIco(rendered)
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await writeFile(output, icon)
+      return
+    } catch (error) {
+      // Windows may briefly lock the existing ICO while icon or bundle tools inspect it.
+      if (process.platform !== 'win32' || attempt === 5 ||
+        !['EBUSY', 'EACCES', 'EPERM', 'UNKNOWN'].includes(error?.code)) throw error
+      await delay(250 * (attempt + 1))
+    }
+  }
 }
 
 const invokedPath = process.argv[1]

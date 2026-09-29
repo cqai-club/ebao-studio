@@ -23,7 +23,8 @@ const scriptLanguages = [{id:'',name:'自动识别'},{id:'zh-CN',name:'简体中
 const normalizeLanguage=(value:unknown):string=>value==='zh'?'zh-CN':value==='en'?'en-US':typeof value==='string'?value:''
 const labels: Record<Job['status'],string> = {draft:'待开始',running:'制作中',completed:'已完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'}
 const videoTaskLabels: Record<NonNullable<Job['videoTasks']>[number]['status'], string> = {submitting:'提交结果待确认',queued:'排队中',in_progress:'生成中',completed:'已下载',failed:'生成失败'}
-type Health = {python?:boolean;ffmpeg?:boolean;voices?:string[];fonts?:{name:string;path:string}[];uv?:boolean;error?:string;setup?:{status:string;logs:string[]}}
+type Setup = {status:'idle'|'running'|'completed'|'failed';items:{id:string;label:string;status:string;detail?:string}[];logs:string[]}
+type Health = {python?:boolean;ffmpeg?:boolean;voices?:string[];fonts?:{name:string;path:string}[];uv?:boolean;error?:string;setup?:Setup}
 type MaterialSource = {provider:string;local_file:string;duration?:number;search_term?:string;asset_id?:string;source_page?:string}
 type SavedManifest = {script?:string;search_terms?:string|string[];material_sources:MaterialSource[]}
 function publicSourcePage(value:unknown):string|undefined {
@@ -256,8 +257,11 @@ function Studio(){
   },[subtitleEditorKey])
   useEffect(()=>{let active=true;const poll=()=>{void api<Job[]>('jobs').then(data=>{if(!active)return;setJobs(data);if(!initialHydrated.current){initialHydrated.current=true;const recent=groupJobsByWorkflow(data)[0];if(recent)openWorkflow(recent,false)}}).catch(()=>{})}
     void reloadCatalog().catch(e=>setError(e.message));void api<Settings>('settings').then(value=>{if(active){setSettings(value);setSavedSettings(value)}}).catch(()=>{});void api<Health>('health').then(setHealth).catch(()=>{});poll()
-    const timer=setInterval(poll,2000);const healthTimer=setInterval(()=>{void api<Health>('health').then(data=>{if(active)setHealth(data)}).catch(()=>{})},10000)
-    return()=>{active=false;clearInterval(timer);clearInterval(healthTimer)}
+    let previousSetup='idle'
+    const setupPoll=()=>{void api<Setup>('setup').then(state=>{if(!active)return;setHealth(value=>({...value,setup:state}));if(previousSetup==='running'&&state.status!=='running')void api<Health>('health').then(data=>{if(active)setHealth(data)}).catch(()=>{});previousSetup=state.status}).catch(()=>{})}
+    void setupPoll()
+    const timer=setInterval(poll,2000);const healthTimer=setInterval(()=>{void api<Health>('health').then(data=>{if(active)setHealth(data)}).catch(()=>{})},10000);const setupTimer=setInterval(setupPoll,2000)
+    return()=>{active=false;clearInterval(timer);clearInterval(healthTimer);clearInterval(setupTimer)}
   },[])
   useEffect(()=>{pageRef.current?.scrollTo(0,0)},[tab])
   const field=(label:string,key:string,help?:string,multiline=false)=>{
@@ -575,11 +579,12 @@ function Studio(){
         </div>
       }):<div className="sv-empty">{filter==='all'?'还没有任务。到“主题与文案”页开始制作。':'没有符合筛选条件的任务。'}</div>}</div>
     </div>}
-    {tab==='settings'&&<div className="sv-grid"><div><div className="sv-card"><h2>运行环境</h2><p className="sv-help">制作引擎基于 MoneyPrinterTurbo 1.3.7。首次使用需要 Python 3.11+、uv 与 FFmpeg；点击安装会把锁定依赖安装到本机数据目录。</p>
-      <div className="sv-kv"><Tag tone={health?.python?'success':'neutral'}>Python {health?.python?'就绪':'待安装'}</Tag><Tag tone={health?.ffmpeg?'success':'neutral'}>FFmpeg {health?.ffmpeg?'就绪':'待安装'}</Tag><Tag tone={health?.uv?'success':'neutral'}>uv {health?.uv?'就绪':'未发现'}</Tag></div>
+    {tab==='settings'&&<div className="sv-grid"><div><div className="sv-card"><h2>运行环境</h2><p className="sv-help">制作引擎基于 MoneyPrinterTurbo 1.3.7。点击安装会在应用私有目录准备 Python 3.11、锁定依赖和 FFmpeg，无需预装系统工具。</p>
+      <div className="sv-kv"><Tag tone={health?.python?'success':'neutral'}>Python 与引擎 {health?.python?'就绪':'待安装'}</Tag><Tag tone={health?.ffmpeg?'success':'neutral'}>FFmpeg {health?.ffmpeg?'就绪':'待安装'}</Tag><Tag tone={health?.uv?'success':'neutral'}>内置 uv {health?.uv?'就绪':'未就绪'}</Tag></div>
       {health?.error&&<div className="sv-error">{health.error}</div>}
-      <div className="sv-actions"><Button variant="primary" disabled={health?.setup?.status==='running'||!!busy} onClick={()=>void action('启动安装…',async()=>{await api('setup',{});setNotice('正在安装运行环境，请稍候。')})}>安装 / 修复依赖</Button><Button variant="outline" onClick={()=>void api<Health>('health').then(setHealth)}>重新检查</Button></div>
-      {health?.setup?.status==='running'&&<p className="sv-help">正在安装依赖；可能需要几分钟。</p>}{health?.setup?.logs?.length?<pre className="sv-log">{health.setup.logs.join('\n')}</pre>:null}
+      <div className="sv-actions"><Button variant="primary" disabled={health?.setup?.status==='running'||!!busy} onClick={()=>void action('启动安装…',async()=>{const setup=await api<Setup>('setup',{});setHealth(value=>({...value,setup}));setNotice('正在安装缺失依赖，完成后自动复检。')})}>{health?.setup?.status==='running'?'正在安装…':'安装 / 修复依赖'}</Button><Button variant="outline" onClick={()=>void api<Health>('health').then(setHealth)}>重新检查</Button></div>
+      {health?.setup?.items?.map(item=><p className="sv-help" key={item.id}>{item.status==='running'?'正在处理':item.status==='completed'||item.status==='ready'?'✓':item.status==='failed'?'失败':'待处理'} {item.label}{item.detail?`：${item.detail}`:''}</p>)}
+      {health?.setup?.status==='failed'&&<p className="sv-error">有依赖安装失败；点击按钮可重试未就绪项。</p>}{health?.setup?.logs?.length?<pre className="sv-log">{health.setup.logs.join('\n')}</pre>:null}
     </div><div className="sv-card"><h2>素材平台</h2><p className="sv-help">这些密钥仅用于素材搜索；脚本和 AI 图片模型仍通过 CQAI Club 账号调用。填写后请点击下方“保存设置”。</p>
       {stockKeyLinks.map(({key,name,href})=><div className="sv-field" key={key}><div className="sv-key-heading"><label htmlFor={key}>{name} API Key</label><a href={href} target="_blank" rel="noopener noreferrer" aria-label={`获取 ${name} API Key（打开官网）`}>获取 API Key ↗</a></div><Input className="sv-native-input" id={key} type="password" value={settings[key]} onChange={e=>setSettings({...settings,[key]:e.target.value})}/></div>)}
       <Button variant="primary" disabled={!!busy} onClick={saveSettings}>保存设置</Button>

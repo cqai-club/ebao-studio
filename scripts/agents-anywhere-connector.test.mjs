@@ -13,20 +13,24 @@ import { AA_WORKSPACES } from './agents-anywhere-release-policy.mjs'
 // Exercise the installed artifact: a patch file alone does not prove Yarn applied it.
 function loadConnector(workspace, environment) {
   const source = readFileSync(new URL(`../${workspace}/node_modules/@agents-anywhere/dsh-bridge-next/lib/index.js`, import.meta.url), 'utf8')
-  const start = source.indexOf('//#region src/host/connector/logs.ts')
-  const end = source.indexOf('//#region src/host/desktop/detect.ts', start)
-  assert.ok(start >= 0 && end > start)
-  return runInNewContext(`${source.slice(start, end)}; SourceConnector`, {
+  const region = name => {
+    const start = source.indexOf(`//#region src/host/connector/${name}.ts`)
+    const end = source.indexOf('//#endregion', start)
+    assert.ok(start >= 0 && end > start)
+    return source.slice(start, end)
+  }
+  return runInNewContext(`${region('logs')}\n${region('process')}; SourceConnector`, {
     execFile, promisify, stripVTControlCharacters, join, setTimeout, clearTimeout,
     process: { platform: process.platform, env: environment },
     readJson$1: async () => [], writeJson: async () => {}, mkdir: async () => {},
+    materializeConnectorProject: async () => '/source',
     resolveUv: async () => 'uv',
     DEFAULT_CONNECTOR_SETTINGS: { syncIntervalSeconds: 30 },
   })
 }
 
 for (const workspace of AA_WORKSPACES) {
-  test(`${workspace}: rc.2 tool results retain the same hash after JSON transport`, () => {
+  test(`${workspace}: tool results retain the same hash after JSON transport`, () => {
     const source = readFileSync(new URL(`../${workspace}/node_modules/@agents-anywhere/dsh-bridge-next/lib/index.js`, import.meta.url), 'utf8')
     const region = name => {
       const start = source.indexOf(`//#region src/host/dsh-runtime/${name}.ts`)

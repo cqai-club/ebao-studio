@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isEdgeVoiceId } from './protocol.ts'
@@ -23,7 +24,7 @@ export class EdgeVoicePreview {
     const {voice, text} = validateEdgePreview(rawVoice, rawText)
     if (this.active >= 2) throw new Error('正在生成其他试听，请稍后再试')
     const python = pythonExecutable(this.upstream)
-    if (python === 'python') throw new Error('Edge TTS 依赖尚未准备，请先在设置中完成首次准备')
+    if (!existsSync(python)) throw new Error('Edge TTS 依赖尚未准备，请先在设置中一键安装')
     this.active++
     const output = join(this.directory, `${randomUUID()}.mp3`)
     try {

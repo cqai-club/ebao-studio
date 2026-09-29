@@ -3,7 +3,7 @@ import { basename, join } from 'node:path'
 import { EDGE_VOICES, isEdgeVoiceId, type Job, type Stage, type VoiceSource } from './protocol.ts'
 import { JobStore } from './store.ts'
 import { TalkCraftAgents } from './agent.ts'
-import { command, health, linkJobRuntime, pythonExecutable } from './runtime.ts'
+import { command, ffmpegExecutable, health, linkJobRuntime, pythonExecutable } from './runtime.ts'
 import { candidateLocalFile, downloadSelected, searchCandidates } from './media.ts'
 import { Secrets } from './secrets.ts'
 
@@ -38,7 +38,9 @@ export class Pipeline {
   private runs = new Map<string, AbortController>()
   private runPromises = new Map<string, Promise<void>>()
   private readonly agentSessionJobs = new Map<string, string>()
-  constructor(readonly store: JobStore, readonly agents: TalkCraftAgents, readonly secrets: Secrets, readonly upstream: string) {}
+  constructor(readonly store: JobStore, readonly agents: TalkCraftAgents, readonly secrets: Secrets, readonly upstream: string,
+    readonly modelDir: string | (() => string) = join(upstream, 'runtime', 'models', 'firered'), readonly nodeShim = 'node') {}
+  private modelPath(): string {return typeof this.modelDir === 'string' ? this.modelDir : this.modelDir()}
   dispose(): void {for (const controller of this.runs.values()) controller.abort()}
   private trackAgentSession(job: Job, sessionId: string): void {this.agentSessionJobs.set(sessionId, job.id)}
   recordBackgroundStep(owner: string, status: string): void {
@@ -50,7 +52,7 @@ export class Pipeline {
     this.store.log(job, `${stage}：后台步骤${status === 'completed' ? '已完成，继续制作' : '失败，正在检查'}`)
   }
   async diagnosis(job: Job): Promise<string[]> {
-    const h = await health(this.upstream)
+    const h = await health(this.upstream, this.modelPath())
     const errors = await this.agents.preflight()
     for (const key of ['node', 'python', 'ffmpeg', 'ffprobe', 'remotion', 'browser'] as const) if (!h[key]) errors.push(`${key} 尚未就绪；${h.prepare}`)
     const source = voiceSource(job)
@@ -59,7 +61,7 @@ export class Pipeline {
     const keys = await this.secrets.publicState()
     if (voiceUpload && h.ffprobe) {
       try {
-        const probe = await command('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', this.store.file(job.id, voiceUpload.file)], {timeout: 20000})
+        const probe = await command(ffmpegExecutable(this.upstream,'ffprobe'), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', this.store.file(job.id, voiceUpload.file)], {timeout: 20000})
         const duration = Number.parseFloat(probe.output.trim())
         if (probe.code !== 0 || !Number.isFinite(duration) || duration < 0.5) errors.push('上传配音为空、损坏或短于 0.5 秒，请重新上传')
       } catch {errors.push('上传配音无法读取，请重新上传')}
@@ -233,7 +235,7 @@ export class Pipeline {
     if (!present(wav)) {
       if (voice) {
         const pending = this.store.file(job.id, 'audio/full.pending.wav')
-        const result = await command('ffmpeg', ['-y', '-i', this.store.file(job.id, voice.file), '-ar', '24000', '-ac', '1', pending], {signal, timeout: 120000})
+        const result = await command(ffmpegExecutable(this.upstream,'ffmpeg'), ['-y', '-i', this.store.file(job.id, voice.file), '-ar', '24000', '-ac', '1', pending], {signal, timeout: 120000})
         if (result.code !== 0 || !present(pending)) throw new Error('配音转换失败，请检查音频文件')
         renameSync(pending, wav)
       } else if (voiceSource(job) === 'edge') {
@@ -249,14 +251,14 @@ export class Pipeline {
           const result = await command(pythonExecutable(this.upstream), [join(this.upstream, '..', 'scripts', 'tts_edge.py'), this.store.file(job.id, 'script.json'), pending, selectedVoice],
             {cwd: root, env: {...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'}, signal, timeout: 270000})
           if (result.code !== 0 || !present(pending)) throw new Error(`Edge TTS 配音失败（退出码 ${result.code}）；不会自动重试。请检查服务或网络后明确重试`)
-          const probe = await command('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', pending], {signal, timeout: 20000})
+          const probe = await command(ffmpegExecutable(this.upstream,'ffprobe'), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', pending], {signal, timeout: 20000})
           const duration = Number.parseFloat(probe.output.trim())
           if (probe.code !== 0 || !Number.isFinite(duration) || duration < 0.5) throw new Error('Edge TTS 返回的音频无效；不会自动重试')
           renameSync(pending, mp3)
           job.edgeSubmission = 'completed'; this.store.persist(job)
         }
         const pendingWav = this.store.file(job.id, 'audio/full.pending.wav')
-        const converted = await command('ffmpeg', ['-y', '-i', mp3, '-ar', '24000', '-ac', '1', '-c:a', 'pcm_s16le', pendingWav], {signal, timeout: 120000})
+        const converted = await command(ffmpegExecutable(this.upstream,'ffmpeg'), ['-y', '-i', mp3, '-ar', '24000', '-ac', '1', '-c:a', 'pcm_s16le', pendingWav], {signal, timeout: 120000})
         if (converted.code !== 0 || !present(pendingWav)) throw new Error('Edge TTS 配音转换失败，可继续任务重试本地转换')
         renameSync(pendingWav, wav)
       } else {
@@ -272,7 +274,7 @@ export class Pipeline {
     const pending = this.store.file(job.id, 'audio/timestamps.pending.json')
     if (!validTimestamps(timestamps) && validTimestamps(pending)) renameSync(pending, timestamps)
     if (!validTimestamps(timestamps)) {
-      const model = process.env.FIRERED_ASR_MODEL_DIR ?? join(this.upstream, 'runtime', 'models', 'firered')
+      const model = this.modelPath()
       const result = await command(pythonExecutable(this.upstream), [join(this.upstream, 'scripts', 'timestamps_cpu.py'), wav, this.store.file(job.id, 'script.json'), pending, '--model-dir', model],
         {cwd: root, env: {...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'}, signal, timeout: 900000})
       if (result.code !== 0 || !validTimestamps(pending)) throw new Error(`字级对齐失败：${result.output.slice(-500)}`)
@@ -328,11 +330,13 @@ export class Pipeline {
     const root = this.store.directory(job.id)
     const skill = join(this.upstream, 'SKILL.md')
     const feedback = job.feedback ? `\n用户修改意见：${job.feedback}\n` : ''
-    const common = `工程目录 ${root}。TalkCraft 固定源码 ${this.upstream}，阅读 ${skill} 中当前阶段，并按实际选用的镜头和卡读取对应 references；不要遍历整个参考库。该 SKILL.md 的「每片开工升级运行时」只适用于原仓库，在此插件中已由独立的一次性准备流程替代；绝对不要运行 check-runtime.sh、npm install/ci/update 或任何自动升级命令。画幅 ${job.aspect}，有声配音 audio/full.wav，时间戳 audio/timestamps.json。Remotion/React 19 依赖在 ${join(this.upstream, 'runtime', 'node_modules')}，绝对不能导入 DSH Client React 18。仅写本任务目录，使用 Windows 可用的 Node/Python/ffmpeg 命令，不用 rsync/open/Unix 专属命令。在 PowerShell 中运行 Python 时设置 PYTHONIOENCODING=utf-8；中文文件始终按 UTF-8 读写。${feedback}`
+    const nodeCommand = process.platform === 'win32' ? `& "${this.nodeShim}"` : `"${this.nodeShim}"`
+    const mediaTool = (name: 'ffmpeg' | 'ffprobe') => {try {return ffmpegExecutable(this.upstream,name)} catch {return `应用私有 ${name} 尚未安装`}}
+    const common = `工程目录 ${root}。TalkCraft 固定源码 ${this.upstream}，阅读 ${skill} 中当前阶段，并按实际选用的镜头和卡读取对应 references；不要遍历整个参考库。该 SKILL.md 的「每片开工升级运行时」只适用于原仓库，在此插件中已由独立的一次性准备流程替代；绝对不要运行 check-runtime.sh、npm install/ci/update 或任何自动升级命令。画幅 ${job.aspect}，有声配音 audio/full.wav，时间戳 audio/timestamps.json。Remotion/React 19 依赖在 ${join(this.upstream, 'runtime', 'node_modules')}，绝对不能导入 DSH Client React 18。仅写本任务目录。使用应用私有 Node ${this.nodeShim}、Python ${pythonExecutable(this.upstream)}、FFmpeg ${mediaTool('ffmpeg')} 和 ffprobe ${mediaTool('ffprobe')}，不要依赖系统 PATH；中文文件始终按 UTF-8 读写。${feedback}`
     const stagePrompts: Record<Exclude<Stage, 'prepare'>, string> = {
       shotbook: `${common}\n先读 script.txt、audio/timestamps.json、asset_plan.json、media_candidates.json 和 sources.md，再读 SKILL.md 第④阶段、references/shot-design.md 与 cinematography.md 第4节。素材描述以 asset_plan.json 为准；无界面 Agent 不要反复调用 read_image。先写非空的 SHOTBOOK.md 和 remotion/shots.json（镜头 ID 从 s01 起，时间连续），再按第④阶段细化每镜的素材路径、来源、节拍、版式和选卡；仅查所选卡的文档。每镜必须用机器可读的独立行：\`- 素材：图（remotion/public/assets/实际文件名.jpg）\`、\`- 蒙皮行：卡名 → 改了什么皮\`，不能用 \`- **素材**：\` 或仅写在自然语言段落里。G0 写版式节奏表。运行 preflight 检查并修正失败项。不要进入样板镜。`,
-      sample: `${common}\n用户已确认 SHOTBOOK。按第⑤阶段创建完整 Remotion 工程骨架，只精做 s01 样板镜，包含成品配音和字幕。运行 node ${join(this.upstream, 'scripts', 'render_shots.mjs')} --shots shots.json --only s01 --seg-audio --preview-dir out/preview，在 remotion 目录执行；确保 remotion/out/preview/s01.mp4 是真实可播放且有声音的样板镜。不要制作其余镜头。`,
-      finish: `${common}\n用户已确认有声样板镜。按第⑤⑥阶段实现其余镜头、字幕、转场与动效，运行机器检查与 node ${join(this.upstream, 'scripts', 'render_shots.mjs')} --shots shots.json --all --parallel 2 --concat out/assembled.mp4 --audio out/full-mix.wav --mux out/finished.mp4，在 remotion 目录执行。确认音轨后把 remotion/out/finished.mp4 复制到任务根 delivery.mp4。`,
+      sample: `${common}\n用户已确认 SHOTBOOK。按第⑤阶段创建完整 Remotion 工程骨架，只精做 s01 样板镜，包含成品配音和字幕。在 remotion 目录执行 ${nodeCommand} "${join(this.upstream, 'scripts', 'render_shots.mjs')}" --shots shots.json --only s01 --seg-audio --preview-dir out/preview；确保 remotion/out/preview/s01.mp4 是真实可播放且有声音的样板镜。不要制作其余镜头。`,
+      finish: `${common}\n用户已确认有声样板镜。按第⑤⑥阶段实现其余镜头、字幕、转场与动效，运行机器检查，并在 remotion 目录执行 ${nodeCommand} "${join(this.upstream, 'scripts', 'render_shots.mjs')}" --shots shots.json --all --parallel 2 --concat out/assembled.mp4 --audio out/full-mix.wav --mux out/finished.mp4。确认音轨后把 remotion/out/finished.mp4 复制到任务根 delivery.mp4。`,
       review: `${common}\n这是新的独立审片上下文。只读检查 SHOTBOOK.md、remotion/shots.json、delivery.mp4、机器验收结果和抽帧；按 TalkCraft 第⑦阶段独立审片。写 review/decision.json 为 {"pass":true|false,"issues":[{"severity":"P0|P1|P2","detail":"..."}]}。发现 P0/P1 时 pass=false。不得修改成片或分镜。`,
     }
     const progress = () => ({resumeSessionId: job.stageSessions?.[stage], onSessionId: (id: string) => {job.stageSessions ??= {}; job.stageSessions[stage] = id; this.trackAgentSession(job, id); this.store.persist(job)}})
@@ -366,7 +370,7 @@ export class Pipeline {
     if (result.code !== 0) throw new Error(`分镜机器验收失败：${result.output.slice(-800)}`)
   }
   private async checkVideoFile(path: string, signal: AbortSignal): Promise<void> {
-    const result = await command('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', path], {signal, timeout: 20000})
+    const result = await command(ffmpegExecutable(this.upstream,'ffprobe'), ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', path], {signal, timeout: 20000})
     if (result.code !== 0 || !result.output.includes('video') || !result.output.includes('audio')) throw new Error('成片必须包含可读的视频轨与音频轨')
   }
 }

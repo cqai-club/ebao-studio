@@ -18,7 +18,8 @@ import { TalkCraftAgents, type AgentServices } from './agent.ts'
 import { Secrets, type SecretName } from './secrets.ts'
 import { Pipeline } from './pipeline.ts'
 import { Workbench } from './workbench.ts'
-import { health } from './runtime.ts'
+import { health, modelReady } from './runtime.ts'
+import { snapshotPath, talkcraftSetup } from './setup.ts'
 
 export const name = 'cqai-talkcraft'
 export const inject = ['webServer', 'credentials']
@@ -50,8 +51,14 @@ function serveFile(req: IncomingMessage, res: ServerResponse, path: string, down
 }
 
 export function apply(ctx: Context): void {
-  const upstream = fileURLToPath(new URL('../upstream/', import.meta.url))
+  const sourceUpstream = fileURLToPath(new URL('../upstream/', import.meta.url))
   const home = join(resolveDshHome(), 'talkcraft')
+  const sourceRoot = dirname(sourceUpstream)
+  const upstream = join(snapshotPath(sourceRoot, home), 'upstream')
+  const configuredModel = process.env.FIRERED_ASR_MODEL_DIR
+  const privateModelDir = join(home, 'models', 'firered')
+  const modelDir = () => configuredModel && modelReady(configuredModel) ? configuredModel : privateModelDir
+  const setup = talkcraftSetup(sourceRoot, home, upstream, modelDir)
   const store = new JobStore(join(home, 'jobs'))
   const edgeVoices = new EdgeVoiceCatalog(upstream, join(home, 'edge-voices.json'))
   const edgePreview = new EdgeVoicePreview(upstream, join(home, 'previews'))
@@ -60,7 +67,7 @@ export function apply(ctx: Context): void {
     modifyRecord: (key, mutate) => ctx.credentials.modifyRecord(key, mutate),
   })
   const agents = new TalkCraftAgents()
-  const work = new Pipeline(store, agents, secrets, upstream)
+  const work = new Pipeline(store, agents, secrets, upstream, modelDir, join(home, 'bin', process.platform === 'win32' ? 'node.cmd' : 'node'))
   const editor = new Workbench(store, upstream)
   ctx.inject(['jobs'], jobsCtx => {
     jobsCtx.effect(() => jobsCtx.jobs.events.subscribe({owners: 'all'}, event => {
@@ -82,7 +89,9 @@ export function apply(ctx: Context): void {
         const url = new URL(req.url ?? '/', 'http://localhost')
         const action = url.pathname.slice(API.length + 1)
         const id = url.searchParams.get('id') ?? ''
-        if (req.method === 'GET' && action === 'health') return json(res, 200, {...await health(upstream), agents: agents.diagnosis()})
+        if (req.method === 'GET' && action === 'health') return json(res, 200, {...await health(upstream, modelDir()), setup: setup.snapshot(), agents: agents.diagnosis()})
+        if (req.method === 'GET' && action === 'setup') return json(res, 200, setup.snapshot())
+        if (req.method === 'POST' && action === 'setup') return json(res, 202, setup.start())
         if (req.method === 'GET' && action === 'edge-voices') return json(res, 200, await edgeVoices.list(url.searchParams.get('refresh') === '1'))
         if (req.method === 'POST' && action === 'edge-preview') {
           const input = await body(req)

@@ -28,12 +28,12 @@
 在易宝工坊仓库根目录启动开发版（Git Bash）：
 
 ```bash
-DSH_AA_SOURCE_REF=pinned corepack yarn dev
+corepack yarn dev
 ```
 
-默认 `desktop` Profile 同时包含“e剪宝”和“短视频制作”，并使用当前 `DSH_HOME` 的登录状态和任务数据。`DSH_AA_SOURCE_REF=pinned` 复用已校验的 Agents Anywhere 包；如果使用新的 `DSH_HOME`，需要在该目录重新登录 CQAI Club。
+默认 `desktop` Profile 同时包含“e剪宝”和“短视频制作”，并使用当前 `DSH_HOME` 的登录状态和任务数据。如果使用新的 `DSH_HOME`，需要在该目录重新登录 CQAI Club。
 
-首次打开“设置”页，点击“安装 / 修复依赖”。需要本机有 Python 3.11+、uv 和 FFmpeg；安装使用随插件附带的 uv.lock，把 Python 环境放在 DSH_HOME/short-video/engine/.venv，可能下载较大的语音识别和视频依赖。素材与任务位于 DSH_HOME/short-video/。可以用 MPT_PYTHON 环境变量指定已准备的 Python 解释器。
+首次打开“设置”页，点击“安装 / 修复依赖”。Desktop 随包提供 uv；若没有兼容的现有 Python 3.11，uv 会将其下载到 `DSH_HOME/media-tools/python`。MoneyPrinterTurbo 使用随插件附带的 `uv.lock`，虚拟环境位于 `DSH_HOME/short-video/engine/.venv`，FFmpeg 由锁定的 `imageio-ffmpeg` 提供并实际执行检查，无需系统预装。安装中可查看逐项进度，失败后重试只处理未就绪项。素材与任务位于 `DSH_HOME/short-video/`。可以用 `MPT_PYTHON` 环境变量指定兼容的现有 Python 3.11。
 
 原仓库的其它付费 AI 视频提供商、专有 TTS/音乐模型、Upload-Post 自动发布、云端批量脚本报价尚未接入此插件。CQAI Club 视频生成会在开始制作前提示按镜头计费。字幕使用本机系统字体；原仓库附带的字体与歌曲不在插件包内。
 

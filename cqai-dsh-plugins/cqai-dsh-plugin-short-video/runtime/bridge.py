@@ -18,6 +18,10 @@ MPT = RUNTIME / "mpt"
 sys.path.insert(0, str(MPT))
 os.chdir(MPT)
 
+# Keep every MoneyPrinterTurbo FFmpeg call on the binary in its private venv.
+import imageio_ffmpeg
+os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
+
 
 def send(kind, **data):
     WIRE.write("MPT_EVENT " + json.dumps({"type": kind, **data}, ensure_ascii=False, default=str) + "\n")

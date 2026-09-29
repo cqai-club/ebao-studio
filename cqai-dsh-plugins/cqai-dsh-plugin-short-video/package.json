@@ -37,6 +37,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "cqai-dsh-plugin-media-runtime": "0.1.0"
+  },
   "peerDependencies": {
     "@cqaiclub/dsn-account": "^0.1.0",
     "@deepseek-ai/cordis": "^4.0.2",

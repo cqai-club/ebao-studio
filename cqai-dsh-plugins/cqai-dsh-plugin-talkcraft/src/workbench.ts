@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
+import { nodeEnvironment } from 'cqai-dsh-plugin-media-runtime'
 import type { JobStore } from './store.ts'
 
 async function availablePort(): Promise<number> {
@@ -31,7 +32,7 @@ export class Workbench {
     const thumbDir = join(this.upstream, 'gallery', 'thumbs')
     if (existsSync(thumbDir)) cpSync(thumbDir, join(publicDir, 'cardthumbs'), {recursive: true, force: false, errorOnExist: false})
     const root = join(this.upstream, 'workbench')
-    const generator = spawn(process.execPath, [join(root, 'scripts', 'gen-index.mjs')], {cwd: root, env: {...process.env, TALKCRAFT_PROJECT: this.store.directory(id)}, windowsHide: true})
+    const generator = spawn(process.execPath, [join(root, 'scripts', 'gen-index.mjs')], {cwd: root, env: nodeEnvironment({...process.env, TALKCRAFT_PROJECT: this.store.directory(id)}), windowsHide: true})
     this.openingId = id
     let generateCode: number
     try {generateCode = await new Promise<number>((resolve, reject) => {generator.once('error', reject); generator.once('close', code => resolve(code ?? -1))})}
@@ -40,8 +41,8 @@ export class Workbench {
     const port = await availablePort()
     this.store.get(id)
     const vite = join(this.upstream, 'runtime', 'node_modules', 'vite', 'bin', 'vite.js')
-    if (!existsSync(vite)) throw new Error('工作台依赖未安装，请先执行 runtime:prepare')
-    const child = spawn(process.execPath, [vite, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {cwd: root, env: {...process.env, TALKCRAFT_PROJECT: this.store.directory(id)}, windowsHide: true})
+    if (!existsSync(vite)) throw new Error('工作台依赖未安装，请先在设置中一键安装')
+    const child = spawn(process.execPath, [vite, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {cwd: root, env: nodeEnvironment({...process.env, TALKCRAFT_PROJECT: this.store.directory(id)}), windowsHide: true})
     this.active = {id, port, child}
     try {
       await new Promise<void>((resolve, reject) => {

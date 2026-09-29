@@ -5,7 +5,8 @@ import type { DsnAccountService } from '@cqaiclub/dsn-account'
 import { isChatModel, isImageGenerationModel, isVideoCatalogEntry, isVideoModel } from '@cqaiclub/dsn-account'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { randomUUID } from 'node:crypto'
+import { SetupManager, python311, pythonEnvironment, run as runCommand, uvEnvironment, uvExecutable } from 'cqai-dsh-plugin-media-runtime'
+import { createHash, randomUUID } from 'node:crypto'
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -146,8 +147,7 @@ function physicalRuntime(): string {
 }
 function pythonPath(dataRoot: string): string {
   const venv = join(dataRoot, 'engine', '.venv')
-  const bundled = process.platform === 'win32' ? join(venv, 'Scripts', 'python.exe') : join(venv, 'bin', 'python')
-  return existsSync(bundled) ? bundled : (process.env.MPT_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'))
+  return process.platform === 'win32' ? join(venv, 'Scripts', 'python.exe') : join(venv, 'bin', 'python')
 }
 function terminate(child: ChildProcess): void {
   if (!child.pid) return
@@ -284,13 +284,21 @@ export function apply(ctx: Context): void {
   const contentChildren = new Set<ChildProcessWithoutNullStreams>()
   let contentReserved = false
   const writes = new Map<string, Promise<void>>()
-  let setup: { status: 'idle' | 'running' | 'completed' | 'failed'; logs: string[] } = {status:'idle', logs:[]}
   let healthCache: Promise<Record<string,unknown>> | undefined
   let healthAt=0
   const health=()=>{
     if(!healthCache||Date.now()-healthAt>30_000){healthAt=Date.now();healthCache=checkHealth(root,runtime)}
     return healthCache
   }
+  const uvHome=join(resolveDshHome(),'media-tools')
+  const setup=new SetupManager(()=>[
+    {id:'uv',label:'内置 uv',ready:async()=>probeUv(),run:async(log)=>{await runCommand(uvExecutable(),['--version'],{log})}},
+    {id:'python',label:'Python 3.11',ready:async()=>{try{await python311(uvHome);return true}catch{return false}},run:async(log)=>{await mkdir(uvHome,{recursive:true});await runCommand(uvExecutable(),['python','install','3.11'],{env:uvEnvironment(uvHome),log})}},
+    {id:'engine',label:'MoneyPrinterTurbo 锁定环境',ready:async()=>engineReady(root,runtime),run:async(log)=>setupEngine(root,runtime,uvHome,log)},
+    {id:'ffmpeg',label:'FFmpeg',ready:async()=>Boolean((await checkHealth(root,runtime)).ffmpeg),run:async(log)=>{log('从锁定的 imageio-ffmpeg 依赖检查内置程序');await setupEngine(root,runtime,uvHome,log)}},
+  ])
+  let lastSetupFinishedAt=0
+  const setupSnapshot=()=>{const state=setup.snapshot();if(state.status!=='running'&&state.status!=='idle'&&state.updatedAt!==lastSetupFinishedAt){healthCache=undefined;lastSetupFinishedAt=state.updatedAt}return state}
   void mkdir(jobsRoot, {recursive:true})
   if (existsSync(jobsRoot)) {
     for (const dir of requireDirs(jobsRoot)) {
@@ -558,8 +566,9 @@ export function apply(ctx: Context): void {
         }
         if(req.method==='GET' && action==='settings')return json(res,200,await readSettings(root))
         if(req.method==='POST' && action==='settings'){const settings=validateSettings(await readJson(req));await mkdir(root,{recursive:true});await writeFile(join(root,'settings.json'),JSON.stringify(settings,null,2));return json(res,200,settings)}
-        if(req.method==='GET' && action==='health')return json(res,200,{...(await health()),setup})
-        if(req.method==='POST' && action==='setup'){if(setup.status==='running')throw new Error('正在安装运行环境');setup={status:'running',logs:[]};void setupEngine(root,runtime,(line)=>{setup.logs.push(line);setup.logs=setup.logs.slice(-30)}).then(()=>{setup.status='completed';healthCache=undefined}).catch(e=>{setup.status='failed';healthCache=undefined;setup.logs.push(e instanceof Error?e.message:String(e))});return json(res,202,setup)}
+        if(req.method==='GET' && action==='health'){const state=setupSnapshot();return json(res,200,{...(await health()),setup:state})}
+        if(req.method==='GET' && action==='setup')return json(res,200,setupSnapshot())
+        if(req.method==='POST' && action==='setup'){const state=setup.start();healthCache=undefined;return json(res,202,state)}
         if(req.method==='GET' && action==='jobs')return json(res,200,[...jobs.values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))
          if(req.method==='POST' && action==='jobs'){
              const raw=await readJson(req),draft=validateDraft(raw)
@@ -647,23 +656,28 @@ import { readdirSync } from 'node:fs'
 async function readSettings(root:string):Promise<Settings>{
   try{return validateSettings(JSON.parse(await readFile(join(root,'settings.json'),'utf8')))}catch{return {...defaultSettings}}
 }
-async function checkHealth(root:string,runtime:string):Promise<Record<string,unknown>>{
+export async function checkHealth(root:string,runtime:string):Promise<Record<string,unknown>>{
   return new Promise(resolveHealth=>{
     const child=spawn(pythonPath(root),[join(runtime,'bridge.py'),'health'],{windowsHide:true,cwd:runtime,env:{...process.env,MPT_DSH_DATA_ROOT:root,PYTHONUTF8:'1'},stdio:['ignore','pipe','pipe']})
     let output='';const timer=setTimeout(()=>terminate(child),45000)
     child.stdout.on('data',chunk=>{output+=chunk.toString()})
     child.on('error',()=>{})
-    child.once('close',()=>{clearTimeout(timer);const line=output.split(/\r?\n/).find(x=>x.startsWith('MPT_EVENT '));try{const v=JSON.parse(line!.slice(10));resolveHealth(v)}catch{resolveHealth({python:false,ffmpeg:false,error:'请安装 Python 3.11 与 uv，然后点击安装运行环境'})}})
+    child.once('close',()=>{clearTimeout(timer);const line=output.split(/\r?\n/).find(x=>x.startsWith('MPT_EVENT '));let result:Record<string,unknown>;try{result=JSON.parse(line!.slice(10))}catch{result={python:false,ffmpeg:false,error:'运行环境尚未就绪，请点击安装 / 修复依赖'}};let locked=false;try{locked=readFileSync(join(root,'engine','.setup-lock'),'utf8').trim()===engineLockHash(runtime)}catch{};void probeUv().then(uv=>resolveHealth({...result,python:Boolean(result.python)&&locked,uv}))})
   })
 }
-async function setupEngine(root:string,runtime:string,log:(line:string)=>void):Promise<void>{
+async function probeUv():Promise<boolean>{
+  try {await runCommand(uvExecutable(),['--version'],{timeout:10000});return true}catch{return false}
+}
+function engineLockHash(runtime:string):string {return createHash('sha256').update(readFileSync(join(runtime,'mpt','uv.lock'))).digest('hex')}
+async function engineReady(root:string,runtime:string):Promise<boolean>{
+  try {return readFileSync(join(root,'engine','.setup-lock'),'utf8').trim()===engineLockHash(runtime)&&Boolean((await checkHealth(root,runtime)).python)}catch{return false}
+}
+export async function setupEngine(root:string,runtime:string,uvHome:string,log:(line:string)=>void):Promise<void>{
   const engine=join(root,'engine');await mkdir(engine,{recursive:true})
-  const cache=join(engine,'uv-cache'),temp=join(engine,'temp');await mkdir(cache,{recursive:true});await mkdir(temp,{recursive:true})
+  const selection=await python311(uvHome)
   await copyFile(join(runtime,'mpt','pyproject.toml'),join(engine,'pyproject.toml'))
   await copyFile(join(runtime,'mpt','uv.lock'),join(engine,'uv.lock'))
-  await new Promise<void>((ok,fail)=>{
-    const child=spawn('uv',['sync','--locked','--no-dev','--no-install-project','--project',engine],{windowsHide:true,cwd:engine,env:{...process.env,UV_PROJECT_ENVIRONMENT:join(engine,'.venv'),UV_CACHE_DIR:cache,TEMP:temp,TMP:temp},stdio:['ignore','pipe','pipe']})
-    let tail='';for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>{tail+=chunk.toString();const lines=tail.split(/\r?\n/);tail=lines.pop()||'';for(const line of lines)log(line.slice(0,300))})
-    child.once('error',fail);child.once('close',code=>code===0?ok():fail(new Error(`uv 安装失败 (exit ${code})`)))
-  })
+  await runCommand(uvExecutable(),['sync','--locked','--no-dev','--no-install-project','--python',selection.python,'--project',engine],
+    {cwd:engine,env:{...pythonEnvironment(uvHome,selection),UV_PROJECT_ENVIRONMENT:join(engine,'.venv')},log})
+  await writeFile(join(engine,'.setup-lock'),engineLockHash(runtime))
 }

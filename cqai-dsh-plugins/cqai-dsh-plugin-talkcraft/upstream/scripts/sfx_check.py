@@ -31,6 +31,7 @@ mix 模式（可听度，交付前对最终混音跑；这是"耳听"的机器�
 """
 import json
 import subprocess
+from private_tools import media_bin
 import sys
 
 import numpy as np
@@ -41,7 +42,7 @@ SR = 16000
 def decode(path: str) -> np.ndarray:
     """任意音频/视频文件 → 16k 单声道 float64（借道 ffmpeg，管线里必有）。"""
     raw = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", str(SR),
+        [media_bin("ffmpeg"), "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", str(SR),
          "-f", "s16le", "-"],
         capture_output=True, check=True,
     ).stdout

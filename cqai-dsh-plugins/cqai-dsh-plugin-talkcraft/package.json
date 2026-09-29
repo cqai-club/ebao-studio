@@ -42,6 +42,9 @@
     "test": "vitest run",
     "runtime:prepare": "node scripts/prepare-runtime.mjs"
   },
+  "dependencies": {
+    "cqai-dsh-plugin-media-runtime": "0.1.0"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.7-rc.2",

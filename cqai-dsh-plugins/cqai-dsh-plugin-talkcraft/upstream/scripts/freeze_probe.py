@@ -26,6 +26,7 @@ import json
 import os
 import re
 import subprocess
+from private_tools import media_bin, node_bin
 import sys
 import tempfile
 import time
@@ -34,7 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def run_stills(frames: list[int], out: str, a) -> tuple[float, float]:
-    cmd = ["node", os.path.join(HERE, "render_stills.mjs"), "--frames", ",".join(map(str, frames)), "--out", out,
+    cmd = [node_bin(), os.path.join(HERE, "render_stills.mjs"), "--frames", ",".join(map(str, frames)), "--out", out,
            "--prefix", "p", "--entry", a.entry]
     if a.scale:
         cmd += ["--scale", str(a.scale)]
@@ -56,7 +57,7 @@ def run_stills(frames: list[int], out: str, a) -> tuple[float, float]:
 def yuv420(png: str):
     """PNG → yuv420p 原始字节（与 freezedetect 看到的平面一致）。"""
     import numpy as np
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", png, "-pix_fmt", "yuv420p", "-f", "rawvideo", "-"],
+    raw = subprocess.run([media_bin("ffmpeg"), "-v", "error", "-i", png, "-pix_fmt", "yuv420p", "-f", "rawvideo", "-"],
                          capture_output=True, check=True).stdout
     return np.frombuffer(raw, dtype=np.uint8).astype(np.float64)
 
@@ -70,7 +71,7 @@ def pair_mafd(p0: str, p1: str) -> float:
 
 
 def freeze_intervals(video: str, noise: float, dur: float) -> list[tuple[float, float]]:
-    proc = subprocess.run(["ffmpeg", "-hide_banner", "-i", video, "-vf", f"freezedetect=n={noise}:d={dur}", "-an", "-f", "null", "-"],
+    proc = subprocess.run([media_bin("ffmpeg"), "-hide_banner", "-i", video, "-vf", f"freezedetect=n={noise}:d={dur}", "-an", "-f", "null", "-"],
                           capture_output=True, text=True)
     starts = [float(x) for x in re.findall(r"freeze_start: ([\d.]+)", proc.stderr)]
     ends = [float(x) for x in re.findall(r"freeze_end: ([\d.]+)", proc.stderr)]

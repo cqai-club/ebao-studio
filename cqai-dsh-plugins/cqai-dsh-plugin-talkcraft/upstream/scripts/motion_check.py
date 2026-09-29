@@ -35,6 +35,7 @@ import glob
 import os
 import re
 import subprocess
+from private_tools import media_bin
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -48,7 +49,7 @@ DEFAULT_CROP = "1200:120:150:150"   # 标题带：本套版式大标题所在区
 
 def check_freeze(video: str, dur: str, noise: str) -> bool:
     proc = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-i", video, "-vf", f"freezedetect=n={noise}:d={dur}", "-an", "-f", "null", "-"],
+        [media_bin("ffmpeg"), "-hide_banner", "-i", video, "-vf", f"freezedetect=n={noise}:d={dur}", "-an", "-f", "null", "-"],
         capture_output=True, text=True,
     )
     starts = re.findall(r"freeze_start: ([\d.]+)", proc.stderr)
@@ -66,7 +67,7 @@ def check_freeze(video: str, dur: str, noise: str) -> bool:
 # ---------- B) 并发光栅抖动 ----------
 
 def probe_duration(src):
-    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+    out = subprocess.run([media_bin("ffprobe"), "-v", "error", "-show_entries", "format=duration",
                           "-of", "csv=p=0", src], capture_output=True, text=True, check=True)
     return float(out.stdout.strip())
 
@@ -76,7 +77,7 @@ def window_diffs(src, t, crop, np, iio):
     os.makedirs(tmp, exist_ok=True)
     for f in glob.glob(f"{tmp}/*.png"):
         os.remove(f)
-    subprocess.run(["ffmpeg", "-v", "error", "-ss", str(t), "-i", src, "-frames:v", str(FRAMES),
+    subprocess.run([media_bin("ffmpeg"), "-v", "error", "-ss", str(t), "-i", src, "-frames:v", str(FRAMES),
                     "-vf", f"crop={crop}", "-vsync", "0", f"{tmp}/%03d.png"], check=True)
     fr = [iio.imread(p).astype(np.float64) for p in sorted(glob.glob(f"{tmp}/*.png"))]
     if len(fr) < 10:
@@ -97,7 +98,7 @@ def judge(d, np):
 
 
 def probe_fps(src):
-    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+    out = subprocess.run([media_bin("ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
                           "-of", "csv=p=0", src], capture_output=True, text=True, check=True).stdout.strip().rstrip(",")
     a, _, b = out.partition("/")
     return float(a) / float(b or 1)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from private_tools import media_bin
 import sys
 from collections import Counter
 from dataclasses import asdict, dataclass
@@ -26,7 +27,7 @@ NEAR_ZERO = 0.15  # 0~255 标尺的绝对底线；实际阈值取 max(NEAR_ZERO,
 def probe(video: str) -> dict:
     """ffprobe：帧率（r/avg）、宽高、时长、帧数。avg 与 r 不等 = VFR 或丢帧。"""
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+        [media_bin("ffprobe"), "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,codec_name,pix_fmt",
          "-show_entries", "format=duration", "-of", "json", video],
         capture_output=True, text=True, check=True).stdout
@@ -57,7 +58,7 @@ def frame_diffs(video: str, t: float, frames: int, crop: str | None = None, widt
         vf.append(f"scale={width}:-2:flags=area")
     vf.append("format=gray")
     proc = subprocess.run(
-        ["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", video, "-frames:v", str(frames),
+        [media_bin("ffmpeg"), "-v", "error", "-ss", f"{t:.3f}", "-i", video, "-frames:v", str(frames),
          "-vf", ",".join(vf), "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
         capture_output=True, check=True)
     raw = np.frombuffer(proc.stdout, dtype=np.uint8)

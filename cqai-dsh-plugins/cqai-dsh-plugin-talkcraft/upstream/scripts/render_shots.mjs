@@ -38,7 +38,17 @@ import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import {fileURLToPath} from 'node:url';
 import {loadProjectBundleOptions, projectRenderOptions, projectEncodeOptions, describeEncodeOptions, parseInputProps} from './remotion_project_config.mjs';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const privateSnapshot = fs.existsSync(path.resolve(scriptDir, '../../.snapshot-ready'));
+const compositorRoot = path.resolve(scriptDir, '../runtime/node_modules/@remotion');
+const compositorBase = `compositor-${process.platform}-${process.arch}`;
+const compositor = privateSnapshot && fs.existsSync(compositorRoot) ? fs.readdirSync(compositorRoot).find((name) =>
+  (name === compositorBase || name.startsWith(`${compositorBase}-`)) && fs.existsSync(path.join(compositorRoot, name, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'))) : null;
+if (privateSnapshot && !compositor) throw new Error(`Remotion compositor missing for ${process.platform}/${process.arch}`);
+const mediaBin = (name) => privateSnapshot ? path.join(compositorRoot, compositor, `${name}${process.platform === 'win32' ? '.exe' : ''}`) : name;
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => {
@@ -196,11 +206,11 @@ console.log(`待渲 ${todo.length}/${segs.length} 段（并行 ${parallel}）：
 
 const probeFrames = (f) =>
   // csv=p=0 的输出带尾逗号（"129,"），Number() 会 NaN——只留数字位
-  Number(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-count_packets',
+  Number(execFileSync(mediaBin('ffprobe'), ['-v', 'error', '-select_streams', 'v:0', '-count_packets',
     '-show_entries', 'stream=nb_read_packets', '-of', 'csv=p=0', f], {encoding: 'utf8'}).replace(/[^0-9]/g, ''));
 // 音轨用容器时长折成帧数（WAV 无 packet 计数可言）
 const probeDurationFrames = (f) =>
-  Math.round(Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration',
+  Math.round(Number(execFileSync(mediaBin('ffprobe'), ['-v', 'error', '-show_entries', 'format=duration',
     '-of', 'csv=p=0', f], {encoding: 'utf8'}).replace(/[^0-9.]/g, '')) * fps);
 
 // —— K 段并行，每段 concurrency:1（段内单进程连续渲，防光栅相位抖动）——
@@ -243,7 +253,7 @@ if (concatOut) {
   const listFile = path.join(segDir, 'concat.txt');
   // concat 列表的 file '...' 语法：路径内单引号需转义
   fs.writeFileSync(listFile, segs.map((s) => `file '${path.resolve(s.file).replace(/'/g, "'\\''")}'`).join('\n'));
-  execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', concatOut]);
+  execFileSync(mediaBin('ffmpeg'), ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', concatOut]);
   const got = probeFrames(concatOut);
   if (got !== TOTAL) { console.error(`FAIL: 拼装总帧数 ${got} != ${TOTAL}`); process.exit(1); }
   console.log(`concat → ${concatOut}  ${got} 帧 ✓`);
@@ -349,7 +359,7 @@ if (previewDir) {
         frameRange: [seg.from, seg.to], imageFormat: 'none', concurrency: audioConcurrency});
       const gotA = probeDurationFrames(segWav);
       if (!(Math.abs(gotA - seg.frames) <= 1)) { console.error(`FAIL: 段音频 ${seg.id} 时长 ${gotA} 帧 != 段 ${seg.frames} 帧（文件留在 ${segWav}）`); process.exit(1); }
-      execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', seg.file, '-i', segWav,
+      execFileSync(mediaBin('ffmpeg'), ['-y', '-v', 'error', '-i', seg.file, '-i', segWav,
         '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-shortest', out]);
       fs.unlinkSync(segWav);
       const got = probeFrames(out);
@@ -357,7 +367,7 @@ if (previewDir) {
       console.log(`preview → ${out}  ${seg.id} 帧 ${seg.from}-${seg.to} + 本段音频 ${(seg.frames / fps).toFixed(2)}s（段音频 ${((Date.now() - st) / 1000).toFixed(0)}s，预览专用已删）✓`);
       continue;
     }
-    execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', seg.file,
+    execFileSync(mediaBin('ffmpeg'), ['-y', '-v', 'error', '-i', seg.file,
       '-ss', (seg.from / fps).toFixed(6), '-t', (seg.frames / fps).toFixed(6), '-i', audioOut,
       '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-shortest', out]);
     const got = probeFrames(out);
@@ -369,7 +379,7 @@ if (previewDir) {
 // —— 混入音轨（预览口径；交付仍走 SKILL.md ⑧ 的 loudnorm）——
 if (muxOut) {
   if (!concatOut || !audioOut) { console.error('--mux 需要同时给 --concat 与 --audio'); process.exit(2); }
-  execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', concatOut, '-i', audioOut,
+  execFileSync(mediaBin('ffmpeg'), ['-y', '-v', 'error', '-i', concatOut, '-i', audioOut,
     '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', muxOut]);
   console.log(`mux → ${muxOut} ✓`);
 }

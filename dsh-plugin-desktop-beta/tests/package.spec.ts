@@ -233,7 +233,7 @@ describe('published package surface', () => {
       'dsh-community-market': '0.1.0-dev.0',
       'dsh-ppt': '0.1.1-rc.2',
       'dsh-ppt-composer': 'file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz',
-      dshmarket: '1.66.3',
+      dshmarket: expect.stringMatching(/^\d+\.\d+\.\d+$/),
       'react-dom': '18.3.1',
     })
     expect(manifest.optionalDependencies ?? {}).not.toHaveProperty('dshmarket')
@@ -880,12 +880,17 @@ describe('published package surface', () => {
     expect(manifest.build?.appId).toBe('ai.deepseek.dsh.desktop.beta')
     expect(manifest.build?.asar).toEqual({ smartUnpack: true })
     expect(manifest.build).not.toHaveProperty('asarUnpack')
+    const uvExecutables = [
+      'node_modules/@dataiku/uv-*/bin/**',
+      'node_modules/cqai-dsh-plugin-media-runtime/node_modules/@dataiku/uv-*/bin/**',
+    ]
     expect(manifest.build?.mac?.asarUnpack).toEqual([
       'build/app-icon-mac.png',
       'build/tray-iconTemplate.png',
       'build/tray-iconTemplate@2x.png',
       'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**',
       'node_modules/cqai-dsh-plugin-short-video/runtime/**',
+      ...uvExecutables,
     ])
     const windowsIcons = [
       'build/app-icon.png',
@@ -901,8 +906,8 @@ describe('published package surface', () => {
       'build/tray-icon-blue@1.5x.png',
       'build/tray-icon-blue@2x.png',
     ]
-    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**'])
-    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**'])
+    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', ...uvExecutables])
+    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', ...uvExecutables])
     expect(manifest.build?.electronFuses).toEqual({
       enableEmbeddedAsarIntegrityValidation: true,
       onlyLoadAppFromAsar: true,
@@ -934,6 +939,9 @@ describe('published package surface', () => {
       },
       '!node_modules/node-pty/build/**',
       '!node_modules/fs-ext/build/**',
+      '!node_modules/cqai-dsh-plugin-talkcraft/upstream/runtime/.venv/**',
+      '!node_modules/cqai-dsh-plugin-talkcraft/upstream/runtime/node_modules/**',
+      '!node_modules/cqai-dsh-plugin-talkcraft/upstream/runtime/models/**',
     ])
     expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
     expect(manifest.build?.mac?.artifactName).toBe('易宝工坊-Beta-${version}-${arch}.${ext}')

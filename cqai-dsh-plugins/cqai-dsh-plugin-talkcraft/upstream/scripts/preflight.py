@@ -40,6 +40,7 @@ SHOTBOOK 机器可读约定（cinematography.md §4）：
              （2026-09-21 用户反馈：11 镜里 8 镜同一张 60/40 卡 + 左下圆章，"排版太固定"；规则正主 cinematography.md §4.5 第 9 条）
 """
 from __future__ import annotations
+from private_tools import media_bin
 
 import argparse
 import json
@@ -142,7 +143,7 @@ def check_host(host: str, fps: float | None, voice: str | None, host_box: str | 
 
 def probe_audio_duration(path: str) -> float:
     import subprocess
-    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+    out = subprocess.run([media_bin("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
                          capture_output=True, text=True, check=True).stdout
     return float(re.sub(r"[^0-9.]", "", out) or 0)
 

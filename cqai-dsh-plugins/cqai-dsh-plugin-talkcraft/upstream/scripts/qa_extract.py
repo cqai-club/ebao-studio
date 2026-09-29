@@ -20,6 +20,7 @@ anchors.json: [{"t": 23.76, "label": "everything-slam", "burst": true}, ...]
 import json
 import re
 import subprocess
+from private_tools import media_bin
 import sys
 from pathlib import Path
 
@@ -42,7 +43,7 @@ Path(outdir).mkdir(parents=True, exist_ok=True)
 
 def grab(t: float, out: str) -> None:
     subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-ss", f"{t:.3f}", "-i", video,
+        [media_bin("ffmpeg"), "-y", "-v", "error", "-ss", f"{t:.3f}", "-i", video,
          "-frames:v", "1", "-vf", f"scale={scale_w}:-1", out],
         check=True,
     )

@@ -12,6 +12,7 @@ type Draft = {title: string; text: string; aspect: '16:9' | '9:16'; voiceMode: V
 type MediaEntry = {id: number; kind: 'image' | 'video'; file: File}
 type Preview = {kind: 'image' | 'video'; label: string; file?: File; url?: string}
 type DeleteTarget = Pick<Job, 'id' | 'title' | 'status'>
+type SetupState = {status: 'idle' | 'running' | 'completed' | 'failed'; items: {id: string; label: string; status: string; detail?: string}[]; logs: string[]; updatedAt: number}
 
 const DRAFT_KEY = 'cqai-talkcraft-create-draft-v2'
 const emptyDraft: Draft = {title: '', text: '', aspect: '16:9', voiceMode: 'upload', edgeVoice: EDGE_VOICES[0].id, onlineSearch: true}
@@ -227,6 +228,7 @@ export function TalkCraft() {
   const [filter, setFilter] = useState<Filter>('all')
   const [showAll, setShowAll] = useState(false)
   const [health, setHealth] = useState<Record<string, unknown>>({})
+  const [setup, setSetup] = useState<SetupState>({status: 'idle', items: [], logs: [], updatedAt: 0})
   const [edgeVoiceList, setEdgeVoiceList] = useState<EdgeVoiceList>({voices: [...EDGE_VOICES], source: 'fallback'})
   const [edgeVoiceLoading, setEdgeVoiceLoading] = useState(false)
   const [edgeVoiceQuery, setEdgeVoiceQuery] = useState('')
@@ -285,10 +287,14 @@ export function TalkCraft() {
     const poll = () => api<Job[]>('jobs').then(items => {if (live) setJobs(items)}).catch(() => {})
     void poll()
     void api<Record<string, unknown>>('health').then(value => {if (live) setHealth(value)}).catch(() => {})
+    let refreshedAt = 0
+    const pollSetup = () => {void api<SetupState>('setup').then(value => {if (!live) return; setSetup(value);if ((value.status === 'completed' || value.status === 'failed') && value.updatedAt !== refreshedAt) {refreshedAt = value.updatedAt;void api<Record<string, unknown>>('health').then(result => {if (live) setHealth(result)}).catch(() => {})}}).catch(() => {})}
+    void pollSetup()
     void api<Record<string, boolean>>('settings').then(value => {if (live) setSettings(value)}).catch(() => {})
     const timer = setInterval(poll, 2500)
+    const setupTimer = setInterval(pollSetup, 2500)
     const clock = setInterval(() => setNow(Date.now()), 30000)
-    return () => {live = false; clearInterval(timer); clearInterval(clock); if (editorId.current) void api(`editor/close?id=${editorId.current}`, {}).catch(() => {})}
+    return () => {live = false; clearInterval(timer); clearInterval(setupTimer); clearInterval(clock); if (editorId.current) void api(`editor/close?id=${editorId.current}`, {}).catch(() => {})}
   }, [])
   useEffect(() => {
     if (page !== 'create' || step !== 1 || draft.voiceMode !== 'edge') return
@@ -475,6 +481,11 @@ export function TalkCraft() {
     catch (cause) {setError(errorMessage(cause))}
     finally {setBusy('')}
   }
+  const installMissing = async () => {
+    setError('')
+    try {setSetup(await api<SetupState>('setup', {}))}
+    catch (cause) {setError(errorMessage(cause))}
+  }
   const shots = useMemo(() => job && shotbookText ? parseShotbook(shotbookText, job.uploads) : [], [job?.id, job?.uploads, shotbookText])
   const selectedChanged = !!job && job.candidates.some(item => item.selected !== chosen.includes(item.id))
   const attention = jobs.filter(item => userStatus(item).attention)
@@ -584,7 +595,22 @@ export function TalkCraft() {
     </div>
   }
 
-  const renderSettings = () => <div className="tc-detail"><button className="tc-back" type="button" onClick={() => {setPage(returnPage === 'settings' ? 'home' : returnPage); setError('')}}>← 返回</button><span className="tc-eyebrow">口播视频制作</span><h1>设置</h1><p className="tc-description">Edge TTS 无需密钥；Fish Audio 与在线素材服务可在这里连接。</p><div className="tc-card tc-section"><div className="tc-health"><div><h2>制作状态</h2><p>{coreReady && agentIssues.length === 0 ? health.asrModel === false ? '本地制作工具已就绪；上传配音或 Edge TTS 还需准备配音识别模型。' : '本地制作工具已就绪。' : '有些制作工具需要准备，展开详情查看。'}</p></div><Button className="tc-secondary" disabled={!!busy} onClick={() => void checkHealth()}>重新检查</Button></div><details className="tc-details"><summary>查看本地环境与准备说明</summary><div className="tc-health-list">{(['node', 'python', 'edgeTts', 'ffmpeg', 'ffprobe', 'remotion', 'browser', 'asrModel'] as const).map(key => <span className={health[key] === true ? '' : 'missing'} key={key}>{health[key] === true ? '✓' : '需准备'} {key === 'asrModel' ? '配音识别模型' : key === 'edgeTts' ? 'Edge TTS' : key}</span>)}</div>{agentIssues.map(issue => <p className="tc-notice warn" key={issue}>{issue}</p>)}<p className="tc-field-help">首次准备：{String(health.prepare ?? 'corepack yarn workspace cqai-dsh-plugin-talkcraft runtime:prepare')}</p></details></div><section className="tc-section"><h2>可选服务</h2><div className="tc-settings-grid">{(['fish', 'pexels', 'pixabay'] as const).map(name => <div className="tc-card" key={name}><div className="tc-service"><div><h3>{serviceNames[name]}</h3><p>{name === 'fish' ? '没有成品配音时生成声音' : '上传的画面不够时查找素材'}</p><p className={settings[name] ? 'tc-service-connected' : undefined}>{settings[name] ? '● 已连接' : '○ 未连接'}</p>{name !== 'fish' && <a className="tc-service-link" href={materialServiceUrls[name]} target="_blank" rel="noopener noreferrer">获取 API Key：{materialServiceUrls[name]} ↗</a>}</div><button className="tc-subtle" type="button" onClick={() => {setKeyEditing(keyEditing === name ? null : name); setRemoveKey(null); setKeyValue('')}}>{keyEditing === name ? '收起' : settings[name] ? '管理' : '连接'}</button></div>{keyEditing === name && <div className="tc-service-edit"><label className="tc-field-label" htmlFor={`tc-key-${name}`}>{settings[name] ? '输入新密钥以替换' : '输入服务密钥'}</label><input id={`tc-key-${name}`} type="password" autoComplete="off" value={keyValue} onChange={event => setKeyValue(event.target.value)} placeholder="密钥仅保存到本机 Credentials"/><div className="tc-actions"><Button variant="primary" className="tc-primary" disabled={!!busy || !keyValue.trim()} onClick={() => void saveKey(name, keyValue)}>保存密钥</Button>{settings[name] && <button type="button" className="tc-plain" onClick={() => setRemoveKey(name)}>移除密钥</button>}</div>{removeKey === name && <div className="tc-notice warn">确定移除 {serviceNames[name]} 的密钥吗？<div className="tc-actions"><button type="button" className="tc-subtle" disabled={!!busy} onClick={() => void saveKey(name, '')}>确认移除</button><button type="button" className="tc-plain" onClick={() => setRemoveKey(null)}>取消</button></div></div>}</div>}</div>)}</div></section></div>
+  const renderEnvironment = () => <div className="tc-card tc-section">
+    <div className="tc-health"><div><h2>制作状态</h2><p>{coreReady && agentIssues.length === 0 ? health.asrModel === false ? '本地制作工具已就绪；上传配音或 Edge TTS 还需准备配音识别模型。' : '本地制作工具已就绪。' : '有些制作工具需要准备，展开详情查看。'}</p></div><Button className="tc-secondary" disabled={!!busy} onClick={() => void checkHealth()}>重新检查</Button></div>
+    <div className="tc-actions"><Button variant="primary" className="tc-primary" disabled={setup.status === 'running' || !!busy} onClick={() => void installMissing()}>{setup.status === 'running' ? '正在安装…' : '一键安装所有缺失依赖'}</Button></div>
+    <p className="tc-field-help">依赖安装到应用私有目录。配音识别模型至少约 700 MB，Remotion 浏览器也需单独下载。</p>
+    {setup.items.find(item => item.status === 'running') && <p className="tc-notice info">正在处理：{setup.items.find(item => item.status === 'running')?.label}</p>}
+    {setup.status === 'failed' && <p className="tc-notice warn">有依赖安装失败，展开详情查看原因并重试。</p>}
+    <details className="tc-details"><summary>查看本地环境与安装进度</summary>
+      <div className="tc-health-list">{(['node', 'python', 'edgeTts', 'ffmpeg', 'ffprobe', 'remotion', 'browser', 'asrModel'] as const).map(key => <span className={health[key] === true ? '' : 'missing'} key={key}>{health[key] === true ? '✓' : '需准备'} {key === 'asrModel' ? '配音识别模型' : key === 'edgeTts' ? 'Edge TTS' : key}</span>)}</div>
+      {agentIssues.map(issue => <p className="tc-notice warn" key={issue}>{issue}</p>)}
+      {setup.items.map(item => <p className="tc-field-help" key={item.id}>{item.status === 'running' ? '正在处理' : item.status === 'completed' || item.status === 'ready' ? '✓' : item.status === 'failed' ? '失败' : '待处理'} {item.label}{item.detail ? `：${item.detail}` : ''}</p>)}
+      {setup.status === 'failed' && <p className="tc-notice warn">部分依赖安装失败；再次点击只处理未就绪项。</p>}
+      {setup.logs.length > 0 && <pre>{setup.logs.join('\n')}</pre>}
+    </details>
+  </div>
+
+  const renderSettings = () => <div className="tc-detail"><button className="tc-back" type="button" onClick={() => {setPage(returnPage === 'settings' ? 'home' : returnPage); setError('')}}>← 返回</button><span className="tc-eyebrow">口播视频制作</span><h1>设置</h1><p className="tc-description">Edge TTS 无需密钥；Fish Audio 与在线素材服务可在这里连接。</p>{renderEnvironment()}<section className="tc-section"><h2>可选服务</h2><div className="tc-settings-grid">{(['fish', 'pexels', 'pixabay'] as const).map(name => <div className="tc-card" key={name}><div className="tc-service"><div><h3>{serviceNames[name]}</h3><p>{name === 'fish' ? '没有成品配音时生成声音' : '上传的画面不够时查找素材'}</p><p className={settings[name] ? 'tc-service-connected' : undefined}>{settings[name] ? '● 已连接' : '○ 未连接'}</p>{name !== 'fish' && <a className="tc-service-link" href={materialServiceUrls[name]} target="_blank" rel="noopener noreferrer">获取 API Key：{materialServiceUrls[name]} ↗</a>}</div><button className="tc-subtle" type="button" onClick={() => {setKeyEditing(keyEditing === name ? null : name); setRemoveKey(null); setKeyValue('')}}>{keyEditing === name ? '收起' : settings[name] ? '管理' : '连接'}</button></div>{keyEditing === name && <div className="tc-service-edit"><label className="tc-field-label" htmlFor={`tc-key-${name}`}>{settings[name] ? '输入新密钥以替换' : '输入服务密钥'}</label><input id={`tc-key-${name}`} type="password" autoComplete="off" value={keyValue} onChange={event => setKeyValue(event.target.value)} placeholder="密钥仅保存到本机 Credentials"/><div className="tc-actions"><Button variant="primary" className="tc-primary" disabled={!!busy || !keyValue.trim()} onClick={() => void saveKey(name, keyValue)}>保存密钥</Button>{settings[name] && <button type="button" className="tc-plain" onClick={() => setRemoveKey(name)}>移除密钥</button>}</div>{removeKey === name && <div className="tc-notice warn">确定移除 {serviceNames[name]} 的密钥吗？<div className="tc-actions"><button type="button" className="tc-subtle" disabled={!!busy} onClick={() => void saveKey(name, '')}>确认移除</button><button type="button" className="tc-plain" onClick={() => setRemoveKey(null)}>取消</button></div></div>}</div>}</div>)}</div></section></div>
 
   const renderHelp = () => <div className="tc-detail"><button className="tc-back" type="button" onClick={goHome}>← 我的视频</button><h1>怎样制作一条视频</h1><div className="tc-card tc-section"><h2>只需准备三样东西</h2><p>一段口播稿、声音来源，以及照片或视频。没有足够画面时，可以连接在线素材服务。</p><h2>制作时会请你看两次</h2><p>先确认画面安排，再试看开头的一小段有声视频。确认后继续制作整条视频。</p><h2>想自己细调？</h2><p>试片确认后，可以从项目进入精细编辑，调整镜头、文字和节奏。</p></div></div>
 

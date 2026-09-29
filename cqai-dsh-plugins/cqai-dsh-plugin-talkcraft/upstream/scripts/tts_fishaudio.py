@@ -17,6 +17,7 @@ import math
 import os
 import shutil
 import subprocess
+from private_tools import media_bin
 import sys
 import tempfile
 import time
@@ -163,7 +164,7 @@ def call_fish_audio_stream(text, api_key, model=DEFAULT_MODEL, reference_id=None
 
 def run_ffmpeg(arguments, *, input_data=None):
     try:
-        return subprocess.run(['ffmpeg', '-v', 'error', '-y', *arguments], input=input_data,
+        return subprocess.run([media_bin('ffmpeg'), '-v', 'error', '-y', *arguments], input=input_data,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True).stdout
     except FileNotFoundError as error:
         raise RuntimeError('ffmpeg is required to decode and assemble Fish Audio output') from error
@@ -313,7 +314,7 @@ def main():
     paths = [args.script, args.audio_out, args.timestamps_out] + ([args.timing_out] if args.timing_out else [])
     if len({p.resolve() for p in paths}) != len(paths):
         parser.error('Input and output paths must be distinct')
-    if not shutil.which('ffmpeg'):
+    if not shutil.which(media_bin('ffmpeg')):
         parser.error('Install ffmpeg before making synthesis requests')
     try:
         sentences = load_script(args.script)

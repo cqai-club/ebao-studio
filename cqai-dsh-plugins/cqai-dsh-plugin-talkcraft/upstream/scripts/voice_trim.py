@@ -45,6 +45,7 @@ import json
 import os
 import re
 import subprocess
+from private_tools import media_bin
 import sys
 import tempfile
 from pathlib import Path
@@ -84,7 +85,7 @@ def to_wav_tmp(path: str) -> str:
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     tmp.close()
     try:
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", path, "-ac", "1", "-f", "wav", tmp.name], check=True)
+        subprocess.run([media_bin("ffmpeg"), "-v", "error", "-y", "-i", path, "-ac", "1", "-f", "wav", tmp.name], check=True)
     except Exception:
         os.unlink(tmp.name)
         raise
@@ -506,7 +507,7 @@ def apply_audio(x: np.ndarray, sr: int, cuts: list[dict], fade_ms: float = 3.0):
 
 
 def probe_video(path: str) -> dict:
-    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
+    out = subprocess.run([media_bin("ffprobe"), "-v", "error", "-select_streams", "v:0", "-count_frames",
                           "-show_entries", "stream=codec_name,r_frame_rate,avg_frame_rate,nb_read_frames,pix_fmt,width,height",
                           "-show_entries", "stream_tags=alpha_mode", "-show_entries", "format=duration", "-of", "json", path],
                          capture_output=True, text=True, check=True).stdout
@@ -530,7 +531,7 @@ def alpha_decoder(info: dict) -> list[str]:
 def alpha_minmax(path: str, decoder: list[str]) -> tuple[int, int] | None:
     """首帧 alpha 面的 (min, max)；解不出返回 None。全 255 = 没有透明信息。"""
     try:
-        raw = subprocess.run(["ffmpeg", "-v", "error", *decoder, "-i", path, "-frames:v", "1",
+        raw = subprocess.run([media_bin("ffmpeg"), "-v", "error", *decoder, "-i", path, "-frames:v", "1",
                               "-vf", "format=rgba,alphaextract", "-pix_fmt", "gray", "-f", "rawvideo", "-"],
                              capture_output=True, check=True).stdout
     except subprocess.CalledProcessError:
@@ -571,7 +572,7 @@ def apply_video(src: str, dst: str, cuts: list[dict], fps: float, audio_total: f
         script = f.name
     dec = alpha_decoder(info)
     try:
-        subprocess.run(["ffmpeg", "-v", "error", "-y", *dec, "-i", src, "-filter_script:v", script, "-an", "-r", str(fps), *codec, dst], check=True)
+        subprocess.run([media_bin("ffmpeg"), "-v", "error", "-y", *dec, "-i", src, "-filter_script:v", script, "-an", "-r", str(fps), *codec, dst], check=True)
     finally:
         os.unlink(script)
     got_info = probe_video(dst)
