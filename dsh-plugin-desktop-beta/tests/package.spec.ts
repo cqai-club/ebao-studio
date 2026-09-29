@@ -233,9 +233,10 @@ describe('published package surface', () => {
       'dsh-community-market': '0.1.0-dev.0',
       'dsh-ppt': '0.1.1-rc.2',
       'dsh-ppt-composer': 'file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz',
-      dshmarket: '1.66.3',
+      dshmarket: '1.66.5',
       'react-dom': '18.3.1',
     })
+    expect(manifest.dependencies).not.toHaveProperty('@cqaiclub/dsh-plugin-activities')
     expect(manifest.optionalDependencies ?? {}).not.toHaveProperty('dshmarket')
   })
 

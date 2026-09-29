@@ -10,6 +10,7 @@ import type {
 
 const issuer = 'https://auth.example.test/oidc'
 const resource = 'https://account.example.test'
+const portalResource = 'https://club.example.test/'
 const account = {
   userId: 7,
   platform: 'dsn',
@@ -140,6 +141,8 @@ function makeRuntime(options: {
     clientId: 'client-123',
     resource,
     accountServiceUrl: resource,
+    clubPortalResource: portalResource,
+    clubPortalUrl: 'https://club.example.test',
     scopes: ['openid', 'offline_access', 'profile', 'email', 'ai:invoke'],
     requestTimeoutMs: 1000,
     categoryDefaultModels: { get: () => ({ ...categoryDefaults }) },
@@ -170,6 +173,107 @@ afterEach(() => {
 })
 
 describe('DsnAccountServiceRuntime', () => {
+  it('keeps legacy account grants active but requires one base-plugin re-login for portal actions', async () => {
+    const harness = makeRuntime()
+    harness.records.set(credential, {
+      kind: 'grant',
+      payload: {
+        version: 1, issuer, clientId: 'client-123', resource,
+        scope: ['openid', 'offline_access', 'ai:invoke'],
+        accessToken: 'legacy-account-token', refreshToken: 'legacy-refresh',
+        accessTokenExpiresAt: Date.now() + 3600_000, account, accountFetchedAt: Date.now(),
+      },
+    })
+    await expect(harness.runtime.getStatus()).resolves.toMatchObject({ state: 'signed-in' })
+    await expect(harness.runtime.getClubPortalAuthorization()).resolves.toBe('reauth-required')
+    await expect(harness.runtime.fetchClubPortal('/api/v1/me/activity-registrations')).rejects.toMatchObject({ code: 'DSN_REAUTH_REQUIRED' })
+  })
+
+  it('refreshes a portal-audience token and retains the rotated refresh token for account requests', async () => {
+    const refreshTokens: string[] = []
+    const portalJwt = `header.${Buffer.from(JSON.stringify({ aud: portalResource })).toString('base64url')}.signature`
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      if (url.endsWith('/token')) {
+        const body = new URLSearchParams(String(init?.body ?? ''))
+        refreshTokens.push(body.get('refresh_token') ?? '')
+        if (body.get('resource') === portalResource) return json({ access_token: portalJwt, refresh_token: 'refresh-rotated', expires_in: 3600 })
+        return json({ access_token: 'account-renewed', refresh_token: 'refresh-final', expires_in: 3600 })
+      }
+      if (url.endsWith('/api/v1/me/activity-registrations')) {
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${portalJwt}`)
+        return json([])
+      }
+      if (url.endsWith('/api/account')) return json({ success: true, data: account })
+      throw new Error(`unexpected test URL: ${url}`)
+    }))
+    const harness = makeRuntime()
+    harness.records.set(credential, {
+      kind: 'grant',
+      payload: {
+        version: 2, issuer, clientId: 'client-123', resource,
+        scope: ['openid', 'offline_access', 'ai:invoke', 'activity:publish'],
+        accessToken: 'account-old', refreshToken: 'refresh-initial',
+        accessTokenExpiresAt: Date.now() - 1000,
+        clubPortalResource: portalResource,
+        clubPortalAccessToken: 'portal-old', clubPortalAccessTokenExpiresAt: Date.now() - 1000,
+        account, accountFetchedAt: Date.now(),
+      },
+    })
+    await expect(harness.runtime.getClubPortalAuthorization()).resolves.toBe('ready')
+    await expect(harness.runtime.fetchClubPortal('/api/v1/me/activity-registrations')).resolves.toMatchObject({ status: 200 })
+    await harness.runtime.getAccount()
+    expect(refreshTokens).toEqual(['refresh-initial', 'refresh-rotated'])
+    const finalRecord = harness.records.get(credential)
+    expect(finalRecord?.kind).toBe('grant')
+    if (finalRecord?.kind !== 'grant') throw new Error('grant disappeared')
+    expect((finalRecord.payload as { refreshToken: string }).refreshToken).toBe('refresh-final')
+  })
+
+  it('keeps a later login when an earlier portal refresh token is revoked', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) {
+        return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      }
+      if (url.endsWith('/token')) return json({ error: 'invalid_grant' }, 400)
+      throw new Error(`unexpected test URL: ${url}`)
+    }))
+    const harness = makeRuntime()
+    const oldGrant = {
+      version: 2 as const, issuer, clientId: 'client-123', resource,
+      scope: ['openid', 'offline_access', 'ai:invoke'],
+      accessToken: 'account-old', refreshToken: 'refresh-revoked',
+      accessTokenExpiresAt: Date.now() + 3600_000,
+      clubPortalResource: portalResource,
+      account, accountFetchedAt: Date.now(),
+    }
+    harness.records.set(credential, { kind: 'grant', payload: oldGrant })
+    await expect(harness.runtime.fetchClubPortal('/api/v1/me/activity-registrations')).rejects.toMatchObject({ code: 'DSN_REAUTH_REQUIRED' })
+    expect(await harness.runtime.getStatus()).toMatchObject({ state: 'reauth-required' })
+    expect(harness.records.has(credential)).toBe(true)
+
+    const newGrant = { ...oldGrant, refreshToken: 'refresh-new' }
+    harness.records.set(credential, { kind: 'grant', payload: newGrant })
+    expect(await harness.runtime.getStatus()).toMatchObject({ state: 'signed-in' })
+    expect((harness.records.get(credential) as { kind: 'grant'; payload: { refreshToken: string } }).payload.refreshToken).toBe('refresh-new')
+  })
+
+  it('exposes the current account subject to a sibling plugin without exposing tokens', async () => {
+    const harness = makeRuntime()
+    await expect(harness.runtime.getIdentity()).resolves.toBeUndefined()
+    const claims = Buffer.from(JSON.stringify({ sub: 'logto-user-1' })).toString('base64url')
+    harness.records.set(credential, {
+      kind: 'grant',
+      payload: {
+        version: 1, issuer, clientId: 'client-123', resource,
+        scope: ['openid'], accessToken: `header.${claims}.signature`,
+        accessTokenExpiresAt: Date.now() + 60_000, account, accountFetchedAt: Date.now(),
+      },
+    })
+    await expect(harness.runtime.getIdentity()).resolves.toEqual({ issuer, sub: 'logto-user-1' })
+  })
   it('does not publish duplicate account-change events for stable status reads', async () => {
     const harness = makeRuntime()
 
@@ -193,6 +297,12 @@ describe('DsnAccountServiceRuntime', () => {
       }
       if (url.endsWith('/token')) {
         const body = new URLSearchParams(String(init?.body ?? ''))
+        if (body.get('grant_type') === 'refresh_token') {
+          expect(body.get('resource')).toBe(portalResource)
+          expect(body.get('refresh_token')).toBe('refresh-secret')
+          const claims = Buffer.from(JSON.stringify({ aud: portalResource, sub: 'logto-user-1' })).toString('base64url')
+          return json({ access_token: `header.${claims}.signature`, refresh_token: 'refresh-portal', expires_in: 3600 })
+        }
         expect(body.get('grant_type')).toBe('authorization_code')
         expect(body.get('code')).toBe('authorization-code')
         expect(body.get('resource')).toBe(resource)
@@ -224,6 +334,7 @@ describe('DsnAccountServiceRuntime', () => {
     }
     expect(start).toMatchObject({ ok: true, value: { state: 'authorizing' } })
     const authorization = new URL(start.value.authorizationUrl)
+    expect(authorization.searchParams.getAll('resource')).toEqual([resource, portalResource])
     const redirectUri = authorization.searchParams.get('redirect_uri')
     expect(redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/cqaiclub-dsn-account\/oauth\/callback$/)
     expect(authorization.searchParams.get('prompt')).toBe('login consent')

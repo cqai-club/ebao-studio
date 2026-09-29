@@ -16,10 +16,16 @@ function loadConnector(workspace, environment) {
   const start = source.indexOf('//#region src/host/connector/logs.ts')
   const end = source.indexOf('//#region src/host/desktop/detect.ts', start)
   assert.ok(start >= 0 && end > start)
-  return runInNewContext(`${source.slice(start, end)}; SourceConnector`, {
+  const projectStart = source.indexOf('//#region src/host/connector/project.ts', start)
+  const projectEnd = source.indexOf('//#endregion', projectStart)
+  assert.ok(projectStart > start && projectEnd > projectStart && projectEnd < end)
+  // Proxy tests exercise the child environment, not Connector project mirroring.
+  const connectorSource = source.slice(start, projectStart) + source.slice(projectEnd + '//#endregion'.length, end)
+  return runInNewContext(`${connectorSource}; SourceConnector`, {
     execFile, promisify, stripVTControlCharacters, join, setTimeout, clearTimeout,
     process: { platform: process.platform, env: environment },
     readJson$1: async () => [], writeJson: async () => {}, mkdir: async () => {},
+    materializeConnectorProject: async config => config.connectorSourceDir,
     resolveUv: async () => 'uv',
     DEFAULT_CONNECTOR_SETTINGS: { syncIntervalSeconds: 30 },
   })

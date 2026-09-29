@@ -26,6 +26,7 @@ export type AuthorizationRequest = {
 
 export const Prompt = {
   Login: 'login',
+  Consent: 'consent',
   LoginConsent: 'login consent',
 } as const
 
@@ -37,6 +38,7 @@ type OidcClientOptions = {
   issuer: string
   clientId: string
   resource: string
+  additionalResources?: readonly string[]
   scopes: readonly string[]
   timeoutMs: number
   fetchImpl?: typeof fetch
@@ -48,6 +50,7 @@ export class OidcClient {
   private readonly issuer: URL
   private readonly clientId: string
   private readonly resource: string
+  private readonly additionalResources: readonly string[]
   private readonly scopes: readonly string[]
   private readonly timeoutMs: number
   private readonly fetchImpl: typeof fetch
@@ -57,6 +60,7 @@ export class OidcClient {
     this.issuer = assertHttpUrl(options.issuer, 'issuer')
     this.clientId = options.clientId
     this.resource = options.resource
+    this.additionalResources = options.additionalResources ?? []
     this.scopes = options.scopes
     this.timeoutMs = options.timeoutMs
     this.fetchImpl = options.fetchImpl ?? fetch
@@ -82,7 +86,7 @@ export class OidcClient {
     const codeVerifier = randomBytes(32).toString('base64url')
     const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url')
     const authorizationUrl = new URL(discovery.authorizationEndpoint)
-    authorizationUrl.search = new URLSearchParams({
+    const parameters = new URLSearchParams({
       response_type: 'code',
       client_id: this.clientId,
       redirect_uri: redirectUri,
@@ -92,7 +96,11 @@ export class OidcClient {
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
       ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
-    }).toString()
+    })
+    for (const resource of this.additionalResources) {
+      if (resource !== this.resource) parameters.append('resource', resource)
+    }
+    authorizationUrl.search = parameters.toString()
     return {
       authorizationUrl: authorizationUrl.toString(),
       state,
@@ -120,7 +128,7 @@ export class OidcClient {
     return parseTokenResponse(data)
   }
 
-  async refreshAccessToken(refreshToken: string, signal?: AbortSignal): Promise<TokenResponse> {
+  async refreshAccessToken(refreshToken: string, signal?: AbortSignal, resource = this.resource): Promise<TokenResponse> {
     const discovery = await this.discovery(signal)
     const response = await this.request(discovery.tokenEndpoint, {
       method: 'POST',
@@ -129,7 +137,7 @@ export class OidcClient {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
         client_id: this.clientId,
-        resource: this.resource,
+        resource,
       }),
     }, signal)
     const data = await this.readJson(response)

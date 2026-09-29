@@ -290,6 +290,10 @@ describe('packaged desktop runtime verification', () => {
     }
   })
 
+  it('does not require the independently installed club activities plugin in app.asar', () => {
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES.some(entry => entry.includes('@cqaiclub/dsh-plugin-activities'))).toBe(false)
+  })
+
   it('keeps the default 一稿多发 bundle present in app.asar', () => {
     expect(REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES).toEqual([
       'node_modules/cqai-dsh-plugin-publisher/package.json',

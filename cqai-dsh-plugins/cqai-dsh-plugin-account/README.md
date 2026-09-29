@@ -8,7 +8,7 @@
 桌面原生登录适配。OAuth 使用每次登录独立的随机端口回环监听器，不经过 Desktop Web
 载体；Desktop 会直接打开系统浏览器，回调后自动关闭监听器并重新置前桌面窗口。回调页还提供
 不携带授权码的 `dsh-desktop://oauth/complete` 按钮，用于通过系统协议重新唤醒应用。上游提交遗漏了 src/client，
-本目录同时补充了桌面风格的 CQAI Club 账号、充值和模型服务页签，恢复按用途分类的模型目录与五类默认模型选择。
+本目录同时补充了桌面风格的 CQAI Club 账号、充值页面和模型服务页签，恢复按用途分类的模型目录与五类默认模型选择。Stable/Beta 从账号菜单打开 CQAI Club 页面；实验性 Next 暂时沿用设置入口。
 充值订单由 Host 创建，支付页面在系统浏览器打开；需要表单 POST 的渠道通过一次性随机本机
 页面转交支付字段，不把字段放入 URL。支付完成或取消后，固定的
 `dsh-desktop://payment/result` 回跳会重新唤醒应用并刷新账户额度。
@@ -22,6 +22,14 @@ CQAI Club 登录。用户可以选择稍后登录并继续使用其他模型；�
 首次登录需要在系统浏览器完成授权。Native App Client 需要允许
 `http://127.0.0.1/cqaiclub-dsn-account/oauth/callback` 的动态端口回调。插件不把 Access
 Token 暴露给 Renderer，默认配置仍由 cordis.patch.yml 管理。
+
+同一次 Native App 授权会申请账号服务和俱乐部门户两个资源。Host 在首次访问门户时取得
+门户 Access Token，避免门户资源临时故障阻断基础账号登录；随后单独缓存两个受众的
+Access Token，并在同一凭据记录内顺序轮换 Refresh Token；活动扩展插件只能通过固定
+`/api/v1` 路径白名单调用门户，不会取得令牌。旧版账号授权继续用于积分和模型，但首次
+使用活动报名或插件投稿前需通过基础插件重新登录一次。开发环境如将活动扩展插件的
+`portalUrl` 指向本机，也需将本插件的 `clubPortalUrl` 指向同一门户服务；
+`clubPortalResource` 始终保持 Logto 中登记的门户 API 标识符。
 
 模型目录兼容 Relay 新增的 OpenRouter 风格字段。业务判断优先使用 `architecture` 的输入、输出
 模态和端点类型，只有结构化字段缺失时才回退旧 `categories`；未知的模态和参数字符串会原样

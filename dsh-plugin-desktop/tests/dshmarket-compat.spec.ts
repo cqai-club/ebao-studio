@@ -47,7 +47,9 @@ let registryUrl: string
 beforeAll(async () => {
   registryServer = createServer((request, response) => {
     response.setHeader('content-type', 'application/json')
-    response.end(JSON.stringify({ version: request.url?.includes('modlens') ? '3.18.1' : '9999.0.0' }))
+    response.end(JSON.stringify(request.url === '/catalog'
+      ? { plugins: [{ name: 'fixture', category: 'utility' }] }
+      : { version: request.url?.includes('modlens') ? '3.18.1' : '9999.0.0' }))
   })
   await new Promise<void>(resolve => registryServer.listen(0, '127.0.0.1', resolve))
   const address = registryServer.address()
@@ -162,6 +164,7 @@ async function invokeUpdate(route: MarketRoute, compatVersion?: string, name = '
 
 describe('dsh-market Desktop install compatibility', () => {
   it('offers the host-provided market update when the Profile omits dshmarket', async () => {
+    vi.stubEnv('DSHM_REGISTRY_URL', `${registryUrl}/catalog`)
 
     const profileDir = mkdtempSync(join(tmpdir(), 'dshmarket-desktop-self-update-'))
     temporaryProfiles.push(profileDir)

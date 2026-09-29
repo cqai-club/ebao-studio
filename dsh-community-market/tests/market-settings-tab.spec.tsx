@@ -9,7 +9,7 @@ import type {
   MarketStateResponse,
 } from '../src/api-types.js'
 import type { CatalogSnapshot } from '../src/contracts/generated/catalog-snapshot.js'
-import { MarketSettingsTab, type MarketSettingsTabProps } from '../src/client/MarketSettingsTab.js'
+import { MarketSettingsTab, MarketSurface, type MarketSettingsTabProps } from '../src/client/MarketSettingsTab.js'
 import { MarketLauncher, type MarketLauncherProps } from '../src/client/MarketLauncher.js'
 import { MarketOverlay, type MarketOverlayProps } from '../src/client/MarketOverlay.js'
 import { createMarketViewStore } from '../src/client/market-view-store.js'
@@ -842,6 +842,19 @@ describe('MarketSettingsTab', () => {
     expect(await screen.findByRole('heading', { name: en.desktopRequiredTitle })).toBeTruthy()
     expect(screen.getByText(en.desktopUnavailable)).toBeTruthy()
     expect(screen.queryByText('unavailable')).toBeNull()
+  })
+
+  it('routes the installed tab to the parent plugin-management page when embedded', async () => {
+    vi.mocked(readMarketState).mockResolvedValue(emptyState)
+    const onOpenInstalled = vi.fn()
+    render(<MarketSurface readLocale={() => 'en'} t={t} showHeader={false} onOpenInstalled={onOpenInstalled} />)
+
+    await screen.findByRole('heading', { name: en.emptyTitle })
+    fireEvent.click(screen.getByRole('button', { name: en.installed }))
+
+    expect(onOpenInstalled).toHaveBeenCalledOnce()
+    expect(readMarketInstallations).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: en.desktopRequiredTitle })).toBeNull()
   })
 
   it('fails closed without offering locally guessed candidates when Host validation fails', async () => {

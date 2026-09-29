@@ -26,7 +26,9 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
   }
 })
 
-import { apply, inject, NS } from '../src/client/index.js'
+import { apply, inject, MarketSurface, NS } from '../src/client/index.js'
+import { MarketSurface as MarketSurfaceImplementation } from '../src/client/MarketSettingsTab.js'
+import { PluginManagementMarket } from '../src/client/PluginManagementMarket.js'
 
 interface TestContext {
   readonly effects: Array<{ effect: () => unknown; label: string }>
@@ -63,6 +65,7 @@ describe('community market client registration', () => {
   it('publishes the expected Loader dependency contract', () => {
     expect(inject).toEqual(['slots', 'locale'])
     expect(NS).toBe('community-market')
+    expect(MarketSurface).toBe(MarketSurfaceImplementation)
   })
 
   it('registers locale, styles, settings tab, sidebar launcher, and shell overlay effects', () => {
@@ -116,20 +119,24 @@ describe('community market client registration', () => {
     expect(typeof overlay?.inject).toBe('function')
   })
 
-  it('moves the launcher into the CQAI account menu on Stable and Beta', () => {
+  it('leaves the CQAI account menu to plugin management on Stable and Beta', () => {
     vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: true })
     const test = testContext()
     apply(test.context)
     expect(test.injections.map(value => value.name)).toEqual([
       'settings.plugins.tab',
-      'cqaiclub.account.menu.action',
+      'cqai.pluginManagement.market',
       'shell.overlay',
     ])
     test.injections.forEach(value => { value.factory() })
-    const [, menuAction, overlay] = test.registrations.map(value => value.spec)
-    expect(menuAction).toEqual(expect.objectContaining({
-      name: 'cqaiclub.account.menu.action', id: 'community-market', locale: NS,
-    }))
-    expect(menuAction?.store).toBe(overlay?.store)
+    expect(test.registrations.map(value => value.spec.name)).toEqual([
+      'settings.plugins.tab',
+      'cqai.pluginManagement.market',
+      'shell.overlay',
+    ])
+    const [, embedded] = test.registrations
+    expect(embedded?.component).toBe(PluginManagementMarket)
+    expect(embedded?.spec.locale).toBe(NS)
+    expect(typeof embedded?.spec.inject).toBe('function')
   })
 })
