@@ -1,5 +1,5 @@
 diff --git a/lib/client.js b/lib/client.js
-index d78d5cc..fc29fdb 100644
+index d78d5cc087..4a8e436725 100644
 --- a/lib/client.js
 +++ b/lib/client.js
 @@ -15722,2 +15722,3 @@ window.__ModuleLoader__.load({
@@ -15,6 +15,11 @@ index d78d5cc..fc29fdb 100644
  			"headerUtilities": "uPhUma_headerUtilities",
 +			"heroModeCluster": "uPhUma_heroModeCluster",
  			"heroWorkspaceRow": "uPhUma_heroWorkspaceRow",
+@@ -16112,3 +16114,3 @@ window.__ModuleLoader__.load({
+ 							className: HeroShell_module_css_default.titleGroup,
+-							children: [(0, react_jsx_runtime.jsx)("span", { children: t("hero.headline") }), (0, react_jsx_runtime.jsx)("span", {
++							children: [(0, react_jsx_runtime.jsx)("span", { children: renderSlot("conversation.hero.headline", {}, { fallback: t("hero.headline") }) }), (0, react_jsx_runtime.jsx)("span", {
+ 								className: HeroShell_module_css_default.previewBadge,
 @@ -16205,3 +16207,7 @@ window.__ModuleLoader__.load({
  					}),
 -					renderSlot("conversation.hero.agentPreset", {})
@@ -28,44 +33,51 @@ index d78d5cc..fc29fdb 100644
  				variant: hero ? "hero" : "composer",
 +				extensionZone: zone,
  				...inert ? {
-@@ -16232,3 +16239,4 @@ window.__ModuleLoader__.load({
+@@ -16226,9 +16233,7 @@ window.__ModuleLoader__.load({
+ 				children: [
+-					hero && (0, react_jsx_runtime.jsx)(HeroShell, {
+-						t,
+-						renderSlot
+-					}),
++					hero && (0, react_jsx_runtime.jsx)(HeroShell, { t, renderSlot }),
+ 					hero && heroWorkspaceRow,
  					zone !== void 0 && renderSlot("conversation.input.dock", zone),
 -					inputBar
 +				inputBar,
-+				sessionId === void 0 ? renderSlot("conversation.hero.dock", zone ?? {}) : null
++					hero ? renderSlot("conversation.hero.dock", zone ?? {}) : null
  				]
-@@ -16292,2 +16300,3 @@ window.__ModuleLoader__.load({
+@@ -16292,2 +16297,3 @@ window.__ModuleLoader__.load({
  				className: clsx(ConversationRoot_module_css_default.header, blank && ConversationRoot_module_css_default.headerBlank, sessionId === void 0 && ConversationRoot_module_css_default.headerSessionless),
 +				"data-conversation-header": "",
  				"data-window-drag": true,
-@@ -16297,3 +16306,3 @@ window.__ModuleLoader__.load({
+@@ -16297,3 +16303,3 @@ window.__ModuleLoader__.load({
  					children: renderSlot("conversation.header.leading", {})
 -				}), sessionId === void 0 ? (0, react_jsx_runtime.jsx)("div", { className: ConversationRoot_module_css_default.titleRow }) : renderSlot("conversation.session.header", { hideChrome: blank })]
 +				}), sessionId === void 0 ? (0, react_jsx_runtime.jsx)("div", { className: ConversationRoot_module_css_default.titleRow, "data-conversation-title-row": "" }) : renderSlot("conversation.session.header", { hideChrome: blank })]
  			});
-@@ -16385,2 +16394,3 @@ window.__ModuleLoader__.load({
+@@ -16385,2 +16391,3 @@ window.__ModuleLoader__.load({
  				className: ConversationRoot_module_css_default.titleRow,
 +				"data-conversation-title-row": "",
  				children: [!hideChrome && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsxs)("div", {
-@@ -17096,2 +17106,3 @@ window.__ModuleLoader__.load({
+@@ -17096,2 +17103,3 @@ window.__ModuleLoader__.load({
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-conversation/InputBar.module.css";
 +		const pptAccessoryCss = ".Q7WfXG_promptRow{width:100%;min-width:0;align-items:flex-start;display:flex}.Q7WfXG_promptRow>.Q7WfXG_accessory{flex:none;padding:4px 0 0 12px}.Q7WfXG_promptRow>.Q7WfXG_accessory:empty{display:none}.Q7WfXG_promptRow>.Q7WfXG_scroll{flex:1;min-width:0}";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
-@@ -17100,3 +17111,3 @@ window.__ModuleLoader__.load({
+@@ -17100,3 +17108,3 @@ window.__ModuleLoader__.load({
  			tag.dataset.pluginCss = tagId$1;
 -			tag.textContent = css$1;
 +			tag.textContent = css$1 + pptAccessoryCss;
  			document.head.appendChild(tag);
-@@ -17122,2 +17133,3 @@ window.__ModuleLoader__.load({
+@@ -17122,2 +17130,3 @@ window.__ModuleLoader__.load({
  			"primary": "Q7WfXG_primary",
 +			"promptRow": "Q7WfXG_promptRow",
  			"retry": "Q7WfXG_retry",
-@@ -17148,3 +17160,3 @@ window.__ModuleLoader__.load({
+@@ -17148,3 +17157,3 @@ window.__ModuleLoader__.load({
  		*/
 -		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory }) {
 +		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, extensionZone }) {
  			const input = useInput((s) => s);
-@@ -17376,7 +17388,3 @@ window.__ModuleLoader__.load({
+@@ -17376,7 +17385,3 @@ window.__ModuleLoader__.load({
  							}),
 -							accessory !== void 0 && (0, react_jsx_runtime.jsx)("div", {
 -								className: InputBar_module_css_default.accessory,
@@ -74,7 +86,7 @@ index d78d5cc..fc29fdb 100644
 -							renderSlot("conversation.input.attachments", {
 +						renderSlot("conversation.input.attachments", {
  								attachments,
-@@ -17396,17 +17404,26 @@ window.__ModuleLoader__.load({
+@@ -17396,17 +17401,26 @@ window.__ModuleLoader__.load({
  							}),
 -							(0, react_jsx_runtime.jsx)(DraftEditor, {
 -								classNames: InputBar_module_css_default,
@@ -116,12 +128,19 @@ index d78d5cc..fc29fdb 100644
 +							]
 +						}),
  							(0, react_jsx_runtime.jsxs)("div", {
-@@ -17537,3 +17554,3 @@ window.__ModuleLoader__.load({
+@@ -17537,3 +17551,3 @@ window.__ModuleLoader__.load({
  						className: InputBar_module_css_default.dock,
 -						children: [variant === "composer" && input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", {}) : null, activity ? null : (0, react_jsx_runtime.jsx)(ContextMeter, {
 +						children: [input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", extensionZone ?? {}) : null, activity ? null : (0, react_jsx_runtime.jsx)(ContextMeter, {
  							useProjection,
-@@ -18104,2 +18121,10 @@ window.__ModuleLoader__.load({
+@@ -18093,2 +18107,6 @@ window.__ModuleLoader__.load({
+ 					},
++					"conversation.hero.headline": {
++						kind: "single",
++						scope: "session-maybe"
++					},
+ 					"conversation.hero.brand.mark": {
+@@ -18104,2 +18122,10 @@ window.__ModuleLoader__.load({
  						scope: "session-maybe"
 +					},
 +					"conversation.hero.modeActions": {
@@ -132,7 +151,7 @@ index d78d5cc..fc29fdb 100644
 +						kind: "list",
 +						scope: "session-maybe"
  					}
-@@ -18227,2 +18252,6 @@ window.__ModuleLoader__.load({
+@@ -18227,2 +18253,6 @@ window.__ModuleLoader__.load({
  					},
 +					"conversation.input.accessory": {
 +						kind: "list",
@@ -140,10 +159,18 @@ index d78d5cc..fc29fdb 100644
 +					},
  					"conversation.input.permission": {
 diff --git a/lib/types/client/contract/slots.d.ts b/lib/types/client/contract/slots.d.ts
-index 74f5846..c26522d 100644
+index 74f584630d..8a61d99aba 100644
 --- a/lib/types/client/contract/slots.d.ts
 +++ b/lib/types/client/contract/slots.d.ts
-@@ -212,2 +212,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -194,2 +194,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+         };
++        /** Replaceable headline text inside the original blank-session Hero. */
++        'conversation.hero.headline': {
++            kind: 'single';
++            scope: 'session-maybe';
++        };
+         /** Workspace picker shown by the blank-session Hero. */
+@@ -212,2 +217,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
          };
 +        /** Product-mode controls beside the blank-session agent preset. */
 +        'conversation.hero.modeActions': {
@@ -151,14 +178,14 @@ index 74f5846..c26522d 100644
 +            scope: 'session-maybe';
 +            owner: InputZone;
 +        };
-+        /** Entries below the new-conversation input before a session exists. */
++        /** Entries below the input while the Conversation is blank. */
 +        'conversation.hero.dock': {
 +            kind: 'list';
 +            scope: 'session-maybe';
 +            owner: InputZone;
 +        };
          /** Full-width entries above the composer card. */
-@@ -223,2 +235,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -223,2 +240,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
          };
 +        /** Compact template and reference material rendered before the editable prompt. */
 +        'conversation.input.accessory': {
@@ -167,11 +194,18 @@ index 74f5846..c26522d 100644
 +            owner: InputZone;
 +        };
          /** Ambient entries below the composer card. */
-@@ -227,2 +245,3 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -237,2 +260,3 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
              scope: 'session';
 +            owner: InputZone;
          };
-@@ -442,4 +461,6 @@ export interface ComposerBarOwnerProps {
+@@ -301,2 +325,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+                 };
++                'conversation.hero.headline': {
++                    kind: 'single';
++                    scope: 'session-maybe';
++                };
+                 'conversation.hero.brand.mark': {
+@@ -442,4 +470,6 @@ export interface ComposerBarOwnerProps {
      placeholder?: string;
 -    /** Optional content rendered above the composer surface. */
 +    /** Optional compact content rendered before the editable prompt. */
@@ -179,7 +213,7 @@ index 74f5846..c26522d 100644
 +    /** Point-in-time Session and input state supplied to Composer extension slots. */
 +    extensionZone?: InputZone;
  }
-@@ -488,3 +509,3 @@ export interface InputActivityOwnerProps extends InputControlOwnerProps {
+@@ -488,3 +518,3 @@ export interface InputActivityOwnerProps extends InputControlOwnerProps {
  /** Full props of the resident composer bar. */
 -export type ComposerBarProps = PropsRuntime<'conversation.composer.bar'> & PropsRenderSlots<'conversation.input.attachments' | 'conversation.input.overlay' | 'conversation.input.permission' | 'conversation.input.left' | 'conversation.input.plan' | 'conversation.input.right' | 'conversation.input.model' | 'conversation.input.activity' | 'conversation.composer.dock'> & InjectFace<ComposerBarInjected> & PropsLocale<'conversation'>;
 +export type ComposerBarProps = PropsRuntime<'conversation.composer.bar'> & PropsRenderSlots<'conversation.input.attachments' | 'conversation.input.overlay' | 'conversation.input.accessory' | 'conversation.input.permission' | 'conversation.input.left' | 'conversation.input.plan' | 'conversation.input.right' | 'conversation.input.model' | 'conversation.input.activity' | 'conversation.composer.dock'> & InjectFace<ComposerBarInjected> & PropsLocale<'conversation'>;

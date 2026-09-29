@@ -170,6 +170,8 @@ describe('desktop profile composition', {
       'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-market',
       'dsh-ppt-composer',
+      'cqai-dsh-plugin-desktop-presentation',
+      'cqai-dsh-plugin-cqai-club-theme',
       'third-party-one',
       'third-party-two',
     ])
@@ -204,6 +206,8 @@ describe('desktop profile composition', {
       'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-market',
       'dsh-ppt-composer',
+      'cqai-dsh-plugin-desktop-presentation',
+      'cqai-dsh-plugin-cqai-club-theme',
       'third-party-plugin',
     ])
     expect(repaired.dependencies).toEqual({ 'dsh-ppt': '0.1.1-rc.2', 'third-party-plugin': '^1.2.3' })
@@ -243,7 +247,27 @@ describe('desktop profile composition', {
       'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-market',
       'dsh-ppt-composer',
+      'cqai-dsh-plugin-desktop-presentation',
+      'cqai-dsh-plugin-cqai-club-theme',
     ])
+  })
+
+  it('lets plugin management disable and restore the CQAI Club theme', () => {
+    const home = temporaryHome()
+    const managementStatePath = join(home, 'user-data', 'plugin-management', 'state.json')
+    mkdirSync(dirname(managementStatePath), { recursive: true })
+    writeFileSync(managementStatePath, JSON.stringify({
+      version: 1,
+      profiles: [{ profileName: 'desktop', disabledBundles: ['cqai-dsh-plugin-cqai-club-theme'] }],
+    }) + '\n')
+
+    const disabled = prepareDesktopProfile(undefined, home, 'win32', 'desktop', managementStatePath)
+    expect(disabled.profile.layers.some(layer => layer.packageName === 'cqai-dsh-plugin-cqai-club-theme')).toBe(false)
+    expect(disabled.profile.layers.some(layer => layer.packageName === 'cqai-dsh-plugin-desktop-presentation')).toBe(true)
+
+    writeFileSync(managementStatePath, JSON.stringify({ version: 1, profiles: [] }) + '\n')
+    const restored = prepareDesktopProfile(undefined, home, 'win32', 'desktop', managementStatePath)
+    expect(restored.profile.layers.some(layer => layer.packageName === 'cqai-dsh-plugin-cqai-club-theme')).toBe(true)
   })
 
   it('marks legacy isolated Profile dependencies for one-time migration', () => {
@@ -405,6 +429,10 @@ virtualStoreDirMaxLength: 60
       name: '@deepseek-ai/dsh-host-directory-picker-auto',
     }))
     expect(rows.find(row => row.id === 'directory-picker')?.disabled).toBeFalsy()
+    expect(rows.find(row => row.id === 'cqai-club-theme')).toEqual(expect.objectContaining({
+      name: 'cqai-dsh-plugin-cqai-club-theme',
+      disabled: false,
+    }))
     expect(rows.map(row => row.id)).not.toContain('desktop-directory-picker-browse-host')
     expect(rows.map(row => row.id)).not.toContain('desktop-directory-picker-browse-surface')
     expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({

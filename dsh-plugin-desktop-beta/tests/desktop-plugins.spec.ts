@@ -140,12 +140,16 @@ describe('desktop direct bundle management', () => {
     expect(first.find(item => item.packageName === '@deepseek-ai/dsh-web-app')).toEqual(
       expect.objectContaining({ status: 'active', mutable: false }),
     )
+    expect(first.find(item => item.packageName === 'cqai-dsh-plugin-cqai-club-theme')).toEqual(
+      expect.objectContaining({ status: 'active', mutable: true }),
+    )
     expect(desktopPluginBundleMutable('dsh-plugin-desktop')).toBe(false)
     expect(desktopPluginBundleMutable('dsh-plugin-desktop-beta')).toBe(false)
     expect(desktopPluginBundleMutable('@cqaiclub/dsn-account')).toBe(false)
     expect(desktopPluginBundleMutable('cqai-dsh-plugin-imagegen')).toBe(false)
     expect(desktopPluginBundleMutable('cqai-dsh-plugin-market')).toBe(false)
     expect(desktopPluginBundleMutable('cqai-dsh-plugin-publisher')).toBe(false)
+    expect(desktopPluginBundleMutable('cqai-dsh-plugin-cqai-club-theme')).toBe(true)
     expect(desktopPluginBundleMutable('dsh-community-market')).toBe(false)
     expect(desktopPluginBundleMutable('../third-party-plugin')).toBe(false)
     expect(desktopPluginBundleMutable('Third-Party-Plugin')).toBe(false)

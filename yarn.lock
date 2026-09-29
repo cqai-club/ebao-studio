@@ -2269,12 +2269,12 @@ __metadata:
 
 "@deepseek-ai/dsh-client-ui-conversation@patch:@deepseek-ai/dsh-client-ui-conversation@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz#./patches/dsh-client-ui-conversation@0.1.7-rc.2.patch::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.1.7-rc.2
-  resolution: "@deepseek-ai/dsh-client-ui-conversation@patch:@deepseek-ai/dsh-client-ui-conversation@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%23vendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%3A%3Ahash=3ee421&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-conversation@0.1.7-rc.2.patch::version=0.1.7-rc.2&hash=3eafcc&locator=deepseek-harness-desktop%40workspace%3A."
+  resolution: "@deepseek-ai/dsh-client-ui-conversation@patch:@deepseek-ai/dsh-client-ui-conversation@file%3Avendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%23vendor/dsh-runtime/0.1.7-rc.2/deepseek-ai-dsh-client-ui-conversation-0.1.7-rc.2.tgz%3A%3Ahash=3ee421&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-client-ui-conversation@0.1.7-rc.2.patch::version=0.1.7-rc.2&hash=3809b3&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@deepseek-ai/schemastery": "npm:~3.18.4"
   peerDependencies:
     "@deepseek-ai/cordis": ~4.0.4
-  checksum: 10c0/3a13d760d19006f723ae23eb9fa0ab7f6f88c2b5ad24278375d65dc1ed912a262a7f743d2670d1e4159dbde86f546e625e9e60a6366f0f54ca054d771b19a0ee
+  checksum: 10c0/20e11ba798e99452cf54d90a42ce9dc511faa4f6024fa6eab38d4338a040504000ecc06b1699f406503cb80704d0b552d77ba7a052c29e1ed2bb6a0751dfb8a1
   languageName: node
   linkType: hard
 
@@ -11531,6 +11531,59 @@ __metadata:
   languageName: node
   linkType: hard
 
+"cqai-dsh-plugin-cqai-club-theme@npm:0.1.0, cqai-dsh-plugin-cqai-club-theme@workspace:cqai-dsh-plugins/cqai-dsh-plugin-cqai-club-theme":
+  version: 0.0.0-use.local
+  resolution: "cqai-dsh-plugin-cqai-club-theme@workspace:cqai-dsh-plugins/cqai-dsh-plugin-cqai-club-theme"
+  dependencies:
+    "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-client-locale": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-settings": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-settings-general": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-theme": "npm:0.1.7-rc.2"
+    "@types/react": "npm:^18.3.0"
+    react: "npm:18.3.1"
+    tsdown: "npm:^0.22.2"
+    typescript: "npm:^6.0.0"
+    vitest: "npm:^4.1.8"
+  peerDependencies:
+    "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-client-locale": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-renderer": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-settings": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-settings-general": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-theme": ^0.1.7-rc.2
+    react: ^18.3.1
+  languageName: unknown
+  linkType: soft
+
+"cqai-dsh-plugin-desktop-presentation@npm:0.1.0, cqai-dsh-plugin-desktop-presentation@workspace:cqai-dsh-plugins/cqai-dsh-plugin-desktop-presentation":
+  version: 0.0.0-use.local
+  resolution: "cqai-dsh-plugin-desktop-presentation@workspace:cqai-dsh-plugins/cqai-dsh-plugin-desktop-presentation"
+  dependencies:
+    "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-client-ui-conversation": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-sidebar": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:0.1.7-rc.2"
+    "@types/react": "npm:^18.3.0"
+    react: "npm:^18.3.1"
+    tsdown: "npm:^0.22.2"
+    typescript: "npm:^6.0.0"
+  peerDependencies:
+    "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-client-ui-conversation": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-layout": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-renderer": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
+    react: ^18.2.0
+  languageName: unknown
+  linkType: soft
+
 "cqai-dsh-plugin-imagegen@npm:0.1.0, cqai-dsh-plugin-imagegen@workspace:cqai-dsh-plugins/cqai-dsh-plugin-imagegen":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-imagegen@workspace:cqai-dsh-plugins/cqai-dsh-plugin-imagegen"
@@ -13282,6 +13335,8 @@ __metadata:
     builder-util-runtime: "npm:9.7.0"
     class-variance-authority: "npm:^0.7.1"
     clsx: "npm:^2.1.1"
+    cqai-dsh-plugin-cqai-club-theme: "npm:0.1.0"
+    cqai-dsh-plugin-desktop-presentation: "npm:0.1.0"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     cqai-dsh-plugin-publisher: "npm:0.1.0"
@@ -13509,6 +13564,8 @@ __metadata:
     builder-util-runtime: "npm:9.7.0"
     class-variance-authority: "npm:^0.7.1"
     clsx: "npm:^2.1.1"
+    cqai-dsh-plugin-cqai-club-theme: "npm:0.1.0"
+    cqai-dsh-plugin-desktop-presentation: "npm:0.1.0"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     cqai-dsh-plugin-publisher: "npm:0.1.0"
@@ -13555,9 +13612,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop":
+"dsh-ppt-composer@file:vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.1.1-rc.2
-  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::hash=b9be66&locator=dsh-plugin-desktop%40workspace%3Adsh-plugin-desktop"
+  resolution: "dsh-ppt-composer@file:vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::hash=b9be66&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@deepseek-ai/schemastery": "npm:3.18.2"
     dsh-ppt: "npm:0.1.1-rc.2"
@@ -13568,16 +13625,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta":
+"dsh-ppt-composer@patch:dsh-ppt-composer@file%3Avendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#./patches/dsh-ppt-composer@0.1.1-rc.2.patch::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 0.1.1-rc.2
-  resolution: "dsh-ppt-composer@file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz::hash=b9be66&locator=dsh-plugin-desktop-beta%40workspace%3Adsh-plugin-desktop-beta"
+  resolution: "dsh-ppt-composer@patch:dsh-ppt-composer@file%3Avendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz%23vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz%3A%3Ahash=b9be66&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/dsh-ppt-composer@0.1.1-rc.2.patch::version=0.1.1-rc.2&hash=64ec48&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@deepseek-ai/schemastery": "npm:3.18.2"
     dsh-ppt: "npm:0.1.1-rc.2"
   peerDependencies:
     "@deepseek-ai/cordis": ~4.0.4
     "@deepseek-ai/dsh-invariants": ^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2
-  checksum: 10c0/82f7f39f304ac626c09856e857b29fff48d082037c4d836cc2d8035b008669145c4b55eeedce3809b9c1c688a3ed567db978a15a9d03f7a09fde4c7f673d56fc
+  checksum: 10c0/684c10f77fb58d6a1f3c63b4b42750b023da74aba8957a9feba41a649aff6c192639de9520e194ac84ff7895d2ffc099699e587794014060ec859139be954073
   languageName: node
   linkType: hard
 

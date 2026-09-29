@@ -277,6 +277,12 @@ try {
     throw new Error('assembled desktop profile is missing the Short Video plugin')
   }
 
+  const themeEntry = [...ctx.loader.entries()]
+    .find(entry => entry.options.name === 'cqai-dsh-plugin-cqai-club-theme')
+  if (themeEntry === undefined || themeEntry.options.disabled === true) {
+    throw new Error('assembled desktop profile did not activate the CQAI Club theme')
+  }
+
   if (ctx.get('desktopPnpm') === undefined) {
     throw new Error('assembled desktop profile is missing the desktop pnpm Host capability')
   }

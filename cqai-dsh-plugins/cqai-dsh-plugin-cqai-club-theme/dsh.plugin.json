@@ -1,0 +1,8 @@
+{
+  "id": "cqai-dsh-plugin-cqai-club-theme",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "CQAI Club light and dark Desktop theme",
+  "engines": { "dsh": ">=0.1.7-rc.2" },
+  "client": { "main": "./lib/client.js" }
+}

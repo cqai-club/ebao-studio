@@ -93,6 +93,8 @@ const CQAI_ACCOUNT_PACKAGE = '@cqaiclub/dsn-account'
 const CQAI_IMAGEGEN_PACKAGE = 'cqai-dsh-plugin-imagegen'
 const CQAI_PUBLISHER_PACKAGE = 'cqai-dsh-plugin-publisher'
 const CQAI_MARKET_PACKAGE = 'cqai-dsh-plugin-market'
+const CQAI_PRESENTATION_PACKAGE = 'cqai-dsh-plugin-desktop-presentation'
+const CQAI_CLUB_THEME_PACKAGE = 'cqai-dsh-plugin-cqai-club-theme'
 const PPT_CORE_PACKAGE = 'dsh-ppt'
 const PPT_COMPOSER_PACKAGE = 'dsh-ppt-composer'
 const DEFAULT_PRODUCT_BUNDLES = [
@@ -104,6 +106,8 @@ const DEFAULT_PRODUCT_BUNDLES = [
   CQAI_PUBLISHER_PACKAGE,
   CQAI_MARKET_PACKAGE,
   PPT_COMPOSER_PACKAGE,
+  CQAI_PRESENTATION_PACKAGE,
+  CQAI_CLUB_THEME_PACKAGE,
 ] as const
 const DEFAULT_PRODUCT_BUNDLE_SET = new Set<string>(DEFAULT_PRODUCT_BUNDLES)
 const OFFICIAL_DEEPSEEK_LLM_ROW_ID = 'llm-deepseek'

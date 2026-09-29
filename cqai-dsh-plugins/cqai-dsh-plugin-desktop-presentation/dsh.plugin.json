@@ -1,0 +1,8 @@
+{
+  "id": "cqai-dsh-plugin-desktop-presentation",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "eBao Desktop empty-conversation home",
+  "engines": { "dsh": ">=0.1.7-rc.2" },
+  "client": { "main": "./lib/client.js" }
+}

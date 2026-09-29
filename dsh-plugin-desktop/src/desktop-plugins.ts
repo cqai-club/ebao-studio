@@ -54,6 +54,7 @@ const IMMUTABLE_BUNDLES = new Set([
   'cqai-dsh-plugin-video',
   'cqai-dsh-plugin-publisher',
   'cqai-dsh-plugin-market',
+  'cqai-dsh-plugin-desktop-presentation',
   'dsh-community-market',
 ])
 

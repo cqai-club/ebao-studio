@@ -1,0 +1,17 @@
+diff --git a/lib/client.js b/lib/client.js
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -1375,13 +1375,6 @@
+ 				locale: NS,
+ 				inject: injectHero
+ 			}, OfficePptStandardComposerDock));
+-			ctx.slots.inject("conversation.composer.dock", () => ctx.slots.register({
+-				name: "conversation.composer.dock",
+-				id: "dsh-ppt",
+-				order: 20,
+-				locale: NS,
+-				inject: injectHero
+-			}, OfficePptStandardComposerDock));
+ 		}
+ 		//#endregion
+ 		//#region src/client/index.ts

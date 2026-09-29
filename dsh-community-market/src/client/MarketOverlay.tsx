@@ -18,6 +18,12 @@ export function MarketOverlay({ useStore, actions, readLocale, t, initialView }:
   const panel = useRef<HTMLElement>(null)
 
   useEffect(() => {
+    const onHomeRequest = () => { actions.open() }
+    window.addEventListener('cqai-desktop-presentation:open-market', onHomeRequest)
+    return () => window.removeEventListener('cqai-desktop-presentation:open-market', onHomeRequest)
+  }, [actions])
+
+  useEffect(() => {
     if (!open) return
     panel.current?.querySelector<HTMLButtonElement>('button')?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
