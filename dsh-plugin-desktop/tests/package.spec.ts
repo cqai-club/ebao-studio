@@ -824,7 +824,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.8')
+    expect(manifest.version).toBe('0.0.9')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
@@ -890,6 +890,11 @@ describe('published package surface', () => {
         from: 'node_modules/@agents-anywhere/dsh-bridge-next',
         to: 'node_modules/@agents-anywhere/dsh-bridge-next',
         filter: ['**/*'],
+      },
+      {
+        from: 'node_modules/@xmanrui/dsh-im',
+        to: 'node_modules/@xmanrui/dsh-im',
+        filter: ['**/*', '!node_modules/**'],
       },
       '!node_modules/node-pty/build/**',
       '!node_modules/fs-ext/build/**',
