@@ -122,7 +122,7 @@
     "verify:cli": "node scripts/verify-cli-runtime.mjs",
     "verify:loader": "node scripts/verify-loader-boot.mjs",
     "verify:profile": "node scripts/verify-profile-boot.mjs",
-    "verify:licenses": "node scripts/verify-licenses.mjs",
+    "verify:licenses": "node --test scripts/redistribution-authorizations.spec.mjs && node scripts/verify-licenses.mjs",
     "verify:operations": "node --test scripts/operation-reliability.spec.mjs && node scripts/verify-operation-reliability.mjs",
     "verify:notices": "node scripts/verify-licenses.mjs --notices THIRD_PARTY_NOTICES.md",
     "verify:vendor": "node ../scripts/verify-publisher-source.mjs",
@@ -148,7 +148,7 @@
     "icons:export": "node ../scripts/export-app-icons.mjs --channel stable"
   },
   "dependencies": {
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.c4b61d67ae359.r1188e1a1.tgz",
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.c20dffe271866.r1188e1a1.tgz",
     "@cqaiclub/dsn-account": "0.1.1",
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/cordis-plugin-group": "1.0.4",

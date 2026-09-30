@@ -1,11 +1,11 @@
 /**
  * Verify every production dependency shipped inside the desktop installers
- * carries a permissive license that allows redistribution.
+ * carries a license or a recorded separate authorization allowing redistribution.
  *
  * Walks the production dependency graph (dependencies + optionalDependencies,
  * excluding dev/peer) starting from this package manifest. Fails when a
  * package has no license field and no LICENSE file, or when its license is
- * not on the redistribution allowlist.
+ * neither on the redistribution allowlist nor covered by a recorded authorization.
  *
  * @module scripts/verify-licenses
  */
@@ -14,6 +14,7 @@ import { createRequire } from 'node:module'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { redistributionAuthorization, redistributionAuthorizationNotices } from './redistribution-authorizations.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const workspaceRoot = dirname(packageRoot)
@@ -126,16 +127,24 @@ function licenseExpression(manifest) {
 const failures = []
 const seen = new Set()
 const manifests = []
+const authorizations = []
 const queue = [{ name: rootManifest.name ?? 'dsh-plugin-desktop', manifestPath: join(packageRoot, 'package.json') }]
 
 for (let index = 0; index < queue.length; index += 1) {
   const current = queue[index]
-  if (current === undefined || seen.has(current.name)) continue
-  seen.add(current.name)
+  if (current === undefined || seen.has(current.manifestPath)) continue
+  seen.add(current.manifestPath)
   const manifest = JSON.parse(readFileSync(current.manifestPath, 'utf8'))
 
   if (current.name !== rootManifest.name) {
     const license = licenseExpression(manifest)
+    const authorization = redistributionAuthorization(manifest, license)
+    if (authorization) {
+      if (!authorizations.includes(authorization)) authorizations.push(authorization)
+      if (!existsSync(join(workspaceRoot, authorization.reference))) {
+        failures.push(`${current.name}: separate authorization record is missing: ${authorization.reference}`)
+      }
+    }
     const hasLicenseFile = existsSync(join(dirname(current.manifestPath), 'LICENSE'))
       || existsSync(join(dirname(current.manifestPath), 'LICENSE.md'))
       || existsSync(join(dirname(current.manifestPath), 'LICENSE.txt'))
@@ -145,7 +154,7 @@ for (let index = 0; index < queue.length; index += 1) {
       if (!hasLicenseFile) {
         failures.push(`${current.name}: license refers to ${JSON.stringify(license)} but no LICENSE file is shipped`)
       }
-    } else if (license !== undefined && !ALLOWED_LICENSES.has(license) && !NOTICE_LICENSES.has(license)) {
+    } else if (license !== undefined && !ALLOWED_LICENSES.has(license) && !NOTICE_LICENSES.has(license) && !authorization) {
       failures.push(`${current.name}: license ${JSON.stringify(license)} is not on the redistribution allowlist`)
     }
     manifests.push({ name: current.name, version: manifest.version, license: license ?? 'SEE LICENSE FILE' })
@@ -173,7 +182,11 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-const noticeOnly = manifests.filter(entry => NOTICE_LICENSES.has(entry.license))
+// Separate dependency locations can contain identical copies; disclose each
+// package/version/license once while still checking every dependency location.
+const noticePackages = [...new Map(manifests.map(entry =>
+  [JSON.stringify([entry.name, entry.version, entry.license]), entry])).values()]
+const noticeOnly = noticePackages.filter(entry => NOTICE_LICENSES.has(entry.license))
 const noticesArg = process.argv.indexOf('--notices')
 if (noticesArg !== -1) {
   const target = process.argv[noticesArg + 1]
@@ -188,10 +201,11 @@ if (noticesArg !== -1) {
     'Package license texts accompany the application when supplied by the package.',
     '',
     ...bundledApplicationNotices(),
+    ...redistributionAuthorizationNotices(authorizations),
     '## npm dependencies',
     '| Package | Version | License |',
     '| --- | --- | --- |',
-    ...manifests
+    ...noticePackages
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(entry => `| ${entry.name} | ${entry.version ?? ''} | ${entry.license} |`),
     '',
@@ -208,6 +222,6 @@ if (noticesArg !== -1) {
 
 const total = seen.size - 1
 const summary = noticeOnly.length === 0
-  ? `verify-licenses: ${total} production packages carry redistribution-safe licenses`
+  ? `verify-licenses: ${total} production packages checked`
   : `verify-licenses: ${total} production packages checked; ${noticeOnly.length} use notice-required licenses (${[...new Set(noticeOnly.map(entry => entry.license))].join(', ')})`
-process.stdout.write(`${summary}\n`)
+process.stdout.write(`${summary}${authorizations.length ? `; ${authorizations.length} covered by recorded separate authorizations` : ''}\n`)
