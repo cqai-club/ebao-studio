@@ -26,6 +26,8 @@ export interface DesktopNativeCopy {
   readonly updateCheckFailedTitle: string
   readonly updateCheckFailedMessage: string
   readonly tryAgainLater: string
+  readonly betaUpdateUnavailableTitle: string
+  readonly betaUpdateUnavailableMessage: string
   readonly upToDateTitle: string
   readonly upToDateMessage: string
   readonly installedVersion: (version: string) => string
@@ -95,6 +97,8 @@ const COPY: Record<DesktopLocale, DesktopNativeCopy> = {
     updateCheckFailedTitle: 'Unable to Check for Updates',
     updateCheckFailedMessage: 'Could not retrieve update information.',
     tryAgainLater: 'Please try again later.',
+    betaUpdateUnavailableTitle: 'Beta Update Information Unavailable',
+    betaUpdateUnavailableMessage: 'The update feed currently lists only the stable release.',
     upToDateTitle: '易宝工坊 Is Up to Date',
     upToDateMessage: 'You are using the latest version.',
     installedVersion: version => `Installed version: ${version}`,
@@ -162,6 +166,8 @@ const COPY: Record<DesktopLocale, DesktopNativeCopy> = {
     updateCheckFailedTitle: '无法检查更新',
     updateCheckFailedMessage: '未能获取更新信息。',
     tryAgainLater: '请稍后重试。',
+    betaUpdateUnavailableTitle: '暂无 Beta 更新信息',
+    betaUpdateUnavailableMessage: '更新源目前仅提供稳定版的版本信息。',
     upToDateTitle: '易宝工坊 已是最新版本',
     upToDateMessage: '当前已是最新版本。',
     installedVersion: version => `当前版本：${version}`,

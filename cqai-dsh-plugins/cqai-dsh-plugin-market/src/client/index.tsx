@@ -25,6 +25,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'root'
       owner: { registerAction: (action: AccountMenuAction) => () => void }
     }
+    'cqai.pluginManagement.skills': { kind: 'list'; scope: 'root' }
+    'cqai.pluginManagement.mcp': { kind: 'list'; scope: 'root' }
   }
 }
 
@@ -54,8 +56,12 @@ export function apply(ctx: Context): void {
     }, (props: PropsRuntime<'cqaiclub.account.menu.action'>) => <AccountAction {...props} open={open} label={label} />))
     scope.slots.inject('plugins.shell', () => scope.slots.register({
       name: 'plugins.shell',
-      children: { 'cqai.pluginManagement.market': { kind: 'list', scope: 'root' } },
-    }, (props: PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market'>) =>
+      children: {
+        'cqai.pluginManagement.market': { kind: 'list', scope: 'root' },
+        'cqai.pluginManagement.skills': { kind: 'list', scope: 'root' },
+        'cqai.pluginManagement.mcp': { kind: 'list', scope: 'root' },
+      },
+    }, (props: PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market' | 'cqai.pluginManagement.skills' | 'cqai.pluginManagement.mcp'>) =>
       <PluginManagementShell {...props} ctx={scope} viewState={viewState} />))
     scope.slots.inject('plugins.installed.cards', () => scope.slots.register({
       name: 'plugins.installed.cards', id: 'cqai-product-bundles',

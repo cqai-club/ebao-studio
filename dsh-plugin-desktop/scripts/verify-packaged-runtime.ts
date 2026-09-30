@@ -109,6 +109,7 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES = [
   'node_modules/@deepseek-ai/node-addon-system-',
   'node_modules/@img/sharp-',
   'node_modules/@koromix/koffi-',
+  'node_modules/@tencent-qqmail/agently-cli-',
   'node_modules/@vscode/ripgrep-',
   'node_modules/node-addon-require-builtin-',
   'node_modules/sherpa-onnx-',
@@ -135,12 +136,29 @@ export const REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES = [
   'node_modules/cqai-dsh-plugin-imagegen/lib/client.js',
 ] as const
 
+/** Bundled Skills and MCP manager required by the default Desktop profile. */
+export const REQUIRED_SKILL_MCP_PANEL_RUNTIME_ENTRIES = [
+  'node_modules/dsh-skill-mcp-panel/package.json',
+  'node_modules/dsh-skill-mcp-panel/cordis.patch.yml',
+  'node_modules/dsh-skill-mcp-panel/lib/index.js',
+  'node_modules/dsh-skill-mcp-panel/lib/client.js',
+] as const
+
 /** 一稿多发 bundle surface required for the default Desktop profile to boot. */
 export const REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES = [
   'node_modules/cqai-dsh-plugin-publisher/package.json',
   'node_modules/cqai-dsh-plugin-publisher/cordis.patch.yml',
   'node_modules/cqai-dsh-plugin-publisher/lib/index.js',
   'node_modules/cqai-dsh-plugin-publisher/lib/client.js',
+] as const
+
+/** IM bot bundle required by the default Desktop profile. */
+export const REQUIRED_DSH_IM_RUNTIME_ENTRIES = [
+  'node_modules/@xmanrui/dsh-im/package.json',
+  'node_modules/@xmanrui/dsh-im/cordis.patch.yml',
+  'node_modules/@xmanrui/dsh-im/lib/index.js',
+  'node_modules/@xmanrui/dsh-im/lib/client.js',
+  'node_modules/@xmanrui/dsh-im/assets/logo-plugin-message-link-gradient.webp',
 ] as const
 
 /** PPT authoring, composer, and a representative bundled template preview. */
@@ -193,7 +211,9 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
   ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   ...REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
+  ...REQUIRED_SKILL_MCP_PANEL_RUNTIME_ENTRIES,
   ...REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
+  ...REQUIRED_DSH_IM_RUNTIME_ENTRIES,
   ...REQUIRED_DSH_PPT_RUNTIME_ENTRIES,
   'node_modules/open/index.js',
   // In-app update staging and its abort bridge must remain ASAR-integrity protected.
@@ -668,9 +688,11 @@ function unpackedGroupRoot(path: string): string {
   return unpackedPackageRoot(path) ?? `desktop/${path.split('/')[0] ?? '(root)'}`
 }
 
-function allowedSmartUnpackPackageRoot(root: string): boolean {
+function allowedSmartUnpackPackageRoot(root: string, entry: string): boolean {
   return ALLOWED_SMART_UNPACK_PACKAGE_ROOTS.some(candidate => root === candidate)
     || ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES.some(prefix => root.startsWith(prefix))
+    || (root === 'node_modules/@xmanrui/dsh-im'
+      && entry.startsWith('node_modules/@xmanrui/dsh-im/node_modules/@img/sharp-'))
 }
 
 /** Summarize smart-unpacked payload by package root for actionable build output. */
@@ -791,7 +813,7 @@ export function verifySelectiveUnpackedRuntime(
   }
   const unexpectedPackageRoots = [...new Set(normalizedFiles.flatMap((file) => {
     const root = unpackedPackageRoot(file.path)
-    return root === undefined || allowedSmartUnpackPackageRoot(root)
+    return root === undefined || allowedSmartUnpackPackageRoot(root, file.path)
       || file.path.startsWith('node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/') ? [] : [root]
   }))].sort()
   if (unexpectedPackageRoots.length > 0) {

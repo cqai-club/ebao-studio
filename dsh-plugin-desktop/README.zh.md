@@ -34,23 +34,25 @@ Login-shell 恢复完成后，Launcher 才创建 layered launch-environment snap
 
 ## 模式设置与重启边界
 
-DSH home `settings.yaml` 文档中的 `dsh-desktop.mode` 字段是单一事实源：
+当前 Profile 的 `cordis.patch.yml` 通过 `desktop-shell` row 保存窗口模式：
 
 ```yaml
-dsh-desktop:
-  mode: compatibility # compatibility、extended 或 advanced
-  macosMaterial: transparent # off 或 transparent
+- id: desktop-shell
+  config:
+    mode: advanced # compatibility、extended 或 advanced
 ```
 
-Launcher 会在组合一个 generation 之前，读取当前 `@deepseek-ai/dsh-settings-file` row 解析到的同一份文件。Host 通过标准 settings service 注册 `dsh-desktop` namespace。profile manifest 中没有平行的模式值。
+Launcher 在启动前组合该 Profile row。旧版 DSH home `settings.yaml` 中的设置会一次性导入 Profile patch layer。Host 通过标准 settings service 提供模式设置；profile manifest 中没有平行的模式值。
 
-用户可以从托盘选择另一种模式，也可以手工编辑 DSH home 中的 `settings.yaml` 文档。托盘会更新已注册的 `dsh-desktop` settings namespace，手工编辑则修改 settings provider 观察的同一文件。修改提交后会请求一次有序重启：先 dispose 当前 Cordis 树，仅当零退出码的 shutdown 成功时才让 Electron relaunch。应用绝不会在存活的 renderer generation 中热切换 root slot、原生窗口材质或 Loader row。
+用户可在桌面设置或托盘中切换模式，两者都会更新 Profile 的 settings row。提交后会请求一次有序重启：先 dispose 当前 Cordis 树，仅当零退出码的 shutdown 成功时才让 Electron relaunch。应用不会在存活的 renderer generation 中热切换 root slot、原生窗口材质或 Loader row。
 
 Linux 只支持兼容模式。其托盘模式命令会被禁用，自定义窗口模式值会被拒绝，而不会静默降级。
 
+正式版在 Windows 与 macOS 上首次使用全新 Profile 时，会将增强模式写入该 Profile 作为默认模式。首次设置引导不显示模式选择，也不提供与增强模式冲突的普通浏览器访问选项；如需浏览器访问，可在设置完成后切换到兼容模式并开启。已有 Profile 的模式设置保持不变。Beta 与 Linux 沿用各自现有行为。
+
 ## 兼容模式
 
-`dsh-desktop.mode` 默认为 `compatibility`。在 macOS 与 Windows 上，该模式会在当前 DSH profile 的官方 Web surface 上方创建一条独立的 36 CSS 像素 Desktop frame，并保留原生红绿灯或窗口按钮。居中的标识、模式 pill、拖动区域与图标操作只属于该 frame；完整官方页面从它下方开始，不参与 frame 的布局或安全区计算。Linux 保留普通原生 frame 作为兼容 fallback。
+未写入模式且不满足首次使用条件的 Profile 仍回退到 `compatibility`。在 macOS 与 Windows 上，该模式会在当前 DSH profile 的官方 Web surface 上方创建一条独立的 36 CSS 像素 Desktop frame，并保留原生红绿灯或窗口按钮。居中的标识、模式 pill、拖动区域与图标操作只属于该 frame；完整官方页面从它下方开始，不参与 frame 的布局或安全区计算。Linux 保留普通原生 frame 作为兼容 fallback。
 
 desktop Client module 会校验模式与平台 marker，在兼容模式下只注册独立 frame overlay 与固定 launcher 操作，不替换任何官方呈现。它不提供或替换 `layout` service，不注册 `root` 或 `sidebar` occupant，也不改动 conversation surface。Desktop 自有的启动健康报告属于能力 effect；兼容模式仍会保留被选 profile 自身的 layout、sidebar 与 conversation 组合，普通 `desktop` 与 `web` profile 因而会原样保留官方 row。上游 dialog 仍是内容 overlay，并被限制在 Desktop frame 下方。
 

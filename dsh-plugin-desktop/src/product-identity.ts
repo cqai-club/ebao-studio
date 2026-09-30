@@ -28,6 +28,11 @@ export const DESKTOP_APP_ID = DESKTOP_PRODUCT_IDENTITY.appId
 export const DESKTOP_RELEASE_CHANNEL = DESKTOP_PRODUCT_IDENTITY.releaseChannel
 export const DESKTOP_HOME_DIRECTORY_NAME = DESKTOP_PRODUCT_IDENTITY.homeDirectoryName
 
+/** Keep shared Desktop source channel-aware across the two literal identities. */
+export function isStableDesktopRelease(channel: 'stable' | 'beta' = DESKTOP_RELEASE_CHANNEL): boolean {
+  return channel === 'stable'
+}
+
 /** Both Desktop package identities are launcher-owned, never Profile plugins. */
 export const DESKTOP_PACKAGE_NAMES: ReadonlySet<string> = new Set([
   DESKTOP_PACKAGE_NAME,

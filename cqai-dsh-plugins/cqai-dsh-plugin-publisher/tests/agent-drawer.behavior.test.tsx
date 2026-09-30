@@ -247,7 +247,7 @@ describe('Publisher Agent drawer binding', () => {
 
   it('creates a new conversation for a fresh article instead of using the unrelated current conversation', async () => {
     mockDraftSession(null)
-    const events: Array<{ open: boolean; contentId?: string }> = []
+    const events: Array<{ open: boolean; contentId?: string; mode?: 'full' | 'simple' }> = []
     const listener = (event: Event) => events.push((event as CustomEvent).detail)
     window.addEventListener(DRAWER_EVENT, listener)
     try {
@@ -267,7 +267,7 @@ describe('Publisher Agent drawer binding', () => {
       expect(workspaces.list.getSnapshot().items[0]?.sessionIds).toContain('new-session-1')
       expect(queryApi).toHaveBeenCalledWith('agent-draft-bind', { sessionId: 'new-session-1', contentId: 'article-1' })
       expect(queryApi).not.toHaveBeenCalledWith('agent-draft-bind', { sessionId: 'unrelated-session', contentId: 'article-1' })
-      expect(events).toContainEqual({ open: true, contentId: 'article-1' })
+      expect(events).toContainEqual({ open: true, contentId: 'article-1', mode: 'simple' })
       expect(container!.textContent).toContain('关闭 Agent')
 
       await click('发布历史')

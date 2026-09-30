@@ -28,6 +28,7 @@ import {
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
+  REQUIRED_DSH_IM_RUNTIME_ENTRIES,
   REQUIRED_DSH_PPT_RUNTIME_ENTRIES,
   REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
   REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES,
@@ -302,6 +303,19 @@ describe('packaged desktop runtime verification', () => {
       'node_modules/cqai-dsh-plugin-publisher/lib/client.js',
     ])
     for (const entry of REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES) {
+      expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
+    }
+  })
+
+  it('keeps the default IM bundle present in app.asar', () => {
+    expect(REQUIRED_DSH_IM_RUNTIME_ENTRIES).toEqual([
+      'node_modules/@xmanrui/dsh-im/package.json',
+      'node_modules/@xmanrui/dsh-im/cordis.patch.yml',
+      'node_modules/@xmanrui/dsh-im/lib/index.js',
+      'node_modules/@xmanrui/dsh-im/lib/client.js',
+      'node_modules/@xmanrui/dsh-im/assets/logo-plugin-message-link-gradient.webp',
+    ])
+    for (const entry of REQUIRED_DSH_IM_RUNTIME_ENTRIES) {
       expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
     }
   })
@@ -705,6 +719,21 @@ describe('packaged desktop runtime verification', () => {
     )).toThrow('non-allowlisted package roots: node_modules/unexpected-native')
   })
 
+  it('unpacks only the IM plugin\'s nested Sharp binary and the QQ Mail CLI', () => {
+    const nativeEntries = [
+      'node_modules/@xmanrui/dsh-im/node_modules/@img/sharp-win32-x64/lib/sharp.node',
+      'node_modules/@tencent-qqmail/agently-cli-win32-x64/bin/agently-cli.exe',
+    ]
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex(nativeEntries), '/build/resources/app.asar.unpacked',
+      nativeEntries.map(path => ({ path, bytes: 10 })),
+    )).not.toThrow()
+    const host = 'node_modules/@xmanrui/dsh-im/lib/index.js'
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([host]), '/build/resources/app.asar.unpacked', [{ path: host, bytes: 10 }],
+    )).toThrow('non-allowlisted package roots: node_modules/@xmanrui/dsh-im')
+  })
+
   it('rejects an unreviewed desktop-owned physical asset', () => {
     const path = 'build/accidental-large-documentation.pdf'
     expect(() => verifySelectiveUnpackedRuntime(
@@ -774,6 +803,7 @@ describe('packaged desktop runtime verification', () => {
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@dataiku/uv-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@vscode/ripgrep-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@img/sharp-')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@tencent-qqmail/agently-cli-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@deepseek-ai/libreoffice-kit-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/sherpa-onnx-')
   })

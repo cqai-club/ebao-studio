@@ -9,6 +9,7 @@ export const styles = `
 .cqpm-nav button:focus-visible,.cqpm-market button:focus-visible,.cqpm-product button:focus-visible,.cqpm-product-pending button:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}
 .cqpm-native{flex:1;min-width:0;min-height:0;height:100%;overflow:hidden}
 .cqpm-native[hidden]{display:none}
+.cqpm-external{flex:1;min-width:0;min-height:0;overflow:hidden}
 .cqpm-market{flex:1;min-width:0;min-height:0;overflow:auto;padding:0 clamp(24px,4vw,48px) 48px}
 .cqpm-market-head{max-width:960px;margin:0 auto 32px;padding-top:calc(28px + var(--dsh-frame-top-clearance,0px))}
 .cqpm-market-head h1{margin:0;font-size:20px;font-weight:500;line-height:28px}
@@ -17,9 +18,9 @@ export const styles = `
 .cqpm-product{min-width:0;margin:0 -8px;border-radius:var(--dsw-radius-xl,12px)}
 .cqpm-product:hover,.cqpm-product:focus-within{background:var(--dsw-alias-interactive-bg-hover)}
 .cqpm-product-head{display:flex;align-items:center;gap:14px;min-width:0;padding:8px}
-.cqpm-product-icon{display:inline-flex;flex:none;align-items:center;justify-content:center;width:48px;height:48px;border:.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-lg,12px);color:var(--dsw-alias-label-secondary)}
-.cqpm-product-icon img{width:36px;height:36px;object-fit:contain}
-.cqpm-product-artwork{color:var(--dsw-alias-state-business-primary,#4b8df8)}
+.cqpm-product-icon{display:inline-flex;flex:none;align-items:center;justify-content:center;width:48px;height:48px;border:1px solid #e1e4eb;border-radius:var(--dsw-radius-lg,12px);background:#fff;box-shadow:0 1px 3px rgba(28,36,68,.05);color:#697487}
+.cqpm-product-icon img{display:block;width:24px;height:24px;object-fit:contain}
+.cqpm-product-artwork{display:block;flex:none;width:25px;height:25px;color:inherit}
 .cqpm-product-main{display:flex;flex:1;flex-direction:column;gap:4px;min-width:0}
 .cqpm-product-title-line{display:flex;align-items:center;gap:8px;min-width:0}
 .cqpm-product-title{min-width:0;max-width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;font-size:14px;font-weight:500;line-height:20px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}

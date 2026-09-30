@@ -266,6 +266,16 @@ try {
     const entries = [...ctx.loader.entries()].map(entry => `${entry.id}=${String(entry.options.name)}`)
     throw new Error(`assembled desktop profile is missing the default CQAI ImageGen plugin: ${entries.join(', ')}`)
   }
+  const imEntry = [...ctx.loader.entries()]
+    .find(entry => entry.options.name === '@xmanrui/dsh-im')
+  if (imEntry === undefined || imEntry.options.disabled === true) {
+    throw new Error('assembled desktop profile did not activate the IM plugin')
+  }
+  const skillMcpEntry = [...ctx.loader.entries()]
+    .find(entry => entry.options.name === 'dsh-skill-mcp-panel')
+  if (skillMcpEntry === undefined || skillMcpEntry.options.disabled === true) {
+    throw new Error('assembled desktop profile did not activate the Skills and MCP manager')
+  }
   const pptEntries = [...ctx.loader.entries()]
     .filter(entry => entry.options.name === 'dsh-ppt-composer')
   if (pptEntries.length !== 1) {
@@ -481,6 +491,19 @@ try {
   const ids = new Set(graph.entries.map(entry => entry.id))
   if (!ids.has('cqai-dsh-plugin-short-video')) {
     throw new Error('assembled Web graph is missing the Short Video client')
+  }
+  if (!ids.has('@xmanrui/dsh-im')) {
+    throw new Error('assembled Web graph is missing the IM client')
+  }
+  if (!ids.has('dsh-skill-mcp-panel')) {
+    throw new Error('assembled Web graph is missing the Skills and MCP manager client')
+  }
+  if (process.argv.includes('--plugin-management-browser')) {
+    const { verifySkillMcpBrowser } = await import('../../scripts/verify-skill-mcp-browser.mjs')
+    await verifySkillMcpBrowser({
+      url: expectedUrl, cookie,
+      headers: { [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value },
+    })
   }
   const aaEnabled = aaRequested && !brokenAa
   if (ids.has('@agents-anywhere/dsh-bridge-next') !== aaEnabled) throw new Error('AA client graph does not match explicit selection')

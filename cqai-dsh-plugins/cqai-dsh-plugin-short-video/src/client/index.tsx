@@ -6,6 +6,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { Button, Input, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useEffect, useRef, useState } from 'react'
+import pluginIcon from '../../assets/plugin-icon.svg'
 import { API, audioPreviewReuseIssue, defaultParams, defaultSettings, groupJobsByWorkflow, materialKeyIssue, materialPreviewReuseIssue, needsText, stageRequirements, subtitlePreviewReuseIssue, workflowAudioPreview, workflowDisplayJob, workflowDraft, type Catalog, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind, type WorkflowGroup } from '../protocol.ts'
 
 export const inject = ['slots']
@@ -58,7 +59,7 @@ async function upload(id:string,kind:UploadKind,file:File):Promise<Job>{
   const value=await response.json();if(!response.ok)throw new Error(value.error||'上传失败');return value as Job
 }
 function url(job:Job,file:string,download=false){return `${API}/artifact?id=${encodeURIComponent(job.id)}&file=${encodeURIComponent(file)}${download?'&download=1':''}`}
-function Icon(){return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m9 9 6 3-6 3V9ZM3 8h18"/></svg>}
+function ShortVideoPanelIcon({size = 20}:{size?:number}){return <img className="cqai-plugin-panel-icon" src={pluginIcon} width={size} height={size} alt="" draggable={false}/>}
 const css = `
 .sv { height: 100%; overflow: auto; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; }
 .sv * { box-sizing: border-box; }
@@ -595,5 +596,5 @@ function Studio(){
 }
 export function apply(ctx:Context):void{
   ctx.slots.inject('main',()=>ctx.slots.register({name:'main',key:PANEL},Studio))
-  ctx.slots.inject('sidebar.panellist',()=>ctx.slots.register({name:'sidebar.panellist',id:PANEL,order:42,label:'短视频制作'},({size}:PropsRuntime<'sidebar.panellist'>)=><span style={{display:'inline-flex',width:size,height:size,alignItems:'center',justifyContent:'center'}}><Icon/></span>))
+  ctx.slots.inject('sidebar.panellist',()=>ctx.slots.register({name:'sidebar.panellist',id:PANEL,order:42,label:'短视频制作'},({size}:PropsRuntime<'sidebar.panellist'>)=><ShortVideoPanelIcon size={size}/>))
 }

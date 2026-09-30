@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "独立口播视频制作插件（基于 TalkCraft）",
+  "icon": "assets/plugin-icon.svg",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "main": "lib/index.js",
@@ -13,13 +14,15 @@
   },
   "files": [
     "lib",
+    "assets/plugin-icon.svg",
     "cordis.patch.yml",
     "upstream",
     "scripts",
     "python-requirements.txt",
     "UPSTREAM.md",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "LUCIDE_LICENSE"
   ],
   "dsh": {
     "bundle": {

@@ -5,7 +5,7 @@ import { DEFAULT_ACCENT, tokensForAccent, contrastRatio } from '../src/client/ac
 import { CLUB_THEME_TOKENS, tokensForPreset } from '../src/client/palette.ts'
 import { THEME_PRESET_ORDER, type ThemePreset } from '../src/client/presets.ts'
 import { PREFERENCES_KEY, type ClubThemePreferenceStore } from '../src/client/preferences.ts'
-import { PRESET_WALLPAPERS } from '../src/client/wallpaper.ts'
+import { CLASSIC_DARK_BACKGROUND, CLASSIC_LIGHT_BACKGROUND, PRESET_WALLPAPERS } from '../src/client/wallpaper.ts'
 
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map(index => Number.parseInt(hex.slice(index, index + 2), 16) / 255)
@@ -120,15 +120,18 @@ describe('CQAI Club palette', () => {
     expect(style.textContent).toContain('background: transparent !important')
     expect(style.textContent).toContain('body[data-ds-dark-theme]')
     expect(style.textContent).toContain('--cqai-club-home-light-background: none')
-    expect(style.textContent).toContain('background-color: #F4F4F4')
-    expect(style.textContent).toContain('background-color: #171717')
-    expect(style.textContent).toContain('backdrop-filter: blur(16px)')
+    expect(style.textContent).toContain('background-color: #F7FAFF')
+    expect(style.textContent).toContain('background-color: #171D28')
+    expect(style.textContent).toContain(CLASSIC_LIGHT_BACKGROUND)
+    expect(style.textContent).toContain(CLASSIC_DARK_BACKGROUND)
+    expect(style.textContent).toContain('backdrop-filter: blur(20px)')
     expect(style.textContent).toContain('.eBaoHomeSectionHeader')
     expect(appendChild).toHaveBeenCalledWith(style)
     preferences!.update({ background: 'custom', customImage: 'data:image/webp;base64,QUJD' })
     expect(style.textContent).toContain('--cqai-club-home-custom-image: url("data:image/webp;base64,QUJD")')
     expect(style.textContent.split('data:image/webp;base64,QUJD')).toHaveLength(2)
-    expect(style.textContent).not.toContain('backdrop-filter: blur(16px)')
+    expect(style.textContent).not.toContain(CLASSIC_LIGHT_BACKGROUND)
+    expect(style.textContent).not.toContain('backdrop-filter: blur(20px)')
     preferences!.update({ background: 'plain', accent: '#087F72' })
     expect(localStorage.setItem).toHaveBeenCalledWith(PREFERENCES_KEY, expect.any(String))
     expect(style.textContent).toContain('--cqai-club-home-light-background: none')

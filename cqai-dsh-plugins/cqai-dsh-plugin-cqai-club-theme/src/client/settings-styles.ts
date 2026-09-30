@@ -1,3 +1,5 @@
+import { CLASSIC_DARK_BACKGROUND, CLASSIC_LIGHT_BACKGROUND } from './wallpaper.ts'
+
 const CSS = `
 .cqaiThemeSettings {
   display: grid;
@@ -51,9 +53,10 @@ body[data-ds-dark-theme] .cqaiThemePresetChoice[data-preset="classic"] { --cqai-
   position: absolute;
   inset: 0;
   display: block;
-  background: #F4F4F4;
+  background-color: #F7FAFF;
+  background-image: ${CLASSIC_LIGHT_BACKGROUND};
 }
-body[data-ds-dark-theme] .cqaiThemeSettings .cqaiThemeClassicArtwork { background: #171717; }
+body[data-ds-dark-theme] .cqaiThemeSettings .cqaiThemeClassicArtwork { background-color: #171D28; background-image: ${CLASSIC_DARK_BACKGROUND}; }
 .cqaiThemePresetChoice[data-preset="classic"] .cqaiThemePresetMockSidebar,
 .cqaiThemePresetChoice[data-preset="classic"] .cqaiThemePresetMockCard { -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .cqaiThemePresetMockSidebar { position: absolute; inset-block: 0; inset-inline-start: 0; width: 23%; background: var(--cqai-preview-sidebar); }

@@ -24,6 +24,7 @@ import {
   desktopBundleList,
   ensureDesktopProfile,
   prepareDesktopProfile,
+  seedStableDesktopProfileModeForFirstUse,
   migrateDesktopSettingsDocumentSections,
   readDesktopShellMode,
   resolveDesktopSettingsDocument,
@@ -33,6 +34,7 @@ import {
 import { setDesktopProfileBundleSelected } from '../src/desktop-plugins.ts'
 import { migrateLegacyAgentPresetSettings } from '../src/setup-wizard-settings.ts'
 import { DESKTOP_MARKET_IDENTITIES } from '../src/desktop-market.ts'
+import { isStableDesktopRelease } from '../src/product-identity.ts'
 
 const homes: string[] = []
 
@@ -101,6 +103,26 @@ afterEach(() => {
 describe('desktop profile composition', {
   timeout: process.platform === 'win32' ? 10_000 : 5_000,
 }, () => {
+  it('seeds enhanced mode only for an untouched Stable Profile on Windows or macOS', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const expectedMode = isStableDesktopRelease() ? 'advanced' : 'compatibility'
+    expect(seedStableDesktopProfileModeForFirstUse(dir, 'linux')).toBe(false)
+    expect(seedStableDesktopProfileModeForFirstUse(dir, 'win32')).toBe(isStableDesktopRelease())
+    expect(prepareDesktopProfile(undefined, home, 'win32').mode).toBe(expectedMode)
+    expect(seedStableDesktopProfileModeForFirstUse(dir, 'darwin')).toBe(false)
+
+    const macHome = temporaryHome()
+    const macDir = ensureDesktopProfile(macHome)
+    expect(seedStableDesktopProfileModeForFirstUse(macDir, 'darwin')).toBe(isStableDesktopRelease())
+    expect(prepareDesktopProfile(undefined, macHome, 'darwin').mode).toBe(expectedMode)
+
+    const existing = temporaryHome()
+    writeDesktopShellPreferences(existing, ['mode: compatibility'])
+    expect(seedStableDesktopProfileModeForFirstUse(ensureDesktopProfile(existing), 'win32')).toBe(false)
+    expect(prepareDesktopProfile(undefined, existing, 'win32').mode).toBe('compatibility')
+  })
+
   it('ships a PowerShell-backed minimal preset for Windows', () => {
     // dsh 0.1.7-alpha.1 moved shipped preset declarations out of a filesystem preset
     // root and into one patch file per preset, carried by the Web bundle.
@@ -168,7 +190,9 @@ describe('desktop profile composition', {
       'cqai-dsh-plugin-short-video',
       'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-publisher',
+      '@xmanrui/dsh-im',
       'cqai-dsh-plugin-market',
+      'dsh-skill-mcp-panel',
       'dsh-ppt-composer',
       'cqai-dsh-plugin-desktop-presentation',
       'cqai-dsh-plugin-cqai-club-theme',
@@ -230,7 +254,9 @@ describe('desktop profile composition', {
       'cqai-dsh-plugin-short-video',
       'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-publisher',
+      '@xmanrui/dsh-im',
       'cqai-dsh-plugin-market',
+      'dsh-skill-mcp-panel',
       'dsh-ppt-composer',
       'cqai-dsh-plugin-desktop-presentation',
       'cqai-dsh-plugin-cqai-club-theme',
@@ -271,7 +297,9 @@ describe('desktop profile composition', {
       'cqai-dsh-plugin-short-video',
       'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-publisher',
+      '@xmanrui/dsh-im',
       'cqai-dsh-plugin-market',
+      'dsh-skill-mcp-panel',
       'dsh-ppt-composer',
       'cqai-dsh-plugin-desktop-presentation',
       'cqai-dsh-plugin-cqai-club-theme',
@@ -715,6 +743,7 @@ virtualStoreDirMaxLength: 60
       'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-video',
       'cqai-dsh-plugin-publisher',
+      '@xmanrui/dsh-im',
       'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-short-video',
       'dsh-ppt-composer',

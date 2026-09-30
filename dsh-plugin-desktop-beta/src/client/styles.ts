@@ -48,6 +48,10 @@ body:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) 
 /* ConversationRoot defaults to a 680px reading column. The drawer needs its own width. */
 .dshDesktopAgentDrawer [data-slot="main.conversation"] > * { --dsh-chat-content-width: max(0px, calc(var(--dsh-conversation-column-width, 0px) - 48px)); }
 .dshDesktopAgentDrawer [data-width-handle] { display: none; }
+/* The caller selects a focused conversation; the ordinary home stays available in full mode. */
+.dshDesktopAgentDrawer[data-conversation-mode="simple"] [data-content-phase="hero"] .zNic4G_root,
+.dshDesktopAgentDrawer[data-conversation-mode="simple"] [data-content-phase="hero"] .eBaoHomeDock { display: none; }
+.dshDesktopAgentDrawer[data-conversation-mode="simple"] [data-content-phase="hero"] [data-conversation-scroll] { justify-content: flex-end !important; }
 .dshDesktopConversationSurface[data-pub-agent-overlay] .dshDesktopAgentDrawer { position: absolute; z-index: 80; top: 0; right: 0; bottom: 0; width: min(460px, 100%); box-shadow: -12px 0 28px rgb(0 0 0 / 12%); }
 .dshDesktopRightbarSurface { position: relative; grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; overflow: visible; }
 .dshDesktopFrame[data-rightbar-fullscreen], .dshDesktopFrame[data-rightbar-fullscreen] .dshDesktopResizeHandle { transition: none; }

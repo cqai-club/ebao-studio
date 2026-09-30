@@ -173,6 +173,8 @@ npx dsh-plugin-desktop-beta
 
 Beta 在本轮不提供应用内下载操作。其共享 lifecycle 保留手动检查、有界请求、通知 action 管线、版本验证与 teardown 行为，并不会声称尚未发布的 Beta 构件可以安装。
 
+当前公开清单只标记稳定版。Beta 手动检查会明确提示更新源未提供 Beta 版本信息，后台检查保持静默；网络或清单错误仍显示检查失败。只有发布 Beta 版本信息后，才能比较 Beta 更新。
+
 在单独评审 Beta 发布设计、元数据、构件、签名策略和验证 gate 之前，Release operator 不得把 Beta 版本添加到清单。稳定版 `v<version>` Release 仍是唯一官方应用内更新源。
 
 在 macOS 与 Windows 上，**打开 DSH 终端** 会打开以当前激活 profile 为工作目录的系统终端。未打包的开发启动会在设置页标题区显示 **导出诊断信息**、**打开 DSH 终端** 和包含 **重启 Desktop**、**重启到恢复模式** 的重启菜单；正式打包版默认不注册这组设置页操作，等效的诊断与恢复能力仍保留在托盘中。任何重启路径都会先显示确认，再开始有序 Cordis shutdown 和 Electron relaunch。终端欢迎信息会显示应用版本、当前 profile、profile 目录与 DSH home，并列出配置与插件管理命令。在该终端内，裸 `dsh`、`dsh --dump-config`，以及没有选择 profile 的 plugin 子命令都会默认使用当前激活 profile；显式 `--profile` 与上游 `web` alias 会保留原有含义。易宝工坊 会在自身 user-data 目录下按 profile 生成私有 `dsh`、`pnpm` 与 `node` shim，设置 `DSH_HOME`，使用当前 profile 作为工作目录，并且只在该终端的 `PATH` 前置 shim 目录；之后切换 profile 不会改变已经打开的终端命令。它不会修改全局环境或 shell 启动文件。macOS launcher 会先保留用户的交互式 zsh 或 bash 设置，再恢复 desktop 自有变量。Windows 会依次选择 PowerShell 7、Windows PowerShell 或命令提示符，并在新的 Windows Terminal 窗口中打开；如果 `wt.exe` 不可用，则由私有 `cmd start` broker 创建可见控制台。同步启动失败与 broker 非正常退出会使用 Desktop dialog surface。Linux 不组合该终端命令。

@@ -2,6 +2,7 @@
   "name": "cqai-dsh-plugin-imagegen",
   "version": "0.1.0",
   "description": "e图宝 image generation studio for DSH with text-to-image, image editing, agent tools, queue, history, gallery, templates, and infinite canvas",
+  "icon": "assets/plugin-icon.svg",
   "license": "Apache-2.0",
   "type": "module",
   "main": "lib/index.js",
@@ -13,6 +14,7 @@
   },
   "files": [
     "lib/**",
+    "assets/plugin-icon.svg",
     "src/templates/**",
     "cordis.patch.yml",
     "dsh.plugin.json",
@@ -21,6 +23,7 @@
     "README.md",
     "UPSTREAM.md",
     "LICENSE",
+    "LUCIDE_LICENSE",
     "package.json"
   ],
   "dsh": {

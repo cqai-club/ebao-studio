@@ -2,6 +2,7 @@
   "name": "cqai-dsh-plugin-video",
   "version": "0.1.0",
   "description": "e剪宝：口播短视频制作、动效包装、成片预览与发布包",
+  "icon": "assets/plugin-icon.svg",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -13,6 +14,7 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "assets/plugin-icon.svg",
     "runtime/*.py",
     "runtime/inferflow/*.py",
     "runtime/inferflow/NOTICE.md",
@@ -28,7 +30,8 @@
     "cordis.patch.yml",
     "README.md",
     "UPSTREAM.md",
-    "LICENSE"
+    "LICENSE",
+    "LUCIDE_LICENSE"
   ],
   "dsh": {
     "bundle": {

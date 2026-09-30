@@ -158,6 +158,28 @@ afterEach(() => {
 })
 
 describe('desktop update Host plugin', () => {
+  it('reports a stable-only feed to Beta without offering a stable installer', async () => {
+    const request = vi.fn(async () => Response.json({ channel: 'stable', version: '0.0.8' }))
+    const harness = await createHarness({
+      packaged: false,
+      canDownload: false,
+      releaseChannel: 'beta',
+      currentVersion: '0.0.8-beta.1',
+      request,
+    })
+
+    await harness.tray.invoke()
+
+    expect(request).toHaveBeenCalledOnce()
+    expect(harness.showManualCheckResult).toHaveBeenCalledWith({
+      status: 'channel-unavailable',
+      currentVersion: '0.0.8-beta.1',
+    })
+    expect(harness.confirmDownload).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
+    await harness.dispose()
+  })
+
   it('checks Beta automatically and installs an older stable release only through the explicit action', async () => {
     const request = vi.fn(async (_url: string, init: RequestInit) => {
       const channel = new Headers(init.headers).get(DESKTOP_RELEASE_CHANNEL_HEADER)

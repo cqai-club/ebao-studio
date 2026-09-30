@@ -1,7 +1,7 @@
 import { isThemePreset, type ThemePreset } from './presets.ts'
 
 // Keep the persisted `galaxy` value for existing v1 preferences; it now means
-// the built-in preset background (frosted solid for classic).
+// the built-in preset background (soft mist for classic).
 export type HomeBackground = 'galaxy' | 'plain' | 'custom'
 
 export interface ClubThemePreferences {

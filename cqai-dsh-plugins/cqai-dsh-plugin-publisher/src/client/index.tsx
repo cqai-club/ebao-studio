@@ -14,6 +14,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ILayout, MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import pluginIcon from '../../assets/plugin-icon.svg'
 import type { Platform, PublisherContent, PublisherContentType } from '../protocol.ts'
 import { AccountsPage } from './accounts.tsx'
 import { ContentEditor } from './content.tsx'
@@ -33,8 +34,8 @@ type PublisherTab = 'publish' | 'history' | 'accounts' | 'settings'
 type AgentDrawerBinding = { contentId: string; sessionId: string; bindingToken: string; workspaceId: WorkspaceId }
 type AgentDraftSession = { contentId: string; sessionId: string | null }
 
-function requestAgentDrawer(open: boolean, contentId?: string) {
-  window.dispatchEvent(new CustomEvent(AGENT_DRAWER_EVENT, { detail: { open, ...(contentId ? { contentId } : {}) } }))
+function requestAgentDrawer(open: boolean, contentId?: string, mode: 'full' | 'simple' = 'full') {
+  window.dispatchEvent(new CustomEvent(AGENT_DRAWER_EVENT, { detail: { open, ...(contentId ? { contentId } : {}), ...(open ? { mode } : {}) } }))
 }
 
 function waitForArchiveSnapshot(workspaces: IWorkspaces): Promise<void> {
@@ -85,7 +86,7 @@ function waitForWorkspaceSession(workspaces: IWorkspaces, workspaceId: Workspace
 }
 
 function PublishIcon({ size = 20 }: { size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 3 10 14"/><path d="m21 3-7 18-4-7-7-4z"/></svg>
+  return <img className="cqai-plugin-panel-icon" src={pluginIcon} width={size} height={size} alt="" draggable={false} />
 }
 
 function handleTabKeyDown(event: KeyboardEvent<HTMLElement>) {
@@ -236,7 +237,7 @@ function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions
     }
     agentDrawerRef.current = { ...binding, workspaceId: workspace.workspaceId }
     setAgentDrawer(agentDrawerRef.current)
-    requestAgentDrawer(true, content.id)
+    requestAgentDrawer(true, content.id, 'simple')
   }
   useEffect(() => subscribePublisherHandoff(handoff => {
     agentRequestGenerationRef.current += 1

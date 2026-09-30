@@ -828,6 +828,18 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   /** Report one user-triggered check without exposing network or response details. */
   private async showManualUpdateCheckResult(result: UpdateCheckResult | null): Promise<void> {
     const copy = desktopNativeCopy(this.currentLocale)
+    if (result?.status === 'channel-unavailable') {
+      await this.showUpdateMessageBox({
+        type: 'info',
+        title: copy.betaUpdateUnavailableTitle,
+        message: copy.betaUpdateUnavailableMessage,
+        detail: copy.installedVersion(result.currentVersion),
+        buttons: [copy.ok],
+        defaultId: 0,
+        noLink: true,
+      })
+      return
+    }
     if (result === null) {
       await this.showUpdateMessageBox({
         type: 'warning',

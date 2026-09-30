@@ -316,9 +316,9 @@ jobs:
           cat > RELEASE_NOTES.md <<'NOTES'
           ## 本次预发布版本
 
-          本版本新增独立的“口播视频制作”插件，提供文案、配音、画面、分镜确认、预览和多轨工作台。该插件目前面向开发验证；本地语音、渲染和浏览器运行环境仍需按插件 README 手动准备，安装包尚未集成这些依赖。其上游 TalkCraft 采用 PolyForm Noncommercial 1.0.0，个人非商用可以使用；商业使用需取得作者授权。
+          本版本更新增强模式首页、主题壁纸和插件管理界面，增加技能与 MCP 面板，并将 dsh-im 纳入 Stable 与 Beta 的默认 Profile。首次创建的 Windows 和 macOS 稳定版 Profile 默认使用增强模式；已有 Profile 保留其模式设置。
 
-          CQAI 插件市场入口现在位于左下角账号菜单。桌面版还改进了后台任务通知，避免内部 Agent 作业产生面向用户的完成提示，并同步了 Agents Anywhere 与插件市场依赖。
+          多平台文章发布现在会在公众号上传前处理超过接口大小限制的 JPEG/PNG 图片；头条文章以文字占位保留正文图片位置，图片和封面需在头条草稿窗口手动上传并再次保存。插件市场升级至 1.66.6，Agents Anywhere 已按发布时官方 main 重新构建。口播视频制作仍面向开发验证，其上游 TalkCraft 采用 PolyForm Noncommercial 1.0.0；商业使用需取得作者授权。
 
           ### 下载与自动更新
 

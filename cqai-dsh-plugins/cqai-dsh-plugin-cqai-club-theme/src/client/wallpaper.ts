@@ -14,39 +14,61 @@ export const PRESET_WALLPAPERS: Record<Exclude<ThemePreset, 'classic'>, { light:
   'warm-cartoon': { light: warmCartoonLight, dark: warmCartoonDark },
 }
 
+/** Resolution-independent mist for the default look and its settings preview. */
+export const CLASSIC_LIGHT_BACKGROUND = [
+  'radial-gradient(ellipse 60% 38% at 53% 3%, rgb(168 206 255 / 39%), transparent 80%)',
+  'radial-gradient(ellipse 44% 42% at 10% 43%, rgb(213 230 253 / 43%), transparent 82%)',
+  'radial-gradient(ellipse 47% 41% at 96% 43%, rgb(194 221 252 / 38%), transparent 82%)',
+  'radial-gradient(ellipse 63% 47% at 56% 100%, rgb(200 226 252 / 37%), transparent 84%)',
+  'linear-gradient(125deg, #FCFDFF 0%, #F2F7FF 48%, #FAFCFF 100%)',
+].join(', ')
+
+export const CLASSIC_DARK_BACKGROUND = [
+  'radial-gradient(ellipse 62% 44% at 55% 2%, rgb(80 115 168 / 22%), transparent 82%)',
+  'radial-gradient(ellipse 52% 48% at 4% 74%, rgb(55 77 113 / 22%), transparent 84%)',
+  'radial-gradient(ellipse 52% 43% at 100% 69%, rgb(62 91 132 / 19%), transparent 82%)',
+  'linear-gradient(135deg, #19202B 0%, #171C26 55%, #1B2431 100%)',
+].join(', ')
+
 // Paint the shared frame once so the artwork stays continuous across the sidebar
 // and conversation. The PPT panel mounts alongside the home dock; exclude it.
 const HOME_FRAME = 'body:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) .dshDesktopFrame:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] .eBaoHomeDock):not(:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] [data-office-ppt-template-panel]))'
 const DARK_HOME_FRAME = 'body[data-ds-dark-theme]:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) .dshDesktopFrame:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] .eBaoHomeDock):not(:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] [data-office-ppt-template-panel]))'
 
-// The classic preset has a solid canvas; translucency and blur live on the
+// The default mist fills the shared frame; translucency and blur live on the
 // surfaces above it. Scope this to the built-in background, not custom images.
 const CLASSIC_FROST_CSS = `
-${HOME_FRAME} { background-color: #F4F4F4; }
-${DARK_HOME_FRAME} { background-color: #171717; }
+${HOME_FRAME} { background-color: #F7FAFF; background-image: ${CLASSIC_LIGHT_BACKGROUND}; }
+${DARK_HOME_FRAME} { background-color: #171D28; background-image: ${CLASSIC_DARK_BACKGROUND}; }
 ${HOME_FRAME} .dshDesktopSidebarSurface {
-  background: rgb(255 255 255 / 72%) !important;
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  box-shadow: inset -1px 0 rgb(0 0 0 / 6%);
+  background: rgb(255 255 255 / 75%) !important;
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: inset -1px 0 rgb(103 139 189 / 11%);
 }
 ${DARK_HOME_FRAME} .dshDesktopSidebarSurface {
-  background: rgb(36 36 36 / 72%) !important;
+  background: rgb(29 35 47 / 76%) !important;
   box-shadow: inset -1px 0 rgb(255 255 255 / 8%);
 }
 ${HOME_FRAME} .eBaoHomeSectionHeader {
   min-height: 128px;
   padding: 26px 32px;
-  border: 1px solid rgb(25 25 25 / 11%);
+  border: 1px solid rgb(120 156 204 / 18%);
   border-radius: 24px;
-  background: linear-gradient(112deg, rgb(255 255 255 / 89%), rgb(255 255 255 / 76%) 55%, rgb(237 237 237 / 73%));
+  background:
+    radial-gradient(ellipse 61% 94% at 58% 122%, rgb(143 190 255 / 31%), transparent 75%),
+    radial-gradient(ellipse 43% 84% at 91% 115%, rgb(198 180 255 / 29%), transparent 77%),
+    linear-gradient(112deg, rgb(255 255 255 / 91%), rgb(248 251 255 / 77%) 55%, rgb(239 247 255 / 75%));
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
-  box-shadow: 0 18px 48px rgb(0 0 0 / 7%), inset 0 1px rgb(255 255 255 / 85%);
+  box-shadow: 0 18px 48px rgb(80 120 180 / 9%), inset 0 1px rgb(255 255 255 / 85%);
 }
 ${DARK_HOME_FRAME} .eBaoHomeSectionHeader {
   border-color: rgb(255 255 255 / 13%);
-  background: linear-gradient(112deg, rgb(45 45 45 / 89%), rgb(34 34 34 / 81%) 55%, rgb(27 27 27 / 82%));
+  background:
+    radial-gradient(ellipse 61% 94% at 58% 122%, rgb(84 128 214 / 29%), transparent 75%),
+    radial-gradient(ellipse 43% 84% at 91% 115%, rgb(127 102 194 / 23%), transparent 77%),
+    linear-gradient(112deg, rgb(40 48 64 / 89%), rgb(30 37 49 / 81%) 55%, rgb(25 33 46 / 82%));
   box-shadow: 0 18px 48px rgb(0 0 0 / 26%), inset 0 1px rgb(255 255 255 / 10%);
 }
 ${HOME_FRAME} .eBaoHomeSectionHeader::before {
@@ -55,8 +77,8 @@ ${HOME_FRAME} .eBaoHomeSectionHeader::before {
   right: 18%;
   width: 390px;
   height: 390px;
-  border-color: rgb(25 25 25 / 10%);
-  box-shadow: 0 0 0 42px rgb(25 25 25 / 2%), 0 0 0 92px rgb(25 25 25 / 1%);
+  border-color: rgb(92 140 208 / 13%);
+  box-shadow: 0 0 0 42px rgb(92 140 208 / 3%), 0 0 0 92px rgb(92 140 208 / 2%);
 }
 ${DARK_HOME_FRAME} .eBaoHomeSectionHeader::before {
   border-color: rgb(255 255 255 / 12%);
@@ -68,7 +90,7 @@ ${HOME_FRAME} .eBaoHomeSectionHeader::after {
   z-index: 0;
   inset: 0 0 0 55%;
   pointer-events: none;
-  background-image: radial-gradient(rgb(25 25 25 / 10%) .7px, transparent 1px);
+  background-image: radial-gradient(rgb(82 130 195 / 12%) .7px, transparent 1px);
   background-size: 16px 16px;
   opacity: .42;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 36%, transparent);
@@ -139,7 +161,7 @@ ${DARK_HOME_FRAME} .eBaoHomeSectionActions .eBaoHomeAdd {
   ${HOME_FRAME} .eBaoHomeSectionHeader { padding: 20px; }
 }
 @media (forced-colors: active) {
-  ${HOME_FRAME}, ${DARK_HOME_FRAME} { background-color: Canvas; }
+  ${HOME_FRAME}, ${DARK_HOME_FRAME} { background-color: Canvas; background-image: none; }
   ${HOME_FRAME} .dshDesktopSidebarSurface,
   ${HOME_FRAME} .eBaoHomeSectionHeader {
     background: Canvas !important;

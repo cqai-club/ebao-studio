@@ -2,6 +2,7 @@
   "name": "cqai-dsh-plugin-cqai-club-theme",
   "version": "0.1.0",
   "description": "CQAI Club theme for eBao Desktop",
+  "icon": "assets/plugin-icon.svg",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -24,6 +25,7 @@
     "dsh.plugin.json",
     "README.md",
     "LICENSE",
+    "LUCIDE_LICENSE",
     "package.json"
   ],
   "dsh": {

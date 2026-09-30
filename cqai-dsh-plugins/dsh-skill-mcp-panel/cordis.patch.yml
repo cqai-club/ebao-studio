@@ -1,0 +1,6 @@
+# dsh-skill-mcp-panel bundle patch.
+# The Desktop profile mounts this bundled plugin by default. Its Skills and
+# MCP pages render inside the product plugin-management shell.
+- insert:
+    - id: skill-mcp-panel
+      name: dsh-skill-mcp-panel

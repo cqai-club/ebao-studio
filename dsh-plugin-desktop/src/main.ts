@@ -138,6 +138,7 @@ import {
   desktopInstallAnchor,
   healDesktopProfileModuleFallback,
   prepareDesktopProfile,
+  seedStableDesktopProfileModeForFirstUse,
   type SkippedOptionalEntry,
 } from './profile.ts'
 import { DesktopProfileCheckpoint } from './profile-checkpoint.ts'
@@ -223,6 +224,7 @@ import {
   DESKTOP_PACKAGE_NAME,
   DESKTOP_PRODUCT_NAME,
   DESKTOP_RELEASE_CHANNEL,
+  isStableDesktopRelease,
   OTHER_DESKTOP_PRODUCT_IDENTITY,
 } from './product-identity.ts'
 import {
@@ -1328,6 +1330,10 @@ async function start(): Promise<void> {
     const lanAddresses = desktopLanAddresses()
     const legacyMarketSelection = readDesktopMarketStateForUserData(marketUserDataDir)
     let profilePreferences = readDesktopProfilePreferences(marketUserDataDir, activeProfileDir)
+    if (safeModePaths === undefined && profilePreferences === undefined
+      && !hasDesktopProfileUsageHistory(releaseUserDataLocations, activeProfileDir, activeProfileName)) {
+      seedStableDesktopProfileModeForFirstUse(activeProfileDir, process.platform)
+    }
     let marketSelection = profilePreferences === undefined
       ? legacyMarketSelection
       : desktopProfileMarketSnapshot(profilePreferences.market)
@@ -1468,7 +1474,13 @@ async function start(): Promise<void> {
       && (desktopSetupWizardPending(marketUserDataDir, prepared.profile.dir)
         || !hasDesktopProfileUsageHistory(releaseUserDataLocations, prepared.profile.dir, activeProfileName))
     if (setupPending) await beginDesktopSetupWizard(marketUserDataDir, prepared.profile.dir)
-    const setupInput = { ...readDesktopSetupWizardSettings(prepared.settingsDocument), appVersion,
+    const setupInput = { ...readDesktopSetupWizardSettings(prepared.settingsDocument),
+      ...(isStableDesktopRelease() ? {
+        mode: prepared.mode,
+        openBrowser: prepared.openBrowser,
+        networkExposure: prepared.networkExposure,
+      } : {}),
+      appVersion,
       profileName: activeProfileName, platform: runtime.platform,
       market: marketSelection.requested, aaEnabled: profilePreferences?.aaEnabled === true }
     let setupSaving = false
@@ -1495,7 +1507,10 @@ async function start(): Promise<void> {
       finish: async (profile, selection, applySettings) => {
         if (!setupPending || setupSaving || profile !== activeProfileName || safeModePaths !== undefined) throw new Error('Desktop setup is unavailable')
         if (selection !== undefined && (!isDesktopSetupWizardInput({ ...selection, appVersion,
-          profileName: profile, platform: runtime.platform }) || !desktopSetupWizardSelectionIsAvailable(selection, { platform: runtime.platform }))) {
+          profileName: profile, platform: runtime.platform }) || !desktopSetupWizardSelectionIsAvailable(selection, { platform: runtime.platform })
+          || (isStableDesktopRelease() && (selection.mode !== setupInput.mode
+            || (runtime.platform !== 'linux' && (selection.openBrowser !== setupInput.openBrowser
+              || selection.networkExposure !== setupInput.networkExposure)))))) {
           throw new Error('Invalid Desktop setup selection')
         }
         // Preferences only mirror the Profile; its patch layer decides the next

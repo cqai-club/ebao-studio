@@ -2,6 +2,7 @@
   "name": "cqai-dsh-plugin-short-video",
   "version": "0.1.0",
   "description": "短视频制作：基于 MoneyPrinterTurbo 的 DSH Cordis 插件",
+  "icon": "assets/plugin-icon.svg",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -12,10 +13,12 @@
   },
   "files": [
     "lib/*.js",
+    "assets/plugin-icon.svg",
     "runtime/**",
     "cordis.patch.yml",
     "README.md",
-    "UPSTREAM_LICENSE"
+    "UPSTREAM_LICENSE",
+    "LUCIDE_LICENSE"
   ],
   "dsh": {
     "bundle": {

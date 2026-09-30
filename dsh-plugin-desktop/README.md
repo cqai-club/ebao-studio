@@ -34,23 +34,25 @@ Plugin authors should use the supported contract imports, lifecycle rules, and a
 
 ## Mode setting and restart boundary
 
-The `dsh-desktop.mode` field in the DSH home `settings.yaml` document is the single source of truth:
+The active Profile stores its desktop mode in the `desktop-shell` row of `cordis.patch.yml`:
 
 ```yaml
-dsh-desktop:
-  mode: compatibility # compatibility, extended, or advanced
-  macosMaterial: transparent # off or transparent
+- id: desktop-shell
+  config:
+    mode: advanced # compatibility, extended, or advanced
 ```
 
-The launcher reads the same file resolved by the active `@deepseek-ai/dsh-settings-file` row before composing a generation. The Host registers the `dsh-desktop` namespace with the standard settings service. There is no parallel mode value in the profile manifest.
+The launcher composes this Profile row before boot. Legacy DSH home `settings.yaml` sections are imported once into the Profile patch layer. The Host exposes the mode through the standard settings service; the profile manifest has no parallel mode value.
 
-Users can select the other mode from the tray or edit the DSH home `settings.yaml` document by hand. The tray updates the registered `dsh-desktop` settings namespace, while a manual edit changes the same file observed by the settings provider. A committed change requests one orderly restart: the current Cordis tree disposes first, then Electron relaunches only after a successful zero-code shutdown. The application never hot-swaps root slots, native window materials, or Loader rows inside a live renderer generation.
+Users can change mode from Desktop settings or the tray; both update the Profile's settings row. A committed change requests one orderly restart: the current Cordis tree disposes first, then Electron relaunches only after a successful zero-code shutdown. The application never hot-swaps root slots, native window materials, or Loader rows inside a live renderer generation.
 
 Linux supports compatibility mode only. Its tray mode command is disabled, and custom-window values are rejected rather than silently falling back.
 
+On Windows and macOS, the Stable app seeds enhanced mode in a fresh Profile before its first use. First-run setup omits the mode picker and ordinary-browser access options, which conflict with enhanced mode. To use browser access, switch to compatibility mode in Desktop settings after setup and enable it there. Existing Profiles keep their saved modes. Beta and Linux retain their current behavior.
+
 ## Compatibility mode
 
-`dsh-desktop.mode` defaults to `compatibility`. On macOS and Windows it creates an independent 36 CSS-pixel Desktop frame, with native traffic lights or caption controls, above the official Web surface from the active DSH profile. The centered identity, mode pill, drag region, and icon actions belong only to that frame. The complete official page begins below it and does not participate in its layout or safe-area calculation. Linux keeps the ordinary native-frame fallback.
+Profiles without a saved mode that do not meet the first-use condition still fall back to `compatibility`. On macOS and Windows it creates an independent 36 CSS-pixel Desktop frame, with native traffic lights or caption controls, above the official Web surface from the active DSH profile. The centered identity, mode pill, drag region, and icon actions belong only to that frame. The complete official page begins below it and does not participate in its layout or safe-area calculation. Linux keeps the ordinary native-frame fallback.
 
 The desktop Client module validates the mode and platform markers, registers only the independent frame overlay and its fixed launcher actions, and performs no official presentation replacement in compatibility mode. It does not provide or replace the `layout` service, register a `root` or `sidebar` occupant, or change the conversation surface. Desktop-owned boot-health reporting is a capability effect; compatibility mode still preserves the selected profile's own layout, sidebar, and conversation composition, so the ordinary `desktop` and `web` profiles keep the official rows unchanged. Upstream dialogs remain content overlays and are bounded below the Desktop frame.
 

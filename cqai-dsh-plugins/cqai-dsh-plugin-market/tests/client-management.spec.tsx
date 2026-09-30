@@ -32,10 +32,10 @@ function makeDom() {
   return dom
 }
 
-function testContext() {
+function testContext(bundleIcons: readonly { name: string; meta: { icon: string } }[] = []) {
   const registrations: Registered[] = []
   const selectPanel = vi.fn()
-  const listBundles = vi.fn(async () => ({ ok: true as const, value: [] }))
+  const listBundles = vi.fn(async () => ({ ok: true as const, value: bundleIcons }))
   const ctx = {
     inject: (_names: readonly string[], callback: (scope: Context) => void) => { callback(ctx as unknown as Context) },
     locale: {
@@ -95,6 +95,8 @@ describe('CQAI plugin management Client', () => {
     const cards = registrations.find(entry => entry.options.name === 'plugins.installed.cards')
     expect(shell).toBeDefined()
     expect(shell?.options.children).toHaveProperty('cqai.pluginManagement.market')
+    expect(shell?.options.children).toHaveProperty('cqai.pluginManagement.skills')
+    expect(shell?.options.children).toHaveProperty('cqai.pluginManagement.mcp')
     expect(account).toBeDefined()
     expect(cards).toBeDefined()
     expect(registrations.some(entry => entry.options.name === 'plugins.bundle.hidden'
@@ -106,8 +108,11 @@ describe('CQAI plugin management Client', () => {
     const showList = vi.fn()
     let action: { id: string; label: () => string; onSelect: () => void } | undefined
     const nativeContent = createElement('div', { 'data-native-manager': true }, '原生插件页面 · 添加插件')
-    const market = (_name: string, owner: { onOpenInstalled: () => void }) =>
-      createElement('button', { onClick: owner.onOpenInstalled }, '市场返回已安装')
+    const market = (name: string, owner: { onOpenInstalled: () => void }) => {
+      if (name === 'cqai.pluginManagement.skills') return createElement('div', { 'data-skills-panel': true }, '技能内容')
+      if (name === 'cqai.pluginManagement.mcp') return createElement('div', { 'data-mcp-panel': true }, 'MCP 内容')
+      return createElement('button', { onClick: owner.onOpenInstalled }, '市场返回已安装')
+    }
     const render = (nativeView: { kind: string }) => createElement('div', null,
       createElement(account!.component, {
         registerAction: (next: typeof action) => { action = next; return () => { action = undefined } },
@@ -133,6 +138,20 @@ describe('CQAI plugin management Client', () => {
       })
       expect(container.querySelector('.cqpm-native')?.hasAttribute('hidden')).toBe(true)
       expect(container.textContent).toContain('市场返回已安装')
+      await act(async () => {
+        [...container.querySelectorAll<HTMLButtonElement>('nav button')]
+          .find(button => button.textContent === '技能')?.click()
+      })
+      expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('技能')
+      expect(container.querySelector('[data-skills-panel]')?.textContent).toBe('技能内容')
+      expect(container.querySelector('[data-mcp-panel]')).toBeNull()
+      await act(async () => {
+        [...container.querySelectorAll<HTMLButtonElement>('nav button')]
+          .find(button => button.textContent === 'MCP')?.click()
+      })
+      expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('MCP')
+      expect(container.querySelector('[data-mcp-panel]')?.textContent).toBe('MCP 内容')
+      expect(container.querySelector('[data-skills-panel]')).toBeNull()
       await act(async () => { container.querySelector<HTMLButtonElement>('.cqpm-back')!.click() })
       expect(selectPanel).toHaveBeenLastCalledWith(null)
 
@@ -170,6 +189,11 @@ describe('CQAI plugin management Client', () => {
         bundles: [
           { bundleId: 'imagegen', packageName: 'cqai-dsh-plugin-imagegen', status, mutable: true, uninstallable: false },
           { bundleId: 'ppt', packageName: 'dsh-ppt-composer', status: 'disabled', mutable: true, uninstallable: false },
+          { bundleId: 'theme', packageName: 'cqai-dsh-plugin-cqai-club-theme', status: 'disabled', mutable: false, uninstallable: false },
+          { bundleId: 'video', packageName: 'cqai-dsh-plugin-video', status: 'disabled', mutable: false, uninstallable: false },
+          { bundleId: 'publisher', packageName: 'cqai-dsh-plugin-publisher', status: 'disabled', mutable: false, uninstallable: false },
+          { bundleId: 'talkcraft', packageName: 'cqai-dsh-plugin-talkcraft', status: 'disabled', mutable: false, uninstallable: false },
+          { bundleId: 'short-video', packageName: 'cqai-dsh-plugin-short-video', status: 'disabled', mutable: false, uninstallable: false },
         ],
         loadedPackageNames: ['cqai-dsh-plugin-imagegen'],
       }), { headers: { 'content-type': 'application/json' } })
@@ -190,7 +214,11 @@ describe('CQAI plugin management Client', () => {
     vi.stubGlobal('fetch', fetcher)
     const invoke = vi.fn(async (_action: 'restart') => {})
     vi.stubGlobal('dshDesktopActions', { invoke })
-    const test = testContext()
+    const productPackages = ['cqai-dsh-plugin-imagegen', 'dsh-ppt-composer', 'cqai-dsh-plugin-cqai-club-theme',
+      'cqai-dsh-plugin-video', 'cqai-dsh-plugin-publisher', 'cqai-dsh-plugin-talkcraft', 'cqai-dsh-plugin-short-video']
+    const test = testContext(productPackages.map((name, index) => ({
+      name, meta: { icon: `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><title>${index}</title></svg>`).toString('base64')}` },
+    })))
     apply(test.ctx)
     const cards = test.registrations.find(entry => entry.options.name === 'plugins.installed.cards')
     expect(cards).toBeDefined()
@@ -199,8 +227,12 @@ describe('CQAI plugin management Client', () => {
     const root = createRoot(container)
     try {
       await act(async () => { root.render(createElement('ul', null, createElement(cards!.component, { reportCount }))) })
-      expect(container.querySelectorAll('[data-product-bundle]')).toHaveLength(2)
-      expect(reportCount).toHaveBeenCalledWith(2)
+      const productCards = [...container.querySelectorAll('[data-product-bundle]')]
+      expect(productCards).toHaveLength(7)
+      expect(reportCount).toHaveBeenCalledWith(7)
+      const icons = productCards.map(card => card.querySelector('.cqpm-product-icon img'))
+      expect(icons.every(icon => icon?.getAttribute('alt') === '')).toBe(true)
+      expect(new Set(icons.map(icon => icon?.getAttribute('src'))).size).toBe(7)
       expect(container.querySelector('[data-product-bundle="@cqaiclub/dsh-plugin-activities"]')).toBeNull()
       const image = container.querySelector('[data-product-bundle="cqai-dsh-plugin-imagegen"]')
       expect(image?.querySelector('.cqpm-product-title')?.textContent).toBe('e图宝')

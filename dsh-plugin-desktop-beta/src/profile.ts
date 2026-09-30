@@ -50,6 +50,7 @@ import {
   DESKTOP_PACKAGE_NAME,
   DESKTOP_PACKAGE_NAMES,
   DESKTOP_RELEASE_CHANNEL,
+  isStableDesktopRelease,
 } from './product-identity.ts'
 import {
   DEFAULT_MACOS_WINDOW_MATERIAL,
@@ -93,7 +94,9 @@ const CQAI_ACCOUNT_PACKAGE = '@cqaiclub/dsn-account'
 const CQAI_ACTIVITIES_PACKAGE = '@cqaiclub/dsh-plugin-activities'
 const CQAI_IMAGEGEN_PACKAGE = 'cqai-dsh-plugin-imagegen'
 const CQAI_PUBLISHER_PACKAGE = 'cqai-dsh-plugin-publisher'
+const DSH_IM_PACKAGE = '@xmanrui/dsh-im'
 const CQAI_MARKET_PACKAGE = 'cqai-dsh-plugin-market'
+const SKILL_MCP_PANEL_PACKAGE = 'dsh-skill-mcp-panel'
 const CQAI_PRESENTATION_PACKAGE = 'cqai-dsh-plugin-desktop-presentation'
 const CQAI_CLUB_THEME_PACKAGE = 'cqai-dsh-plugin-cqai-club-theme'
 const PPT_CORE_PACKAGE = 'dsh-ppt'
@@ -105,7 +108,9 @@ const DEFAULT_PRODUCT_BUNDLES = [
   'cqai-dsh-plugin-short-video',
   'cqai-dsh-plugin-talkcraft',
   CQAI_PUBLISHER_PACKAGE,
+  DSH_IM_PACKAGE,
   CQAI_MARKET_PACKAGE,
+  SKILL_MCP_PANEL_PACKAGE,
   PPT_COMPOSER_PACKAGE,
   CQAI_PRESENTATION_PACKAGE,
   CQAI_CLUB_THEME_PACKAGE,
@@ -616,6 +621,22 @@ function replaceDocument(path: string, text: string): void {
     rmSync(temporary, { force: true })
     throw cause
   }
+}
+
+/** Seed only an untouched, unused Stable Profile before its first composition. */
+export function seedStableDesktopProfileModeForFirstUse(
+  profileDir: string,
+  platform: NodeJS.Platform,
+): boolean {
+  if (!isStableDesktopRelease() || (platform !== 'win32' && platform !== 'darwin')) return false
+  const patchPath = join(profileDir, PROFILE_PATCH_FILENAME)
+  if (lstatSync(patchPath, { throwIfNoEntry: false })?.isSymbolicLink()) return false
+  const document = parseDocument(readFileSync(patchPath, 'utf8'))
+  if (document.errors.length > 0 || !isSeq(document.contents) || document.contents.items.length > 0) return false
+  document.contents.flow = false
+  document.addIn([], { id: DESKTOP_SHELL_ENTRY_ID, config: { mode: 'advanced' } })
+  replaceDocument(patchPath, String(document))
+  return true
 }
 
 /** Resolve the public Web template once and reject an incompatible DSH release. */

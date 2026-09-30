@@ -3,22 +3,22 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { BundleInfo } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from 'dsh-community-market/client'
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { ProductPackage } from '../product-bundles.js'
 import { changeProductBundle, readProductInventory, requestDesktopRestart, type ProductBundle, type ProductInventory } from './management-api.js'
 import { styles } from './styles.js'
 
-const PRODUCT_DETAILS: Readonly<Record<ProductPackage, { name: string; zh: string; en: string; icon: string }>> = {
-  'cqai-dsh-plugin-cqai-club-theme': { name: 'CQAI Club 主题', zh: '自定义桌面配色与背景。', en: 'Customize Desktop colors and background.', icon: 'theme' },
-  'cqai-dsh-plugin-imagegen': { name: 'e图宝', zh: '生成、编辑和管理图片素材。', en: 'Generate, edit and manage images.', icon: 'image' },
-  'cqai-dsh-plugin-video': { name: 'e剪宝', zh: '制作口播短视频并预览成片。', en: 'Create and preview narrated videos.', icon: 'video' },
-  'cqai-dsh-plugin-publisher': { name: '多平台发布', zh: '管理草稿并向多个平台发布内容。', en: 'Manage drafts and publish to multiple platforms.', icon: 'publish' },
-  'cqai-dsh-plugin-talkcraft': { name: '口播视频制作', zh: '制作和编辑口播视频。', en: 'Create and edit talking videos.', icon: 'voice' },
-  'cqai-dsh-plugin-short-video': { name: '短视频制作', zh: '根据脚本与素材制作短视频。', en: 'Create short videos from scripts and media.', icon: 'film' },
-  'dsh-ppt-composer': { name: 'PPT 制作', zh: '创建和编辑演示文稿。', en: 'Create and edit presentations.', icon: 'slides' },
+const PRODUCT_DETAILS: Readonly<Record<ProductPackage, { name: string; zh: string; en: string }>> = {
+  'cqai-dsh-plugin-cqai-club-theme': { name: 'CQAI Club 主题', zh: '自定义桌面配色与背景。', en: 'Customize Desktop colors and background.' },
+  'cqai-dsh-plugin-imagegen': { name: 'e图宝', zh: '生成、编辑和管理图片素材。', en: 'Generate, edit and manage images.' },
+  'cqai-dsh-plugin-video': { name: 'e剪宝', zh: '制作口播短视频并预览成片。', en: 'Create and preview narrated videos.' },
+  'cqai-dsh-plugin-publisher': { name: '多平台发布', zh: '管理草稿并向多个平台发布内容。', en: 'Manage drafts and publish to multiple platforms.' },
+  'cqai-dsh-plugin-talkcraft': { name: '口播视频制作', zh: '制作和编辑口播视频。', en: 'Create and edit talking videos.' },
+  'cqai-dsh-plugin-short-video': { name: '短视频制作', zh: '根据脚本与素材制作短视频。', en: 'Create short videos from scripts and media.' },
+  'dsh-ppt-composer': { name: 'PPT 制作', zh: '创建和编辑演示文稿。', en: 'Create and edit presentations.' },
 }
 
-type View = 'installed' | 'market'
+type View = 'installed' | 'market' | 'skills' | 'mcp'
 
 export function createViewState() {
   let view: View = 'installed'
@@ -45,21 +45,21 @@ function useLocale(ctx: Context): string {
 
 function copy(locale: string) {
   return locale.startsWith('zh') ? {
-    title: '插件管理', back: '返回', installed: '已安装插件', market: '插件市场', marketIntro: '发现并安装插件',
-    unavailable: '当前插件市场不可用。', loading: '正在读取预制插件…',
+    title: '插件管理', back: '返回', installed: '已安装插件', market: '插件市场', skills: '技能', mcp: 'MCP', marketIntro: '发现并安装插件',
+    unavailable: '当前插件市场不可用。', unavailablePanel: '当前管理页面不可用。', loading: '正在读取预制插件…',
     enable: '启用', disable: '停用', current: '当前运行', disabled: '已停用',
     willDisable: '重启后停用', willEnable: '重启后启用', failed: '无法加载',
     pending: '更改将在重启后生效', later: '稍后重启', restart: '立即重启',
   } : {
-    title: 'Plugin management', back: 'Back', installed: 'Installed plugins', market: 'Plugin market', marketIntro: 'Discover and install plugins',
-    unavailable: 'The plugin market is unavailable.', loading: 'Loading bundled plugins…',
+    title: 'Plugin management', back: 'Back', installed: 'Installed plugins', market: 'Plugin market', skills: 'Skills', mcp: 'MCP', marketIntro: 'Discover and install plugins',
+    unavailable: 'The plugin market is unavailable.', unavailablePanel: 'This management page is unavailable.', loading: 'Loading bundled plugins…',
     enable: 'Enable', disable: 'Disable', current: 'Running', disabled: 'Disabled',
     willDisable: 'Disables after restart', willEnable: 'Enables after restart', failed: 'Failed to load',
     pending: 'Changes take effect after restart', later: 'Restart later', restart: 'Restart now',
   }
 }
 
-type ShellProps = PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market'> & {
+type ShellProps = PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market' | 'cqai.pluginManagement.skills' | 'cqai.pluginManagement.mcp'> & {
   ctx: Context
   viewState: ViewState
 }
@@ -93,6 +93,8 @@ export function PluginManagementShell({ ctx, viewState, content, nativeView, sho
       </button>
       <button type="button" aria-current={view === 'installed' ? 'page' : undefined} onClick={openInstalled}>{t.installed}</button>
       <button type="button" aria-current={view === 'market' ? 'page' : undefined} onClick={() => viewState.select('market')}>{t.market}</button>
+      <button type="button" aria-current={view === 'skills' ? 'page' : undefined} onClick={() => viewState.select('skills')}>{t.skills}</button>
+      <button type="button" aria-current={view === 'mcp' ? 'page' : undefined} onClick={() => viewState.select('mcp')}>{t.mcp}</button>
     </nav>
     <div className="cqpm-native" hidden={view !== 'installed'}>{content}</div>
     {view === 'market' && <div className="cqpm-market">
@@ -101,6 +103,12 @@ export function PluginManagementShell({ ctx, viewState, content, nativeView, sho
         fallback: <p className="cqpm-message">{t.unavailable}</p>,
       })}
     </div>}
+    {view === 'skills' && <div className="cqpm-external">{renderSlot('cqai.pluginManagement.skills', {}, {
+      fallback: <p className="cqpm-message">{t.unavailablePanel}</p>,
+    })}</div>}
+    {view === 'mcp' && <div className="cqpm-external">{renderSlot('cqai.pluginManagement.mcp', {}, {
+      fallback: <p className="cqpm-message">{t.unavailablePanel}</p>,
+    })}</div>}
   </div>
 }
 
@@ -122,22 +130,12 @@ function unwrap<T>(answer: RemoteAnswer<T>): T {
   return answer.value
 }
 
-const ARTWORK: Readonly<Record<string, ReactNode>> = {
-  theme: <><circle cx="18" cy="18" r="12"/><path d="M18 6a12 12 0 0 0 0 24M18 6a12 12 0 0 1 0 24M6 18h24"/></>,
-  image: <><rect x="5" y="6" width="26" height="24" rx="5"/><circle cx="12" cy="13" r="2"/><path d="m7 25 7-7 5 5 4-4 6 6"/></>,
-  video: <><rect x="5" y="7" width="26" height="22" rx="5"/><path d="m15 13 8 5-8 5z"/></>,
-  publish: <><path d="M18 23V5m-6 6 6-6 6 6"/><path d="M7 20v8a3 3 0 0 0 3 3h16a3 3 0 0 0 3-3v-8"/></>,
-  voice: <><rect x="14" y="5" width="8" height="17" rx="4"/><path d="M10 17a8 8 0 0 0 16 0M18 25v6m-5 0h10"/></>,
-  film: <><rect x="5" y="10" width="26" height="21" rx="3"/><path d="M5 17h26M11 10l4-6m5 6 4-6m-11 18 9 4-9 4z"/></>,
-  slides: <><rect x="5" y="6" width="26" height="21" rx="3"/><path d="M18 27v5m-7 0h14m-15-17h16m-16 5h10"/></>,
-}
-
-function Artwork({ src, kind }: { src?: string; kind?: string }) {
+function Artwork({ src }: { src?: string }) {
   const [failedSource, setFailedSource] = useState<string>()
   if (src !== undefined && failedSource !== src) {
     return <img src={src} width="36" height="36" alt="" onError={() => setFailedSource(src)} />
   }
-  return <svg className="cqpm-product-artwork" width="36" height="36" viewBox="0 0 36 36" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ARTWORK[kind ?? 'image']}</svg>
+  return <svg className="cqpm-product-artwork" width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/></svg>
 }
 
 function Toggle({ checked, label, disabled, onChange }: { checked: boolean; label: string; disabled: boolean; onChange: () => void }) {
@@ -205,7 +203,7 @@ export function ProductInstalledCards({ ctx, reportCount }: ProductProps) {
       const name = info?.name ?? bundle.packageName
       return <li className="cqpm-product" key={bundle.packageName} data-product-bundle={bundle.packageName}>
         <div className="cqpm-product-head">
-          <span className="cqpm-product-icon"><Artwork src={native?.meta?.icon} kind={info?.icon} /></span>
+          <span className="cqpm-product-icon"><Artwork src={native?.meta?.icon} /></span>
           <div className="cqpm-product-main">
             <div className="cqpm-product-title-line"><button type="button" className="cqpm-product-title" aria-expanded={expanded === bundle.packageName}
               onClick={() => setExpanded(expanded === bundle.packageName ? undefined : bundle.packageName)}>{name}</button>

@@ -18,6 +18,7 @@ export interface DesktopSetupWizardCopy {
   readonly welcomeTitle: string
   readonly welcomeBody: string
   readonly firstProfileSetup: string
+  readonly enhancedByDefault: string
   readonly startSetup: string
   readonly presentationTitle: string
   readonly presentationBody: string
@@ -98,6 +99,7 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     welcomeTitle: 'Welcome to 易宝工坊',
     welcomeBody: 'Set up window appearance, phone connection, and notifications for the current Profile.',
     firstProfileSetup: 'Complete Desktop setup before using this configuration environment (Profile) for the first time.',
+    enhancedByDefault: 'Enhanced mode is the default. To use browser access, switch modes in Desktop settings after setup.',
     startSetup: 'Start setup',
     presentationTitle: 'Choose a window mode',
     presentationBody: 'Choose a window layout and desktop controls.',
@@ -176,6 +178,7 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     welcomeTitle: '欢迎使用 易宝工坊',
     welcomeBody: '为当前 Profile 设置窗口外观、手机连接和桌面通知。',
     firstProfileSetup: '首次使用此配置环境（Profile），请先完成桌面设置。',
+    enhancedByDefault: '默认使用增强模式。如需浏览器访问，请在完成设置后前往桌面设置切换模式。',
     startSetup: '开始设置',
     presentationTitle: '选择窗口模式',
     presentationBody: '选择窗口布局和桌面操作方式。',

@@ -151,6 +151,7 @@ describe('desktop direct bundle management', () => {
       'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-video',
       'cqai-dsh-plugin-publisher',
+      '@xmanrui/dsh-im',
       'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-short-video',
       'dsh-ppt-composer',

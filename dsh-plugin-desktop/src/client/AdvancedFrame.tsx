@@ -14,6 +14,8 @@ const PUBLISHER_AGENT_DRAWER_EVENT = 'cqai-publisher-agent-drawer'
 interface PublisherAgentDrawerRequest {
   open: boolean
   contentId?: string
+  /** The opener chooses whether a blank conversation shows the home presentation. */
+  mode?: 'full' | 'simple'
 }
 
 /** Private values assembled by one Desktop-owned shell registration. */
@@ -77,7 +79,7 @@ export function DesktopOwnedFrame({
           agentReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
         }
         agentDrawerOpenRef.current = true
-        setAgentDrawer({ open: true, ...(typeof request.contentId === 'string' ? { contentId: request.contentId } : {}) })
+        setAgentDrawer({ open: true, mode: request.mode === 'simple' ? 'simple' : 'full', ...(typeof request.contentId === 'string' ? { contentId: request.contentId } : {}) })
       } else {
         agentDrawerOpenRef.current = false
         setAgentDrawer({ open: false })
@@ -197,7 +199,7 @@ export function DesktopOwnedFrame({
       </aside>
       <main className="dshDesktopConversationSurface" data-pub-agent-overlay={agentDrawerVisible && columns.center < 960 || undefined}>
         <div className="dshDesktopMainPanelSurface"><MainPanel panelId={panelId} renderSlot={renderSlot} /></div>
-        {agentDrawerVisible && <aside id="pub-agent-drawer" className="dshDesktopAgentDrawer" aria-labelledby="pub-agent-drawer-title" data-content-id={agentDrawer.contentId}>
+        {agentDrawerVisible && <aside id="pub-agent-drawer" className="dshDesktopAgentDrawer" aria-labelledby="pub-agent-drawer-title" data-content-id={agentDrawer.contentId} data-conversation-mode={agentDrawer.mode ?? 'full'}>
           <div className="dshDesktopAgentDrawerHeader">
             <span id="pub-agent-drawer-title">Agent · 当前文章</span>
             <button ref={closeAgentButtonRef} type="button" className="dshDesktopAgentDrawerClose" aria-label="关闭 Agent 对话" onClick={closeAgentDrawer}>×</button>

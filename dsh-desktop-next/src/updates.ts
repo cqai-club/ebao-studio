@@ -90,7 +90,9 @@ export class NextUpdates {
       this.set({ phase: 'checking' })
       try {
         this.result = await this.query(signal) ?? undefined
-        if (!this.result) { this.set({ phase: 'error', error: 'service', version: undefined }); return }
+        if (!this.result || this.result.status === 'channel-unavailable') {
+          this.set({ phase: 'error', error: 'service', version: undefined }); return
+        }
         this.set({ phase: this.result.status === 'update-available' ? 'available' : 'current', version: this.result.latestVersion })
       } catch (error) { this.options.log(error); this.set({ phase: 'error', error: 'service' }) }
     })
@@ -106,7 +108,7 @@ export class NextUpdates {
         // Recheck before a counted download; the service also pins targetVersion across races.
         this.set({ phase: 'checking' })
         const result = await this.query(signal)
-        if (!result) { this.set({ phase: 'error', error: 'service' }); return }
+        if (!result || result.status === 'channel-unavailable') { this.set({ phase: 'error', error: 'service' }); return }
         this.result = result
         if (result.status !== 'update-available') { this.set({ phase: 'current', version: result.latestVersion }); return }
         const platform = this.options.platform as 'darwin' | 'win32'

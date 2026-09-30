@@ -2576,6 +2576,36 @@ describe('Electron desktop runtime', () => {
       }),
     )
 
+    await runtime.updates.showManualCheckResult({
+      status: 'channel-unavailable',
+      currentVersion: '0.0.8-beta.1',
+    })
+    expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
+      activeWindow,
+      expect.objectContaining({
+        title: 'Beta Update Information Unavailable',
+        message: 'The update feed currently lists only the stable release.',
+        detail: 'Installed version: 0.0.8-beta.1',
+        buttons: ['OK'],
+      }),
+    )
+
+    runtime.setLocalePreference('zh')
+    await runtime.updates.showManualCheckResult({
+      status: 'channel-unavailable',
+      currentVersion: '0.0.8-beta.1',
+    })
+    expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
+      activeWindow,
+      expect.objectContaining({
+        title: '暂无 Beta 更新信息',
+        message: '更新源目前仅提供稳定版的版本信息。',
+        detail: '当前版本：0.0.8-beta.1',
+        buttons: ['确定'],
+      }),
+    )
+    runtime.setLocalePreference('en')
+
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
     await expect(runtime.updates.confirmDownload('2.1.0')).resolves.toBe(false)
     expect(electronUpdater.downloadUpdate).not.toHaveBeenCalled()

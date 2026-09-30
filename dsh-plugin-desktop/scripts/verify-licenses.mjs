@@ -37,6 +37,8 @@ const ALLOWED_LICENSES = new Set([
   'CC0-1.0',
   'Zlib',
   'Python-2.0',
+  // mailsplit grants a choice of MIT or EUPL; Desktop uses the MIT option.
+  '(MIT OR EUPL-1.1+)',
 ])
 
 /**
@@ -50,6 +52,8 @@ const NOTICE_LICENSES = new Set([
   'BlueOak-1.0.0',
   'LGPL-3.0-or-later',
   'Apache-2.0 AND LGPL-3.0-or-later',
+  'Artistic-2.0',
+  'CC-BY-3.0',
 ])
 
 /** MatrixMedia source-built Helper bundled beside app.asar by `build.mac.extraResources`. */
@@ -109,10 +113,12 @@ function licenseExpression(manifest) {
   if (typeof value === 'string') return value
   if (typeof value === 'object' && value !== null && typeof value.type === 'string') return value.type
   if (Array.isArray(manifest.licenses)) {
-    return manifest.licenses
+    const expression = manifest.licenses
       .map((item) => (typeof item === 'string' ? item : item.type))
       .filter(Boolean)
       .join(' OR ')
+    // qrcode-terminal 0.12.0 uses pre-SPDX metadata for Apache-2.0.
+    return expression === 'Apache 2.0' ? 'Apache-2.0' : expression
   }
   return undefined
 }
@@ -178,8 +184,8 @@ if (noticesArg !== -1) {
   const lines = [
     '# Third-Party Notices',
     '易宝工坊 distributes the following third-party packages inside its installers.',
-    'Each package ships with its own license text in the application files; this list records',
-    'the package names, versions, and licenses for transparency.',
+    'This list records package names, versions, and licenses for transparency.',
+    'Package license texts accompany the application when supplied by the package.',
     '',
     ...bundledApplicationNotices(),
     '## npm dependencies',
@@ -189,9 +195,12 @@ if (noticesArg !== -1) {
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(entry => `| ${entry.name} | ${entry.version ?? ''} | ${entry.license} |`),
     '',
+    noticeOnly.some(entry => entry.name === 'spdx-exceptions')
+      ? 'spdx-exceptions data: The Linux Foundation; contributor Kyle E. Mitchell. Licensed under Creative Commons Attribution 3.0 Unported (https://creativecommons.org/licenses/by/3.0/).'
+      : '',
     noticeOnly.length === 0
       ? ''
-      : `> Notice-required licenses in use: ${[...new Set(noticeOnly.map(entry => entry.license))].join(', ')}. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.`,
+      : `> Notice-required licenses in use: ${[...new Set(noticeOnly.map(entry => entry.license))].join(', ')}. See package LICENSE files where supplied; npm's Artistic-2.0 license ships with npm.`,
     '',
   ].filter(line => line !== '')
   writeFileSync(join(packageRoot, target), lines.join('\n'))

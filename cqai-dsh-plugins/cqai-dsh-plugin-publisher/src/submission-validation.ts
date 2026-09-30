@@ -11,7 +11,7 @@ const WECHAT_COVER_LIMIT = 10 * 1024 * 1024
 const WECHAT_BODY_IMAGE_LIMIT = 1024 * 1024
 
 function usableWechatCover(asset: PublisherContent['assets'][number]): boolean {
-  return (asset.mime === 'image/jpeg' || asset.mime === 'image/png') && asset.bytes < WECHAT_COVER_LIMIT
+  return asset.mime === 'image/jpeg' || asset.mime === 'image/png'
 }
 
 /** Explain changes made only to the platform submission copy; the editable draft stays intact. */
@@ -39,15 +39,18 @@ export function articleSubmissionWarnings(
     if (account.platform === 'wxmp' && selected.summary.length > 120) notes.push('摘要将截短至 120 字')
     const selectedCover = selected.assets.find(asset => asset.id === selected.coverAssetId)
     const effectiveCoverId = selectedCover?.id ?? selected.assets[0]?.id
-    if (account.platform === 'juejin' || account.platform === 'blbl') {
+    if (account.platform === 'tt') {
+      if (sources.length > 0 || hasRawArticleImage(selected.body)) {
+        notes.push('正文图片会在原位置保留占位，请在头条草稿中手动上传')
+      }
+    } else if (account.platform === 'juejin' || account.platform === 'blbl') {
       if (sources.length > 0 || hasRawArticleImage(selected.body)) notes.push('正文插图将从该平台版本移除')
       if (selected.assets.some(asset => asset.id !== effectiveCoverId)) notes.push('非封面图片不会提交到该平台')
     } else {
       const unsupported = sources.some(source => {
         const id = MANAGED_IMAGE.exec(source)?.[1]
         const asset = id ? assets.get(id) : undefined
-        return !asset || account.platform === 'wxmp'
-          && (asset.mime === 'image/webp' || asset.bytes >= WECHAT_BODY_IMAGE_LIMIT)
+        return !asset || account.platform === 'wxmp' && asset.mime === 'image/webp'
       }) || hasRawArticleImage(selected.body)
       if (unsupported) notes.push('不符合该平台要求的正文图片将从平台版本移除')
       if (account.platform === 'wxmp' && selected.assets.some(asset => asset.mime === 'image/webp')) {
@@ -63,15 +66,19 @@ export function articleSubmissionWarnings(
       const usedBodyIds = new Set(sources.flatMap(source => {
         const id = MANAGED_IMAGE.exec(source)?.[1]
         const asset = id ? assets.get(id) : undefined
-        return asset && (asset.mime === 'image/jpeg' || asset.mime === 'image/png')
-          && asset.bytes < WECHAT_BODY_IMAGE_LIMIT ? [asset.id] : []
+        return asset && (asset.mime === 'image/jpeg' || asset.mime === 'image/png') ? [asset.id] : []
       }))
+      if ((effectiveCover && effectiveCover.bytes >= WECHAT_COVER_LIMIT)
+        || [...usedBodyIds].some(id => (assets.get(id)?.bytes ?? 0) >= WECHAT_BODY_IMAGE_LIMIT)) {
+        notes.push('超限图片上传前将尝试压缩，草稿需核对画质')
+      }
       if (selected.assets.some(asset => asset.id !== effectiveCover?.id && !usedBodyIds.has(asset.id))) {
         notes.push('未使用或不兼容的素材不会上传到公众号')
       }
-    } else if (!selectedCover && selected.assets.length > 0) {
+    } else if (!selectedCover && selected.assets.length > 0 && account.platform !== 'tt') {
       notes.push('将自动选取首张图片作为封面')
     }
+    if (account.platform === 'tt' && effectiveCoverId) notes.push('封面需在头条草稿中手动设置')
     if (account.platform !== 'wxmp' && selected.coverAssetId && !selectedCover && selected.assets.length === 0) {
       notes.push('封面不在该平台所选图片中，提交时将忽略')
     }
@@ -100,7 +107,7 @@ export function contentSubmissionError(
       return `${PLATFORM_LABELS[account.platform]}封面不在该平台已选图片中`
     }
     if (selected.contentType === 'article' && account.platform === 'wxmp') {
-      if (!selected.assets.some(usableWechatCover)) return '微信公众号文章需要一张小于 10MB 的 JPEG/PNG 封面图片'
+      if (!selected.assets.some(usableWechatCover)) return '微信公众号文章需要一张 JPEG/PNG 封面图片'
     }
     const capability = capabilities.find(item => item.platform === account.platform)
     if (!capability?.modes[selected.contentType]?.includes(mode)) {
