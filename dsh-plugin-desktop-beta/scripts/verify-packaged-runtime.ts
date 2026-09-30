@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   accessSync,
+  chmodSync,
   constants,
   existsSync,
   lstatSync,
@@ -1003,6 +1004,18 @@ export function reportUnpackedRuntime(summary: UnpackedRuntimeSummary): void {
   process.stdout.write(`dsh-plugin-desktop: packaged runtime inventory: ${formatUnpackedRuntimeSummary(summary)}\n`)
 }
 
+/** Restore the reviewed uv executables after Electron Builder copies dependency trees. */
+export function preparePackagedAgentsAnywhere(
+  context: PackagedRuntimeContext,
+  chmod: (path: string, mode: number) => void = chmodSync,
+): void {
+  if (context.electronPlatformName !== 'darwin') return
+  const root = usesAsarLayout(context) ? resolvePackagedUnpackedRoot(context) : resolvePackagedApplicationRoot(context)
+  for (const entry of MACOS_UNIVERSAL_NATIVE_ENTRIES.filter(entry => entry.path.endsWith('/bin/uv'))) {
+    chmod(join(root, entry.path), 0o755)
+  }
+}
+
 /** Verify the AA version and built entry sealed into the actual installation payload. */
 export function verifyPackagedAgentsAnywhere(
   context: PackagedRuntimeContext,
@@ -1074,9 +1087,11 @@ export async function afterPack(
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   report: (summary: UnpackedRuntimeSummary) => void = reportUnpackedRuntime,
   verifyAa: typeof verifyPackagedAgentsAnywhere = verifyPackagedAgentsAnywhere,
+  prepareAa: typeof preparePackagedAgentsAnywhere = preparePackagedAgentsAnywhere,
 ): Promise<void> {
   const summary = verify(context)
   try {
+    prepareAa(context)
     verifyAa(context)
   } catch (error) {
     try {

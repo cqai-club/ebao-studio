@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,6 +26,7 @@ import {
   MAX_SHERPA_ONNX_SMART_UNPACK_BYTES,
   MAX_UNPACKED_RUNTIME_BYTES,
   MAX_UNPACKED_RUNTIME_FILES,
+  preparePackagedAgentsAnywhere,
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
@@ -449,7 +451,20 @@ describe('packaged desktop runtime verification', () => {
     expect(calls).toEqual(['static', 'aa', 'report'])
   })
 
-  it.skipIf(process.platform === 'win32')('rejects a 0644 packaged uv before signing', () => {
+  it('prepares the packaged uv before checking AA and reporting the inventory', async () => {
+    const runtimeContext = context('/build', 'darwin', 4)
+    const calls: string[] = []
+    await afterPack(
+      runtimeContext,
+      () => { calls.push('static'); return { files: 4, bytes: 1024, groups: [] } },
+      () => { calls.push('report') },
+      () => { calls.push('aa') },
+      () => { calls.push('prepare-uv') },
+    )
+    expect(calls).toEqual(['static', 'prepare-uv', 'aa', 'report'])
+  })
+
+  it.skipIf(process.platform === 'win32')('repairs a copied 0644 uv and retains the executable and AA content checks', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-packaged-uv-'))
     try {
       const base = context(root, 'darwin', 4)
@@ -466,7 +481,11 @@ describe('packaged desktop runtime verification', () => {
       }
       const read = (path: string): Buffer => Buffer.from(path.endsWith('package.json') ? '{"version":"1.0.0"}' : 'same AA')
       expect(() => verifyPackagedAgentsAnywhere(target, read, read)).toThrow()
-      for (const path of files) chmodSync(path, 0o755)
+      preparePackagedAgentsAnywhere(target)
+      for (const path of files) {
+        expect(statSync(path).mode & 0o777).toBe(0o755)
+        expect(readFileSync(path, 'utf8')).toBe('uv fixture')
+      }
       expect(() => verifyPackagedAgentsAnywhere(target, read, read)).not.toThrow()
     } finally {
       rmSync(root, { recursive: true, force: true })
