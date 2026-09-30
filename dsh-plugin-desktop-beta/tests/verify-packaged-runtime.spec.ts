@@ -26,7 +26,7 @@ import {
   MAX_SHERPA_ONNX_SMART_UNPACK_BYTES,
   MAX_UNPACKED_RUNTIME_BYTES,
   MAX_UNPACKED_RUNTIME_FILES,
-  preparePackagedAgentsAnywhere,
+  preparePackagedMacExecutables,
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
@@ -451,7 +451,7 @@ describe('packaged desktop runtime verification', () => {
     expect(calls).toEqual(['static', 'aa', 'report'])
   })
 
-  it('prepares the packaged uv before checking AA and reporting the inventory', async () => {
+  it('prepares packaged executables before checking AA and reporting the inventory', async () => {
     const runtimeContext = context('/build', 'darwin', 4)
     const calls: string[] = []
     await afterPack(
@@ -459,21 +459,26 @@ describe('packaged desktop runtime verification', () => {
       () => { calls.push('static'); return { files: 4, bytes: 1024, groups: [] } },
       () => { calls.push('report') },
       () => { calls.push('aa') },
-      () => { calls.push('prepare-uv') },
+      () => { calls.push('prepare-executables') },
     )
-    expect(calls).toEqual(['static', 'prepare-uv', 'aa', 'report'])
+    expect(calls).toEqual(['static', 'prepare-executables', 'aa', 'report'])
   })
 
-  it.skipIf(process.platform === 'win32')('repairs a copied 0644 uv and retains the executable and AA content checks', () => {
+  it.skipIf(process.platform === 'win32')('repairs copied 0644 executables and retains the AA content checks', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-packaged-uv-'))
     try {
       const base = context(root, 'darwin', 4)
       const target: PackagedRuntimeContext = {
         ...base, packager: { ...base.packager, platformSpecificBuildOptions: { asar: false } },
       }
-      const files = ['arm64', 'x64'].map(arch => join(
-        resolvePackagedApplicationRoot(target), 'node_modules', '@dataiku', `uv-darwin-${arch}`, 'bin', 'uv',
-      ))
+      const files = [
+        '@dataiku/uv-darwin-arm64/bin/uv',
+        '@dataiku/uv-darwin-x64/bin/uv',
+        'node-pty/prebuilds/darwin-arm64/spawn-helper',
+        'node-pty/prebuilds/darwin-x64/spawn-helper',
+        '@tencent-qqmail/agently-cli-darwin-arm64/bin/agently-cli',
+        '@tencent-qqmail/agently-cli-darwin-x64/bin/agently-cli',
+      ].map(entry => join(resolvePackagedApplicationRoot(target), 'node_modules', entry))
       for (const path of files) {
         mkdirSync(join(path, '..'), { recursive: true })
         writeFileSync(path, 'uv fixture')
@@ -481,7 +486,7 @@ describe('packaged desktop runtime verification', () => {
       }
       const read = (path: string): Buffer => Buffer.from(path.endsWith('package.json') ? '{"version":"1.0.0"}' : 'same AA')
       expect(() => verifyPackagedAgentsAnywhere(target, read, read)).toThrow()
-      preparePackagedAgentsAnywhere(target)
+      preparePackagedMacExecutables(target)
       for (const path of files) {
         expect(statSync(path).mode & 0o777).toBe(0o755)
         expect(readFileSync(path, 'utf8')).toBe('uv fixture')

@@ -998,14 +998,15 @@ export function reportUnpackedRuntime(summary: UnpackedRuntimeSummary): void {
   process.stdout.write(`dsh-plugin-desktop: packaged runtime inventory: ${formatUnpackedRuntimeSummary(summary)}\n`)
 }
 
-/** Restore the reviewed uv executables after Electron Builder copies dependency trees. */
-export function preparePackagedAgentsAnywhere(
+/** Restore reviewed macOS executable permissions after dependency trees are copied. */
+export function preparePackagedMacExecutables(
   context: PackagedRuntimeContext,
   chmod: (path: string, mode: number) => void = chmodSync,
 ): void {
   if (context.electronPlatformName !== 'darwin') return
   const root = usesAsarLayout(context) ? resolvePackagedUnpackedRoot(context) : resolvePackagedApplicationRoot(context)
-  for (const entry of MACOS_UNIVERSAL_NATIVE_ENTRIES.filter(entry => entry.path.endsWith('/bin/uv'))) {
+  for (const entry of MACOS_UNIVERSAL_NATIVE_ENTRIES.filter(entry =>
+    entry.path.endsWith('/bin/uv') || entry.path.endsWith('/spawn-helper') || entry.path.endsWith('/bin/agently-cli'))) {
     chmod(join(root, entry.path), 0o755)
   }
 }
@@ -1081,11 +1082,11 @@ export async function afterPack(
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   report: (summary: UnpackedRuntimeSummary) => void = reportUnpackedRuntime,
   verifyAa: typeof verifyPackagedAgentsAnywhere = verifyPackagedAgentsAnywhere,
-  prepareAa: typeof preparePackagedAgentsAnywhere = preparePackagedAgentsAnywhere,
+  prepareRuntime: typeof preparePackagedMacExecutables = preparePackagedMacExecutables,
 ): Promise<void> {
   const summary = verify(context)
   try {
-    prepareAa(context)
+    prepareRuntime(context)
     verifyAa(context)
   } catch (error) {
     try {

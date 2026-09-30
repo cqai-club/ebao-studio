@@ -148,7 +148,7 @@
     "icons:export": "node ../scripts/export-app-icons.mjs --channel stable"
   },
   "dependencies": {
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.c20dffe271866.r1188e1a1.tgz",
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz",
     "@cqaiclub/dsn-account": "0.1.1",
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/cordis-plugin-group": "1.0.4",
@@ -475,7 +475,7 @@
       "signIgnore": [
         "\\.(?:pak|dat|wasm)$"
       ],
-      "x64ArchFiles": "**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,sherpa-onnx-darwin-*/**}",
+      "x64ArchFiles": "**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,sherpa-onnx-darwin-*/**,@tencent-qqmail/agently-cli-darwin-*/**}",
       "artifactName": "eBao-Studio-${version}-${arch}.${ext}"
     },
     "win": {

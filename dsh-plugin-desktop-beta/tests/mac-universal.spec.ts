@@ -42,6 +42,8 @@ describe('universal macOS native runtime preparation', () => {
       [join(desktopRoot, 'node_modules/@dataiku/uv-darwin-x64/bin/uv'), 0o755],
       [join(desktopRoot, 'node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper'), 0o755],
       [join(desktopRoot, 'node_modules/node-pty/prebuilds/darwin-x64/spawn-helper'), 0o755],
+      [join(desktopRoot, 'node_modules/@tencent-qqmail/agently-cli-darwin-arm64/bin/agently-cli'), 0o755],
+      [join(desktopRoot, 'node_modules/@tencent-qqmail/agently-cli-darwin-x64/bin/agently-cli'), 0o755],
     ])
   })
 

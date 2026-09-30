@@ -1071,6 +1071,7 @@ describe('published package surface', () => {
     expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
     expect(manifest.build?.mac?.x64ArchFiles).toContain('@deepseek-ai/libreoffice-kit-darwin-*')
     expect(manifest.build?.mac?.x64ArchFiles).toContain('sherpa-onnx-darwin-*')
+    expect(manifest.build?.mac?.x64ArchFiles).toContain('@tencent-qqmail/agently-cli-darwin-*')
     expect(manifest.build?.files).toContain('!node_modules/node-pty/build/**')
     expect(manifest.build?.files).toContain('!node_modules/fs-ext/build/**')
     expect(manifest.devDependencies?.['@electron/asar']).toBe('3.4.1')

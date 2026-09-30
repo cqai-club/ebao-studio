@@ -1014,6 +1014,7 @@ describe('published package surface', () => {
     }))
     expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
     expect(manifest.build?.files).toContain('!node_modules/node-pty/build/**')
+    expect(manifest.build?.mac?.x64ArchFiles).toContain('@tencent-qqmail/agently-cli-darwin-*')
     expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
     expect(manifest.devDependencies?.['@electron/asar']).toBe('3.4.1')
     expect(manifest.devDependencies?.['@electron/fuses']).toBe('1.8.0')

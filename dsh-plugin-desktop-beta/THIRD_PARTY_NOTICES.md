@@ -25,7 +25,7 @@ or grant recipients unrestricted rights to redistribute them independently.
 | Package | Version | License |
 | --- | --- | --- |
 | @agentclientprotocol/sdk | 1.4.0 | Apache-2.0 |
-| @agents-anywhere/dsh-bridge-next | 2.0.2-desktop.c20dffe271866.r1188e1a1 | MIT |
+| @agents-anywhere/dsh-bridge-next | 2.0.2-desktop.ce0d3ccf68b11.r1188e1a1 | MIT |
 | @aiden0z/pptx-renderer | 1.2.4 | Apache-2.0 |
 | @anthropic-ai/sdk | 0.123.0 | MIT |
 | @asamuzakjp/css-color | 5.1.11 | MIT |
