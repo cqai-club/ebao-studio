@@ -20,9 +20,11 @@ function VideoSourcePlayer({ url, kind }: { url: string; kind: 'work' | 'local' 
       controls playsInline preload="metadata" onError={() => setFailed(true)}>当前环境无法播放此视频。</video>
 }
 
-export function VideoPage({ active, selectedContentId, onSelectedContentChange, onBack }: {
+export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent, onSelectedContentChange, onBack }: {
   active: boolean
   selectedContentId: string
+  agentOpen?: boolean
+  onToggleAgent?: (content: PublisherContent) => Promise<void>
   onSelectedContentChange(id: string): void
   onBack(): void
 }) {
@@ -32,6 +34,10 @@ export function VideoPage({ active, selectedContentId, onSelectedContentChange, 
   const [accounts, setAccounts] = useState<PublisherAccount[]>([])
   const [draft, setDraft] = useState<PublisherContent>()
   const draftRef = useRef<PublisherContent>()
+  const activeDraftRef = useRef({ selectedContentId, active, generation: 0 })
+  if (activeDraftRef.current.selectedContentId !== selectedContentId || activeDraftRef.current.active !== active) {
+    activeDraftRef.current = { selectedContentId, active, generation: activeDraftRef.current.generation + 1 }
+  }
   const dirtyRef = useRef(false)
   const saveTask = useRef<Promise<void>>()
   const [editVersion, setEditVersion] = useState(0)
@@ -138,6 +144,39 @@ export function VideoPage({ active, selectedContentId, onSelectedContentChange, 
     const timer = setTimeout(() => { void flush().catch(cause => showError(errorMessage(cause))) }, 800)
     return () => clearTimeout(timer)
   }, [editVersion])
+  useEffect(() => {
+    if (!active || !agentOpen || !selectedContentId) return
+    let live = true
+    let reading = false
+    const refresh = async () => {
+      if (reading || busyRef.current) return
+      reading = true
+      try {
+        if (saveTask.current) {
+          try { await saveTask.current } catch { /* A newer Agent revision may replace local edits. */ }
+        }
+        const latest = await api<PublisherContent>(`content/${selectedContentId}`)
+        if (!live || busyRef.current || latest.contentType !== 'video') return
+        const current = draftRef.current
+        if (current?.id === latest.id && latest.revision > current.revision) {
+          if (dirtyRef.current || saveTask.current) {
+            setSaveError('草稿已在其他页面更新，请重新加载后再保存')
+          } else {
+            setServerDraft(latest)
+            if (latest.videoSource?.kind === 'work') {
+              try {
+                const availableWorks = await api<Work[]>('works')
+                if (live) setWorks(availableWorks)
+              } catch { /* Keep the saved draft visible. */ }
+            }
+          }
+        }
+      } catch { /* The ordinary editor load path reports read failures. */ }
+      finally { reading = false }
+    }
+    const timer = setInterval(() => { void refresh() }, 1200)
+    return () => { live = false; clearInterval(timer) }
+  }, [active, agentOpen, selectedContentId])
   useEffect(() => () => {
     if (dirtyRef.current) void flush().catch(() => { /* Keep the persisted revision on save failure. */ })
   }, [])
@@ -159,6 +198,27 @@ export function VideoPage({ active, selectedContentId, onSelectedContentChange, 
     const copy = await api<PublisherContent>('content-copy', { id: current.id })
     setServerDraft(copy)
     onSelectedContentChange(copy.id)
+  })
+  const reloadAfterConflict = () => void act(async () => {
+    const id = draftRef.current?.id
+    const generation = activeDraftRef.current.generation
+    const stillCurrent = () => activeDraftRef.current.active && activeDraftRef.current.selectedContentId === id
+      && activeDraftRef.current.generation === generation && draftRef.current?.id === id
+    if (!id || !stillCurrent()) return
+    try { if (saveTask.current) await saveTask.current } catch { /* User chose to discard the failed local version. */ }
+    if (!stillCurrent()) return
+    const latest = await api<PublisherContent>(`content/${id}`)
+    if (!stillCurrent()) return
+    if (latest.contentType !== 'video') throw new Error('草稿内容类型不匹配')
+    setServerDraft(latest)
+    if (latest.videoSource?.kind === 'work') {
+      try {
+        const availableWorks = await api<Work[]>('works')
+        if (!stillCurrent()) return
+        setWorks(availableWorks)
+      } catch { /* The draft remains usable without the work list. */ }
+    }
+    if (stillCurrent()) showSuccess('已加载最新草稿。')
   })
   const remove = () => {
     const id = draftRef.current?.id
@@ -232,12 +292,22 @@ export function VideoPage({ active, selectedContentId, onSelectedContentChange, 
           <button type="button" aria-pressed={!preview} disabled={busy || !draft} onClick={() => setPreview(false)}>编辑</button>
           <button type="button" aria-pressed={preview} disabled={busy || !draft} onClick={() => setPreview(true)}>预览</button>
         </div>
+        {onToggleAgent && <Button size="sm" variant="outline" aria-expanded={Boolean(agentOpen)} aria-controls="pub-agent-drawer" disabled={busy || !draft || draft.id !== selectedContentId} onClick={() => void act(async () => {
+          const current = await flush()
+          if (!current) throw new Error('请先打开视频草稿')
+          setPreview(false)
+          await onToggleAgent(current)
+        })}>Agent 辅助编辑</Button>}
         <Button size="sm" variant="outline" disabled={busy || !draft} onClick={duplicate}>复制</Button>
         <Button size="sm" variant="outline" className="pub-danger-action" disabled={busy || !draft} onClick={remove}>删除</Button>
         <Button size="sm" variant="primary" disabled={busy || draft?.id !== selectedContentId} onClick={() => setPublishOpen(true)}>发布</Button>
       </div>
     </div>
     {loadError && draft?.id !== selectedContentId && <div className="pub-error" role="status">打开草稿失败：{loadError}<div className="pub-actions"><Button size="sm" variant="outline" onClick={() => setLoadRetry(value => value + 1)}>重试读取草稿</Button></div></div>}
+    {saveError.includes('草稿已在其他页面更新') && <div className="pub-error" role="status">
+      草稿已在其他页面更新。请重新加载后继续编辑；当前未保存的修改会丢失。
+      <div className="pub-actions"><Button size="sm" variant="outline" disabled={busy} onClick={reloadAfterConflict}>重新加载草稿</Button></div>
+    </div>}
     {draft?.id !== selectedContentId ? <div className="pub-empty" role="status">正在打开视频草稿…</div> : <div className="pub-video-editor-main">
     {preview ? <div className="pub-card"><h2>平台分享预览</h2><PublisherContentPreview content={draft} videoSourceName={videoSourceName} videoPreviewUrl={videoPreviewUrl}/></div> : <>
     <div className="pub-card"><h2><span className="pub-count">01</span>选择视频素材</h2>

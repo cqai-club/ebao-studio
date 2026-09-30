@@ -119,7 +119,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     return () => { live = false }
   }, [contentType, active, selectedContentId, busy, handoffRetry, handoffGeneration])
   useEffect(() => {
-    if (!active || !agentOpen || !selectedContentId || contentType !== 'article') return
+    if (!active || !agentOpen || !selectedContentId) return
     let live = true
     let reading = false
     const refresh = async () => {
@@ -132,7 +132,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
           try { await saveTask.current } catch { /* A newer Agent revision may replace local edits. */ }
         }
         const latest = await api<PublisherContent>(`content/${selectedContentId}`)
-        if (!live || busyRef.current || latest.contentType !== 'article') return
+        if (!live || busyRef.current || latest.contentType !== contentType) return
         const current = draftRef.current
         if (current?.id === latest.id && latest.revision > current.revision) {
           if (dirtyRef.current || saveTask.current) {
@@ -517,9 +517,9 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
           <button type="button" aria-pressed={!preview} disabled={editorLocked || !draft} onClick={() => setPreview(false)}>编辑</button>
           <button type="button" aria-pressed={preview} disabled={editorLocked || !draft} onClick={() => setPreview(true)}>预览</button>
         </div>
-        {contentType === 'article' && onToggleAgent && <Button size="sm" variant="outline" aria-expanded={Boolean(agentOpen)} aria-controls="pub-agent-drawer" disabled={editorLocked || !draft} onClick={() => void act(async () => {
+        {onToggleAgent && <Button size="sm" variant="outline" aria-expanded={Boolean(agentOpen)} aria-controls="pub-agent-drawer" disabled={editorLocked || !draft} onClick={() => void act(async () => {
           const current = await flush()
-          if (!current) throw new Error('请先打开文章草稿')
+          if (!current) throw new Error('请先打开草稿')
           selectContentView('master')
           setPreview(false)
           await onToggleAgent(current)

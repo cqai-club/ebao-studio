@@ -18,16 +18,18 @@ function home(): string {
   return path
 }
 
-describe('article Agent project Workspace route', () => {
-  it('uses the article project directory and rejects image-note drafts', () => {
+describe('draft Agent project Workspace route', () => {
+  it('uses each draft project directory for article, image-note, and video', () => {
     const root = home()
     const env = { DSH_HOME: root }
     const article = createContent('article', env)
     const imageNote = createContent('image-note', env)
+    const video = createContent('video', env)
     const first = ensureAgentWorkspace(article.id, env)
     expect(first).toBe(ensureProjectWorkspace(article.id, env).path)
     expect(first).toBe(realpathSync(join(root, 'publisher', 'projects', 'article', article.id)))
-    expect(() => ensureAgentWorkspace(imageNote.id, env)).toThrow('只支持编辑文章草稿')
+    expect(ensureAgentWorkspace(imageNote.id, env)).toBe(realpathSync(join(root, 'publisher', 'projects', 'image-note', imageNote.id)))
+    expect(ensureAgentWorkspace(video.id, env)).toBe(realpathSync(join(root, 'publisher', 'projects', 'video', video.id)))
   })
 
   it('requires the content ID and same-origin mutation header', async () => {
@@ -67,7 +69,8 @@ describe('article Agent project Workspace route', () => {
       expect((await request('POST', { contentId: article.id },
         { 'x-ejianbao': '1', origin: 'https://evil.example' })).status).toBe(403)
       expect((await request('POST', {}, { 'x-ejianbao': '1' })).status).toBe(400)
-      expect((await request('POST', { contentId: imageNote.id }, { 'x-ejianbao': '1' })).status).toBe(400)
+      expect(await request('POST', { contentId: imageNote.id }, { 'x-ejianbao': '1' }))
+        .toEqual({ status: 200, body: { path: ensureAgentWorkspace(imageNote.id) } })
       const opened = await request('POST', { contentId: article.id }, { 'x-ejianbao': '1' })
       expect(opened).toEqual({ status: 200, body: { path: ensureAgentWorkspace(article.id) } })
     } finally {
