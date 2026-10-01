@@ -18,6 +18,8 @@ import {
   DESKTOP_RELEASE_CHANNEL_HEADER,
   type UpdateCheckResult,
 } from '../src/update-checker.ts'
+import { DESKTOP_UPDATE_CHECK_PATH } from '../src/desktop-settings-contract.ts'
+import { DESKTOP_UPDATE_STATUS_PATH, type DesktopUpdateStatus } from '../src/desktop-update-status.ts'
 import { apply, Config, inject, type Config as UpdateConfig } from '../src/updates.ts'
 
 const testConfig: UpdateConfig = {
@@ -49,6 +51,8 @@ interface Harness {
     request: ConnectionTrustRequest,
   ) => ConnectionRequestRejection>>
   readonly route: WebRoute
+  readonly statusRoute: WebRoute
+  readonly routeDisposers: readonly ReturnType<typeof vi.fn>[]
   dispose(): Promise<void>
 }
 
@@ -90,7 +94,8 @@ async function createHarness(options: {
   ) => ConnectionRequestRejection>(() => undefined)
   let tray: DesktopTrayItem | undefined
   const trays: DesktopTrayItem[] = []
-  let route: WebRoute | undefined
+  const routes = new Map<string, WebRoute>()
+  const routeDisposers: ReturnType<typeof vi.fn>[] = []
   let disposer: (() => void | Promise<void>) | undefined
   const runtime = {
     locale: options.locale ?? 'en',
@@ -118,8 +123,10 @@ async function createHarness(options: {
     webServer: {
       port: 43120,
       register: (registered: WebRoute) => {
-        route = registered
-        return () => {}
+        routes.set(registered.path, registered)
+        const unregister = vi.fn()
+        routeDisposers.push(unregister)
+        return unregister
       },
     },
     connection: { requestRejection },
@@ -132,7 +139,9 @@ async function createHarness(options: {
 
   apply(ctx, options.config ?? testConfig)
   if (tray === undefined) throw new Error('Update tray item was not registered.')
-  if (route === undefined) throw new Error('Update route was not registered.')
+  const route = routes.get(DESKTOP_UPDATE_CHECK_PATH)
+  const statusRoute = routes.get(DESKTOP_UPDATE_STATUS_PATH)
+  if (route === undefined || statusRoute === undefined) throw new Error('Update routes were not registered.')
   return {
     statePath,
     tray,
@@ -149,8 +158,30 @@ async function createHarness(options: {
     registrationDispose,
     requestRejection,
     route,
+    statusRoute,
+    routeDisposers,
     dispose: async () => { await disposer?.() },
   }
+}
+
+function statusRequest(headers: IncomingMessage['headers'] = {}): IncomingMessage {
+  return {
+    method: 'GET',
+    headers: { host: '127.0.0.1:43120', origin: 'http://127.0.0.1:43120', ...headers },
+    socket: { remoteAddress: '127.0.0.1' },
+  } as IncomingMessage
+}
+
+async function readStatus(harness: Harness): Promise<DesktopUpdateStatus> {
+  let body = ''
+  const res = {
+    statusCode: 200,
+    setHeader: vi.fn(),
+    end: vi.fn((value?: string) => { body = value ?? '' }),
+  } as unknown as ServerResponse
+  await harness.statusRoute.handler(statusRequest(), res)
+  expect(res.statusCode).toBe(200)
+  return JSON.parse(body) as DesktopUpdateStatus
 }
 
 afterEach(() => {
@@ -158,6 +189,104 @@ afterEach(() => {
 })
 
 describe('desktop update Host plugin', () => {
+  it.each([true, false])('reads a supported=%s idle snapshot without polling or prompting', async canDownload => {
+    const request = vi.fn(async () => versionResponse('2.1.0'))
+    const harness = await createHarness({ packaged: false, canDownload, request })
+
+    expect(harness.statusRoute.path).toBe('/api/desktop/updates/status')
+    for (let read = 0; read < 3; read++) {
+      expect(await readStatus(harness)).toEqual({
+        supported: canDownload, currentVersion: '2.0.0', availableVersion: null, checking: false, downloading: false,
+      })
+    }
+    expect(request).not.toHaveBeenCalled()
+    expect(harness.confirmDownload).not.toHaveBeenCalled()
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
+    await harness.dispose()
+  })
+
+  it('reflects an in-flight check without starting another version request', async () => {
+    let finishCheck!: (response: Response) => void
+    const request = vi.fn(() => new Promise<Response>(resolve => { finishCheck = resolve }))
+    const harness = await createHarness({ packaged: false, request })
+    const checking = harness.tray.invoke()
+    await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce() })
+
+    expect(await readStatus(harness)).toEqual({
+      supported: true, currentVersion: '2.0.0', availableVersion: null, checking: true, downloading: false,
+    })
+    expect(request).toHaveBeenCalledOnce()
+    finishCheck(versionResponse('2.0.0'))
+    await checking
+    expect((await readStatus(harness)).checking).toBe(false)
+    await harness.dispose()
+  })
+
+  it.each(['complete', 'failed'] as const)('keeps an available update after confirmation cancellation and a %s download', async outcome => {
+    let finishDownload!: () => void
+    let failDownload!: (cause: Error) => void
+    const download = new Promise<void>((resolve, reject) => { finishDownload = resolve; failDownload = reject })
+    const confirmDownload = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const request = vi.fn(async () => versionResponse('2.1.0'))
+    const harness = await createHarness({ packaged: false, request, confirmDownload, downloadAndInstall: async () => download })
+
+    await harness.tray.invoke()
+    expect(await readStatus(harness)).toEqual({
+      supported: true, currentVersion: '2.0.0', availableVersion: '2.1.0', checking: false, downloading: false,
+    })
+    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
+    const accepted = harness.tray.invoke()
+    await vi.waitFor(() => { expect(harness.downloadAndInstall).toHaveBeenCalledOnce() })
+    expect(await readStatus(harness)).toEqual({
+      supported: true, currentVersion: '2.0.0', availableVersion: '2.1.0', checking: false, downloading: true,
+    })
+    expect(request).toHaveBeenCalledTimes(2)
+    if (outcome === 'complete') finishDownload()
+    else failDownload(new Error('private download error /private/state'))
+    await accepted
+
+    expect(await readStatus(harness)).toEqual({
+      supported: true, currentVersion: '2.0.0', availableVersion: '2.1.0', checking: false, downloading: false,
+    })
+    expect(request).toHaveBeenCalledTimes(2)
+    await harness.dispose()
+  })
+
+  it.each([401, 403] as const)('applies Connection %i rejection before reading update status', async rejection => {
+    const request = vi.fn(async () => versionResponse('2.1.0'))
+    const harness = await createHarness({ packaged: false, request })
+    harness.requestRejection.mockReturnValue(rejection)
+    const req = statusRequest()
+    const res = { writeHead: vi.fn(), end: vi.fn() } as unknown as ServerResponse
+
+    await harness.statusRoute.handler(req, res)
+
+    expect(harness.requestRejection).toHaveBeenCalledWith(req)
+    expect(res.writeHead).toHaveBeenCalledWith(rejection)
+    expect(res.end).toHaveBeenCalledWith(rejection === 401 ? 'unauthorized' : 'forbidden')
+    expect(request).not.toHaveBeenCalled()
+    expect(harness.confirmDownload).not.toHaveBeenCalled()
+    await harness.dispose()
+  })
+
+  it('releases both routes and hides stale availability immediately when the generation is disposed', async () => {
+    const request = vi.fn(async () => versionResponse('2.1.0'))
+    const harness = await createHarness({ packaged: false, request })
+    await harness.tray.invoke()
+    expect((await readStatus(harness)).availableVersion).toBe('2.1.0')
+
+    await harness.dispose()
+    await harness.dispose()
+
+    expect(harness.routeDisposers).toHaveLength(2)
+    for (const unregister of harness.routeDisposers) expect(unregister).toHaveBeenCalledOnce()
+    expect(await readStatus(harness)).toEqual({
+      supported: false, currentVersion: '2.0.0', availableVersion: null, checking: false, downloading: false,
+    })
+    await harness.tray.invoke()
+    expect(request).toHaveBeenCalledOnce()
+  })
+
   it('reports a stable-only feed to Beta without offering a stable installer', async () => {
     const request = vi.fn(async () => Response.json({ channel: 'stable', version: '0.0.8' }))
     const harness = await createHarness({
@@ -620,6 +749,7 @@ describe('desktop update Host plugin', () => {
     const pendingCheck = checking.tray.invoke()
     await vi.waitFor(() => { expect(checkSignal).toBeDefined() })
     await checking.dispose()
+    expect(await readStatus(checking)).toEqual({ supported: false, currentVersion: '2.0.0', availableVersion: null, checking: false, downloading: false })
     await pendingCheck
     expect(checkSignal?.aborted).toBe(true)
     expect(checking.registrationDispose).toHaveBeenCalledOnce()
@@ -640,6 +770,7 @@ describe('desktop update Host plugin', () => {
     const pendingDownload = downloading.tray.invoke()
     await vi.waitFor(() => { expect(downloadSignal).toBeDefined() })
     await downloading.dispose()
+    expect(await readStatus(downloading)).toEqual({ supported: false, currentVersion: '2.0.0', availableVersion: null, checking: false, downloading: false })
     await pendingDownload
     expect(downloadSignal?.aborted).toBe(true)
     expect(downloading.registrationDispose).toHaveBeenCalledOnce()

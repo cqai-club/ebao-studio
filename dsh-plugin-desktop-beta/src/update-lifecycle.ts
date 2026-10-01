@@ -10,6 +10,7 @@ import type {
   DesktopTrayItemRegistration,
   DesktopUpdateAdapter,
 } from './runtime.ts'
+import type { DesktopUpdateStatus } from './desktop-update-status.ts'
 import { desktopTrayLabel } from './tray-locale.ts'
 import {
   checkForDesktopUpdate,
@@ -38,6 +39,8 @@ export interface DesktopUpdateLifecycleOptions {
 
 /** Lifecycle handle for one generation's update operations. */
 export interface DesktopUpdateLifecycle {
+  /** Read current generation state without polling, prompting, or downloading. */
+  getStatus(): DesktopUpdateStatus
   /** Run the same interactive update flow exposed by the native tray. */
   checkNow(): Promise<void>
   dispose(): Promise<void>
@@ -120,6 +123,16 @@ class DesktopUpdateLifecycleOwner implements DesktopUpdateLifecycle {
     if (this.checkTask !== undefined) pending.push(this.checkTask)
     this.disposeTask = Promise.allSettled(pending).then(() => {})
     return this.disposeTask
+  }
+
+  getStatus(): DesktopUpdateStatus {
+    return {
+      supported: !this.disposed && this.options.adapter.canDownload,
+      currentVersion: this.options.adapter.currentVersion,
+      availableVersion: this.disposed ? null : this.availableVersion ?? null,
+      checking: !this.disposed && this.checking,
+      downloading: !this.disposed && this.downloadingVersion !== undefined,
+    }
   }
 
   checkNow(): Promise<void> {
