@@ -1,4 +1,4 @@
-/** Durable bounds for the one 易宝工坊 main window. */
+/** Durable bounds for the one e宝工坊 main window. */
 
 import { randomUUID } from 'node:crypto'
 import {

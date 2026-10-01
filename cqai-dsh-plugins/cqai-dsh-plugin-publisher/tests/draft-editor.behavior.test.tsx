@@ -246,6 +246,27 @@ describe('draft editor navigation', () => {
     expect(container!.querySelector<HTMLInputElement>('#pub-image-note-title')?.value).toBe('image-1 title')
   })
 
+  it('saves image-note edits before opening Agent and refreshes later Agent edits', async () => {
+    apiFor([draft('image-1', 'image-note')])
+    const onToggleAgent = vi.fn(async () => {})
+    vi.useFakeTimers()
+    await render(<ContentEditor contentType="image-note" active selectedContentId="image-1"
+      agentOpen onToggleAgent={onToggleAgent} onBack={vi.fn()}/> )
+    await enter('#pub-image-note-title', 'Local image-note title')
+    await click('[aria-controls="pub-agent-drawer"]')
+    expect(onToggleAgent).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'image-1', contentType: 'image-note', title: 'Local image-note title', revision: 2,
+    }))
+    const regularApi = queryApi.getMockImplementation()!
+    queryApi.mockImplementation(async (route: string, payload?: Record<string, unknown>) => {
+      if (route === 'content/image-1') return { ...draft('image-1', 'image-note'),
+        title: 'Agent image-note title', revision: 3 }
+      return regularApi(route, payload)
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(1200) })
+    expect(container!.querySelector<HTMLInputElement>('#pub-image-note-title')?.value).toBe('Agent image-note title')
+  })
+
   it('shows the selected video before its text fields while editing', async () => {
     apiFor([{ ...draft('video-1', 'video'), videoSource: { kind: 'local', localVideoId: 'local-1', fileName: 'clip.mp4', bytes: 1024 } }])
     await render(<VideoPage active selectedContentId="video-1" onSelectedContentChange={vi.fn()} onBack={vi.fn()}/>)
@@ -257,6 +278,82 @@ describe('draft editor navigation', () => {
     expect(container!.querySelector('.pub-video-editor-main > .pub-card:first-child video')?.getAttribute('src'))
       .toBe('/api/cqai-publisher/video-preview/local/local-1')
     expect(container!.querySelector<HTMLInputElement>('#pub-title')?.value).toBe('video-1 title')
+  })
+
+  it('saves video copy before opening Agent and refreshes later Agent edits', async () => {
+    apiFor([draft('video-1', 'video')])
+    const onToggleAgent = vi.fn(async () => {})
+    vi.useFakeTimers()
+    await render(<VideoPage active selectedContentId="video-1" agentOpen
+      onToggleAgent={onToggleAgent} onSelectedContentChange={vi.fn()} onBack={vi.fn()}/> )
+    await enter('#pub-title', 'Local video title')
+    await click('[aria-controls="pub-agent-drawer"]')
+    expect(onToggleAgent).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'video-1', contentType: 'video', title: 'Local video title', revision: 2,
+    }))
+    const regularApi = queryApi.getMockImplementation()!
+    queryApi.mockImplementation(async (route: string, payload?: Record<string, unknown>) => {
+      if (route === 'content/video-1') return { ...draft('video-1', 'video'),
+        title: 'Agent video title', description: 'Agent video description', revision: 3 }
+      return regularApi(route, payload)
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(1200) })
+    expect(container!.querySelector<HTMLInputElement>('#pub-title')?.value).toBe('Agent video title')
+    expect(container!.querySelector<HTMLTextAreaElement>('#pub-description')?.value).toBe('Agent video description')
+  })
+
+  it('keeps unsaved video edits visible until the user reloads an Agent revision', async () => {
+    apiFor([draft('video-1', 'video')])
+    const regularApi = queryApi.getMockImplementation()!
+    let remote = draft('video-1', 'video')
+    queryApi.mockImplementation((route: string, payload?: Record<string, unknown>) => {
+      if (route === 'content/video-1') return Promise.resolve(remote)
+      if (route === 'content-save') return Promise.reject(new Error('草稿已在其他页面更新，请重新加载后再保存'))
+      return regularApi(route, payload)
+    })
+    vi.useFakeTimers()
+    await render(<VideoPage active selectedContentId="video-1" agentOpen
+      onToggleAgent={vi.fn(async () => {})} onSelectedContentChange={vi.fn()} onBack={vi.fn()}/> )
+    await enter('#pub-title', 'Local video title')
+    remote = { ...remote, title: 'Agent video title', revision: 2 }
+    await act(async () => { await vi.advanceTimersByTimeAsync(1200) })
+    expect(container!.querySelector<HTMLInputElement>('#pub-title')?.value).toBe('Local video title')
+    expect(container!.textContent).toContain('当前未保存的修改会丢失')
+    const reload = Array.from(container!.querySelectorAll('button')).find(button => button.textContent === '重新加载草稿')!
+    await act(async () => { reload.click() })
+    expect(container!.querySelector<HTMLInputElement>('#pub-title')?.value).toBe('Agent video title')
+  })
+
+  it('discards a late conflict reload after opening another video draft', async () => {
+    apiFor([draft('video-1', 'video'), draft('video-2', 'video')])
+    const regularApi = queryApi.getMockImplementation()!
+    const pendingReload = deferred<PublisherContent>()
+    let rejectSave = true
+    let delayReload = false
+    queryApi.mockImplementation((route: string, payload?: Record<string, unknown>) => {
+      if (route === 'content-save' && rejectSave) return Promise.reject(new Error('草稿已在其他页面更新，请重新加载后再保存'))
+      if (route === 'content/video-1' && delayReload) return pendingReload.promise
+      return regularApi(route, payload)
+    })
+    const editor = (selectedContentId: string) => <VideoPage active selectedContentId={selectedContentId}
+      onSelectedContentChange={vi.fn()} onBack={vi.fn()}/>
+    vi.useFakeTimers()
+    await render(editor('video-1'))
+    await enter('#pub-title', 'Local video title')
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    const reload = Array.from(container!.querySelectorAll('button')).find(button => button.textContent === '重新加载草稿')!
+    expect(reload).toBeDefined()
+    delayReload = true
+    rejectSave = false
+    await act(async () => { reload.click() })
+    await render(editor('video-2'))
+    expect(container!.querySelector<HTMLInputElement>('#pub-title')?.value).toBe('video-2 title')
+    const workReads = queryApi.mock.calls.filter(([route]) => route === 'works').length
+    await act(async () => { pendingReload.resolve({ ...draft('video-1', 'video'), title: 'Late Agent title', revision: 3,
+      videoSource: { kind: 'work', workId: 'old-work' } }) })
+    expect(container!.querySelector<HTMLInputElement>('#pub-title')?.value).toBe('video-2 title')
+    expect(queryApi.mock.calls.filter(([route]) => route === 'works')).toHaveLength(workReads)
+    expect(container!.textContent).not.toContain('已加载最新草稿。')
   })
 
   it('opens article publishing settings, keeps account and mode when returning from confirmation, and submits only on final confirmation', async () => {

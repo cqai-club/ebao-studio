@@ -349,9 +349,9 @@ export function TalkCraft() {
       })
       if (!response.ok) {
         const result = await response.json().catch(() => ({})) as {error?: string}
-        throw new Error(response.status === 404 ? '试听服务尚未加载，请重启易宝工坊开发版后重试' : result.error ?? '试听生成失败，请稍后重试')
+        throw new Error(response.status === 404 ? '试听服务尚未加载，请重启e宝工坊开发版后重试' : result.error ?? '试听生成失败，请稍后重试')
       }
-      if (!response.headers.get('content-type')?.includes('audio/mpeg')) throw new Error('试听服务返回了非音频内容，请重启易宝工坊开发版后重试')
+      if (!response.headers.get('content-type')?.includes('audio/mpeg')) throw new Error('试听服务返回了非音频内容，请重启e宝工坊开发版后重试')
       const audio = await response.blob()
       if (controller.signal.aborted) return
       const url = URL.createObjectURL(audio)

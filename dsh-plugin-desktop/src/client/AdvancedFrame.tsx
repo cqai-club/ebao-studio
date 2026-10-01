@@ -10,10 +10,12 @@ import {
 
 const PUBLISHER_PANEL = 'cqai-publisher'
 const PUBLISHER_AGENT_DRAWER_EVENT = 'cqai-publisher-agent-drawer'
+const AGENT_CONTENT_LABELS = { article: '文章', 'image-note': '图文', video: '视频' } as const
 
 interface PublisherAgentDrawerRequest {
   open: boolean
   contentId?: string
+  contentType?: keyof typeof AGENT_CONTENT_LABELS
   /** The opener chooses whether a blank conversation shows the home presentation. */
   mode?: 'full' | 'simple'
 }
@@ -79,7 +81,10 @@ export function DesktopOwnedFrame({
           agentReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
         }
         agentDrawerOpenRef.current = true
-        setAgentDrawer({ open: true, mode: request.mode === 'simple' ? 'simple' : 'full', ...(typeof request.contentId === 'string' ? { contentId: request.contentId } : {}) })
+        const contentType = typeof request.contentType === 'string' && Object.hasOwn(AGENT_CONTENT_LABELS, request.contentType)
+          ? request.contentType : 'article'
+        setAgentDrawer({ open: true, contentType, mode: request.mode === 'simple' ? 'simple' : 'full',
+          ...(typeof request.contentId === 'string' ? { contentId: request.contentId } : {}) })
       } else {
         agentDrawerOpenRef.current = false
         setAgentDrawer({ open: false })
@@ -201,7 +206,7 @@ export function DesktopOwnedFrame({
         <div className="dshDesktopMainPanelSurface"><MainPanel panelId={panelId} renderSlot={renderSlot} /></div>
         {agentDrawerVisible && <aside id="pub-agent-drawer" className="dshDesktopAgentDrawer" aria-labelledby="pub-agent-drawer-title" data-content-id={agentDrawer.contentId} data-conversation-mode={agentDrawer.mode ?? 'full'}>
           <div className="dshDesktopAgentDrawerHeader">
-            <span id="pub-agent-drawer-title">Agent · 当前文章</span>
+            <span id="pub-agent-drawer-title">Agent · 当前{AGENT_CONTENT_LABELS[agentDrawer.contentType ?? 'article']}</span>
             <button ref={closeAgentButtonRef} type="button" className="dshDesktopAgentDrawerClose" aria-label="关闭 Agent 对话" onClick={closeAgentDrawer}>×</button>
           </div>
           <div className="dshDesktopAgentConversation">{renderSlot('main', {}, { entryKey: 'conversation' })}</div>

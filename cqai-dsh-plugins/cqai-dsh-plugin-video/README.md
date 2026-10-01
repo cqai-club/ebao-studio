@@ -1,6 +1,6 @@
 # e剪宝
 
-易宝工坊 / DeepSeek Harness 视频制作插件，基于 `dsh-shortvideo-pipeline`。
+e宝工坊 / DeepSeek Harness 视频制作插件，基于 `dsh-shortvideo-pipeline`。
 
 侧栏 **e图宝 → e剪宝 → 工作区**。通过官方 `sidebar.panellist` 和 `main` 插槽挂载，保留原有对话界面。
 
@@ -29,7 +29,7 @@
 
 ## 插件构建
 
-在易宝工坊仓库根目录执行：
+在e宝工坊仓库根目录执行：
 
 ```sh
 corepack yarn install

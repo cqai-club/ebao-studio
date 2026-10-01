@@ -1,17 +1,17 @@
 <p align="center">
-  <img src="assets/desktop-hero-en.png" alt="易宝工坊 desktop app" width="100%">
+  <img src="assets/desktop-hero-en.png" alt="e宝工坊 desktop app" width="100%">
 </p>
 
-# 易宝工坊
+# e宝工坊
 
 [中文](README.md) · [Download](https://github.com/cqai-club/ebao-studio/releases) · [User guide](docs/user-guide.en.md)
 
-易宝工坊 is an open-source desktop app for Windows and macOS built around [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It brings the upstream local Web client, Host service, and plugin system into a native window, with a system tray, Profile management, a terminal, recovery, and plugin management. Installed builds include the required runtime.
+e宝工坊 is an open-source desktop app for Windows and macOS built around [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It brings the upstream local Web client, Host service, and plugin system into a native window, with a system tray, Profile management, a terminal, recovery, and plugin management. Installed builds include the required runtime.
 
 This repository pins an **unmodified upstream** version. Repository-owned plugins and an Electron launcher compose the desktop features around it. The project is maintained independently by the community and is not affiliated with or endorsed by DeepSeek or the official upstream team.
 
 <p align="center">
-  <img src="assets/desktop-chat-en.png" alt="易宝工坊 chat interface screenshot" width="100%">
+  <img src="assets/desktop-chat-en.png" alt="e宝工坊 chat interface screenshot" width="100%">
 </p>
 
 ## Use

@@ -1,5 +1,5 @@
 # Third-Party Notices
-易宝工坊 distributes the following third-party packages inside its installers.
+e宝工坊 distributes the following third-party packages inside its installers.
 This list records package names, versions, and licenses for transparency.
 Package license texts accompany the application when supplied by the package.
 ## Bundled applications

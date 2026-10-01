@@ -30,7 +30,7 @@ function asToolResult<T extends object>(value: T): Record<string, JsonValue> {
 }
 
 export const AGENT_SOURCE_GUIDANCE = [
-  '如果用户是在多平台发布的文章编辑页右侧 Agent 抽屉要求修改，先调用 publisher_get_current_draft；返回文章时按当前草稿工具的说明直接保存草稿，此时不要执行下列 Markdown 原稿流程。',
+  '如果用户是在多平台发布的文章、图文或视频编辑页 Agent 抽屉要求修改，先调用 publisher_get_current_draft；返回草稿时按 content_type 使用当前草稿工具直接保存，此时不要执行下列 Markdown 原稿流程。',
   '文章和图文先保存为真实的本地 Markdown (.md) 文件。原稿保留在你创建的位置；正文图片使用相对于 MD 文件的路径，或指向当前 Agent 工作目录内文件的绝对路径。用户上传或生图只提供附件引用时，用 publisher_export_image 把选中的图片保存到原稿旁，按其返回的相对路径写入 MD。写完并确认文件存在后调用 publisher_register_source，右侧通用预览将直接读取这份原稿及图片。修改原稿后再次登记。',
   '用户仅要求写作、修改或预览时，不准备平台版本，也不创建 Publisher 草稿。图片不要求来自当前会话的上传或生图事件，但必须是原稿实际引用且可读取的本地图片。',
   '只有用户明确要求发布到社交平台或多平台时，先读取已登记原稿，整理文章或图文类型、目标平台和所需的平台文案，然后调用 publisher_prepare_preview。文章可选掘金、B站专栏、头条、百家号、微信公众号；图文可选小红书、抖音、快手，头条不提供图文。平台候选中的图片仍引用原稿返回的 source-image:// 图片地址，不复制素材；候选主稿与平台版本合计最多选 20 张不同图片。文章平台不兼容的插图会在提交平台草稿时提示并移除；公众号仍需可用的 JPEG/PNG 封面。预览可供用户检查。',

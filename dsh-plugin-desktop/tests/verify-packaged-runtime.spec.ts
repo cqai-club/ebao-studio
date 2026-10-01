@@ -75,7 +75,7 @@ function context(
     ...(arch === undefined ? {} : { arch }),
     packager: {
       ...(executableName === undefined ? {} : { executableName }),
-      appInfo: { productFilename: '易宝工坊 Beta' },
+      appInfo: { productFilename: electronPlatformName === 'darwin' ? '易宝工坊 Beta' : 'e宝工坊 Beta' },
     },
   }
 }
@@ -529,7 +529,7 @@ describe('packaged desktop runtime verification', () => {
     [
       'win32',
       join('/build', 'resources', 'app.asar'),
-      join('/build', '易宝工坊 Beta.exe'),
+      join('/build', 'e宝工坊 Beta.exe'),
     ],
   ])('inspects the %s selective ASAR layout', (platform, expectedPath, expectedExecutable) => {
     const runtimeContext = context('/build', platform)

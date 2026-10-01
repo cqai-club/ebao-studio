@@ -253,7 +253,7 @@ describe('desktop notifications Host plugin', () => {
 
     expect(harness.notifyAttention.mock.calls).toEqual([
       [{ title: 'Background Job Completed', body: 'A background job has finished.' }],
-      [{ title: 'Background Job Failed', body: 'A background job could not finish. Open 易宝工坊 for details.' }],
+      [{ title: 'Background Job Failed', body: 'A background job could not finish. Open e宝工坊 for details.' }],
     ])
     expect(JSON.stringify(harness.notifyAttention.mock.calls)).not.toMatch(/Users|private|secret|session-123/u)
   })
@@ -313,8 +313,8 @@ describe('desktop notifications Host plugin', () => {
     }, 6))
 
     expect(harness.notifyAttention.mock.calls).toEqual([
-      [{ title: 'Background Job Failed', body: 'A background job could not finish. Open 易宝工坊 for details.' }],
-      [{ title: 'User Turn Failed', body: 'A user-initiated turn could not finish. Open 易宝工坊 for details.' }],
+      [{ title: 'Background Job Failed', body: 'A background job could not finish. Open e宝工坊 for details.' }],
+      [{ title: 'User Turn Failed', body: 'A user-initiated turn could not finish. Open e宝工坊 for details.' }],
     ])
   })
 
@@ -384,7 +384,7 @@ describe('desktop notifications Host plugin', () => {
     expect(harness.notifyAttention).toHaveBeenCalledOnce()
     expect(harness.notifyAttention).toHaveBeenCalledWith({
       title: 'User Turn Failed',
-      body: 'A user-initiated turn could not finish. Open 易宝工坊 for details.',
+      body: 'A user-initiated turn could not finish. Open e宝工坊 for details.',
     })
   })
 

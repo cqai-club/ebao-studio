@@ -1,6 +1,6 @@
 # 短视频制作
 
-独立的 DSH Cordis 插件，使用 MoneyPrinterTurbo 1.3.7 的视频流水线。制作页面沿用易宝工坊的控件和主题；与“e剪宝”是两个插件、两个任务目录。
+独立的 DSH Cordis 插件，使用 MoneyPrinterTurbo 1.3.7 的视频流水线。制作页面沿用e宝工坊的控件和主题；与“e剪宝”是两个插件、两个任务目录。
 
 ## 第一阶段功能
 
@@ -25,7 +25,7 @@
 
 ## 使用
 
-在易宝工坊仓库根目录启动开发版（Git Bash）：
+在e宝工坊仓库根目录启动开发版（Git Bash）：
 
 ```bash
 corepack yarn dev

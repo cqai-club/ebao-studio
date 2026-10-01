@@ -1,11 +1,12 @@
-/** Cordis Host plugin for scheduled and interactive 易宝工坊 updates. */
+/** Cordis Host plugin for scheduled and interactive e宝工坊 updates. */
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import { DESKTOP_UPDATE_STATUS_PATH } from './desktop-update-status.ts'
 import { DESKTOP_UPDATE_CHECK_PATH } from './desktop-settings-contract.ts'
-import { handleDesktopUpdateCheckRequest } from './desktop-settings-route.ts'
+import { handleDesktopUpdateCheckRequest, handleDesktopUpdateStatusRequest } from './desktop-settings-route.ts'
 import type {} from './runtime.ts'
 import { startDesktopUpdateLifecycle } from './update-lifecycle.ts'
 
@@ -51,7 +52,7 @@ export function apply(ctx: Context, config: Config): void {
       registerTrayItem: item => ctx.desktopRuntime.registerTrayItem(item),
     })
     const rendererOrigin = `http://127.0.0.1:${String(ctx.webServer.port)}`
-    const unregister = ctx.webServer.register({
+    const unregisterCheck = ctx.webServer.register({
       kind: 'exact',
       path: DESKTOP_UPDATE_CHECK_PATH,
       handler: (req, res) => {
@@ -74,9 +75,27 @@ export function apply(ctx: Context, config: Config): void {
         )
       },
     })
-    return async () => {
-      unregister()
-      await lifecycle.dispose()
+    const unregisterStatus = ctx.webServer.register({
+      kind: 'exact',
+      path: DESKTOP_UPDATE_STATUS_PATH,
+      handler: (req, res) => {
+        const rejection = ctx.connection.requestRejection(req)
+        if (rejection !== undefined) {
+          res.writeHead(rejection)
+          res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+          return
+        }
+        return handleDesktopUpdateStatusRequest(req, res, rendererOrigin, () => lifecycle.getStatus())
+      },
+    })
+    let disposeTask: Promise<void> | undefined
+    return () => {
+      disposeTask ??= (async () => {
+        unregisterCheck()
+        unregisterStatus()
+        await lifecycle.dispose()
+      })()
+      return disposeTask
     }
   }, 'dsh-plugin-desktop: update polling, confirmation, and installer handoff')
 }

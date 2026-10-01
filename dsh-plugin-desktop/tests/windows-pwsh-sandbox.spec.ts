@@ -63,9 +63,9 @@ function pwshConfig(pwshPath: LiveRef<string | undefined>, cwd = 'C:\\workspace'
 const adaptation: WindowsAclAdaptation = {
   platform: 'win32',
   electron: true,
-  execPath: 'C:\\Program Files\\易宝工坊\\易宝工坊.exe',
-  upstreamRunner: 'C:\\Program Files\\易宝工坊\\resources\\app.asar\\runner.js',
-  trampoline: 'C:\\Program Files\\易宝工坊\\resources\\app.asar\\desktop-runner.js',
+  execPath: 'C:\\Program Files\\e宝工坊\\e宝工坊.exe',
+  upstreamRunner: 'C:\\Program Files\\e宝工坊\\resources\\app.asar\\runner.js',
+  trampoline: 'C:\\Program Files\\e宝工坊\\resources\\app.asar\\desktop-runner.js',
 }
 
 describe('Windows Electron PowerShell sandbox adaptation', () => {

@@ -41,9 +41,9 @@ async function mount(Frame: typeof AdvancedFrame | typeof ExtendedFrame) {
   return { layout, render, renderSlot }
 }
 
-async function request(open: boolean, contentId?: string, mode?: 'full' | 'simple') {
+async function request(open: boolean, contentId?: string, mode?: 'full' | 'simple', contentType?: unknown) {
   await act(async () => {
-    window.dispatchEvent(new CustomEvent(DRAWER_EVENT, { detail: { open, contentId, mode } }))
+    window.dispatchEvent(new CustomEvent(DRAWER_EVENT, { detail: { open, contentId, mode, contentType } }))
   })
 }
 
@@ -57,6 +57,23 @@ afterEach(async () => {
 })
 
 describe.each([['advanced', AdvancedFrame], ['extended', ExtendedFrame]] as const)('%s Publisher Agent drawer', (_mode, Frame) => {
+  it.each([['article', '文章'], ['image-note', '图文'], ['video', '视频']])('labels the current %s draft while preserving simple mode', async (contentType, label) => {
+    await mount(Frame)
+    await request(true, 'draft-1', 'simple', contentType)
+    expect(container!.querySelector('#pub-agent-drawer-title')?.textContent).toBe(`Agent · 当前${label}`)
+    expect(container!.querySelector<HTMLElement>('#pub-agent-drawer')?.dataset.conversationMode).toBe('simple')
+  })
+
+  it('falls back to the article label for missing or invalid draft types', async () => {
+    await mount(Frame)
+    await request(true, 'draft-1', 'simple', 'video')
+    for (const contentType of [undefined, null, 7, {}, 'unknown', 'constructor', '__proto__']) {
+      await request(true, 'draft-1', undefined, contentType)
+      expect(container!.querySelector('#pub-agent-drawer-title')?.textContent).toBe('Agent · 当前文章')
+      expect(container!.querySelector<HTMLElement>('#pub-agent-drawer')?.dataset.conversationMode).toBe('full')
+    }
+  })
+
   it('shows the existing conversation beside the Publisher and closes from its button', async () => {
     const { renderSlot } = await mount(Frame)
     const opener = document.createElement('button')

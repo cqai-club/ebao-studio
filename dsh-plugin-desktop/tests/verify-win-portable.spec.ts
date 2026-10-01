@@ -22,7 +22,7 @@ function fixture(version = '2.0.0'): { readonly root: string; readonly portable:
   mkdirSync(dist, { recursive: true })
   const portable = join(dist, `eBao-Studio-${version}-x64-Portable.zip`)
   const archive = new AdmZip()
-  archive.addFile('易宝工坊.exe', portableExecutable())
+  archive.addFile('e宝工坊.exe', portableExecutable())
   archive.addFile('resources/app.asar', Buffer.from('asar'))
   archive.addFile('resources/publisher/MatrixMedia Publisher Worker.exe', portableExecutable())
   archive.addFile('resources/publisher/resources/app.asar', Buffer.from('worker asar'))
@@ -55,7 +55,7 @@ describe('Windows portable artifact verification', () => {
     const invalid = portableExecutable()
     invalid.write('NO', 0, 'ascii')
     const archive = new AdmZip()
-    archive.addFile('易宝工坊.exe', invalid)
+    archive.addFile('e宝工坊.exe', invalid)
     archive.addFile('resources/app.asar', Buffer.from('asar'))
     archive.writeZip(value.portable)
 
@@ -66,7 +66,7 @@ describe('Windows portable artifact verification', () => {
   it('rejects a portable archive without the Publisher Worker', () => {
     const value = fixture()
     const archive = new AdmZip()
-    archive.addFile('易宝工坊.exe', portableExecutable())
+    archive.addFile('e宝工坊.exe', portableExecutable())
     archive.addFile('resources/app.asar', Buffer.from('asar'))
     archive.writeZip(value.portable)
     expect(() => verifyWindowsPortable({ desktopRoot: value.root, version: '2.0.0' }))

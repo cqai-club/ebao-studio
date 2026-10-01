@@ -1,5 +1,9 @@
 /** Same-origin browser client for launcher-owned Desktop settings operations. */
 
+import { DESKTOP_UPDATE_STATUS_PATH, type DesktopUpdateStatus } from '../desktop-update-status.ts'
+
+export type { DesktopUpdateStatus } from '../desktop-update-status.ts'
+
 import {
   DESKTOP_RENDERER_ACTIONS_BRIDGE,
   type DesktopRendererAction,
@@ -19,6 +23,8 @@ const RENDERER_RELOAD_PATH = '/api/desktop/developer/reload'
 const DEVELOPER_TOOLS_TOGGLE_PATH = '/api/desktop/developer/devtools'
 const UPDATE_CHECK_PATH = '/api/desktop/updates/check'
 const DIAGNOSTICS_EXPORT_PATH = '/api/desktop/diagnostics/export'
+const MAX_UPDATE_VERSION_LENGTH = 128
+const UPDATE_VERSION_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/u
 const MAX_PROFILES = 256
 const MAX_PROFILE_NAME_LENGTH = 255
 const MAX_LAN_URLS = 32
@@ -91,6 +97,8 @@ export interface DesktopSettingsApi {
   restartToRecovery(): Promise<void>
   reloadRenderer(): Promise<void>
   toggleDeveloperTools(): Promise<void>
+  /** Read local update state without starting a network version check. */
+  readUpdateStatus(): Promise<DesktopUpdateStatus>
   checkForUpdates(): Promise<void>
   exportDiagnostics(): Promise<void>
 }
@@ -273,6 +281,34 @@ export function parseDesktopSettingsView(value: unknown): DesktopSettingsView {
   })
 }
 
+function isUpdateVersion(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > MAX_UPDATE_VERSION_LENGTH) return false
+  const match = UPDATE_VERSION_PATTERN.exec(value)
+  if (match === null || match[0] !== value) return false
+  const prerelease = match[4]?.split('.') ?? []
+  return prerelease.every(identifier => !/^0[0-9]+$/u.test(identifier))
+}
+
+/** Validate the bounded local update state before it reaches the sidebar. */
+export function parseDesktopUpdateStatus(value: unknown): DesktopUpdateStatus {
+  if (!isObject(value)
+    || !hasExactKeys(value, ['supported', 'currentVersion', 'availableVersion', 'checking', 'downloading'])
+    || typeof value.supported !== 'boolean'
+    || !isUpdateVersion(value.currentVersion)
+    || (value.availableVersion !== null && !isUpdateVersion(value.availableVersion))
+    || typeof value.checking !== 'boolean'
+    || typeof value.downloading !== 'boolean') {
+    throw new Error('dsh-plugin-desktop: invalid Desktop update status response')
+  }
+  return Object.freeze({
+    supported: value.supported,
+    currentVersion: value.currentVersion,
+    availableVersion: value.availableVersion,
+    checking: value.checking,
+    downloading: value.downloading,
+  })
+}
+
 /** Validate restart acknowledgement returned before the Host generation exits. */
 export function parseDesktopRestartAcceptance(value: unknown): DesktopRestartAcceptance {
   if (!isObject(value) || value.accepted !== true || typeof value.restartRequired !== 'boolean') {
@@ -391,6 +427,16 @@ export function createDesktopSettingsApi(
     async toggleDeveloperTools() {
       await native('developer', () => post(fetcher, DEVELOPER_TOOLS_TOGGLE_PATH, {}))
     },
+    async readUpdateStatus() {
+      const response = await fetcher(DESKTOP_UPDATE_STATUS_PATH, {
+        method: 'GET',
+        credentials: 'same-origin',
+        redirect: 'error',
+        cache: 'no-store',
+        headers: { 'Accept': 'application/json' },
+      })
+      return parseDesktopUpdateStatus(await readResponse(response))
+    },
     async checkForUpdates() {
       await native('check-for-updates', () => post(fetcher, UPDATE_CHECK_PATH, {}))
     },
@@ -412,5 +458,6 @@ export const desktopSettingsPaths = Object.freeze({
   rendererReload: RENDERER_RELOAD_PATH,
   developerToolsToggle: DEVELOPER_TOOLS_TOGGLE_PATH,
   updateCheck: UPDATE_CHECK_PATH,
+  updateStatus: DESKTOP_UPDATE_STATUS_PATH,
   diagnosticsExport: DIAGNOSTICS_EXPORT_PATH,
 })

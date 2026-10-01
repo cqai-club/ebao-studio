@@ -12,7 +12,19 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
 vi.mock('../src/client/accounts.tsx', () => ({ AccountsPage: () => null }))
 vi.mock('../src/client/history.tsx', () => ({ SubmissionHistory: () => null }))
 vi.mock('../src/client/project-directory-info.tsx', () => ({ ProjectDirectoryInfo: () => null }))
-vi.mock('../src/client/video.tsx', () => ({ VideoPage: () => null }))
+vi.mock('../src/client/video.tsx', () => ({
+  VideoPage: ({ active, agentOpen, onToggleAgent, onBack }: {
+    active: boolean
+    agentOpen?: boolean
+    onToggleAgent?: (content: PublisherContent) => Promise<void>
+    onBack: () => void
+  }) => active ? <>
+    {onToggleAgent && <button type="button" aria-controls="pub-agent-drawer" onClick={() => void onToggleAgent({ id: 'video-1', contentType: 'video' } as PublisherContent)}>
+      {agentOpen ? '关闭 Agent' : '打开 Agent'}
+    </button>}
+    <button type="button" onClick={onBack}>返回草稿列表</button>
+  </> : null,
+}))
 vi.mock('../src/client/conversation-preview.tsx', () => ({
   ConversationPreview: () => null, ConversationPreviewAction: () => null,
   PREVIEW_ID: 'publisher-preview', PREVIEW_KIND: 'publisher-preview',
@@ -32,17 +44,21 @@ vi.mock('../src/client/shared.tsx', () => ({
   PublisherModal: () => null,
 }))
 vi.mock('../src/client/draft-gallery.tsx', () => ({
-  DraftGallery: ({ active, onOpen }: { active: boolean; onOpen: (id: string) => void }) =>
-    active ? <button type="button" onClick={() => onOpen('article-1')}>打开文章草稿</button> : null,
+  DraftGallery: ({ active, contentType, onOpen }: {
+    active: boolean; contentType: 'article' | 'image-note' | 'video'; onOpen: (id: string) => void
+  }) => active ? <button type="button" onClick={() => onOpen(`${contentType}-1`)}>
+    打开{contentType === 'article' ? '文章' : contentType === 'image-note' ? '图文' : '视频'}草稿
+  </button> : null,
 }))
 vi.mock('../src/client/content.tsx', () => ({
-  ContentEditor: ({ active, agentOpen, onToggleAgent, onBack }: {
+  ContentEditor: ({ active, contentType, agentOpen, onToggleAgent, onBack }: {
     active: boolean
+    contentType: 'article' | 'image-note'
     agentOpen?: boolean
     onToggleAgent?: (content: PublisherContent) => Promise<void>
     onBack: () => void
   }) => active ? <>
-    {onToggleAgent && <button type="button" onClick={() => void onToggleAgent({ id: 'article-1', contentType: 'article' } as PublisherContent)}>
+    {onToggleAgent && <button type="button" aria-controls="pub-agent-drawer" onClick={() => void onToggleAgent({ id: `${contentType}-1`, contentType } as PublisherContent)}>
       {agentOpen ? '关闭 Agent' : '打开 Agent'}
     </button>}
     <button type="button" onClick={onBack}>返回草稿列表</button>
@@ -152,10 +168,10 @@ async function ownProjectSession(workspaces: ReturnType<typeof fakeWorkspaces>, 
   workspaces.create.mockClear()
 }
 
-function mockDraftSession(sessionId: string | null) {
+function mockDraftSession(sessionId: string | null, contentId = 'article-1') {
   let linkedSessionId = sessionId
   queryApi.mockImplementation((route: string, payload?: { sessionId: string; contentId: string | null }) => {
-    if (route === 'agent-draft-session/article-1') return Promise.resolve({ contentId: 'article-1', sessionId: linkedSessionId })
+    if (route === `agent-draft-session/${contentId}`) return Promise.resolve({ contentId, sessionId: linkedSessionId })
     if (route === 'agent-workspace') return Promise.resolve({ path: AGENT_WORKSPACE_PATH })
     if (route === 'agent-draft-bind' && payload?.contentId) {
       linkedSessionId = payload.sessionId
@@ -166,7 +182,7 @@ function mockDraftSession(sessionId: string | null) {
   })
 }
 
-async function renderPublisher(mode: 'compatibility' | 'extended') {
+async function renderPublisher(mode: 'compatibility' | 'extended' | 'advanced') {
   frame = document.createElement('div')
   frame.className = 'dshDesktopFrame'
   frame.dataset.desktopMode = mode
@@ -245,13 +261,40 @@ describe('Publisher Agent drawer binding', () => {
     expect(queryApi).not.toHaveBeenCalledWith('agent-draft-bind', expect.anything())
   })
 
-  it('creates a new conversation for a fresh article instead of using the unrelated current conversation', async () => {
+  it.each([
+    ['image-note', '图文'], ['video', '视频'],
+  ] as const)('binds a %s draft to the Desktop conversation and closes it on content type changes', async (type, label) => {
+    const contentId = `${type}-1`
+    mockDraftSession(null, contentId)
+    const events: Array<{ open: boolean; contentId?: string; contentType?: string; mode?: string }> = []
+    const listener = (event: Event) => events.push((event as CustomEvent).detail)
+    window.addEventListener(DRAWER_EVENT, listener)
+    try {
+      const { sessions } = await renderPublisher('extended')
+      await click(label)
+      await click(`打开${label}草稿`)
+      await click('打开 Agent')
+      expect(sessions.open).toHaveBeenCalledWith('new-session-1')
+      expect(queryApi).toHaveBeenCalledWith('agent-workspace', { contentId })
+      expect(queryApi).toHaveBeenCalledWith(`agent-draft-session/${contentId}`)
+      expect(queryApi).toHaveBeenCalledWith('agent-draft-bind', { sessionId: 'new-session-1', contentId })
+      expect(events).toContainEqual({ open: true, contentId, contentType: type, mode: 'simple' })
+      expect(container!.textContent).toContain('关闭 Agent')
+      await click('文章')
+      expect(events).toContainEqual({ open: false })
+      expect(queryApi).toHaveBeenCalledWith('agent-draft-bind', {
+        sessionId: 'new-session-1', contentId: null, bindingToken: 'token-new-session-1',
+      })
+    } finally { window.removeEventListener(DRAWER_EVENT, listener) }
+  })
+
+  it.each(['extended', 'advanced'] as const)('creates a fresh article conversation in %s mode', async mode => {
     mockDraftSession(null)
     const events: Array<{ open: boolean; contentId?: string; mode?: 'full' | 'simple' }> = []
     const listener = (event: Event) => events.push((event as CustomEvent).detail)
     window.addEventListener(DRAWER_EVENT, listener)
     try {
-      const { sessions, workspaces, layout } = await renderPublisher('extended')
+      const { sessions, workspaces, layout } = await renderPublisher(mode)
       await click('打开文章草稿')
       await click('打开 Agent')
       expect(queryApi).toHaveBeenCalledWith('agent-draft-session/article-1')
@@ -267,7 +310,7 @@ describe('Publisher Agent drawer binding', () => {
       expect(workspaces.list.getSnapshot().items[0]?.sessionIds).toContain('new-session-1')
       expect(queryApi).toHaveBeenCalledWith('agent-draft-bind', { sessionId: 'new-session-1', contentId: 'article-1' })
       expect(queryApi).not.toHaveBeenCalledWith('agent-draft-bind', { sessionId: 'unrelated-session', contentId: 'article-1' })
-      expect(events).toContainEqual({ open: true, contentId: 'article-1', mode: 'simple' })
+      expect(events).toContainEqual({ open: true, contentId: 'article-1', contentType: 'article', mode: 'simple' })
       expect(container!.textContent).toContain('关闭 Agent')
 
       await click('发布历史')

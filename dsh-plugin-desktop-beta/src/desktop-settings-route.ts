@@ -1,6 +1,7 @@
 /** Strict loopback HTTP handlers for the private Desktop settings API. */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { DesktopUpdateStatus } from './desktop-update-status.ts'
 import { assertDesktopProfileName } from './profile-manager.ts'
 import type { DesktopMarketProvider } from './desktop-market.ts'
 import type DesktopSettingsController from './desktop-settings-controller.ts'
@@ -94,8 +95,9 @@ function isSameOriginLoopbackRequest(
   const expected = expectedLoopbackOrigin(expectedOrigin)
   if (expected === undefined || !isLoopbackAddress(req.socket.remoteAddress)) return false
   if (req.headers.host?.toLowerCase() !== expected.host.toLowerCase()) return false
-  if (exactHeaderOrigin(req.headers.origin) === expected.origin) {
-    return req.headers['sec-fetch-site'] === undefined || req.headers['sec-fetch-site'] === 'same-origin'
+  if (req.headers.origin !== undefined) {
+    return exactHeaderOrigin(req.headers.origin) === expected.origin
+      && (req.headers['sec-fetch-site'] === undefined || req.headers['sec-fetch-site'] === 'same-origin')
   }
   if (mutating) return false
   return req.headers['sec-fetch-site'] === 'same-origin'
@@ -448,6 +450,20 @@ export async function handleDesktopDeveloperToolsToggleRequest(
     reportError('toggle Developer Tools', cause)
     finishJson(res, 500, error('Developer Tools could not be toggled'))
   }
+}
+
+/** Read the generation-owned update snapshot using the same boundary as settings GET. */
+export function handleDesktopUpdateStatusRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  expectedOrigin: string,
+  getStatus: () => DesktopUpdateStatus,
+): void {
+  if (req.method !== 'GET') return finishJson(res, 405, error('method not allowed'), 'GET')
+  if (!isSameOriginLoopbackRequest(req, expectedOrigin, false)) {
+    return finishJson(res, 403, error('forbidden'))
+  }
+  finishJson(res, 200, getStatus())
 }
 
 /** Run the generation-owned interactive update flow from an exact empty request. */

@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-desktop-beta",
   "version": "0.0.9-beta.1",
-  "description": "易宝工坊 Beta: an Electron shell composed as a DeepSeek Harness Cordis plugin",
+  "description": "e宝工坊 Beta: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
@@ -371,10 +371,10 @@
   },
   "build": {
     "appId": "ai.deepseek.dsh.desktop.beta",
-    "productName": "易宝工坊 Beta",
+    "productName": "e宝工坊 Beta",
     "protocols": [
       {
-        "name": "易宝工坊 Beta",
+        "name": "e宝工坊 Beta",
         "schemes": [
           "dsh-desktop-beta"
         ]
@@ -453,7 +453,7 @@
           "to": "publisher/SOURCE.json"
         }
       ],
-      "artifactName": "易宝工坊-Beta-${version}-${arch}.${ext}",
+      "artifactName": "e宝工坊-Beta-${version}-${arch}.${ext}",
       "target": [
         "dir"
       ],
@@ -464,7 +464,8 @@
         "CFBundleLocalizations": [
           "en",
           "zh_CN"
-        ]
+        ],
+        "CFBundleDisplayName": "易宝工坊 Beta"
       },
       "hardenedRuntime": true,
       "icon": "build/app-icon-mac.png",
@@ -473,7 +474,17 @@
       "signIgnore": [
         "\\.(?:pak|dat|wasm)$"
       ],
-      "x64ArchFiles": "**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,sherpa-onnx-darwin-*/**,@tencent-qqmail/agently-cli-darwin-*/**}"
+      "x64ArchFiles": "**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,sherpa-onnx-darwin-*/**,@tencent-qqmail/agently-cli-darwin-*/**}",
+      "executableName": "易宝工坊 Beta",
+      "extraFiles": [
+        {
+          "from": "build/app-name-localizations",
+          "to": "Resources",
+          "filter": [
+            "*/InfoPlist.strings"
+          ]
+        }
+      ]
     },
     "win": {
       "asarUnpack": [
@@ -509,7 +520,7 @@
           ]
         }
       ],
-      "artifactName": "易宝工坊-Beta-${version}-${arch}-Portable.${ext}",
+      "artifactName": "e宝工坊-Beta-${version}-${arch}-Portable.${ext}",
       "icon": "build/app-icon.ico",
       "compression": "normal"
     },
@@ -523,9 +534,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "differentialPackage": false,
-      "shortcutName": "易宝工坊 Beta",
+      "shortcutName": "e宝工坊 Beta",
       "useZip": false,
-      "artifactName": "易宝工坊-Beta-${version}-${arch}-Setup.${ext}",
+      "artifactName": "e宝工坊-Beta-${version}-${arch}-Setup.${ext}",
       "installerIcon": "build/app-icon.ico",
       "uninstallerIcon": "build/app-icon.ico"
     },
@@ -545,9 +556,9 @@
         }
       ],
       "icon": "build/app-icon.png",
-      "artifactName": "易宝工坊-Beta-${version}-${arch}.${ext}",
+      "artifactName": "e宝工坊-Beta-${version}-${arch}.${ext}",
       "category": "Development",
-      "synopsis": "易宝工坊 Beta desktop for DeepSeek Harness",
+      "synopsis": "e宝工坊 Beta desktop for DeepSeek Harness",
       "maintainer": "CQAI Club",
       "executableName": "ebao-studio-beta",
       "syncDesktopName": true,

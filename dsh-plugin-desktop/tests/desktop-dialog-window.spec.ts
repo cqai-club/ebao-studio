@@ -79,7 +79,7 @@ describe('DesktopDialogWindow', () => {
     const parent = new electron.BrowserWindow({})
     const dialog = new DesktopDialogWindow({
       type: 'question',
-      title: 'Restart 易宝工坊',
+      title: 'Restart e宝工坊',
       message: 'Restart now?',
       detail: 'Running operations may be interrupted.',
       buttons: ['Restart', 'Cancel'],
@@ -179,7 +179,7 @@ describe('DesktopDialogWindow', () => {
     const result = new DesktopDialogWindow({
       type: 'warning',
       title: 'Profile compatibility warning',
-      message: 'Current Profile “work” was used by 易宝工坊 Beta.',
+      message: 'Current Profile “work” was used by e宝工坊 Beta.',
       detail: 'Previous DSH: 0.1.2-alpha.5\nCurrent DSH: 0.1.1-rc.2',
       advisory: 'Warning: DSH version differences may make plugins unavailable.',
       presentation: 'profile-compatibility',

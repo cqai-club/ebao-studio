@@ -14,7 +14,7 @@ describe('Desktop protocol', () => {
   it('registers the packaged product scheme', () => {
     const setAsDefaultProtocolClient = vi.fn(() => true)
     expect(registerDesktopProtocolClient({ setAsDefaultProtocolClient }, {
-      execPath: 'C:\\Program Files\\易宝工坊\\易宝工坊.exe',
+      execPath: 'C:\\Program Files\\e宝工坊\\e宝工坊.exe',
       argv: [],
     })).toBe(true)
     expect(DESKTOP_PROTOCOL_SCHEME).toBe('dsh-desktop')
