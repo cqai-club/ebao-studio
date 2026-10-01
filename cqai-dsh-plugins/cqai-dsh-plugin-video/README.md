@@ -8,7 +8,7 @@
 
 1. 选择已有口播视频、数字人口播，或仅生成动效方案。
 2. 上传素材并填写文案。填写的文案优先于上传的文案文件。
-3. 数字人模式在“个人 InferFlow 账户”中输入自己的 API Key，验证后估算费用，再确认生成。密钥仅保留在本次运行的内存中。在制作记录中查看进度或继续任务。
+3. 数字人模式先登录产品账户并充值，获取积分报价，再确认生成。在制作记录中查看进度或继续任务。
 4. 完成后预览 MP4，下载成片、文案、计划、TSX 动效包和发布 JSON。
 
 已有口播视频默认全部本地处理；AI 文案优化、数字人和封面生成功能需用户在界面选择后才调用对应云服务。发布阶段仅准备素材，不登录或自动发布至任何平台。
@@ -21,7 +21,7 @@
 - Node.js 22+。在 `runtime/render-studio` 执行 `npm ci` 安装固定 Remotion 依赖。
 - Remotion 首次渲染需下载浏览器，可用 `EJIANBAO_BROWSER_EXECUTABLE` 指向本机 Chromium 浏览器。
 - `EJIANBAO_PYTHON` 可指定 Python 可执行文件；`FFMPEG_PATH` 可指定 FFmpeg。
-- 数字人直连个人 InferFlow 账户，API Key 通过本机接口传入 Host 内存，不写入任务文件；重启后需重新连接。无需部署 CQAI 托管视频后台。
+- 数字人使用产品账户服务，用户无需 InferFlow Key；运营方需先部署托管服务与 Relay `ejianbao` Task Plugin 渠道，详见 `docs/cqai/ejianbao-managed-service.md`。
 - 数字人模式关闭可选 AI 文案与封面。其他模式的这两项仍使用原有 `DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY` 配置。
 - 未安装 SenseVoice 模型时使用能量/停顿级字幕校准，界面明确显示校准等级。
 
