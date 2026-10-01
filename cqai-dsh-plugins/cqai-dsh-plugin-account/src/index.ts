@@ -1459,7 +1459,7 @@ function respondOAuth(
   const safeTitle = escapeHtml(title)
   const safeMessage = escapeHtml(message)
   const openDesktop = success && loginCompletionUrl !== undefined
-    ? `<a class="open" href="${escapeHtml(loginCompletionUrl)}">打开 易宝工坊</a><p class="return">如果没有自动返回，请点击按钮继续。</p>`
+    ? `<a class="open" href="${escapeHtml(loginCompletionUrl)}">打开 e宝工坊</a><p class="return">如果没有自动返回，请点击按钮继续。</p>`
     : ''
   response.writeHead(status, {
     'Cache-Control': 'no-store',

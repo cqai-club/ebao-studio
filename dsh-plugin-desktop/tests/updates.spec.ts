@@ -304,7 +304,7 @@ describe('desktop update Host plugin', () => {
     await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
     await vi.waitFor(() => {
       expect(harness.notifications).toEqual([{
-        title: '易宝工坊 Update Available',
+        title: 'e宝工坊 Update Available',
         body: 'Version 2.1.0 is ready to download. Click this notification to review the update.',
         action: 'open-update',
       }])
@@ -312,7 +312,7 @@ describe('desktop update Host plugin', () => {
     expect(harness.registerNotificationAction).toHaveBeenCalledWith('open-update', expect.any(Function))
     expect(harness.confirmDownload).not.toHaveBeenCalled()
     expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available')
+    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
     await vi.waitFor(async () => {
       expect(JSON.parse(await readFile(harness.statePath, 'utf8'))).toEqual({
         version: 3,
@@ -402,14 +402,14 @@ describe('desktop update Host plugin', () => {
     expect(version).toBe('2.1.0')
     expect(signal).toBeInstanceOf(AbortSignal)
     expect(signal.aborted).toBe(false)
-    expect(harness.tray.label()).toBe('Downloading 易宝工坊 2.1.0…')
+    expect(harness.tray.label()).toBe('Downloading e宝工坊 2.1.0…')
     expect(harness.notifications).toEqual([])
 
     resolveDownload()
     await pending
-    await vi.waitFor(() => { expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available') })
+    await vi.waitFor(() => { expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available') })
     expect(harness.notifications).toEqual([])
-    expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available')
+    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
   })
 
   it('rechecks a digest-bearing manifest before invoking the native updater', async () => {
@@ -444,7 +444,7 @@ describe('desktop update Host plugin', () => {
     await harness.tray.invoke()
     expect(confirmDownload).toHaveBeenCalledOnce()
     expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available')
+    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
 
     await harness.tray.invoke()
     expect(confirmDownload).toHaveBeenCalledTimes(2)
@@ -468,7 +468,7 @@ describe('desktop update Host plugin', () => {
     expect(harness.confirmDownload).toHaveBeenCalledWith('2.1.0')
     expect(harness.downloadAndInstall).not.toHaveBeenCalled()
     expect(harness.showManualCheckResult).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('易宝工坊 2.2.0 Available')
+    expect(harness.tray.label()).toBe('e宝工坊 2.2.0 Available')
   })
 
   it.each([
@@ -557,7 +557,7 @@ describe('desktop update Host plugin', () => {
 
     expect(harness.notifications).toEqual([])
     expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available')
+    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
   })
 
   it('does not prompt on a platform without a fixed download entry', async () => {
@@ -600,7 +600,7 @@ describe('desktop update Host plugin', () => {
     expect(harness.downloadAndInstall).toHaveBeenCalledOnce()
     expect(harness.notifications).toEqual([])
     expect(harness.warnings).toEqual([])
-    expect(harness.tray.label()).toBe('易宝工坊 2.1.0 Available')
+    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
   })
 
   it('aborts checks and downloads and removes the tray item on effect disposal', async () => {

@@ -307,10 +307,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          release_title="易宝工坊 ${RELEASE_TAG}（预发布）"
+          release_title="e宝工坊 ${RELEASE_TAG}（预发布）"
           macos_note='macOS 自动更新构件必须使用 Developer ID 签名并完成 Apple 公证；本工作流会在缺少签名或公证凭据时失败，而不会发布不可自动更新的 macOS 构件。'
           if [[ "$MACOS_UNSIGNED_TEST" == 'true' ]]; then
-            release_title="易宝工坊 ${RELEASE_TAG}（未签名 macOS 测试预发布）"
+            release_title="e宝工坊 ${RELEASE_TAG}（未签名 macOS 测试预发布）"
             macos_note='本次 macOS 构件是未签名测试包：仅供测试者明确下载、在 Gatekeeper 提示中手动授权打开及验证更新发现链路。它不是生产 macOS 自动更新构件；不要将其作为正式发布或静默替换的依据。后续生产 macOS 发布仍必须使用 Developer ID 签名并完成 Apple 公证。'
           fi
           cat > RELEASE_NOTES.md <<'NOTES'

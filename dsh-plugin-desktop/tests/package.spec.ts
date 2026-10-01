@@ -42,6 +42,8 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
     files?: unknown
     dmg?: { icon?: unknown }
     mac?: {
+      executableName?: unknown
+      extraFiles?: unknown
       extendInfo?: unknown
       hardenedRuntime?: unknown
       icon?: unknown
@@ -830,7 +832,15 @@ describe('published package surface', () => {
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
       directory: 'dsh-plugin-desktop',
     })
-    expect(manifest.build?.productName).toBe('易宝工坊')
+    expect(manifest.build?.productName).toBe('e宝工坊')
+    // Keep Squirrel's relaunch path stable while Info.plist uses the new display name.
+    expect(manifest.build?.mac?.executableName).toBe('易宝工坊')
+    expect(manifest.build?.mac?.extendInfo).toMatchObject({ CFBundleDisplayName: '易宝工坊' })
+    expect(manifest.build?.mac?.extraFiles).toEqual([{
+      from: 'build/app-name-localizations',
+      to: 'Resources',
+      filter: ['*/InfoPlist.strings'],
+    }])
     expect(manifest.build?.appId).toBe('ai.deepseek.dsh.desktop')
     expect(manifest.build?.asar).toEqual({ smartUnpack: true })
     expect(manifest.build).not.toHaveProperty('asarUnpack')
@@ -923,13 +933,13 @@ describe('published package surface', () => {
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
       differentialPackage: false,
-      shortcutName: '易宝工坊',
+      shortcutName: 'e宝工坊',
       uninstallerIcon: 'build/app-icon.ico',
       useZip: false,
       artifactName: 'eBao-Studio-${version}-${arch}-Setup.${ext}',
     })
     expect(manifest.build?.linux?.icon).toBe('build/app-icon.png')
-    expect(manifest.build?.linux?.synopsis).toBe('易宝工坊 desktop for DeepSeek Harness')
+    expect(manifest.build?.linux?.synopsis).toBe('e宝工坊 desktop for DeepSeek Harness')
     // Electron derives the window's WM_CLASS from the root desktopName, and
     // syncDesktopName names the installed entry after it. Without the pair,
     // WM_CLASS falls back to the npm package name while the entry advertises
@@ -1003,6 +1013,7 @@ describe('published package surface', () => {
         CFBundleAllowMixedLocalizations: true,
         CFBundleDevelopmentRegion: 'en',
         CFBundleLocalizations: ['en', 'zh_CN'],
+        CFBundleDisplayName: '易宝工坊',
       },
       hardenedRuntime: true,
       mergeASARs: false,

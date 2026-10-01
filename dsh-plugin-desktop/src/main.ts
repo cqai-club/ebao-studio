@@ -1,4 +1,4 @@
-/** 易宝工坊 executable: minimal Electron bootstrap around the Host Cordis root. */
+/** e宝工坊 executable: minimal Electron bootstrap around the Host Cordis root. */
 
 // Tool subprocesses start the private Node runner through this Electron binary.
 // The dsh-subprocess-local patch scopes ELECTRON_RUN_AS_NODE to the runner child.
@@ -223,6 +223,7 @@ import {
   DESKTOP_APP_ID,
   DESKTOP_PACKAGE_NAME,
   DESKTOP_PRODUCT_NAME,
+  DESKTOP_STORAGE_NAME,
   DESKTOP_RELEASE_CHANNEL,
   isStableDesktopRelease,
   OTHER_DESKTOP_PRODUCT_IDENTITY,
@@ -1971,7 +1972,8 @@ async function start(): Promise<void> {
 }
 
 async function run(): Promise<void> {
-  app.setName(PRODUCT_NAME)
+  // Electron safeStorage keys use this internal name; OS and window titles use PRODUCT_NAME.
+  app.setName(DESKTOP_STORAGE_NAME)
   if (process.argv.includes('--export-diagnostics')) {
     try {
       await app.whenReady()

@@ -1,7 +1,7 @@
 # @cqaiclub/dsn-account
 
 本目录固定了 [cqai-club/cqaiclub-dsh-plugin](https://github.com/cqai-club/cqaiclub-dsh-plugin)
-的 3bad8bed59be26573e3b2881bd9f105576e53532 提交，并作为 易宝工坊 的默认 CQAI
+的 3bad8bed59be26573e3b2881bd9f105576e53532 提交，并作为 e宝工坊 的默认 CQAI
 账号插件使用。
 
 为适配本仓库锁定的 DSH 0.1.7-rc.2，本目录调整了插件元数据和依赖版本，并补充了

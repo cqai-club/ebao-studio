@@ -5,6 +5,7 @@ import { mkdtempSync, readdirSync, rmdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readMacBundleNames, verifyMacBundleIdentity, type MacBundleIdentityOptions } from './mac-bundle-identity.ts'
 import { MACOS_UNIVERSAL_NATIVE_ENTRIES } from './mac-universal.ts'
 import {
   PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH,
@@ -12,12 +13,12 @@ import {
 } from './publisher-helper.ts'
 
 /** Injectable filesystem and command boundaries for release verification. */
-export interface MacReleaseVerificationOptions {
+export interface MacReleaseVerificationOptions extends MacBundleIdentityOptions {
   /** Native inventory for shells which do not load legacy-only modules. */
   readonly nativeEntries?: readonly { readonly arch: string; readonly path: string }[]
   /** Directory containing exactly one release DMG. */
   readonly distDir: string
-  /** Installed application name inside the mounted image. */
+  /** Physical app and executable filename, retained for updater compatibility. */
   readonly productName: string
   /** Return regular DMG files in the distribution directory. */
   readonly listDmgs: (distDir: string) => readonly string[]
@@ -51,6 +52,8 @@ function defaultOptions(): MacReleaseVerificationOptions {
       ? join(packageRoot, 'dist', 'mac-release')
       : resolve(process.argv[2]),
     productName: '易宝工坊',
+    displayName: 'e宝工坊',
+    readBundleNames: readMacBundleNames,
     listDmgs,
     makeMountPoint: () => mkdtempSync(join(tmpdir(), 'dsh-desktop-dmg-')),
     run,
@@ -82,6 +85,7 @@ export function verifyMacRelease(
   try {
     options.run('hdiutil', ['attach', dmgPath, '-mountpoint', mountPoint, '-nobrowse', '-readonly'])
     mounted = true
+    verifyMacBundleIdentity(join(appPath, 'Contents', 'Info.plist'), options)
     const executablePath = join(appPath, 'Contents', 'MacOS', options.productName)
     options.run('lipo', [executablePath, '-verify_arch', 'x86_64'])
     options.run('lipo', [executablePath, '-verify_arch', 'arm64'])

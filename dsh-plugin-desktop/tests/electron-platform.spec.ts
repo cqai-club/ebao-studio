@@ -49,7 +49,7 @@ describe('electronPlatformStrategy', () => {
     expect(strategy.canToggleShellMode).toBe(true)
     expect(strategy.hidesWindowOnClose).toBe(true)
 
-    strategy.configureApplication(icon, '易宝工坊')
+    strategy.configureApplication(icon, 'e宝工坊')
     strategy.configureWindow(window as never)
 
     expect(electron.app.dock.setIcon).not.toHaveBeenCalled()
@@ -70,7 +70,7 @@ describe('electronPlatformStrategy', () => {
     expect(strategy.canToggleShellMode).toBe(true)
     expect(strategy.hidesWindowOnClose).toBe(true)
 
-    strategy.configureApplication(icon, '易宝工坊')
+    strategy.configureApplication(icon, 'e宝工坊')
     strategy.configureWindow(window as never)
 
     expect(electron.app.dock.setIcon).toHaveBeenCalledWith(icon)
@@ -100,7 +100,7 @@ describe('electronPlatformStrategy', () => {
     // no way back. Linux generations minimize on close instead.
     expect(strategy.hidesWindowOnClose).toBe(false)
 
-    strategy.configureApplication({} as never, '易宝工坊')
+    strategy.configureApplication({} as never, 'e宝工坊')
     strategy.configureWindow(window as never)
 
     expect(electron.app.dock.setIcon).not.toHaveBeenCalled()

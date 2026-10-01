@@ -1,4 +1,4 @@
-/** Private installation identity used only by 易宝工坊 update checks. */
+/** Private installation identity used only by e宝工坊 update checks. */
 
 import { randomUUID } from 'node:crypto'
 import { chmod, lstat, mkdir, open } from 'node:fs/promises'

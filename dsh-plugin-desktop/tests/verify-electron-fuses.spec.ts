@@ -20,7 +20,8 @@ function result(
     readonly key: string
   }[],
   configuration: ElectronArtifactBuildResult['configuration'] = {
-    productName: '易宝工坊',
+    productName: 'e宝工坊',
+    mac: { executableName: '易宝工坊' },
   },
 ): ElectronArtifactBuildResult {
   return {
@@ -50,8 +51,8 @@ describe('final Electron fuse verification', () => {
     const expected = [
       join('/build', 'linux-unpacked', 'dsh-plugin-desktop'),
       join('/build', 'mac-universal', '易宝工坊.app', 'Contents', 'MacOS', '易宝工坊'),
-      join('/build', 'win-unpacked', '易宝工坊.exe'),
-      join('/build', 'win-arm64-unpacked', '易宝工坊.exe'),
+      join('/build', 'win-unpacked', 'e宝工坊.exe'),
+      join('/build', 'win-arm64-unpacked', 'e宝工坊.exe'),
     ].sort()
 
     expect(resolveFinalPackagedRuntimeContexts(
@@ -68,7 +69,7 @@ describe('final Electron fuse verification', () => {
         electronPlatformName: 'linux',
         packager: {
           executableName: 'dsh-plugin-desktop',
-          appInfo: { productFilename: '易宝工坊' },
+          appInfo: { productFilename: 'e宝工坊' },
         },
       },
       {
@@ -81,13 +82,13 @@ describe('final Electron fuse verification', () => {
         appOutDir: join('/build', 'win-arm64-unpacked'),
         arch: 3,
         electronPlatformName: 'win32',
-        packager: { appInfo: { productFilename: '易宝工坊' } },
+        packager: { appInfo: { productFilename: 'e宝工坊' } },
       },
       {
         appOutDir: join('/build', 'win-unpacked'),
         arch: 1,
         electronPlatformName: 'win32',
-        packager: { appInfo: { productFilename: '易宝工坊' } },
+        packager: { appInfo: { productFilename: 'e宝工坊' } },
       },
     ])
   })
@@ -100,7 +101,7 @@ describe('final Electron fuse verification', () => {
 
   it('honors Linux executableName and recovers a configured suffixless architecture', () => {
     const configured = result([{ key: 'linux', archs: [Arch.arm64] }], {
-      productName: '易宝工坊',
+      productName: 'e宝工坊',
       linux: { defaultArch: 'arm64', executableName: 'dsh-desktop' },
     })
     const executable = join('/build', 'linux-unpacked', 'dsh-desktop')
@@ -149,8 +150,8 @@ describe('final Electron fuse verification', () => {
   })
 
   it('ignores a stale sibling architecture from an earlier build', () => {
-    const expected = join('/build', 'win-unpacked', '易宝工坊.exe')
-    const stale = join('/build', 'win-arm64-unpacked', '易宝工坊.exe')
+    const expected = join('/build', 'win-unpacked', 'e宝工坊.exe')
+    const stale = join('/build', 'win-arm64-unpacked', 'e宝工坊.exe')
     const exists = vi.fn((filename: string) => filename === expected || filename === stale)
 
     expect(resolveFinalPackagedRuntimeContexts(
@@ -166,19 +167,19 @@ describe('final Electron fuse verification', () => {
   })
 
   it('fails when one requested architecture is missing even if a sibling exists', () => {
-    const x64Executable = join('/build', 'win-unpacked', '易宝工坊.exe')
+    const x64Executable = join('/build', 'win-unpacked', 'e宝工坊.exe')
 
     expect(() => resolveFinalPackagedRuntimeContexts(
       result([{ key: 'win', archs: [Arch.x64, Arch.arm64] }]),
       filename => filename === x64Executable,
-    )).toThrow(`win/arm64 at ${join('/build', 'win-arm64-unpacked', '易宝工坊.exe')}`)
+    )).toThrow(`win/arm64 at ${join('/build', 'win-arm64-unpacked', 'e宝工坊.exe')}`)
   })
 
   it('resolves a real target-name map through the target archs retained by NSIS', () => {
     const platform = { buildConfigurationKey: 'win' }
     const built = {
       outDir: '/build',
-      configuration: { productName: '易宝工坊' },
+      configuration: { productName: 'e宝工坊', mac: { executableName: '易宝工坊' } },
       platformToTargets: new Map([[platform, new Map([
         ['nsis', { archs: new Map([
           [Arch.x64, '/build/win-unpacked'],
@@ -242,7 +243,7 @@ describe('final Electron fuse verification', () => {
     ])]])
     const built = {
       outDir: '/build',
-      configuration: { productName: '易宝工坊' },
+      configuration: { productName: 'e宝工坊', mac: { executableName: '易宝工坊' } },
       platformToTargets: new Map([[platform, new Map([
         ['dmg', { packager: { packagerOptions: { targets: requestedTargets } } }],
       ])]]),
@@ -304,7 +305,7 @@ describe('final Electron fuse verification', () => {
   ])('fails loud when required fuse %s is not enabled', async (option, name) => {
     const read: ElectronFuseReader = async () => fuseWire({ [option]: FuseState.DISABLE })
 
-    await expect(verifyElectronExecutableFuses('/build/易宝工坊.exe', read))
+    await expect(verifyElectronExecutableFuses('/build/e宝工坊.exe', read))
       .rejects.toThrow(`${name}=DISABLE`)
   })
 
@@ -325,7 +326,7 @@ describe('final Electron fuse verification', () => {
   it('wraps an unreadable final executable with its resolved path', async () => {
     const read: ElectronFuseReader = async () => { throw new Error('missing sentinel') }
 
-    await expect(verifyElectronExecutableFuses('/build/易宝工坊.exe', read))
-      .rejects.toThrow('/build/易宝工坊.exe')
+    await expect(verifyElectronExecutableFuses('/build/e宝工坊.exe', read))
+      .rejects.toThrow('/build/e宝工坊.exe')
   })
 })

@@ -19,6 +19,7 @@ const PRIVATE_DIRECTORY_MODE = 0o700
 const PRIVATE_FILE_MODE = 0o600
 const MAX_STATE_BYTES = 128 * 1024
 const MAX_ADDRESSES = 64
+// Keep the existing certificate identity valid on devices that already trust it.
 const CA_COMMON_NAME = '易宝工坊 Local CA'
 const CA_VALIDITY_DAYS = 3650
 const LEAF_VALIDITY_DAYS = 30

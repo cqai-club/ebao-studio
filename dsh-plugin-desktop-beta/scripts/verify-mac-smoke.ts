@@ -5,14 +5,15 @@ import { existsSync, mkdtempSync, readdirSync, rmdirSync, statSync } from 'node:
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readMacBundleNames, verifyMacBundleIdentity, type MacBundleIdentityOptions } from './mac-bundle-identity.ts'
 import { MACOS_UNIVERSAL_NATIVE_ENTRIES, macSmokeArchitecture, macSmokeExecutableSlices, type MacUniversalArch } from './mac-universal.ts'
 import { PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH, PUBLISHER_HELPER_UNIVERSAL_ENTRIES } from './publisher-helper.ts'
 
 /** Injectable filesystem and command boundaries for smoke verification. */
-export interface MacSmokeVerificationOptions {
+export interface MacSmokeVerificationOptions extends MacBundleIdentityOptions {
   /** Directory containing exactly one smoke DMG. */
   readonly distDir: string
-  /** Installed application name inside the mounted image. */
+  /** Physical app and executable filename, retained for updater compatibility. */
   readonly productName: string
   /** Mach-O slices the main executable must contain; defaults to both CPUs. */
   readonly executableSlices?: readonly MacUniversalArch[]
@@ -56,6 +57,8 @@ function defaultOptions(): MacSmokeVerificationOptions {
       ? join(packageRoot, 'dist', 'mac-smoke')
       : resolve(process.argv[2]),
     productName: '易宝工坊 Beta',
+    displayName: 'e宝工坊 Beta',
+    readBundleNames: readMacBundleNames,
     executableSlices: macSmokeExecutableSlices(macSmokeArchitecture(process.env)),
     listDmgs,
     makeMountPoint: () => mkdtempSync(join(tmpdir(), 'dsh-desktop-dmg-smoke-')),
@@ -101,6 +104,7 @@ export function verifyMacSmoke(
       throw new Error(`packaged application is missing ${infoPlistPath}`)
     }
     options.run('plutil', ['-lint', infoPlistPath])
+    verifyMacBundleIdentity(infoPlistPath, options)
 
     const macosDirectory = join(appPath, 'Contents', 'MacOS')
     if (!options.exists(macosDirectory)) {

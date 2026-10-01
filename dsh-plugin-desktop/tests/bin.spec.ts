@@ -44,18 +44,20 @@ describe('desktop npm launcher', () => {
   })
 
   it('names the installed product and selected profile behavior', () => {
-    expect(DESKTOP_CLI_HELP).toContain('易宝工坊')
+    expect(DESKTOP_CLI_HELP).toContain('e宝工坊')
         expect(DESKTOP_CLI_HELP).toContain('[folder]')
     expect(DESKTOP_CLI_HELP).toContain('register the folder as a workspace')
     expect(DESKTOP_CLI_HELP).toContain('selected Web-capable profile')
     expect(DESKTOP_CLI_HELP).toContain('--export-diagnostics')
   })
 
-  it('resolves the packaged Desktop user-data directory without Electron', () => {
+  it('retains the historical user-data directory after the product is renamed', () => {
     expect(defaultDesktopUserDataDirectory('win32', { APPDATA: 'C:\\Users\\Example\\AppData\\Roaming' }, 'ignored'))
       .toBe('C:\\Users\\Example\\AppData\\Roaming\\易宝工坊')
     expect(defaultDesktopUserDataDirectory('darwin', {}, '/Users/example'))
       .toBe('/Users/example/Library/Application Support/易宝工坊')
+    expect(defaultDesktopUserDataDirectory('linux', { XDG_CONFIG_HOME: '/config' }, '/home/example'))
+      .toBe('/config/易宝工坊')
   })
 
   it('exports diagnostics without launching Electron', async () => {

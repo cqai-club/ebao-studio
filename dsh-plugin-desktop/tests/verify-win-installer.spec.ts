@@ -25,7 +25,7 @@ function fixture(version = '2.0.0'): {
   const unpacked = join(dist, 'win-unpacked')
   mkdirSync(unpacked, { recursive: true })
   const installer = join(dist, `eBao-Studio-${version}-x64-Setup.exe`)
-  const application = join(unpacked, '易宝工坊.exe')
+  const application = join(unpacked, 'e宝工坊.exe')
   const publisher = join(unpacked, 'resources', 'publisher')
   mkdirSync(join(publisher, 'resources'), { recursive: true })
   writeFileSync(installer, portableExecutable())

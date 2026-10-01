@@ -66,7 +66,7 @@ function options(
   const value: MacSmokeVerificationOptions = {
     distDir: '/release/dist',
     productName: '易宝工坊',
-    listDmgs: () => ['/release/dist/易宝工坊-2.0.1.dmg'],
+    listDmgs: () => ['/release/dist/e宝工坊-2.0.1.dmg'],
     makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-smoke-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
@@ -113,14 +113,14 @@ describe('macOS DMG smoke artifact verification', () => {
 
     expect(verifyMacSmoke(harness.value)).toEqual({
       appPath,
-      dmgPath: '/release/dist/易宝工坊-2.0.1.dmg',
+      dmgPath: '/release/dist/e宝工坊-2.0.1.dmg',
     })
 
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
         args: [
-          'attach', '/release/dist/易宝工坊-2.0.1.dmg',
+          'attach', '/release/dist/e宝工坊-2.0.1.dmg',
           '-mountpoint', value.root, '-nobrowse', '-readonly',
         ],
       },
@@ -164,6 +164,49 @@ describe('macOS DMG smoke artifact verification', () => {
     expect(executableChecks).toEqual([[value.executable, '-verify_arch', 'arm64']])
   })
 
+  it('checks the new display name independently of the legacy app and executable filename', () => {
+    const value = fixture()
+    const readBundleNames = vi.fn((path: string) => ({
+      name: 'e宝工坊', displayName: path.endsWith('Info.plist') ? '易宝工坊' : 'e宝工坊',
+    }))
+    const harness = options({ makeMountPoint: () => value.root, displayName: 'e宝工坊', readBundleNames }, value.modeOverrides)
+
+    expect(verifyMacSmoke(harness.value).appPath).toContain('易宝工坊.app')
+    expect(readBundleNames).toHaveBeenCalledWith(value.infoPlist)
+    for (const locale of ['en', 'zh_CN']) {
+      expect(readBundleNames).toHaveBeenCalledWith(
+        join(value.root, '易宝工坊.app', 'Contents', 'Resources', `${locale}.lproj`, 'InfoPlist.strings'),
+      )
+    }
+  })
+
+  it.each(['name', 'displayName'] as const)('rejects an invalid raw %s while preserving cleanup', key => {
+    const value = fixture()
+    const names = { name: 'e宝工坊', displayName: '易宝工坊', [key]: key === 'name' ? '易宝工坊' : 'e宝工坊' }
+    const harness = options({ makeMountPoint: () => value.root, displayName: 'e宝工坊', readBundleNames: () => names }, value.modeOverrides)
+
+    expectSmokeFailure(harness, 'must declare CFBundleName e宝工坊 and CFBundleDisplayName 易宝工坊')
+    expect(harness.calls.at(-1)).toEqual({ command: 'hdiutil', args: ['detach', value.root] })
+    expect(harness.removeMountPoint).toHaveBeenCalledWith(value.root)
+  })
+
+  it.each(['en', 'zh_CN'])('rejects missing or stale %s visible names while preserving cleanup', locale => {
+    for (const failure of ['missing', 'name', 'displayName']) {
+      const value = fixture()
+      const harness = options({ makeMountPoint: () => value.root, displayName: 'e宝工坊', readBundleNames: path => {
+        if (path.includes(`${locale}.lproj`)) {
+          if (failure === 'missing') throw new Error('missing localized names')
+          return { name: 'e宝工坊', displayName: 'e宝工坊', [failure]: '易宝工坊' }
+        }
+        return { name: 'e宝工坊', displayName: path.endsWith('Info.plist') ? '易宝工坊' : 'e宝工坊' }
+      } }, value.modeOverrides)
+
+      expectSmokeFailure(harness, failure === 'missing' ? 'missing localized names' : 'must localize CFBundleName and CFBundleDisplayName as e宝工坊')
+      expect(harness.calls.at(-1)).toEqual({ command: 'hdiutil', args: ['detach', value.root] })
+      expect(harness.removeMountPoint).toHaveBeenCalledWith(value.root)
+    }
+  })
+
   it('rejects the mount when no DMG is present', () => {
     const harness = options({ listDmgs: () => [] })
 
@@ -181,7 +224,7 @@ describe('macOS DMG smoke artifact verification', () => {
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
-        args: ['attach', '/release/dist/易宝工坊-2.0.1.dmg', '-mountpoint', value.root, '-nobrowse', '-readonly'],
+        args: ['attach', '/release/dist/e宝工坊-2.0.1.dmg', '-mountpoint', value.root, '-nobrowse', '-readonly'],
       },
       { command: 'hdiutil', args: ['detach', value.root] },
     ])

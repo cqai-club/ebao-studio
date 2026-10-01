@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-desktop",
   "version": "0.0.9",
-  "description": "易宝工坊: an Electron shell composed as a DeepSeek Harness Cordis plugin",
+  "description": "e宝工坊: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
@@ -375,10 +375,10 @@
   },
   "build": {
     "appId": "ai.deepseek.dsh.desktop",
-    "productName": "易宝工坊",
+    "productName": "e宝工坊",
     "protocols": [
       {
-        "name": "易宝工坊",
+        "name": "e宝工坊",
         "schemes": [
           "dsh-desktop"
         ]
@@ -466,7 +466,8 @@
         "CFBundleLocalizations": [
           "en",
           "zh_CN"
-        ]
+        ],
+        "CFBundleDisplayName": "易宝工坊"
       },
       "hardenedRuntime": true,
       "icon": "build/app-icon-mac.png",
@@ -476,7 +477,17 @@
         "\\.(?:pak|dat|wasm)$"
       ],
       "x64ArchFiles": "**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,sherpa-onnx-darwin-*/**,@tencent-qqmail/agently-cli-darwin-*/**}",
-      "artifactName": "eBao-Studio-${version}-${arch}.${ext}"
+      "artifactName": "eBao-Studio-${version}-${arch}.${ext}",
+      "executableName": "易宝工坊",
+      "extraFiles": [
+        {
+          "from": "build/app-name-localizations",
+          "to": "Resources",
+          "filter": [
+            "*/InfoPlist.strings"
+          ]
+        }
+      ]
     },
     "win": {
       "asarUnpack": [
@@ -527,7 +538,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "differentialPackage": false,
-      "shortcutName": "易宝工坊",
+      "shortcutName": "e宝工坊",
       "uninstallerIcon": "build/app-icon.ico",
       "useZip": false,
       "artifactName": "eBao-Studio-${version}-${arch}-Setup.${ext}"
@@ -563,7 +574,7 @@
       "executableName": "dsh-desktop",
       "syncDesktopName": true,
       "artifactName": "eBao-Studio-${version}-${arch}.${ext}",
-      "synopsis": "易宝工坊 desktop for DeepSeek Harness",
+      "synopsis": "e宝工坊 desktop for DeepSeek Harness",
       "maintainer": "CQAI Club"
     },
     "npmRebuild": false,

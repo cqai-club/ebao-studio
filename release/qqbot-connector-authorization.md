@@ -3,7 +3,7 @@
 - Package: `@tencent-connect/qqbot-connector`
 - Version covered by this repository's exception: `1.2.0`
 - Upstream npm license metadata: `UNLICENSED` (unchanged)
-- Product: 易宝工坊 / eBao Studio, Stable and Beta desktop installers
+- Product: e宝工坊 / eBao Studio, Stable and Beta desktop installers
 - Confirmation recorded: 2026-09-30, Asia/Singapore
 
 The eBao Studio release requester confirmed that a separate authorization exists

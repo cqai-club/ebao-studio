@@ -378,8 +378,8 @@ function parseState(text: string): ParsedUpdateState {
 
 function updateAvailableNotification(locale: DesktopLocale, version: string): DesktopNotification {
   return locale === 'zh'
-    ? { title: '易宝工坊 有可用更新', body: `版本 ${version} 已可下载。点击通知即可确认升级。`, action: 'open-update' }
-    : { title: '易宝工坊 Update Available', body: `Version ${version} is ready to download. Click this notification to review the update.`, action: 'open-update' }
+    ? { title: 'e宝工坊 有可用更新', body: `版本 ${version} 已可下载。点击通知即可确认升级。`, action: 'open-update' }
+    : { title: 'e宝工坊 Update Available', body: `Version ${version} is ready to download. Click this notification to review the update.`, action: 'open-update' }
 }
 
 async function readState(filename: string): Promise<string> {
