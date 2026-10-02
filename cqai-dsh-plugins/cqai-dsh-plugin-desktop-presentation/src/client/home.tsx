@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { coverForCard } from './covers'
+import { aggregateVideoAvailable, preserveSuppressedOrder, projectVideoEntries } from './video-navigation.ts'
 
 const MARKET_OPEN_EVENT = 'cqai-desktop-presentation:open-market'
 const STORAGE_PREFIX = 'cqai-desktop-presentation:home:v1:'
@@ -24,7 +25,8 @@ interface HomePreference {
 
 const DEFAULT_CARDS: readonly HomeCard[] = [
   { id: 'cqai-imagegen', title: 'e图宝', description: '图片生成、编辑与无限画布', panelId: 'cqai-imagegen' },
-  { id: 'cqai-video', title: 'e剪宝', description: '视频制作与剪辑', panelId: 'cqai-video' },
+  { id: 'cqai-ejianbao', title: 'e剪宝', description: '数字人、短视频与口播制作', panelId: 'cqai-ejianbao' },
+  { id: 'cqai-video', title: '数字人视频制作', description: '数字人口播与动效包装', panelId: 'cqai-video' },
   { id: 'cqai-short-video', title: '短视频制作', description: '从文案到成片', panelId: 'cqai-short-video' },
   { id: 'cqai-talkcraft', title: '口播视频制作', description: '口播与多轨编辑', panelId: 'cqai-talkcraft' },
   { id: 'cqai-publisher', title: '多平台发布', description: '内容编辑与发布', panelId: 'cqai-publisher' },
@@ -93,7 +95,8 @@ function installedCards(ctx: Context): { cards: HomeCard[]; panels: Set<string>;
   const known = new Set(DEFAULT_CARDS.map(card => card.panelId ?? card.id))
   const sidebar = ctx.slots.entriesOfSlot('sidebar.panellist')
   const icons = new Map<string, CardIconComponent>()
-  const cards = [...DEFAULT_CARDS]
+  const aggregate = aggregateVideoAvailable(panels, new Set(sidebar.map(entry => String(entry.options.id))))
+  const cards = projectVideoEntries(DEFAULT_CARDS, aggregate)
   for (const entry of sidebar) {
     const id = String(entry.options.id)
     if (typeof entry.component === 'function') icons.set(id, entry.component as CardIconComponent)
@@ -179,7 +182,7 @@ export function HomeDock({ ctx }: { ctx: Context }) {
     const first = order.indexOf(id)
     const second = order.indexOf(target)
     ;[order[first], order[second]] = [order[second]!, order[first]!]
-    save({ ...preference, order })
+    save({ ...preference, order: preserveSuppressedOrder(preference.order, order) })
   }
   const toggleHidden = (id: string) => {
     const next = hidden.has(id) ? preference.hidden.filter(item => item !== id) : [...preference.hidden, id]

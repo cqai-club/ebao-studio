@@ -96,6 +96,14 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   odt: 'application/vnd.oasis.opendocument.text',
   odp: 'application/vnd.oasis.opendocument.presentation',
   ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  tiff: 'image/tiff',
+  tif: 'image/tiff',
   mp3: 'audio/mpeg',
   wav: 'audio/wav',
   mp4: 'video/mp4',
@@ -471,12 +479,21 @@ export class CanvasStore {
   private async readIndex(): Promise<CanvasSummary[]> {
     const value = await readJson(this.indexPath())
     if (value === undefined || typeof value !== 'object' || !Array.isArray((value as { projects?: unknown }).projects)) return []
-    return (value as { projects: unknown[] }).projects.filter(item => {
-      if (item === null || typeof item !== 'object') return false
+    return (value as { projects: unknown[] }).projects.flatMap(item => {
+      if (item === null || typeof item !== 'object') return []
       const project = item as Record<string, unknown>
-      return typeof project.id === 'string' && typeof project.title === 'string' && typeof project.revision === 'number'
-        && typeof project.nodeCount === 'number' && typeof project.createdAt === 'number' && typeof project.updatedAt === 'number'
-    }) as CanvasSummary[]
+      if (!(typeof project.id === 'string' && typeof project.title === 'string' && typeof project.revision === 'number'
+        && typeof project.nodeCount === 'number' && typeof project.createdAt === 'number' && typeof project.updatedAt === 'number')) return []
+      return [{
+        id: project.id,
+        title: project.title,
+        revision: project.revision,
+        nodeCount: project.nodeCount,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+        ...project.favorite === true ? { favorite: true } : {},
+      }]
+    })
   }
 
   private async writeIndex(projects: CanvasSummary[]): Promise<void> {
@@ -519,8 +536,24 @@ export class CanvasStore {
       }
       await this.ensure()
       await writeJsonAtomic(this.pagePath(next.id), next)
-      const projects = (await this.readIndex()).filter(item => item.id !== next.id)
-      await this.writeIndex([this.summaryOf(next), ...projects])
+      const projects = await this.readIndex()
+      const favorite = projects.find(item => item.id === next.id)?.favorite === true
+      await this.writeIndex([this.summaryOf(next, favorite), ...projects.filter(item => item.id !== next.id)])
+      return next
+    })
+  }
+
+  async setFavorite(id: string, favorite: boolean): Promise<CanvasSummary[]> {
+    if (typeof id !== 'string' || id.trim() === '' || typeof favorite !== 'boolean') throw new Error('invalid canvas favorite input')
+    return serialize(async () => {
+      const projects = await this.readIndex()
+      if (!projects.some(item => item.id === id)) throw new Error('画布不存在')
+      const next = projects.map(item => {
+        if (item.id !== id) return item
+        const { favorite: _favorite, ...summary } = item
+        return favorite ? { ...summary, favorite: true } : summary
+      })
+      await this.writeIndex(next)
       return next
     })
   }
@@ -641,7 +674,7 @@ export class CanvasStore {
     await fs.writeFile(targetPath, found.data)
   }
 
-  private summaryOf(document: CanvasDocument): CanvasSummary {
+  private summaryOf(document: CanvasDocument, favorite = false): CanvasSummary {
     return {
       id: document.id,
       title: document.title,
@@ -649,6 +682,7 @@ export class CanvasStore {
       nodeCount: document.nodes.length,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
+      ...favorite ? { favorite: true } : {},
     }
   }
 }

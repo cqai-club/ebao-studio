@@ -9,11 +9,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import { createPortal } from 'react-dom'
 import {
   Bold, BookOpen, ChevronDown, Copy, Download, Eraser, FileText as FileTextIcon, FolderX, Hand, Image as ImageIcon,
-  Layers, Map as MapIcon, Maximize, Maximize2, MousePointer2, Palette, Pencil, Plus, Redo2, Scissors, SendHorizonal, Sparkles,
+  Layers, Map as MapIcon, Maximize, Maximize2, MousePointer2, Palette, Pencil, Plus, Redo2, Scissors, SendHorizonal, Sparkles, Star,
   SquareDashedMousePointer, Trash2, Type, Undo2, Upload, Wand2, Wallpaper, X,
 } from 'lucide-react'
 import type { CanvasAnnotation, CanvasAssetRef, CanvasConnection, CanvasDocument, CanvasFileKind, CanvasLayerInfo, CanvasLayerPlanItem, CanvasNode, CanvasRect, CanvasSkillConfigApplyResult, CanvasSkillConfigField, CanvasSkillConfigPreviewResult, CanvasSkillConfigSaveResult, CanvasSkillConfigStep, CanvasSkillConfigView, CanvasSkillDescriptor, CanvasSkillLibrary, CanvasSkillOutput, CanvasSkillRunRequest, CanvasSkillTask, CanvasSketchStroke, GenerateRequest, GenerationTask, HistoryEntry } from '../protocol.ts'
-import type { ImageGenApi } from './api.ts'
+import { ImageGenApiError, type ImageGenApi } from './api.ts'
 import { errorMessage, tt } from './helpers.ts'
 import { autoRemoveBackground, canvasToDataUrl, compositeAnnotatedResult, containRect, cropRaster, drawAnnotation, loadRaster, rectBetween, transparencyRatio } from './image-ops.ts'
 import { TemplateLibrary } from './TemplateLibrary.tsx'
@@ -211,7 +211,7 @@ function normalizeConfigNodeSizes(document: CanvasDocument): CanvasDocument {
   return nodes === document.nodes ? document : { ...document, nodes }
 }
 
-function summaryOf(document: CanvasDocument): ProjectSummary {
+function summaryOf(document: CanvasDocument, favorite = false): ProjectSummary {
   return {
     id: document.id,
     title: document.title,
@@ -219,6 +219,7 @@ function summaryOf(document: CanvasDocument): ProjectSummary {
     nodeCount: document.nodes.length,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
+    ...favorite ? { favorite: true } : {},
   }
 }
 
@@ -443,7 +444,7 @@ function rasterizeSketch(strokes: CanvasSketchStroke[], boardWidth: number, boar
   return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
 }
 
-type ToolbarIconName = 'new' | 'select' | 'pan' | 'image' | 'text' | 'file' | 'sketch' | 'eraser' | 'trash' | 'undo' | 'redo' | 'fit' | 'minimap' | 'background' | 'template' | 'download' | 'duplicate' | 'sparkle' | 'send' | 'close' | 'deleteProject' | 'annotate' | 'removeBg' | 'layers' | 'bold' | 'color' | 'skill' | 'upload' | 'expand'
+type ToolbarIconName = 'new' | 'select' | 'pan' | 'image' | 'text' | 'file' | 'sketch' | 'eraser' | 'trash' | 'undo' | 'redo' | 'fit' | 'minimap' | 'background' | 'template' | 'download' | 'duplicate' | 'sparkle' | 'send' | 'close' | 'deleteProject' | 'annotate' | 'removeBg' | 'layers' | 'bold' | 'color' | 'skill' | 'upload' | 'expand' | 'favorite' | 'favoriteFilled'
 
 /** Lucide icons (stroke matches the DSH line style); one shared component so
  *  every dock/toolbar icon comes from the same well-drawn set. */
@@ -479,6 +480,8 @@ function ToolbarIcon({ name, size = 16 }: { name: ToolbarIconName; size?: number
     case 'skill': return <Wand2 {...common} />
     case 'upload': return <Upload {...common} />
     case 'expand': return <Maximize2 {...common} />
+    case 'favorite': return <Star {...common} />
+    case 'favoriteFilled': return <Star {...common} fill="currentColor" />
   }
 }
 
@@ -1146,6 +1149,7 @@ function IconButton(props: {
     type="button"
     className={css.iconButton}
     data-active={props.active ? '' : undefined}
+    aria-pressed={props.active === undefined ? undefined : props.active}
     aria-label={props.label}
     title={props.label}
     disabled={props.disabled}
@@ -1219,6 +1223,7 @@ function ComposerSelect(props: {
 export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element {
   const { api, imageModels, defaultChannelId, requireExplicitImageModel, connected, history, gallery, tasks, importRequest, onImportRequestHandled, onOpenSettings } = props
   const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [favoriteBusy, setFavoriteBusy] = useState(false)
   const [document, setDocument] = useState<CanvasDocument | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
@@ -1291,6 +1296,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     const dock = dockRef.current
     if (outer === null || dock === null) return
     if (typeof window.requestAnimationFrame !== 'function') return
+    if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const clockNow = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now())
     const BASE = 34
     const MAGNIFIED = 50
@@ -1300,7 +1306,16 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     const STIFFNESS = 170
     const DAMPING = 16
     const MASS = 0.5
-    const tiles = [...dock.querySelectorAll<HTMLElement>('[data-dock-item]')].map(el => ({ el, size: BASE, velocity: 0 }))
+    const MAX_FRAME_SECONDS = 0.034
+    const MAX_TILE_VELOCITY = 420
+    const MAX_OUTER_VELOCITY = 320
+    // Resting offsets stay fixed while magnification changes the dock's layout.
+    // Store them relative to the outer anchor so window resizing stays aligned.
+    const outerRect = outer.getBoundingClientRect()
+    const tiles = [...dock.querySelectorAll<HTMLElement>('[data-dock-item]')].map(el => {
+      const rect = el.getBoundingClientRect()
+      return { el, size: BASE, velocity: 0, centerOffset: rect.left + Math.min(rect.width, BASE) / 2 - (outerRect.left + outerRect.width / 2) }
+    })
     let outerSize = REST_HEIGHT
     let outerVelocity = 0
     let mouseX = Number.POSITIVE_INFINITY
@@ -1309,18 +1324,20 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     let running = false
     let last = clockNow()
     const step = (now: number): void => {
-      const dt = Math.min(0.05, (now - last) / 1000)
+      const dt = Math.max(0, Math.min(MAX_FRAME_SECONDS, (now - last) / 1000))
       last = now
       let settled = true
+      const anchor = outer.getBoundingClientRect()
+      const anchorX = anchor.left + anchor.width / 2
       for (const tile of tiles) {
         let target = BASE
         if (hovered) {
-          const rect = tile.el.getBoundingClientRect()
-          const distance = Math.abs(mouseX - (rect.left + rect.width / 2))
+          const distance = Math.abs(mouseX - (anchorX + tile.centerOffset))
           target = BASE + (MAGNIFIED - BASE) * Math.max(0, 1 - distance / DISTANCE)
         }
         tile.velocity += ((STIFFNESS * (target - tile.size) - DAMPING * tile.velocity) / MASS) * dt
-        tile.size += tile.velocity * dt
+        tile.velocity = Math.max(-MAX_TILE_VELOCITY, Math.min(MAX_TILE_VELOCITY, tile.velocity))
+        tile.size = Math.max(BASE, Math.min(MAGNIFIED, tile.size + tile.velocity * dt))
         if (Math.abs(target - tile.size) > 0.15 || Math.abs(tile.velocity) > 2) settled = false
         else {
           tile.size = target
@@ -1331,7 +1348,8 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
       }
       const outerTarget = hovered ? HOVER_HEIGHT : REST_HEIGHT
       outerVelocity += ((STIFFNESS * (outerTarget - outerSize) - DAMPING * outerVelocity) / MASS) * dt
-      outerSize += outerVelocity * dt
+      outerVelocity = Math.max(-MAX_OUTER_VELOCITY, Math.min(MAX_OUTER_VELOCITY, outerVelocity))
+      outerSize = Math.max(REST_HEIGHT, Math.min(HOVER_HEIGHT, outerSize + outerVelocity * dt))
       if (Math.abs(outerTarget - outerSize) > 0.25 || Math.abs(outerVelocity) > 3) settled = false
       else {
         outerSize = outerTarget
@@ -1352,7 +1370,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     }
     const onPointerMove = (event: PointerEvent): void => {
       mouseX = event.clientX
-      hovered = true
+      hovered = outer.clientWidth > 900
       wake()
     }
     const onPointerLeave = (): void => {
@@ -1362,9 +1380,37 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     }
     dock.addEventListener('pointermove', onPointerMove)
     dock.addEventListener('pointerleave', onPointerLeave)
+    let layoutWidth = outer.clientWidth
+    const resetLayout = (): void => {
+      if (outer.clientWidth === layoutWidth) return
+      layoutWidth = outer.clientWidth
+      window.cancelAnimationFrame(raf)
+      running = false
+      hovered = false
+      mouseX = Number.POSITIVE_INFINITY
+      outerSize = REST_HEIGHT
+      outerVelocity = 0
+      outer.style.height = `${REST_HEIGHT}px`
+      for (const tile of tiles) {
+        tile.size = BASE
+        tile.velocity = 0
+        tile.el.style.width = `${BASE}px`
+        tile.el.style.height = `${BASE}px`
+      }
+      const anchor = outer.getBoundingClientRect()
+      for (const tile of tiles) {
+        const rect = tile.el.getBoundingClientRect()
+        tile.centerOffset = rect.left + BASE / 2 - (anchor.left + anchor.width / 2)
+      }
+    }
+    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resetLayout) : undefined
+    resizeObserver?.observe(outer)
+    window.addEventListener('resize', resetLayout)
     wake()
     return () => {
       window.cancelAnimationFrame(raf)
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', resetLayout)
       dock.removeEventListener('pointermove', onPointerMove)
       dock.removeEventListener('pointerleave', onPointerLeave)
     }
@@ -1406,9 +1452,8 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
   const panFrameRef = useRef<number | null>(null)
   const syncedRef = useRef('')
   const processedTasks = useRef(new Set<string>())
+  const resolvingTasks = useRef(new Set<string>())
   const processedImport = useRef('')
-  const localTaskIds = useRef(new Set<string>())
-  const mountedAtRef = useRef(Date.now())
   const internalClipboard = useRef<{ nodes: CanvasNode[]; connections: Array<{ fromNodeId: string; toNodeId: string }> } | null>(null)
   const pastRef = useRef<string[]>([])
   const futureRef = useRef<string[]>([])
@@ -2117,6 +2162,14 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     setFilePreviewNodeId(node.id)
   }, [])
 
+  /** Image nodes reuse the reader's full image view and zoom controls. */
+  const openImageNode = useCallback((node: CanvasNode): void => {
+    if (node.type !== 'image') return
+    const asset = assetOf(node)
+    if (asset === undefined || asset.assetId === '' || asset.url === '') return
+    setFilePreviewNodeId(node.id)
+  }, [])
+
   /** One-click AI polish for a text node (light tier, replaces the text). */
   const polishTextNode = useCallback(async (node: CanvasNode, style: string, instruction?: string): Promise<void> => {
     const current = documentRef.current
@@ -2688,7 +2741,6 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
         },
       }
       const task = await api.taskSubmit(request)
-      localTaskIds.current.add(task.id)
       mutate(previous => {
         const nodes = [...previous.nodes]
         const connections = [...previous.connections]
@@ -2773,7 +2825,6 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
         canvas: { canvasId: current.id, sourceNodeId: sourceId ?? references[0]?.id, parentNodeId: node.id, placement: 'right' as const },
       }
       const task = await api.taskSubmit(request)
-      localTaskIds.current.add(task.id)
       patchNode(node.id, {
         status: 'generating', error: undefined, taskId: task.id,
         // Remember the boxes so the finished image can be composited back onto
@@ -2788,53 +2839,53 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     }
   }, [annotatedReference, api, connected, defaultChannelId, imageModels, onOpenSettings, patchNode, requireExplicitImageModel, upstreamNodes])
 
-  // Orphan reconciliation: a generating placeholder whose task no longer exists
-  // in the host feed (e.g. the host restarted) can never complete on its own.
+  // Recover only pending canvas nodes. Older completed tasks intentionally omit
+  // results from the panel feed and may be outside its terminal-entry limit.
   useEffect(() => {
     if (document === null) return
-    const feedFresh = tasks.length > 0 || Date.now() - mountedAtRef.current > 8000
-    if (!feedFresh) return
-    const feedIds = new Set(tasks.map(task => task.id))
-    const orphans = document.nodes.filter(node => {
-      if (node.type !== 'image' || nodeMetadata(node).status !== 'generating') return false
-      const taskId = nodeMetadata(node).taskId
-      return taskId !== undefined && !feedIds.has(taskId) && !localTaskIds.current.has(taskId)
-    })
-    if (orphans.length === 0) return
-    updateNodes(nodes => nodes.map(node => {
-      const taskId = node.type === 'image' ? nodeMetadata(node).taskId : undefined
-      if (node.type !== 'image' || nodeMetadata(node).status !== 'generating' || taskId === undefined
-        || feedIds.has(taskId) || localTaskIds.current.has(taskId)) return node
-      return { ...node, metadata: { ...nodeMetadata(node), status: 'error', error: tt('canvas.taskLost') } }
-    }))
-  }, [document, tasks, updateNodes])
-
-  useEffect(() => {
-    if (document === null) return
-    const canvasTasks = tasks.filter(task => task.request.canvas?.canvasId === document.id)
-    for (const task of canvasTasks) {
-      if (task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled') continue
-      if (processedTasks.current.has(task.id)) continue
-      const targets = document.nodes.filter(node => node.type === 'image' && nodeMetadata(node).taskId === task.id && nodeMetadata(node).status === 'generating')
-      if (targets.length === 0) continue
-      processedTasks.current.add(task.id)
-      const sourceId = nodeMetadata(targets[0]!).sourceNodeId
+    const canvasId = document.id
+    const pendingIds = new Set(document.nodes.flatMap(node => node.type === 'image' && nodeMetadata(node).status === 'generating'
+      && nodeMetadata(node).taskId !== undefined ? [nodeMetadata(node).taskId!] : []))
+    for (const taskId of pendingIds) {
+      if (processedTasks.current.has(taskId) || resolvingTasks.current.has(taskId)) continue
+      const observed = tasks.find(task => task.id === taskId)
+      if (observed?.status === 'queued' || observed?.status === 'running') continue
       const fail = (message: string): void => {
-        updateNodes(nodes => nodes.map(node => node.type === 'image' && nodeMetadata(node).taskId === task.id && nodeMetadata(node).status === 'generating'
-          ? { ...node, metadata: { ...nodeMetadata(node), status: 'error', error: message } }
-          : node))
+        if (documentRef.current?.id !== canvasId) return
+        updateNodes(nodes => nodes.map(node => node.type === 'image' && nodeMetadata(node).taskId === taskId && nodeMetadata(node).status === 'generating'
+          ? { ...node, metadata: { ...nodeMetadata(node), status: 'error', error: message } } : node))
       }
-      if (task.status !== 'completed' || task.result === undefined || task.result.images.length === 0) {
-        fail(task.error ?? tt('canvas.generateFailed'))
-        continue
-      }
+      resolvingTasks.current.add(taskId)
       void (async () => {
+        let task = observed
+        if (task === undefined || task.status === 'completed' && task.result === undefined) {
+          try { task = await api.taskGet(taskId) }
+          catch (caught) {
+            // A capped or temporarily unavailable list does not prove an orphan.
+            if (caught instanceof ImageGenApiError && caught.code === 'not-found' && documentRef.current?.id === canvasId) {
+              processedTasks.current.add(taskId)
+              fail(tt('canvas.taskLost'))
+            }
+            return
+          }
+        }
+        const current = documentRef.current
+        if (current?.id !== canvasId || task.request.canvas?.canvasId !== canvasId) return
+        if (task.status === 'queued' || task.status === 'running' || task.status === 'completed' && task.result === undefined) return
+        const targets = current.nodes.filter(node => node.type === 'image' && nodeMetadata(node).taskId === taskId && nodeMetadata(node).status === 'generating')
+        if (targets.length === 0) return
+        processedTasks.current.add(taskId)
+        if (task.status !== 'completed' || task.result === undefined || task.result.images.length === 0) {
+          fail(task.error ?? tt('canvas.generateFailed'))
+          return
+        }
+        const sourceId = nodeMetadata(targets[0]!).sourceNodeId
         const assets: CanvasAssetRef[] = []
         const annotationEdit = nodeMetadata(targets[0]!).annotationEdit
         const originalAsset = annotationEdit === undefined
           ? undefined
-          : usableAsset(document.nodes.find(node => node.id === annotationEdit.sourceNodeId) ?? targets[0]!)
-        for (const image of task.result!.images) {
+          : usableAsset(current.nodes.find(node => node.id === annotationEdit.sourceNodeId) ?? targets[0]!)
+        for (const image of task.result.images) {
           let dataUrl = imageDataUrl(image)
           // A 标注 edit: keep the generated pixels only inside the boxes and
           // restore the clean original everywhere else, so the red marker the
@@ -2850,7 +2901,12 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
           const dimensions = await readImageSize(dataUrl)
           assets.push(await api.canvasUpload(dataUrl, dimensions.width, dimensions.height, { origin: 'generated', originId: task.id }))
         }
+        if (documentRef.current?.id !== canvasId) {
+          processedTasks.current.delete(taskId)
+          return
+        }
         updateDocument(previous => {
+          if (previous.id !== canvasId) return previous
           const ordered = previous.nodes.filter(node => node.type === 'image' && nodeMetadata(node).taskId === task.id && nodeMetadata(node).status === 'generating')
           if (ordered.length === 0) return previous
           const last = ordered[ordered.length - 1]!
@@ -2878,6 +2934,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
           return { ...previous, nodes: [...nodes, ...siblings], connections: [...previous.connections, ...connections] }
         })
       })().catch(caught => fail(caught instanceof Error ? caught.message : String(caught)))
+        .finally(() => { resolvingTasks.current.delete(taskId) })
     }
   }, [api, document, tasks, updateDocument, updateNodes])
 
@@ -2962,7 +3019,10 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
       void saveWithRetry().then(next => {
         syncedRef.current = JSON.stringify(next)
         setDocument(next)
-        setProjects(previous => [summaryOf(next), ...previous.filter(item => item.id !== next.id)])
+        setProjects(previous => {
+          const favorite = previous.find(item => item.id === next.id)?.favorite === true
+          return [summaryOf(next, favorite), ...previous.filter(item => item.id !== next.id)]
+        })
         setSaveState('saved')
       }).catch(caught => { setError(caught instanceof Error ? caught.message : String(caught)); setSaveState('error') })
     }, 650)
@@ -3465,6 +3525,23 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)) }
   }, [api])
 
+  const currentFavorite = projects.find(project => project.id === document?.id)?.favorite === true
+  const favoriteProjects = projects.filter(project => project.favorite === true)
+  const otherProjects = projects.filter(project => project.favorite !== true)
+
+  const toggleCurrentFavorite = useCallback(async (): Promise<void> => {
+    const current = documentRef.current
+    if (current === null || favoriteBusy) return
+    setFavoriteBusy(true)
+    try {
+      setProjects(await api.canvasFavorite(current.id, !currentFavorite))
+    } catch (caught) {
+      setError(errorMessage(caught))
+    } finally {
+      setFavoriteBusy(false)
+    }
+  }, [api, currentFavorite, favoriteBusy])
+
   const removeCurrentProject = useCallback(async (): Promise<void> => {
     const current = documentRef.current
     if (current === null) return
@@ -3597,6 +3674,13 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
       className={`${css.node} ${isSketch ? css.sketchNode : isConfig ? css.configNode : isTextual ? css.textNode : css.imageNode} ${isSelected ? css.nodeSelected : ''} ${isRelated ? css.nodeRelated : ''} ${isConnectTarget ? css.nodeConnectTarget : ''}`}
       style={{ left: node.x, top: node.y, width: node.width, height: node.height }}
       onPointerDown={event => handleNodePointerDown(event, node.id)}
+      onDoubleClick={event => {
+        if (!hasImage || node.type !== 'image' || annotating) return
+        if ((event.target as Element).closest('button, input, select, textarea, [data-toolbar]')) return
+        event.preventDefault()
+        event.stopPropagation()
+        openImageNode(node)
+      }}
       onContextMenu={event => {
         if ((event.target as Element).closest('textarea, input, select')) return
         event.preventDefault(); event.stopPropagation()
@@ -3701,7 +3785,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
               : isError
                 ? <div className={css.nodeStateError}>{metadata.error ?? tt('canvas.generateFailed')}<button type="button" onClick={() => { void retryGeneration(node) }}>{tt('canvas.retry')}</button></div>
                 : hasImage
-                  ? <img src={asset.url} alt={node.title} draggable={false} onDragStart={event => event.preventDefault()} />
+                  ? <img src={asset.url} alt={node.title} title={tt('canvas.preview.doubleClick')} draggable={false} onDragStart={event => event.preventDefault()} />
                   : <button type="button" className={css.nodeEmpty} onClick={() => imageFileRef.current?.click()}><ToolbarIcon name="image" /><span>{tt('canvas.emptyImageNode')}</span></button>}
             {hasImage && annotations.length > 0 ? <div className={css.annotationLayer} aria-hidden="true">
               {annotations.map((annotation, index) => <div key={annotation.id} className={css.annotationBox} style={boxStyle(annotation)}>
@@ -3778,6 +3862,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
             onChange={value => patchNode(node.id, { model: value === '' ? undefined : value })}
           />
           <span className={css.toolbarDivider} aria-hidden="true" />
+          <IconButton name="expand" label={tt('canvas.preview.expand')} onClick={() => openImageNode(node)} />
           <IconButton name="download" label={tt('canvas.download')} onClick={() => downloadNode(node)} />
         </> : null}
         {skillable ? <>
@@ -4058,7 +4143,10 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
       const items: Array<{ label: string; action: () => void; danger?: boolean; icon: ToolbarIconName }> = []
       if (contextMenu.type === 'node') {
         const node = nodeById.get(contextMenu.nodeId)
-        if (node !== undefined && node.type === 'image' && (assetOf(node)?.url.length ?? 0) > 0) items.push({ label: tt('canvas.download'), icon: 'download', action: () => downloadNode(node) })
+        if (node !== undefined && node.type === 'image' && (assetOf(node)?.url.length ?? 0) > 0) {
+          items.push({ label: tt('canvas.preview.expand'), icon: 'expand', action: () => openImageNode(node) })
+          items.push({ label: tt('canvas.download'), icon: 'download', action: () => downloadNode(node) })
+        }
         if (node !== undefined && node.type === 'file' && (assetOf(node)?.url.length ?? 0) > 0) {
           items.push({ label: tt('canvas.skills.fileDownload'), icon: 'download', action: () => downloadFileNode(node) })
           items.push({ label: tt('canvas.preview.expand'), icon: 'expand', action: () => openFileNode(node) })
@@ -4121,9 +4209,21 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
   return <section ref={rootRef} className={css.root} data-canvas-workspace="">
     <header className={css.topBar} data-canvas-no-zoom="">
       <select className={css.projectSelect} value={document?.id ?? ''} onChange={event => { void selectProject(event.target.value) }} aria-label={tt('canvas.project')}>
-        {projects.map(project => <option key={project.id} value={project.id}>{project.title}</option>)}
+        {favoriteProjects.length > 0 ? <optgroup label={tt('canvas.favoriteProjects', { count: favoriteProjects.length })}>
+          {favoriteProjects.map(project => <option key={project.id} value={project.id}>{project.title}</option>)}
+        </optgroup> : null}
+        {otherProjects.length > 0 ? <optgroup label={tt('canvas.allProjects', { count: otherProjects.length })}>
+          {otherProjects.map(project => <option key={project.id} value={project.id}>{project.title}</option>)}
+        </optgroup> : null}
       </select>
       <IconButton name="new" label={tt('canvas.newCanvas')} onClick={() => { void newCanvas() }} />
+      <IconButton
+        name={currentFavorite ? 'favoriteFilled' : 'favorite'}
+        label={currentFavorite ? tt('canvas.unfavoriteCanvas') : tt('canvas.favoriteCanvas')}
+        active={currentFavorite}
+        disabled={document === null || favoriteBusy}
+        onClick={() => { void toggleCurrentFavorite() }}
+      />
       <IconButton name="deleteProject" label={confirmDeleteProject ? tt('canvas.deleteCanvasConfirm') : tt('canvas.deleteCanvas')} active={confirmDeleteProject} disabled={document === null} onClick={() => {
         if (confirmDeleteProject) { void removeCurrentProject() } else { setConfirmDeleteProject(true); window.setTimeout(() => setConfirmDeleteProject(false), 3000) }
       }} />

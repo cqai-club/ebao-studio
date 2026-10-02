@@ -156,27 +156,27 @@ export type Catalog = {
   defaultImage?: string
 }
 export type Settings = {
-  pexels_api_keys: string
-  pixabay_api_keys: string
-  coverr_api_keys: string
+  pexelsConfigured: boolean
+  pixabayConfigured: boolean
+  coverrConfigured: boolean
   subtitle_provider: 'edge' | 'whisper'
   video_codec: 'libx264' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf'
 }
 export const defaultSettings: Settings = {
-  pexels_api_keys: '', pixabay_api_keys: '', coverr_api_keys: '',
+  pexelsConfigured: false, pixabayConfigured: false, coverrConfigured: false,
   subtitle_provider: 'edge', video_codec: 'libx264',
 }
 const stockMaterialKeys = {
-  pexels: {name: 'Pexels', key: 'pexels_api_keys'},
-  pixabay: {name: 'Pixabay', key: 'pixabay_api_keys'},
-  coverr: {name: 'Coverr', key: 'coverr_api_keys'},
+  pexels: {name: 'Pexels', key: 'pexelsConfigured'},
+  pixabay: {name: 'Pixabay', key: 'pixabayConfigured'},
+  coverr: {name: 'Coverr', key: 'coverrConfigured'},
 } as const
 export function materialKeyIssue(draft: Draft, settings: Settings): string | undefined {
   if (!stageRequirements(draft).materialUpload && !['materials','video'].includes(draft.stopAt)) return
   const source = String(draft.params.video_source)
   if (!(source in stockMaterialKeys)) return
   const {name, key} = stockMaterialKeys[source as keyof typeof stockMaterialKeys]
-  if (!settings[key].trim()) return `当前选择 ${name} 素材库，但尚未保存 ${name} API Key。请在“设置 → 素材平台”填入密钥并点击“保存设置”后重试。`
+  if (!settings[key]) return `当前选择 ${name} 素材库，但尚未保存 ${name} API Key。请在“设置 → 素材平台”填入密钥并点击“保存设置”后重试。`
 }
 export const defaultParams: Record<string, unknown> = {
   video_subject: '', video_script: '', video_terms: '',

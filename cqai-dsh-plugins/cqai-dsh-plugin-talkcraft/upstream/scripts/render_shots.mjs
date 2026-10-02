@@ -40,15 +40,17 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {loadProjectBundleOptions, projectRenderOptions, projectEncodeOptions, describeEncodeOptions, parseInputProps} from './remotion_project_config.mjs';
+import {sharedMediaBinary} from './common_media_tools.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const privateSnapshot = fs.existsSync(path.resolve(scriptDir, '../../.snapshot-ready'));
 const compositorRoot = path.resolve(scriptDir, '../runtime/node_modules/@remotion');
 const compositorBase = `compositor-${process.platform}-${process.arch}`;
 const compositor = privateSnapshot && fs.existsSync(compositorRoot) ? fs.readdirSync(compositorRoot).find((name) =>
-  (name === compositorBase || name.startsWith(`${compositorBase}-`)) && fs.existsSync(path.join(compositorRoot, name, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'))) : null;
+  (name === compositorBase || name.startsWith(`${compositorBase}-`)) && ['ffmpeg', 'ffprobe', 'remotion'].every((bin) => fs.existsSync(path.join(compositorRoot, name, `${bin}${process.platform === 'win32' ? '.exe' : ''}`)))) : null;
 if (privateSnapshot && !compositor) throw new Error(`Remotion compositor missing for ${process.platform}/${process.arch}`);
-const mediaBin = (name) => privateSnapshot ? path.join(compositorRoot, compositor, `${name}${process.platform === 'win32' ? '.exe' : ''}`) : name;
+const mediaBin = (name) => sharedMediaBinary(name, privateSnapshot ? path.resolve(scriptDir, '../..') : undefined)
+  ?? (privateSnapshot ? path.join(compositorRoot, compositor, `${name}${process.platform === 'win32' ? '.exe' : ''}`) : name);
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => {

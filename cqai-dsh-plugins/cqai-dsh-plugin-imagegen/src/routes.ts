@@ -15,7 +15,7 @@ import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attach
 import { SettingsConflictError, type SettingsDescriptor } from '@deepseek-ai/dsh-settings'
 import type { UpstreamConfig } from './engine.ts'
 import type { CqaiImageProvider } from './cqai-image-provider.ts'
-import { enhancePrompt, listImageModels, listPromptModels, type PromptModelConfig } from './prompt-enhancer.ts'
+import { enhancePrompt, polishPrompt, listImageModels, listPromptModels, type PromptModelConfig } from './prompt-enhancer.ts'
 import { analyzeLayers, analyzeLayersWithChat, MAX_LAYER_IMAGE_BYTES } from './layer-analyzer.ts'
 import { normalizeImageModels } from './image-models.ts'
 import { ImageGenerationRuntime, type ChannelsView } from './generation-runtime.ts'
@@ -176,6 +176,7 @@ export interface CanvasBackend {
   read: (id: string) => Promise<Awaited<ReturnType<CanvasStore['read']>>>
   save: (document: CanvasDocument, expectedRevision?: number) => Promise<Awaited<ReturnType<CanvasStore['save']>>>
   remove: (id: string) => Promise<Awaited<ReturnType<CanvasStore['remove']>>>
+  setFavorite?: (id: string, favorite: boolean) => Promise<Awaited<ReturnType<CanvasStore['setFavorite']>>>
   putImage: (input: CanvasImageInput) => Promise<Awaited<ReturnType<CanvasStore['putImage']>>>
   readAsset: (file: string) => Promise<Awaited<ReturnType<CanvasStore['readAsset']>>>
   /** File assets (the canvas file node). Optional so older test backends work. */
@@ -780,6 +781,31 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
         }
       },
     },
+    {
+      kind: 'exact',
+      path: PROMPT_ENHANCE_API.polish,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        const body = await readJsonBody(req)
+        const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : ''
+        if (prompt === '' || prompt.length > 50_000) {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: 'prompt must contain 1 to 50000 characters' })
+          return
+        }
+        try {
+          const polished = deps.cqai === undefined
+            ? await polishPrompt(resolvePrompt(), prompt)
+            : await deps.cqai.complete({
+                temperature: 0.35,
+                system: '你是电商生图提示词编辑。请在保持图片用途、商品事实、平台、语言和原有结构不变的前提下，润色文字并补充可执行的视觉细节，减少重复和空泛表达。只输出最终提示词，不要解释、标题或 Markdown。',
+                content: prompt,
+              })
+          writeJson(res, 200, { ok: true, prompt: polished })
+        } catch (error) {
+          writeJson(res, 200, { ok: false, code: 'prompt-polish-failed', message: messageOf(error) })
+        }
+      },
+    },
     // -------------------------------------------------- settings describe
     {
       kind: 'exact',
@@ -878,7 +904,17 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
     },
     {
       kind: 'exact', path: TASK_API.list,
-      handler: async (req, res) => { if (!guard(req, res, 'POST')) return; writeJson(res, 200, { ok: true, tasks: runtime.queue.list() }) },
+      handler: async (req, res) => { if (!guard(req, res, 'POST')) return; writeJson(res, 200, { ok: true, tasks: runtime.queue.summaries() }) },
+    },
+    {
+      kind: 'exact', path: TASK_API.get,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        const body = await readJsonBody(req)
+        const task = typeof body?.id === 'string' ? runtime.queue.get(body.id) : undefined
+        if (task === undefined) { writeJson(res, 200, { ok: false, code: 'not-found', message: 'task not found' }); return }
+        writeJson(res, 200, { ok: true, task })
+      },
     },
     {
       kind: 'exact', path: TASK_API.cancel,
@@ -1182,6 +1218,26 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
         const id = typeof body?.id === 'string' ? body.id : ''
         if (id === '') { writeJson(res, 200, { ok: false, code: 'bad-request', message: 'canvas id is required' }); return }
         try { writeJson(res, 200, { ok: true, projects: await canvas.remove(id) }) }
+        catch (error) { writeJson(res, 200, { ok: false, code: 'canvas-failed', message: messageOf(error) }) }
+      },
+    },
+    // ---------------------------------------------------- canvas favorite
+    {
+      kind: 'exact',
+      path: CANVAS_API.favorite,
+      handler: async (req, res) => {
+        if (!guard(req, res, 'POST')) return
+        const body = await readJsonBody(req)
+        const id = typeof body?.id === 'string' ? body.id.trim() : ''
+        if (id === '' || typeof body?.favorite !== 'boolean') {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: 'canvas id and boolean favorite are required' })
+          return
+        }
+        if (canvas.setFavorite === undefined) {
+          writeJson(res, 200, { ok: false, code: 'canvas-failed', message: 'canvas favorites are unavailable' })
+          return
+        }
+        try { writeJson(res, 200, { ok: true, projects: await canvas.setFavorite(id, body.favorite) }) }
         catch (error) { writeJson(res, 200, { ok: false, code: 'canvas-failed', message: messageOf(error) }) }
       },
     },
@@ -1741,10 +1797,13 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
           return
         }
         const record = rawCase as Record<string, unknown>
-        const id = Number(record.id)
+        const id = record.id
         const title = typeof record.title === 'string' ? record.title.trim() : ''
         const prompt = typeof record.prompt === 'string' ? record.prompt.trim() : ''
-        if (!Number.isInteger(id) || title === '' || prompt === '') {
+        const validId = typeof id === 'number'
+          ? Number.isSafeInteger(id)
+          : typeof id === 'string' && id.trim() !== '' && id.length <= 200
+        if (!validId || title === '' || prompt === '') {
           writeJson(res, 200, { ok: false, code: 'template-favorite-invalid', message: '收藏请求缺少有效的模板数据' })
           return
         }

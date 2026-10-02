@@ -101,14 +101,14 @@ describe('short-video local job boundary', () => {
   })
   it('asks for the selected stock API key before starting visual material work', () => {
     for (const [source, key, name] of [
-      ['pexels', 'pexels_api_keys', 'Pexels'],
-      ['pixabay', 'pixabay_api_keys', 'Pixabay'],
-      ['coverr', 'coverr_api_keys', 'Coverr'],
+      ['pexels', 'pexelsConfigured', 'Pexels'],
+      ['pixabay', 'pixabayConfigured', 'Pixabay'],
+      ['coverr', 'coverrConfigured', 'Coverr'],
     ] as const) {
       const job = draft({video_script:'已写好的旁白',video_source:source})
       expect(materialKeyIssue(job, defaultSettings)).toContain(`${name} API Key`)
       expect(materialKeyIssue({...job,stopAt:'subtitle'}, defaultSettings)).toBeUndefined()
-      expect(materialKeyIssue(job, {...defaultSettings,[key]:'example-key'})).toBeUndefined()
+      expect(materialKeyIssue(job, {...defaultSettings,[key]:true})).toBeUndefined()
       expect(materialKeyIssue({...job,stopAt:'audio'}, defaultSettings)).toBeUndefined()
     }
     expect(materialKeyIssue(draft({video_script:'已写好的旁白',video_source:'local'}), defaultSettings)).toBeUndefined()

@@ -30,7 +30,7 @@ function syncMemoRoot(): void {
 }
 
 /** Build the stable key of one case within a source. */
-export function templateFavoriteKey(sourceId: string, caseId: number): string {
+export function templateFavoriteKey(sourceId: string, caseId: number | string): string {
   return `${sourceId}:${caseId}`
 }
 
@@ -41,14 +41,20 @@ function normalizeFavorite(raw: unknown): TemplateFavorite | undefined {
   if (typeof record.key !== 'string' || typeof record.savedAt !== 'string') return undefined
   const sourceId = typeof record.sourceId === 'string' ? record.sourceId : ''
   if (!isTemplateSourceId(sourceId)) return undefined
-  if (record.key !== templateFavoriteKey(sourceId, Number(record.case && (record.case as TemplateCase).id))) return undefined
   const rawCase = record.case
   if (rawCase === null || typeof rawCase !== 'object') return undefined
   const item = rawCase as Record<string, unknown>
-  const id = Number(item.id)
+  let id: number | string = typeof item.id === 'number' && Number.isInteger(item.id)
+    ? item.id
+    : typeof item.id === 'string' ? item.id.trim() : ''
+  if ((sourceId === 'vibeui' || sourceId === 'canghe') && typeof id === 'string') {
+    if (id === '' || !Number.isInteger(Number(id))) return undefined
+    id = Number(id)
+  }
   const title = typeof item.title === 'string' ? item.title : ''
   const prompt = typeof item.prompt === 'string' ? item.prompt : ''
-  if (!Number.isInteger(id) || title === '' || prompt === '') return undefined
+  if (id === '' || title === '' || prompt === '') return undefined
+  if (record.key !== templateFavoriteKey(sourceId, id)) return undefined
   // Keep only the wire fields so hand-edited files cannot smuggle extras.
   const snapshot: TemplateCase = {
     id,

@@ -4,8 +4,8 @@ import { mkdir, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { SetupManager, makeNodeShim, nodeEnvironment, npmCli, python311, pythonEnvironment, run, uvEnvironment, uvExecutable, withPrivatePath } from 'cqai-dsh-plugin-media-runtime'
-import { ffmpegExecutable, health, modelReady, pythonExecutable, remotionBrowserExecutable } from './runtime.ts'
+import { SetupManager, commonToolEnvironment, commonToolSteps, makeNodeShim, nodeEnvironment, npmCli, python311, pythonEnvironment, run, uvExecutable, withPrivatePath } from 'cqai-dsh-plugin-media-runtime'
+import { health, modelReady, pythonExecutable, remotionBrowserExecutable, remotionCompositorExecutable } from './runtime.ts'
 
 const MODEL_SOURCE = 'https://huggingface.co/csukuangfj2/sherpa-onnx-fire-red-asr2-ctc-zh_en-int8-2026-02-25/resolve/main/'
 const MODEL_FILES = [
@@ -17,7 +17,7 @@ const OMIT = new Set(['node_modules', '.venv', 'models', 'dist', '.git', 'tsconf
 export function snapshotPath(sourceRoot: string, home: string): string {
   const hash = createHash('sha256')
   for (const file of ['UPSTREAM.md', 'python-requirements.txt', 'upstream/runtime/remotion-lock.json',
-    ...['render_shots.mjs','private_tools.py','frame_signature.py','freeze_probe.py','motion_check.py','preflight.py','qa_extract.py','sfx_check.py','tts_fishaudio.py','voice_trim.py'].map(name=>`upstream/scripts/${name}`)])
+    ...['render_shots.mjs','common_media_tools.mjs','private_tools.py','frame_signature.py','freeze_probe.py','motion_check.py','preflight.py','qa_extract.py','sfx_check.py','tts_fishaudio.py','voice_trim.py'].map(name=>`upstream/scripts/${name}`)])
     hash.update(readFileSync(join(sourceRoot, file)))
   return join(home, 'runtime', `v1-${hash.digest('hex').slice(0, 12)}`)
 }
@@ -87,26 +87,27 @@ export async function downloadModel(directory: string, log: (line: string) => vo
 export function talkcraftSetup(sourceRoot: string, home: string, upstream: string, modelDir: string | (() => string)): SetupManager {
   const target = dirname(upstream)
   const runtime = join(upstream, 'runtime')
-  const uvHome = join(dirname(home), 'media-tools')
+  const dshHome = dirname(home)
+  const uvHome = join(dshHome, 'media-tools')
   const nodeDir = join(home, 'bin')
   const venv = join(runtime, '.venv')
   const python = pythonExecutable(upstream)
   const selectedModel = () => typeof modelDir === 'string' ? modelDir : modelDir()
   return new SetupManager(() => [
     {id:'snapshot',label:'应用私有运行时',ready:async()=>snapshotReady(target),run:async log=>{prepareSnapshot(sourceRoot,target);log('已复制固定版本源码与配置')}},
-    {id:'node',label:'内置 Node 与 npm',ready:async()=>{
+    ...commonToolSteps(dshHome),
+    {id:'nodeLauncher',label:'口播 Node 启动器',ready:async()=>{
       const shim=join(nodeDir,process.platform==='win32'?'node.cmd':'node')
       return existsSync(shim) && readFileSync(shim,'utf8').includes(process.execPath)
         && (await probe(process.execPath,['--version'],nodeEnvironment())) && existsSync(npmCli())
     },run:async log=>{makeNodeShim(nodeDir);await run(process.execPath,[npmCli(),'--version'],{env:nodeEnvironment(),log})}},
-    {id:'python',label:'Python 3.11',ready:async()=>{try{await python311(uvHome);return true}catch{return false}},run:async log=>{await mkdir(uvHome,{recursive:true});await run(uvExecutable(),['python','install','3.11'],{env:uvEnvironment(uvHome),log})}},
-    {id:'edgeTts',label:'Python、Edge TTS 与识别依赖',ready:async()=>{const h=await health(upstream,selectedModel());return h.python===true&&h.edgeTts===true},run:async log=>{
+    {id:'edgeTts',label:'口播 Python 包环境、Edge TTS 与识别依赖',ready:async()=>{const h=await health(upstream,selectedModel(),dshHome);return h.pythonPackages===true&&h.edgeTts===true},run:async log=>{
       const selection=await python311(uvHome)
       const environment=pythonEnvironment(uvHome,selection)
       await run(uvExecutable(),['venv','--allow-existing','--python',selection.python,venv],{env:environment,log})
       await run(uvExecutable(),['pip','install','--python',python,'-r',join(target,'python-requirements.txt')],{env:environment,log})
     }},
-    {id:'remotion',label:'Remotion 锁定依赖',ready:async()=>{const h=await health(upstream,selectedModel());return h.remotion===true&&h.ffmpeg===true&&h.ffprobe===true},run:async log=>{
+    {id:'remotion',label:'Remotion 锁定依赖与原生组件',ready:async()=>{const h=await health(upstream,selectedModel(),dshHome);return h.remotion===true&&h.remotionCompositor===true},run:async log=>{
       const shim=makeNodeShim(nodeDir)
       await run(process.execPath,[npmCli(),'ci','--include=dev','--ignore-scripts','--no-audit','--no-fund','--no-progress'],
         {cwd:runtime,env:withPrivatePath([shim],nodeEnvironment({...process.env,npm_config_cache:join(home,'npm-cache')})),log})
@@ -117,12 +118,10 @@ export function talkcraftSetup(sourceRoot: string, home: string, upstream: strin
         symlinkSync(deps,wbDeps,process.platform==='win32'?'junction':'dir')
       }
     }},
-    {id:'ffmpeg',label:'FFmpeg',ready:async()=>probe(ffmpegExecutable(upstream,'ffmpeg'),['-version']),run:async log=>{log('检查 Remotion 平台程序');await run(ffmpegExecutable(upstream,'ffmpeg'),['-version'],{log})}},
-    {id:'ffprobe',label:'ffprobe',ready:async()=>probe(ffmpegExecutable(upstream,'ffprobe'),['-version']),run:async log=>{log('检查 Remotion 平台程序');await run(ffmpegExecutable(upstream,'ffprobe'),['-version'],{log})}},
     {id:'browser',label:'Remotion 浏览器',ready:async()=>{const bin=browserPath(upstream);return Boolean(bin && await probe(bin,['--version']))},run:async log=>{
       log('下载并准备 Remotion 浏览器，首次安装可能需要数百 MB')
       await run(process.execPath,[join(runtime,'node_modules','@remotion','cli','remotion-cli.js'),'browser','ensure'],
-        {cwd:runtime,env:withPrivatePath([makeNodeShim(nodeDir),dirname(ffmpegExecutable(upstream,'ffmpeg'))],nodeEnvironment()),log})
+        {cwd:runtime,env:withPrivatePath([makeNodeShim(nodeDir),dirname(remotionCompositorExecutable(upstream,'ffmpeg'))],nodeEnvironment(commonToolEnvironment(dshHome))),log})
     }},
     {id:'asrModel',label:'本地配音识别模型',ready:async()=>modelReady(selectedModel()),run:async log=>downloadModel(join(home,'models','firered'),log)},
   ])

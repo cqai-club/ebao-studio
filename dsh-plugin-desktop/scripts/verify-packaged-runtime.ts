@@ -92,8 +92,9 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
   'node_modules/@dataiku/uv-darwin-arm64',
   'node_modules/@dataiku/uv-darwin-x64',
   'node_modules/@dataiku/uv-win32-x64',
-  // The Short Video package carries explicitly unpacked runtime executables.
+  // The video packages carry explicitly unpacked Python runtime scripts.
   'node_modules/cqai-dsh-plugin-short-video',
+  'node_modules/cqai-dsh-plugin-video',
   'node_modules/fs-ext',
   'node_modules/koffi',
   'node_modules/node-addon-require-builtin',
@@ -223,32 +224,35 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'node_modules/pnpm/bin/pnpm.mjs',
 ] as const
 
-/** macOS-only desktop assets loaded by nativeImage from physical paths. */
+/** macOS assets and external Python runtime scripts loaded from physical paths. */
 export const REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon-mac.png',
   'build/tray-iconTemplate.png',
   'build/tray-iconTemplate@2x.png',
+  'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
 ] as const
 
-/** Windows desktop assets, including white notification-area DPI variants. */
+/** Windows assets, including white notification-area DPI variants, and Python runtime scripts. */
 export const REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon.png',
   'build/tray-icon-white.png',
   'build/tray-icon-white@1.25x.png',
   'build/tray-icon-white@1.5x.png',
   'build/tray-icon-white@2x.png',
+  'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
 ] as const
 
-/** Linux desktop assets, including brand-color DPI variants. */
+/** Linux assets, including brand-color DPI variants, and Python runtime scripts. */
 export const REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon.png',
   'build/tray-icon-blue.png',
   'build/tray-icon-blue@1.25x.png',
   'build/tray-icon-blue@1.5x.png',
   'build/tray-icon-blue@2x.png',
+  'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
 ] as const
 
-/** Complete cross-platform asset surface, used only as a closed allowlist. */
+/** Complete cross-platform physical asset surface, used only as a closed allowlist. */
 export const REQUIRED_UNPACKED_RUNTIME_ENTRIES = [
   ...REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
   ...REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,

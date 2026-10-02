@@ -1,7 +1,7 @@
 /** In-memory, host-resident image generation queue. */
 
 import { randomUUID } from 'node:crypto'
-import type { GenerateRequest, GenerateResult, GenerationTask } from './protocol.ts'
+import type { GenerateRequest, GenerateResult, GenerationTask, GenerationTaskSummary } from './protocol.ts'
 
 export type GenerationTaskListener = (task: GenerationTask) => void
 
@@ -18,6 +18,26 @@ export class GenerationTaskQueue {
 
   list(): GenerationTask[] {
     return this.tasks.map(task => this.snapshot(task))
+  }
+
+  /** Poll without resending reference images or generated image payloads. */
+  summaries(terminalLimit = 100): GenerationTaskSummary[] {
+    const limit = Number.isFinite(terminalLimit) ? Math.max(0, Math.floor(terminalLimit)) : 100
+    const recentTerminal = new Set(this.tasks
+      .filter(task => task.status !== 'queued' && task.status !== 'running')
+      .sort((a, b) => (b.finishedAt ?? b.createdAt) - (a.finishedAt ?? a.createdAt))
+      .slice(0, limit).map(task => task.id))
+    return this.tasks.filter(task => task.status === 'queued' || task.status === 'running' || recentTerminal.has(task.id)).map(task => {
+      const { result, request, ...summary } = task
+      const { image: _image, images: _images, ...metadata } = request
+      return { ...summary, request: metadata, resultAvailable: result !== undefined }
+    })
+  }
+
+  /** Fetch an image payload only when a consumer needs that task's result. */
+  get(id: string): GenerationTask | undefined {
+    const task = this.tasks.find(item => item.id === id)
+    return task === undefined ? undefined : this.snapshot(task)
   }
 
   /** Observe queue state changes. Listener failures never disrupt generation. */

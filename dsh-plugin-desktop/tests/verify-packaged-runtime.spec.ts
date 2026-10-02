@@ -820,6 +820,7 @@ describe('packaged desktop runtime verification', () => {
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-win32-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/cqai-dsh-plugin-short-video')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/cqai-dsh-plugin-video')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/fs-ext')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/node-pty')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
@@ -978,6 +979,7 @@ describe('packaged desktop runtime verification', () => {
   it.each([
     'build/app-icon.png',
     'build/tray-icon-white@2x.png',
+    'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
     'node_modules/@vscode/ripgrep-win32-x64/bin/rg.exe',
     'node_modules/node-pty/prebuilds/win32-x64/conpty.node',
   ])('fails loud when selective physical entry %s is absent', (missing) => {

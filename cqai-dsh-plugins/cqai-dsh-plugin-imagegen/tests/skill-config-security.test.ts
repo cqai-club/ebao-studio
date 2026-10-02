@@ -54,7 +54,8 @@ describe('untrusted skill configuration apply', () => {
     const outside = path.join(root, 'outside')
     await fs.mkdir(safe)
     await fs.mkdir(outside)
-    await fs.symlink(outside, path.join(safe, 'escape'))
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+    await fs.symlink(outside, path.join(safe, 'escape'), linkType)
     const manifest = declaration({
       version: 1,
       apply: [{ kind: 'file', path: 'escape/stolen.txt', content: 'nope' }],
@@ -68,7 +69,7 @@ describe('untrusted skill configuration apply', () => {
     await expect(fs.access(path.join(outside, 'stolen.txt'))).rejects.toThrow()
 
     const linkedConfigRoot = path.join(root, 'linked-root', 'files')
-    await fs.symlink(outside, path.join(root, 'linked-root'))
+    await fs.symlink(outside, path.join(root, 'linked-root'), linkType)
     const rootPreview = await previewSkillConfigSteps(manifest, new Map(), {
       configRoot: linkedConfigRoot,
       safeBase: root,
@@ -137,7 +138,9 @@ describe('untrusted skill configuration apply', () => {
     expect(result[0]).toMatchObject({ ok: true, detail: '→ <skill-config>/nested/service.json' })
     const target = path.join(configRoot, 'nested', 'service.json')
     expect(await fs.readFile(target, 'utf8')).toContain('super-secret-value')
-    expect((await fs.stat(target)).mode & 0o777).toBe(0o600)
+    // Windows stat exposes synthetic POSIX bits; the permission assertion is
+    // meaningful on POSIX, while the redaction/atomic-write checks run on both.
+    if (process.platform !== 'win32') expect((await fs.stat(target)).mode & 0o777).toBe(0o600)
   })
 
   it('binds confirmation fingerprints to both declaration and current values', () => {

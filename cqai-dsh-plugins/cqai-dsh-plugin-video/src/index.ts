@@ -1,21 +1,23 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-credentials'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { createReadStream, createWriteStream, existsSync, realpathSync, statSync } from 'node:fs'
+import { createMediaSettings, createMediaSettingsHandler } from 'cqai-dsh-media-settings'
+import { createReadStream, createWriteStream, realpathSync, statSync } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { join, extname, dirname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { spawn } from 'node:child_process'
 import { API, type UploadKind } from './protocol.ts'
 import { JobStore, validateOptions } from './jobs.ts'
 import { UPLOADS, validateUpload } from './uploads.ts'
 import { ManagedJobs, type VideoAccount } from './managed-jobs.ts'
+import { checkVideoHealth, createVideoHealth, createVideoSetup, videoEnvironment, videoPython, videoRuntime } from './runtime.ts'
 
 export const name = 'cqai-video'
-export const inject = ['webServer', 'dsnAccount']
+export const inject = ['webServer', 'dsnAccount', 'credentials']
 function json(res: ServerResponse, code: number, data: unknown) {res.writeHead(code, {'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}); res.end(JSON.stringify(data))}
 export function permitted(req: IncomingMessage): boolean {
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '')) return false
@@ -44,32 +46,43 @@ export function serveArtifact(req: IncomingMessage, res: ServerResponse, path: s
   const stream = createReadStream(path, {start, end}); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res)
 }
 export function apply(ctx: Context): void {
-  const runtime = process.env.EJIANBAO_RUNTIME || fileURLToPath(new URL('../runtime/', import.meta.url))
-  const store = new JobStore(join(resolveDshHome(), 'ejianbao', 'jobs'), runtime)
+  const dshHome = resolveDshHome()
+  const mediaSettings = createMediaSettings({home: dshHome, credentials: {
+    readRecord: key => ctx.credentials.readRecord(key),
+    modifyRecord: (key, mutate) => ctx.credentials.modifyRecord(key, mutate),
+  }})
+  const handleMediaSettings = createMediaSettingsHandler(mediaSettings, {path: `${API}/media-settings`})
+  const source = fileURLToPath(new URL('../runtime/', import.meta.url))
+  const runtime = videoRuntime(source)
+  const store = new JobStore(join(dshHome, 'ejianbao', 'jobs'), runtime, () => videoPython(dshHome), () => videoEnvironment(dshHome))
   const account = () => (ctx as Context & {dsnAccount: VideoAccount}).dsnAccount
   const managed = new ManagedJobs(store, {
     fetchAi: (path, init, signal) => account().fetchAi(path, init, signal),
     getAccount: () => account().getAccount(),
   })
   store.managedGenerate = (job, signal) => managed.generate(job, signal)
-  let health: Promise<unknown> | undefined
-  const getHealth = () => health ??= new Promise(resolveHealth => {
-    const child = spawn(store.python, [join(runtime, 'runner.py'), '--health'], {windowsHide: true, env: {...process.env, PYTHONUTF8: '1'}, stdio: ['ignore', 'pipe', 'pipe']})
-    let text = ''; const timer = setTimeout(() => child.kill(), 10000)
-    child.stdout!.on('data', chunk => {text += chunk.toString()})
-    child.on('error', () => {}); child.once('close', () => {clearTimeout(timer); try {resolveHealth(JSON.parse(text))} catch {resolveHealth({python: false, message: '找不到 Python，请安装 Python 或设置 EJIANBAO_PYTHON 后重启'})}})
-  })
+  const health = createVideoHealth(() => checkVideoHealth(runtime, store.python, videoEnvironment(dshHome)))
+  const setup = createVideoSetup(dshHome, runtime)
+  let setupFinishedAt = 0
+  const setupSnapshot = () => {
+    const state = setup.snapshot()
+    if (state.status !== 'idle' && state.status !== 'running' && state.updatedAt !== setupFinishedAt) {setupFinishedAt = state.updatedAt; health.invalidate()}
+    return state
+  }
   ctx.effect(() => {
     const unregister = ctx.webServer.register({kind: 'prefix', path: API, handler: async (req, res) => {
+      if (await handleMediaSettings(req, res)) return
       if (!permitted(req)) return json(res, 403, {error: '仅允许本机应用访问'})
       try {
         const url = new URL(req.url!, 'http://localhost'); const action = url.pathname.slice(API.length + 1)
         const id = url.searchParams.get('id') ?? ''
-        if (req.method === 'GET' && action === 'health') return json(res, 200, await getHealth())
+        if (req.method === 'GET' && action === 'health') {const state = setupSnapshot(); return json(res, 200, {...await health.read(url.searchParams.get('refresh') === '1'), setup: state})}
+        if (req.method === 'GET' && action === 'setup') return json(res, 200, setupSnapshot())
+        if (req.method === 'POST' && action === 'setup') {if ([...store.jobs.values()].some(job => job.status === 'running')) throw new Error('正在制作，请等待当前任务完成后修复环境'); health.invalidate(); return json(res, 202, setup.start())}
         if (req.method === 'GET' && action === 'jobs') return json(res, 200, [...store.jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(j => ({...j, logs: j.logs.slice(-40)})))
         if (req.method === 'POST' && action === 'jobs') return json(res, 201, store.create(validateOptions(await readJson(req))))
         if (req.method === 'POST' && action === 'quote') return json(res, 200, await managed.quote(id))
-        if (req.method === 'POST' && action === 'start') return json(res, 200, store.start(id))
+        if (req.method === 'POST' && action === 'start') {if (setup.snapshot().status === 'running') throw new Error('环境正在准备，请完成后再制作'); return json(res, 200, store.start(id))}
         if (req.method === 'POST' && action === 'cancel') {await store.cancel(id); return json(res, 200, store.get(id))}
         if (req.method === 'POST' && action === 'upload') {
           const job = store.get(id); if (job.status !== 'draft') throw new Error('只能修改尚未开始的任务素材')

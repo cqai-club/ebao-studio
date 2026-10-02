@@ -1,0 +1,4 @@
+- insert:
+    - id: cqai-ejianbao
+      name: cqai-dsh-plugin-ejianbao
+      disabled: false

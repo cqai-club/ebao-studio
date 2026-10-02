@@ -23,6 +23,7 @@ export type CoverId = keyof typeof coverImages
 const knownCovers = new Map<string, CoverId>([
   ['cqai-imagegen', 'imagegen'],
   ['cqai-video', 'video'],
+  ['cqai-ejianbao', 'video'],
   ['cqai-short-video', 'short-video'],
   ['cqai-talkcraft', 'talkcraft'],
   ['cqai-publisher', 'publisher'],

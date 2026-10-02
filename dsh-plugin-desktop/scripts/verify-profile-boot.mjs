@@ -505,6 +505,10 @@ try {
       headers: { [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value },
     })
   }
+  if (process.argv.includes('--ejianbao-browser')) {
+    const { verifyEjianbaoBrowser } = await import('../../scripts/verify-ejianbao-browser.mjs')
+    await verifyEjianbaoBrowser({url: expectedUrl, cookie, headers: {[BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value}})
+  }
   const aaEnabled = aaRequested && !brokenAa
   if (ids.has('@agents-anywhere/dsh-bridge-next') !== aaEnabled) throw new Error('AA client graph does not match explicit selection')
   if (aaEnabled && (!ctx.get('agentsAnywhereRuntime') || !ctx.get('agentsAnywhereOnboarding'))) {

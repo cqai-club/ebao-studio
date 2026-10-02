@@ -18,7 +18,8 @@ export class JobStore {
   readonly jobs = new Map<string, Job>()
   private active?: {id: string; child: ChildProcess; done: Promise<void>; controller: AbortController}
   managedGenerate?: (job: Job, signal: AbortSignal) => Promise<void>
-  constructor(readonly root: string, readonly runtime: string, readonly python = process.env.EJIANBAO_PYTHON || 'python') {
+  constructor(readonly root: string, readonly runtime: string, private readonly pythonSource: string | (() => string) = process.env.EJIANBAO_PYTHON || 'python',
+    private readonly environment: () => NodeJS.ProcessEnv = () => process.env) {
     mkdirSync(root, {recursive: true})
     for (const id of readdirSync(root)) {
       if (!validId(id)) continue
@@ -30,6 +31,7 @@ export class JobStore {
       } catch { /* Ignore incomplete directories; never read outside job storage. */ }
     }
   }
+  get python(): string {return typeof this.pythonSource === 'function' ? this.pythonSource() : this.pythonSource}
   dir(id: string): string { if (!validId(id)) throw new Error('无效任务'); return join(this.root, id) }
   get(id: string): Job { const job = this.jobs.get(id); if (!job) throw new Error('任务不存在'); return job }
   save(job: Job): void {
@@ -73,7 +75,7 @@ export class JobStore {
     const controller = new AbortController()
     const child = spawn(this.python, ['-u', join(this.runtime, 'runner.py'), '--out', this.dir(id), ...(preparing ? ['--prepare-only'] : [])], {
       cwd: this.runtime, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-      env: {...process.env, INFERFLOW_API_KEY: '', EJIANBAO_MANAGED_ACCOUNT: '1', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'},
+      env: {...this.environment(), INFERFLOW_API_KEY: '', EJIANBAO_MANAGED_ACCOUNT: '1', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'},
       detached: process.platform !== 'win32',
     })
     let pending = ''

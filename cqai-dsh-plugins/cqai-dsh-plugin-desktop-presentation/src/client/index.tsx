@@ -7,13 +7,15 @@ import robotArtwork from '../../assets/ebao-robot.webp'
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { HomeDock } from './home.tsx'
 import { installHomeStyles } from './styles.ts'
+import { aggregateVideoAvailable, projectVideoEntries } from './video-navigation.ts'
 
 export const inject = ['slots']
 
 const HERO_ACTIONS = [
   { id: 'cqai-imagegen', label: 'e图宝', position: 'image', prompt: '想把灵感变成图片？试试 e图宝。' },
   { id: 'cqai-short-video', label: '短视频制作', position: 'short-video', prompt: '有短视频点子？可以从文案开始。' },
-  { id: 'cqai-video', label: 'e剪宝', position: 'video', prompt: '有视频要剪？打开 e剪宝试试。' },
+  { id: 'cqai-ejianbao', label: 'e剪宝', position: 'video', prompt: '有视频要做？打开 e剪宝试试。' },
+  { id: 'cqai-video', label: '数字人视频制作', position: 'video', prompt: '需要数字人视频？试试数字人视频制作。' },
   { id: 'cqai-talkcraft', label: '口播视频制作', position: 'talkcraft', prompt: '需要口播视频？从文案开始吧。' },
   { id: 'cqai-publisher', label: '多平台发布', position: 'publisher', prompt: '内容准备好了？试试多平台发布。' },
 ] as const
@@ -159,9 +161,10 @@ function HomeHeadline({ ctx }: { ctx: Context }) {
       const component = entries.get(action.id)?.component
       return [action.id, typeof component === 'function' ? component as EmployeeIcon : undefined] as const
     }))
-    return { panels, icons }
+    const aggregate = aggregateVideoAvailable(panels, new Set(entries.keys()))
+    return { panels, icons, actions: projectVideoEntries(HERO_ACTIONS, aggregate) }
   }, [ctx, revision])
-  const enabledKey = HERO_ACTIONS.filter(action => roster.panels.has(action.id)).map(action => action.id).join(',')
+  const enabledKey = roster.actions.filter(action => roster.panels.has(action.id)).map(action => action.id).join(',')
   const prompt = useHeroPrompt(enabledKey)
 
   return <span className="eBaoHeroSlot">
@@ -171,7 +174,7 @@ function HomeHeadline({ ctx }: { ctx: Context }) {
         <span className="eBaoHeroPromptMeasure" aria-hidden="true">{prompt.message}</span>
         <span className="eBaoHeroPromptText" aria-hidden="true">{prompt.typed}</span>
       </span>
-      {HERO_ACTIONS.map(action => {
+      {roster.actions.map(action => {
         const Icon = roster.icons.get(action.id)
         const available = roster.panels.has(action.id)
         return <button

@@ -6,6 +6,8 @@ import { TalkCraftAgents } from './agent.ts'
 import { command, ffmpegExecutable, health, linkJobRuntime, pythonExecutable } from './runtime.ts'
 import { candidateLocalFile, downloadSelected, searchCandidates } from './media.ts'
 import { Secrets } from './secrets.ts'
+import { commonToolEnvironment } from 'cqai-dsh-plugin-media-runtime'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 
 const present = (path: string) => existsSync(path) && statSync(path).isFile() && statSync(path).size > 0
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
@@ -54,7 +56,7 @@ export class Pipeline {
   async diagnosis(job: Job): Promise<string[]> {
     const h = await health(this.upstream, this.modelPath())
     const errors = await this.agents.preflight()
-    for (const key of ['node', 'python', 'ffmpeg', 'ffprobe', 'remotion', 'browser'] as const) if (!h[key]) errors.push(`${key} 尚未就绪；${h.prepare}`)
+    for (const key of ['node', 'pythonPackages', 'ffmpeg', 'ffprobe', 'remotion', 'remotionCompositor', 'browser'] as const) if (!h[key]) errors.push(`${key} 尚未就绪；${h.prepare}`)
     const source = voiceSource(job)
     const voice = source === 'upload'
     const voiceUpload = job.uploads.find(item => item.kind === 'voice')
@@ -249,7 +251,7 @@ export class Pipeline {
           rmSync(pending, {force: true})
           job.edgeSubmission = 'uncertain'; this.store.persist(job)
           const result = await command(pythonExecutable(this.upstream), [join(this.upstream, '..', 'scripts', 'tts_edge.py'), this.store.file(job.id, 'script.json'), pending, selectedVoice],
-            {cwd: root, env: {...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'}, signal, timeout: 270000})
+            {cwd: root, env: commonToolEnvironment(resolveDshHome(), {...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'}), signal, timeout: 270000})
           if (result.code !== 0 || !present(pending)) throw new Error(`Edge TTS 配音失败（退出码 ${result.code}）；不会自动重试。请检查服务或网络后明确重试`)
           const probe = await command(ffmpegExecutable(this.upstream,'ffprobe'), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', pending], {signal, timeout: 20000})
           const duration = Number.parseFloat(probe.output.trim())
@@ -266,7 +268,7 @@ export class Pipeline {
         if (!key) throw new Error('未设置 Fish Audio 密钥')
         job.fishSubmission = 'uncertain'; this.store.persist(job)
         const result = await command(pythonExecutable(this.upstream), [join(this.upstream, 'scripts', 'tts_fishaudio.py'), this.store.file(job.id, 'script.json'), wav, timestamps, '--mode', 'stream'],
-          {cwd: root, env: {...process.env, FISH_AUDIO_API_KEY: key, PYTHONUTF8: '1'}, signal, timeout: 360000})
+          {cwd: root, env: commonToolEnvironment(resolveDshHome(), {...process.env, FISH_AUDIO_API_KEY: key, PYTHONUTF8: '1'}), signal, timeout: 360000})
         if (result.code !== 0 || !present(wav) || !present(timestamps)) throw new Error('Fish Audio 请求未确认成功；不会自动重复提交。请检查服务结果或上传音频')
         job.fishSubmission = 'completed'; this.store.persist(job)
       }
@@ -276,7 +278,7 @@ export class Pipeline {
     if (!validTimestamps(timestamps)) {
       const model = this.modelPath()
       const result = await command(pythonExecutable(this.upstream), [join(this.upstream, 'scripts', 'timestamps_cpu.py'), wav, this.store.file(job.id, 'script.json'), pending, '--model-dir', model],
-        {cwd: root, env: {...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'}, signal, timeout: 900000})
+        {cwd: root, env: commonToolEnvironment(resolveDshHome(), {...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'}), signal, timeout: 900000})
       if (result.code !== 0 || !validTimestamps(pending)) throw new Error(`字级对齐失败：${result.output.slice(-500)}`)
       renameSync(pending, timestamps)
     }
@@ -366,7 +368,7 @@ export class Pipeline {
   private async checkShotbook(job: Job, signal: AbortSignal): Promise<void> {
     const shots = JSON.parse(readFileSync(this.store.file(job.id, 'remotion/shots.json'), 'utf8')) as unknown
     if (!Array.isArray(shots) || shots.length === 0 || shots[0]?.id !== 's01') throw new Error('分镜表必须包含 s01 样板镜')
-    const result = await command(pythonExecutable(this.upstream), [join(this.upstream, 'scripts', 'preflight.py'), '--project', this.store.directory(job.id), '--shotbook', 'SHOTBOOK.md', '--shots', 'remotion/shots.json', '--voice', 'audio/full.wav', '--fps', '30'], {cwd: this.store.directory(job.id), env: {...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'}, signal, timeout: 120000})
+    const result = await command(pythonExecutable(this.upstream), [join(this.upstream, 'scripts', 'preflight.py'), '--project', this.store.directory(job.id), '--shotbook', 'SHOTBOOK.md', '--shots', 'remotion/shots.json', '--voice', 'audio/full.wav', '--fps', '30'], {cwd: this.store.directory(job.id), env: commonToolEnvironment(resolveDshHome(), {...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8'}), signal, timeout: 120000})
     if (result.code !== 0) throw new Error(`分镜机器验收失败：${result.output.slice(-800)}`)
   }
   private async checkVideoFile(path: string, signal: AbortSignal): Promise<void> {

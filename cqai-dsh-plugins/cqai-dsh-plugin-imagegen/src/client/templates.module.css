@@ -96,6 +96,7 @@
 
 .sourceTabs {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 0 18px 10px;
