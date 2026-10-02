@@ -1,4 +1,4 @@
-/** Headless version checks against the public 易宝工坊 release service. */
+/** Headless version checks against the public e宝工坊 release service. */
 
 import {
   assertDesktopInstallationId,
@@ -6,7 +6,7 @@ import {
   type DesktopInstallationId,
 } from './desktop-installation-id.ts'
 
-/** Public endpoint returning the latest 易宝工坊 version for a requested channel. */
+/** Public endpoint returning the latest e宝工坊 version for a requested channel. */
 export const DESKTOP_VERSION_ENDPOINT = 'https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json'
 
 /** Header carrying the installed Desktop version to the fixed version endpoint. */
@@ -123,7 +123,7 @@ export function compareSemVerVersions(left: string, right: string): number | nul
 }
 
 /**
- * Check the fixed 易宝工坊 version endpoint for a release in one channel.
+ * Check the fixed e宝工坊 version endpoint for a release in one channel.
  * @param options - installed version, caller-owned signal, and optional request adapter.
  * @returns a successful comparison, or null when any request or validation step fails.
  */

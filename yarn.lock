@@ -14,9 +14,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@agents-anywhere/dsh-bridge-next@file:vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
-  version: 2.0.2-desktop.ce0d3ccf68b11.r1188e1a1
-  resolution: "@agents-anywhere/dsh-bridge-next@file:vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz#vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz::hash=4e81ff&locator=deepseek-harness-desktop%40workspace%3A."
+"@agents-anywhere/dsh-bridge-next@file:vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 2.0.3-desktop.c7df5b31f3fe2.r1188e1a1
+  resolution: "@agents-anywhere/dsh-bridge-next@file:vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz#vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz::hash=f919c6&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@dataiku/uv": "npm:0.12.0"
     clsx: "npm:2.1.1"
@@ -29,13 +29,13 @@ __metadata:
     "@deepseek-ai/dsh-typert-protocol": 0.1.7-rc.2
     "@deepseek-ai/schemastery": 3.18.4
     react: ^18.3.1
-  checksum: 10c0/fbc90227dae23748e70b6116ccc56efe47866dd90cbf01f7f78e88f66341a8e257ae8bba0ba845675e495c2bec8d0944a85d13970ca361fcd2d6d891cbf50080
+  checksum: 10c0/f4b8ca05eb163e1d06e6aed89467c96afa55e8fe6e4234748e1ad4bfb9aebbb63be73f346e8e787336bce6884d4b58d2ef8506b8a447ed9d3361efb2828a80f5
   languageName: node
   linkType: hard
 
-"@agents-anywhere/dsh-bridge-next@patch:@agents-anywhere/dsh-bridge-next@file%3Avendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz#./patches/agents-anywhere-connector-httpx.patch::locator=deepseek-harness-desktop%40workspace%3A.":
-  version: 2.0.2-desktop.ce0d3ccf68b11.r1188e1a1
-  resolution: "@agents-anywhere/dsh-bridge-next@patch:@agents-anywhere/dsh-bridge-next@file%3Avendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz%23vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz%3A%3Ahash=4e81ff&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/agents-anywhere-connector-httpx.patch::version=2.0.2-desktop.ce0d3ccf68b11.r1188e1a1&hash=da2201&locator=deepseek-harness-desktop%40workspace%3A."
+"@agents-anywhere/dsh-bridge-next@patch:@agents-anywhere/dsh-bridge-next@file%3Avendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz#./patches/agents-anywhere-connector-httpx.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 2.0.3-desktop.c7df5b31f3fe2.r1188e1a1
+  resolution: "@agents-anywhere/dsh-bridge-next@patch:@agents-anywhere/dsh-bridge-next@file%3Avendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz%23vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz%3A%3Ahash=f919c6&locator=deepseek-harness-desktop%2540workspace%253A.#./patches/agents-anywhere-connector-httpx.patch::version=2.0.3-desktop.c7df5b31f3fe2.r1188e1a1&hash=da2201&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     "@dataiku/uv": "npm:0.12.0"
     clsx: "npm:2.1.1"
@@ -48,7 +48,7 @@ __metadata:
     "@deepseek-ai/dsh-typert-protocol": 0.1.7-rc.2
     "@deepseek-ai/schemastery": 3.18.4
     react: ^18.3.1
-  checksum: 10c0/5b53ff81d988a9a16bd272173e6fed995dc1d4a321f6ea014a14002db890851045bbdce5a1b9ee708ad981e86f7186c3560c16eded6eb163c87ff90bb6bd785e
+  checksum: 10c0/2d8f817de41991e547c3990923089646b881fea0fa486f3472818dfc59d03858e9bf6d1d70cc699df99428583dba8c0b2d49ec3ffb5d868ce0427503f2e426c0
   languageName: node
   linkType: hard
 
@@ -10061,7 +10061,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react-dom@npm:^18, @types/react-dom@npm:^18.3.0, @types/react-dom@npm:^18.3.5":
+"@types/react-dom@npm:^18, @types/react-dom@npm:^18.3.0, @types/react-dom@npm:^18.3.5, @types/react-dom@npm:~18.3.1":
   version: 18.3.7
   resolution: "@types/react-dom@npm:18.3.7"
   peerDependencies:
@@ -12004,6 +12004,39 @@ __metadata:
   languageName: node
   linkType: hard
 
+"cqai-dsh-media-settings@npm:0.1.0, cqai-dsh-media-settings@workspace:cqai-dsh-plugins/cqai-dsh-media-settings":
+  version: 0.0.0-use.local
+  resolution: "cqai-dsh-media-settings@workspace:cqai-dsh-plugins/cqai-dsh-media-settings"
+  dependencies:
+    "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-atomic-write": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-primitives": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-credentials": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-invariants": "npm:0.1.7-rc.2"
+    "@types/node": "npm:^22.20.0"
+    "@types/react": "npm:~18.3.1"
+    react: "npm:^18.3.1"
+    tsdown: "npm:0.22.2"
+    typescript: "npm:~5.7.2"
+    vitest: "npm:4.1.8"
+  peerDependencies:
+    "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-atomic-write": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-layout": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-renderer": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-credentials": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-invariants": 0.1.7-rc.2
+    react: ^18.3.1
+  languageName: unknown
+  linkType: soft
+
 "cqai-dsh-plugin-cqai-club-theme@npm:0.1.0, cqai-dsh-plugin-cqai-club-theme@workspace:cqai-dsh-plugins/cqai-dsh-plugin-cqai-club-theme":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-cqai-club-theme@workspace:cqai-dsh-plugins/cqai-dsh-plugin-cqai-club-theme"
@@ -12054,6 +12087,49 @@ __metadata:
     "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
     react: ^18.2.0
+  languageName: unknown
+  linkType: soft
+
+"cqai-dsh-plugin-ejianbao@npm:0.1.0, cqai-dsh-plugin-ejianbao@workspace:cqai-dsh-plugins/cqai-dsh-plugin-ejianbao":
+  version: 0.0.0-use.local
+  resolution: "cqai-dsh-plugin-ejianbao@workspace:cqai-dsh-plugins/cqai-dsh-plugin-ejianbao"
+  dependencies:
+    "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-primitives": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-credentials": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-home-paths": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-host-webserver": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-invariants": "npm:0.1.7-rc.2"
+    "@types/node": "npm:^22.20.0"
+    "@types/react": "npm:~18.3.1"
+    "@types/react-dom": "npm:~18.3.1"
+    cqai-dsh-media-settings: "npm:0.1.0"
+    cqai-dsh-plugin-media-runtime: "npm:0.1.0"
+    cqai-dsh-plugin-short-video: "npm:0.1.0"
+    cqai-dsh-plugin-talkcraft: "npm:0.1.0"
+    cqai-dsh-plugin-video: "npm:0.1.0"
+    jsdom: "npm:29.1.1"
+    react: "npm:^18.3.1"
+    react-dom: "npm:^18.3.1"
+    tsdown: "npm:0.22.2"
+    typescript: "npm:~5.7.2"
+    vitest: "npm:4.1.8"
+  peerDependencies:
+    "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-client-ui-layout": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-renderer": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-credentials": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-home-paths": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-host-webserver": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-invariants": 0.1.7-rc.2
+    react: ^18.3.1
   languageName: unknown
   linkType: soft
 
@@ -12278,22 +12354,25 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"cqai-dsh-plugin-short-video@npm:^0.1.0, cqai-dsh-plugin-short-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-short-video":
+"cqai-dsh-plugin-short-video@npm:0.1.0, cqai-dsh-plugin-short-video@npm:^0.1.0, cqai-dsh-plugin-short-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-short-video":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-short-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-short-video"
   dependencies:
     "@cqaiclub/dsn-account": "npm:^0.1.0"
     "@deepseek-ai/cordis": "npm:^4.0.2"
+    "@deepseek-ai/dsh-atomic-write": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-primitives": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-credentials": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-home-paths": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-host-webserver": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-llm": "npm:^0.1.7-rc.2"
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:~18.3.1"
+    cqai-dsh-media-settings: "npm:0.1.0"
     cqai-dsh-plugin-media-runtime: "npm:0.1.0"
     react: "npm:^18.3.1"
     tsdown: "npm:0.22.2"
@@ -12302,11 +12381,13 @@ __metadata:
   peerDependencies:
     "@cqaiclub/dsn-account": ^0.1.0
     "@deepseek-ai/cordis": ^4.0.2
+    "@deepseek-ai/dsh-atomic-write": ^0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-layout": ^0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-primitives": ^0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-renderer": ^0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-credentials": ^0.1.7-rc.2
     "@deepseek-ai/dsh-home-paths": ^0.1.7-rc.2
     "@deepseek-ai/dsh-host-webserver": ^0.1.7-rc.2
     "@deepseek-ai/dsh-llm": ^0.1.7-rc.2
@@ -12331,8 +12412,12 @@ __metadata:
     "@deepseek-ai/dsh-system-prompt": "npm:^0.1.7-rc.2"
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:~18.3.1"
+    "@types/react-dom": "npm:~18.3.1"
+    cqai-dsh-media-settings: "npm:0.1.0"
     cqai-dsh-plugin-media-runtime: "npm:0.1.0"
+    jsdom: "npm:29.1.1"
     react: "npm:^18.3.1"
+    react-dom: "npm:^18.3.1"
     tsdown: "npm:0.22.2"
     typescript: "npm:~5.7.2"
     vitest: "npm:4.1.8"
@@ -12352,19 +12437,23 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"cqai-dsh-plugin-video@npm:^0.1.0, cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video":
+"cqai-dsh-plugin-video@npm:0.1.0, cqai-dsh-plugin-video@npm:^0.1.0, cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video"
   dependencies:
     "@deepseek-ai/cordis": "npm:^4.0.2"
     "@deepseek-ai/dsh-client-ui-layout": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-primitives": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-renderer": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-sidebar": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-client-ui-slots": "npm:^0.1.7-rc.2"
+    "@deepseek-ai/dsh-credentials": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-home-paths": "npm:^0.1.7-rc.2"
     "@deepseek-ai/dsh-host-webserver": "npm:^0.1.7-rc.2"
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:~18.3.1"
+    cqai-dsh-media-settings: "npm:0.1.0"
+    cqai-dsh-plugin-media-runtime: "npm:0.1.0"
     react: "npm:^18.3.1"
     tsdown: "npm:0.22.2"
     typescript: "npm:~5.7.2"
@@ -12372,9 +12461,11 @@ __metadata:
   peerDependencies:
     "@deepseek-ai/cordis": ^4.0.2
     "@deepseek-ai/dsh-client-ui-layout": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-primitives": ^0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-renderer": ^0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.7-rc.2
     "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-credentials": ^0.1.7-rc.2
     "@deepseek-ai/dsh-home-paths": ^0.1.7-rc.2
     "@deepseek-ai/dsh-host-webserver": ^0.1.7-rc.2
     react: ^18.3.1
@@ -13487,7 +13578,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dsh-desktop-next@workspace:dsh-desktop-next"
   dependencies:
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz"
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz"
     "@base-ui/react": "npm:^1.7.0"
     "@deepseek-ai/cordis": "npm:4.0.4"
     "@deepseek-ai/cordis-plugin-group": "npm:1.0.4"
@@ -13663,7 +13754,7 @@ __metadata:
     clsx: "npm:^2.1.1"
     diff: "npm:^9.0.0"
     dsh-community-market: "npm:0.1.0-dev.0"
-    dshmarket: "npm:1.66.6"
+    dshmarket: "npm:1.66.8"
     electron: "npm:44.0.0"
     electron-builder: "npm:26.15.7"
     immer: "npm:^10.1.1"
@@ -13705,7 +13796,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dsh-plugin-desktop-beta@workspace:dsh-plugin-desktop-beta"
   dependencies:
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz"
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz"
     "@base-ui/react": "npm:^1.7.0"
     "@cqaiclub/dsn-account": "npm:0.1.1"
     "@deepseek-ai/cordis": "npm:4.0.4"
@@ -13885,6 +13976,7 @@ __metadata:
     clsx: "npm:^2.1.1"
     cqai-dsh-plugin-cqai-club-theme: "npm:0.1.0"
     cqai-dsh-plugin-desktop-presentation: "npm:0.1.0"
+    cqai-dsh-plugin-ejianbao: "npm:0.1.0"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     cqai-dsh-plugin-publisher: "npm:0.1.0"
@@ -13895,7 +13987,7 @@ __metadata:
     dsh-ppt: "npm:0.1.1-rc.2"
     dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz"
     dsh-skill-mcp-panel: "npm:2.1.3"
-    dshmarket: "npm:1.66.6"
+    dshmarket: "npm:1.66.8"
     electron: "npm:44.0.0"
     electron-builder: "npm:26.15.7"
     electron-updater: "npm:6.8.9"
@@ -13936,7 +14028,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dsh-plugin-desktop@workspace:dsh-plugin-desktop"
   dependencies:
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz"
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz"
     "@base-ui/react": "npm:^1.7.0"
     "@cqaiclub/dsn-account": "npm:0.1.1"
     "@deepseek-ai/cordis": "npm:4.0.4"
@@ -14116,6 +14208,7 @@ __metadata:
     clsx: "npm:^2.1.1"
     cqai-dsh-plugin-cqai-club-theme: "npm:0.1.0"
     cqai-dsh-plugin-desktop-presentation: "npm:0.1.0"
+    cqai-dsh-plugin-ejianbao: "npm:0.1.0"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     cqai-dsh-plugin-publisher: "npm:0.1.0"
@@ -14126,7 +14219,7 @@ __metadata:
     dsh-ppt: "npm:0.1.1-rc.2"
     dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz"
     dsh-skill-mcp-panel: "npm:2.1.3"
-    dshmarket: "npm:1.66.6"
+    dshmarket: "npm:1.66.8"
     electron: "npm:44.0.0"
     electron-builder: "npm:26.15.7"
     electron-updater: "npm:6.8.9"
@@ -14251,9 +14344,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"dshmarket@npm:1.66.6":
-  version: 1.66.6
-  resolution: "dshmarket@npm:1.66.6"
+"dshmarket@npm:1.66.8":
+  version: 1.66.8
+  resolution: "dshmarket@npm:1.66.8"
   dependencies:
     js-yaml: "npm:^4.1.0"
     undici: "npm:^7.29.0"
@@ -14266,13 +14359,13 @@ __metadata:
       optional: true
     "@deepseek-ai/schemastery":
       optional: true
-  checksum: 10c0/8bcb9b90aaea0526a63d9be5069a7306f56259e010f881ee2502dd1799ec4c80238475430d246c5eed615829ea56174b85dc0d9831cea603cb85e08f8c500cee
+  checksum: 10c0/3d67c38ddeb29ff8107812b1293ae15c5b4cc0ccfaa69550fcd9ca0af98478641484e7698a2046b503ea7017d85db60764eb86dca24c8c6c3cf60714a45ad7f9
   languageName: node
   linkType: hard
 
-"dshmarket@patch:dshmarket@npm%3A1.66.6#./.yarn/patches/dshmarket-desktop.patch::locator=deepseek-harness-desktop%40workspace%3A.":
-  version: 1.66.6
-  resolution: "dshmarket@patch:dshmarket@npm%3A1.66.6#./.yarn/patches/dshmarket-desktop.patch::version=1.66.6&hash=3f3d04&locator=deepseek-harness-desktop%40workspace%3A."
+"dshmarket@patch:dshmarket@npm%3A1.66.8#./.yarn/patches/dshmarket-desktop.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 1.66.8
+  resolution: "dshmarket@patch:dshmarket@npm%3A1.66.8#./.yarn/patches/dshmarket-desktop.patch::version=1.66.8&hash=471ec8&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     js-yaml: "npm:^4.1.0"
     undici: "npm:^7.29.0"
@@ -14285,7 +14378,7 @@ __metadata:
       optional: true
     "@deepseek-ai/schemastery":
       optional: true
-  checksum: 10c0/1e9219874a7606d2aa2d8a5da7d05d8662b1a3de9499f4b4d9446a5a03691a9f7dfd93ce84bc1526fdad8905bc6219f0244148a6c95a505333a8a6130298d0f8
+  checksum: 10c0/15d89f61cb90a86eb065132a108131c8bf80f5ecb235de9177427c7629887e56d82c91995409ec1c9ad6ee7d9090a2ff7b29615df7a9ac89a837a1cb1ee03b22
   languageName: node
   linkType: hard
 

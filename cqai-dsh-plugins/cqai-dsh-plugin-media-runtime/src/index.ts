@@ -3,6 +3,8 @@ import { createRequire } from 'node:module'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname, delimiter } from 'node:path'
 
+export { COMMON_FFMPEG_VERSION, commonMediaPackage, commonToolsHome, commonFFmpegDirectory, sharedMediaTool, commonToolEnvironment, installCommonMediaTools, commonToolSteps, commonToolHealth, type CommonToolHealth } from './common-tools.ts'
+
 export type SetupStatus = 'idle' | 'running' | 'completed' | 'failed'
 export type StepStatus = 'pending' | 'running' | 'ready' | 'completed' | 'failed' | 'skipped'
 export interface SetupItem {id: string; label: string; status: StepStatus; detail?: string}

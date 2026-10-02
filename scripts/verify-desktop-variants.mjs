@@ -6,7 +6,7 @@ const stableRoot = join(root, 'dsh-plugin-desktop', 'src')
 const betaRoot = join(root, 'dsh-plugin-desktop-beta', 'src')
 // Both editions now pin one core API. Only their product identities differ.
 const allowedDifferences = new Set(['product-identity.ts'])
-const normalizeIdentity = source => source.toString().replaceAll('dsh-plugin-desktop-beta', 'dsh-plugin-desktop').replaceAll('易宝工坊 Beta', '易宝工坊')
+const normalizeIdentity = source => source.toString().replaceAll('dsh-plugin-desktop-beta', 'dsh-plugin-desktop').replaceAll('e宝工坊 Beta', 'e宝工坊').replaceAll('易宝工坊 Beta', '易宝工坊')
 
 function files(directory, base = directory) {
   const result = []

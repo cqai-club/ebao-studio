@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-desktop-beta",
-  "version": "0.0.9-beta.1",
-  "description": "易宝工坊 Beta: an Electron shell composed as a DeepSeek Harness Cordis plugin",
+  "version": "0.0.10-beta.1",
+  "description": "e宝工坊 Beta: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
@@ -111,7 +111,7 @@
     }
   },
   "scripts": {
-    "build": "node ../scripts/prepare-agents-anywhere-runtime.mjs && yarn workspace cqai-dsh-plugin-media-runtime build && yarn workspace cqai-dsh-plugin-video build && yarn workspace cqai-dsh-plugin-short-video build && yarn workspace cqai-dsh-plugin-talkcraft build && yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && yarn workspace dsh-skill-mcp-panel build && yarn workspace cqai-dsh-plugin-publisher build && yarn workspace cqai-dsh-plugin-desktop-presentation build && yarn workspace cqai-dsh-plugin-cqai-club-theme build && node scripts/generate-mac-app-icon.mjs && node scripts/generate-windows-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.client.config.ts && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "node ../scripts/prepare-agents-anywhere-runtime.mjs && yarn workspace cqai-dsh-media-settings build && yarn workspace cqai-dsh-plugin-media-runtime build && yarn workspace cqai-dsh-plugin-video build && yarn workspace cqai-dsh-plugin-short-video build && yarn workspace cqai-dsh-plugin-talkcraft build && yarn workspace cqai-dsh-plugin-ejianbao build && yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && yarn workspace dsh-skill-mcp-panel build && yarn workspace cqai-dsh-plugin-publisher build && yarn workspace cqai-dsh-plugin-desktop-presentation build && yarn workspace cqai-dsh-plugin-cqai-club-theme build && node scripts/generate-mac-app-icon.mjs && node scripts/generate-windows-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.client.config.ts && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "verify:closure": "node --test scripts/runtime-closure.spec.mjs && node scripts/verify-runtime-closure.mjs",
@@ -144,7 +144,7 @@
     "check:linux-package:platform": "yarn workspace dsh-community-market build && yarn run build && vitest run tests/package.spec.ts tests/package-linux.spec.ts tests/verify-linux-artifacts.spec.ts tests/verify-packaged-runtime.spec.ts && yarn run verify:closure"
   },
   "dependencies": {
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ce0d3ccf68b11.r1188e1a1.tgz",
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz",
     "@cqaiclub/dsn-account": "0.1.1",
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/cordis-plugin-group": "1.0.4",
@@ -309,6 +309,7 @@
     "builder-util-runtime": "9.7.0",
     "cqai-dsh-plugin-cqai-club-theme": "0.1.0",
     "cqai-dsh-plugin-desktop-presentation": "0.1.0",
+    "cqai-dsh-plugin-ejianbao": "0.1.0",
     "cqai-dsh-plugin-imagegen": "0.1.0",
     "cqai-dsh-plugin-market": "0.1.0",
     "cqai-dsh-plugin-publisher": "0.1.0",
@@ -319,7 +320,7 @@
     "dsh-ppt": "0.1.1-rc.2",
     "dsh-ppt-composer": "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz",
     "dsh-skill-mcp-panel": "2.1.3",
-    "dshmarket": "1.66.6",
+    "dshmarket": "1.66.8",
     "electron-updater": "6.8.9",
     "fs-ext": "2.1.1",
     "katex": "^0.16.47",
@@ -371,10 +372,10 @@
   },
   "build": {
     "appId": "ai.deepseek.dsh.desktop.beta",
-    "productName": "易宝工坊 Beta",
+    "productName": "e宝工坊 Beta",
     "protocols": [
       {
-        "name": "易宝工坊 Beta",
+        "name": "e宝工坊 Beta",
         "schemes": [
           "dsh-desktop-beta"
         ]
@@ -436,6 +437,7 @@
         "build/tray-iconTemplate@2x.png",
         "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**",
         "node_modules/cqai-dsh-plugin-short-video/runtime/**",
+        "node_modules/cqai-dsh-plugin-video/runtime/**",
         "node_modules/@dataiku/uv-*/bin/**",
         "node_modules/cqai-dsh-plugin-media-runtime/node_modules/@dataiku/uv-*/bin/**"
       ],
@@ -453,7 +455,7 @@
           "to": "publisher/SOURCE.json"
         }
       ],
-      "artifactName": "易宝工坊-Beta-${version}-${arch}.${ext}",
+      "artifactName": "e宝工坊-Beta-${version}-${arch}.${ext}",
       "target": [
         "dir"
       ],
@@ -464,7 +466,8 @@
         "CFBundleLocalizations": [
           "en",
           "zh_CN"
-        ]
+        ],
+        "CFBundleDisplayName": "易宝工坊 Beta"
       },
       "hardenedRuntime": true,
       "icon": "build/app-icon-mac.png",
@@ -473,7 +476,17 @@
       "signIgnore": [
         "\\.(?:pak|dat|wasm)$"
       ],
-      "x64ArchFiles": "**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,sherpa-onnx-darwin-*/**,@tencent-qqmail/agently-cli-darwin-*/**}"
+      "x64ArchFiles": "**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,sherpa-onnx-darwin-*/**,@tencent-qqmail/agently-cli-darwin-*/**}",
+      "executableName": "易宝工坊 Beta",
+      "extraFiles": [
+        {
+          "from": "build/app-name-localizations",
+          "to": "Resources",
+          "filter": [
+            "*/InfoPlist.strings"
+          ]
+        }
+      ]
     },
     "win": {
       "asarUnpack": [
@@ -484,6 +497,7 @@
         "build/tray-icon-white@2x.png",
         "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**",
         "node_modules/cqai-dsh-plugin-short-video/runtime/**",
+        "node_modules/cqai-dsh-plugin-video/runtime/**",
         "node_modules/@dataiku/uv-*/bin/**",
         "node_modules/cqai-dsh-plugin-media-runtime/node_modules/@dataiku/uv-*/bin/**"
       ],
@@ -509,7 +523,7 @@
           ]
         }
       ],
-      "artifactName": "易宝工坊-Beta-${version}-${arch}-Portable.${ext}",
+      "artifactName": "e宝工坊-Beta-${version}-${arch}-Portable.${ext}",
       "icon": "build/app-icon.ico",
       "compression": "normal"
     },
@@ -523,9 +537,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "differentialPackage": false,
-      "shortcutName": "易宝工坊 Beta",
+      "shortcutName": "e宝工坊 Beta",
       "useZip": false,
-      "artifactName": "易宝工坊-Beta-${version}-${arch}-Setup.${ext}",
+      "artifactName": "e宝工坊-Beta-${version}-${arch}-Setup.${ext}",
       "installerIcon": "build/app-icon.ico",
       "uninstallerIcon": "build/app-icon.ico"
     },
@@ -545,9 +559,9 @@
         }
       ],
       "icon": "build/app-icon.png",
-      "artifactName": "易宝工坊-Beta-${version}-${arch}.${ext}",
+      "artifactName": "e宝工坊-Beta-${version}-${arch}.${ext}",
       "category": "Development",
-      "synopsis": "易宝工坊 Beta desktop for DeepSeek Harness",
+      "synopsis": "e宝工坊 Beta desktop for DeepSeek Harness",
       "maintainer": "CQAI Club",
       "executableName": "ebao-studio-beta",
       "syncDesktopName": true,
@@ -560,6 +574,7 @@
         "build/tray-icon-blue@2x.png",
         "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**",
         "node_modules/cqai-dsh-plugin-short-video/runtime/**",
+        "node_modules/cqai-dsh-plugin-video/runtime/**",
         "node_modules/@dataiku/uv-*/bin/**",
         "node_modules/cqai-dsh-plugin-media-runtime/node_modules/@dataiku/uv-*/bin/**"
       ]

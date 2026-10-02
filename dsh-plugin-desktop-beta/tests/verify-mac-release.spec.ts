@@ -16,7 +16,7 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
   const value: MacReleaseVerificationOptions = {
     distDir: '/release/dist',
     productName: '易宝工坊 Beta',
-    listDmgs: () => ['/release/dist/易宝工坊-Beta-2.0.0-universal.dmg'],
+    listDmgs: () => ['/release/dist/e宝工坊-Beta-2.0.0-universal.dmg'],
     makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
@@ -33,14 +33,14 @@ describe('macOS release artifact verification', () => {
 
     expect(verifyMacRelease(harness.value)).toEqual({
       appPath,
-      dmgPath: '/release/dist/易宝工坊-Beta-2.0.0-universal.dmg',
+      dmgPath: '/release/dist/e宝工坊-Beta-2.0.0-universal.dmg',
     })
 
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
         args: [
-          'attach', '/release/dist/易宝工坊-Beta-2.0.0-universal.dmg',
+          'attach', '/release/dist/e宝工坊-Beta-2.0.0-universal.dmg',
           '-mountpoint', '/private/tmp/dsh-desktop-dmg-test', '-nobrowse', '-readonly',
         ],
       },
@@ -96,6 +96,52 @@ describe('macOS release artifact verification', () => {
       },
     ])
     expect(harness.removeMountPoint).toHaveBeenCalledWith('/private/tmp/dsh-desktop-dmg-test')
+  })
+
+  it('accepts the legacy filename with the renamed visible bundle identity', () => {
+    const readBundleNames = vi.fn((path: string) => ({
+      name: 'e宝工坊 Beta', displayName: path.endsWith('Info.plist') ? '易宝工坊 Beta' : 'e宝工坊 Beta',
+    }))
+    const harness = options({ displayName: 'e宝工坊 Beta', readBundleNames })
+
+    expect(verifyMacRelease(harness.value).appPath).toContain('易宝工坊 Beta.app')
+    expect(readBundleNames).toHaveBeenCalledWith(
+      join('/private/tmp/dsh-desktop-dmg-test', '易宝工坊 Beta.app', 'Contents', 'Info.plist'),
+    )
+    for (const locale of ['en', 'zh_CN']) {
+      expect(readBundleNames).toHaveBeenCalledWith(
+        join('/private/tmp/dsh-desktop-dmg-test', '易宝工坊 Beta.app', 'Contents', 'Resources', `${locale}.lproj`, 'InfoPlist.strings'),
+      )
+    }
+  })
+
+  it.each(['name', 'displayName'] as const)('rejects an invalid raw %s and detaches the bundle', key => {
+    const names = { name: 'e宝工坊 Beta', displayName: '易宝工坊 Beta', [key]: key === 'name' ? '易宝工坊 Beta' : 'e宝工坊 Beta' }
+    const harness = options({ displayName: 'e宝工坊 Beta', readBundleNames: () => names })
+
+    expect(() => verifyMacRelease(harness.value)).toThrow(AggregateError)
+    expect(harness.calls.at(-1)).toEqual({
+      command: 'hdiutil', args: ['detach', '/private/tmp/dsh-desktop-dmg-test'],
+    })
+    expect(harness.removeMountPoint).toHaveBeenCalledOnce()
+  })
+
+  it.each(['en', 'zh_CN'])('rejects missing or stale %s visible names and detaches', locale => {
+    for (const failure of ['missing', 'name', 'displayName']) {
+      const harness = options({ displayName: 'e宝工坊 Beta', readBundleNames: path => {
+        if (path.includes(`${locale}.lproj`)) {
+          if (failure === 'missing') throw new Error('missing localized names')
+          return { name: 'e宝工坊 Beta', displayName: 'e宝工坊 Beta', [failure]: '易宝工坊 Beta' }
+        }
+        return { name: 'e宝工坊 Beta', displayName: path.endsWith('Info.plist') ? '易宝工坊 Beta' : 'e宝工坊 Beta' }
+      } })
+
+      expect(() => verifyMacRelease(harness.value)).toThrow(AggregateError)
+      expect(harness.calls.at(-1)).toEqual({
+        command: 'hdiutil', args: ['detach', '/private/tmp/dsh-desktop-dmg-test'],
+      })
+      expect(harness.removeMountPoint).toHaveBeenCalledOnce()
+    }
   })
 
   it('rejects absent or ambiguous release images before mounting', () => {

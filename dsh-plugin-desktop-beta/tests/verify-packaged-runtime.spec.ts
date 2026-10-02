@@ -75,7 +75,7 @@ function context(
     ...(arch === undefined ? {} : { arch }),
     packager: {
       ...(executableName === undefined ? {} : { executableName }),
-      appInfo: { productFilename: '易宝工坊 Beta' },
+      appInfo: { productFilename: electronPlatformName === 'darwin' ? '易宝工坊 Beta' : 'e宝工坊 Beta' },
     },
   }
 }
@@ -529,7 +529,7 @@ describe('packaged desktop runtime verification', () => {
     [
       'win32',
       join('/build', 'resources', 'app.asar'),
-      join('/build', '易宝工坊 Beta.exe'),
+      join('/build', 'e宝工坊 Beta.exe'),
     ],
   ])('inspects the %s selective ASAR layout', (platform, expectedPath, expectedExecutable) => {
     const runtimeContext = context('/build', platform)
@@ -821,6 +821,7 @@ describe('packaged desktop runtime verification', () => {
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-win32-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/cqai-dsh-plugin-short-video')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/cqai-dsh-plugin-video')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/fs-ext')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/node-pty')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
@@ -979,6 +980,7 @@ describe('packaged desktop runtime verification', () => {
   it.each([
     'build/app-icon.png',
     'build/tray-icon-white@2x.png',
+    'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
     'node_modules/@vscode/ripgrep-win32-x64/bin/rg.exe',
     'node_modules/node-pty/prebuilds/win32-x64/conpty.node',
   ])('fails loud when selective physical entry %s is absent', (missing) => {

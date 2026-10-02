@@ -81,6 +81,7 @@ describe('normal generation stream', () => {
       task('completed-persisted', 'completed', 10, {
         result: { images: [{ b64: 'durable', mime: 'image/png' }], history: [persisted] },
       }),
+      task('completed-summary', 'completed', 9),
     ]
 
     const stream = buildNormalGenerationStream([], tasks, ALL_FILTERS)

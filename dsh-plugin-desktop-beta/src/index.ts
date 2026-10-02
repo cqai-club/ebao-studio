@@ -1,4 +1,4 @@
-/** 易宝工坊 Host plugin: owns the selected native shell generation. */
+/** e宝工坊 Host plugin: owns the selected native shell generation. */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
@@ -152,8 +152,8 @@ export function apply(ctx: Context, config: DesktopShellConfig): void {
   const runtime = ctx.get('desktopRuntime')
   if (runtime === undefined) {
     process.stderr.write(
-      'dsh-plugin-desktop: this profile is composed with the 易宝工坊 shell, which requires the desktop launcher (desktopRuntime).\n'
-      + 'Start it with `dsh-desktop`, or select this profile inside the packaged 易宝工坊 application.\n'
+      'dsh-plugin-desktop: this profile is composed with the e宝工坊 shell, which requires the desktop launcher (desktopRuntime).\n'
+      + 'Start it with `dsh-desktop`, or select this profile inside the packaged e宝工坊 application.\n'
       + 'The desktop terminal, profile, and update rows stay inactive in an ordinary DSH boot.\n',
     )
     return
@@ -442,7 +442,7 @@ export function apply(ctx: Context, config: DesktopShellConfig): void {
         authenticationUrl: ctx.connection.authenticatedUrl(new URL(url).origin),
         rendererAccessHeader: browserAccess.rendererHeader,
         productName: DESKTOP_PRODUCT_NAME,
-        windowTitle: '易宝工坊',
+        windowTitle: 'e宝工坊',
         iconPath,
         trayIcons,
         readLocalePreference: () => {

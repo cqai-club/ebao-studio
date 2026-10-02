@@ -1,17 +1,17 @@
 <p align="center">
-  <img src="assets/desktop-hero-zh.png" alt="易宝工坊桌面应用" width="100%">
+  <img src="assets/desktop-hero-zh.png" alt="e宝工坊桌面应用" width="100%">
 </p>
 
-# 易宝工坊
+# e宝工坊
 
 [English](README.en.md) · [下载](https://github.com/cqai-club/ebao-studio/releases) · [用户指南](docs/user-guide.md)
 
-易宝工坊是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的开源桌面应用，面向 Windows 和 macOS。它把上游的本地 Web 客户端、Host 服务和插件系统带进原生窗口，并提供系统托盘、Profile 管理、终端、恢复和插件管理。安装版自带所需运行环境。
+e宝工坊是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的开源桌面应用，面向 Windows 和 macOS。它把上游的本地 Web 客户端、Host 服务和插件系统带进原生窗口，并提供系统托盘、Profile 管理、终端、恢复和插件管理。安装版自带所需运行环境。
 
 本仓库固定一个**不修改源码**的上游版本，桌面能力由仓库自己的插件和 Electron 启动器组合。项目由社区独立维护，与深度求索及上游官方团队没有隶属或背书关系。
 
 <p align="center">
-  <img src="assets/desktop-chat-zh.png" alt="易宝工坊对话界面截图" width="100%">
+  <img src="assets/desktop-chat-zh.png" alt="e宝工坊对话界面截图" width="100%">
 </p>
 
 ## 使用

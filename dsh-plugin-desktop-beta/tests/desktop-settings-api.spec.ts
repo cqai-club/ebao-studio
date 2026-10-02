@@ -19,8 +19,10 @@ import {
   handleDesktopSettingsRequest,
   handleDesktopTerminalOpenRequest,
   handleDesktopUpdateCheckRequest,
+  handleDesktopUpdateStatusRequest,
   desktopSettingsRouteConstants,
 } from '../src/desktop-settings-route.ts'
+import type { DesktopUpdateStatus } from '../src/desktop-update-status.ts'
 import type { DesktopProfileSummary } from '../src/profile-manager.ts'
 
 const ORIGIN = 'http://127.0.0.1:43120'
@@ -419,6 +421,7 @@ describe('desktop settings HTTP boundary', () => {
 
   it.each([
     ['cross-origin', { headers: { origin: 'https://example.com' } }],
+    ['cross-origin with same-origin metadata and referrer', { headers: { origin: 'https://example.com', referer: `${ORIGIN}/settings`, 'sec-fetch-site': 'same-origin' } }],
     ['wrong Host', { headers: { host: 'example.com', origin: ORIGIN } }],
     ['non-loopback socket', { remoteAddress: '192.0.2.10' }],
     ['cross-site metadata', { headers: { 'sec-fetch-site': 'cross-site' } }],
@@ -647,6 +650,56 @@ describe('desktop settings HTTP boundary', () => {
       expect(rejected.statusCode).toBe(req.headers.origin === ORIGIN ? 400 : 403)
     }
     expect(openTerminal).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    { origin: ORIGIN },
+    { origin: undefined, referer: `${ORIGIN}/threads`, 'sec-fetch-site': 'same-origin' },
+  ])('serves the current update snapshot with settings GET read boundaries', headers => {
+    const snapshot: DesktopUpdateStatus = {
+      supported: true, currentVersion: '2.0.0', availableVersion: '2.1.0', checking: false, downloading: true,
+    }
+    const getStatus = vi.fn(() => snapshot)
+    const res = response()
+
+    handleDesktopUpdateStatusRequest(request('GET', { headers }), res, ORIGIN, getStatus)
+
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toEqual(snapshot)
+    expect(Object.keys(JSON.parse(res.body))).toEqual(['supported', 'currentVersion', 'availableVersion', 'checking', 'downloading'])
+    expect(getStatus).toHaveBeenCalledOnce()
+    expect(res.setHeader).toHaveBeenCalledWith('cache-control', 'no-store')
+    expect(res.setHeader).toHaveBeenCalledWith('content-type', 'application/json; charset=utf-8')
+    expect(res.setHeader).toHaveBeenCalledWith('x-content-type-options', 'nosniff')
+  })
+
+  it.each([
+    ['cross-origin', { headers: { origin: 'https://example.com', referer: `${ORIGIN}/`, 'sec-fetch-site': 'same-origin' } }],
+    ['cross-site metadata', { headers: { origin: ORIGIN, 'sec-fetch-site': 'cross-site' } }],
+    ['missing Origin and referrer', { headers: { origin: undefined, 'sec-fetch-site': 'same-origin' } }],
+    ['foreign referrer', { headers: { origin: undefined, referer: 'https://example.com/', 'sec-fetch-site': 'same-origin' } }],
+    ['wrong Host', { headers: { host: 'example.com' } }],
+    ['non-loopback socket', { remoteAddress: '192.0.2.10' }],
+  ] as const)('rejects %s before reading update status', (_label, options) => {
+    const getStatus = vi.fn<() => DesktopUpdateStatus>()
+    const res = response()
+
+    handleDesktopUpdateStatusRequest(request('GET', options), res, ORIGIN, getStatus)
+
+    expect(res.statusCode).toBe(403)
+    expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' })
+    expect(getStatus).not.toHaveBeenCalled()
+  })
+
+  it.each(['POST', 'HEAD', 'OPTIONS'])('rejects %s for the read-only update snapshot', method => {
+    const getStatus = vi.fn<() => DesktopUpdateStatus>()
+    const res = response()
+
+    handleDesktopUpdateStatusRequest(request(method), res, ORIGIN, getStatus)
+
+    expect(res.statusCode).toBe(405)
+    expect(res.setHeader).toHaveBeenCalledWith('allow', 'GET')
+    expect(getStatus).not.toHaveBeenCalled()
   })
 
   it('runs the shared interactive update flow only for an exact empty request', async () => {

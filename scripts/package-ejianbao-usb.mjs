@@ -26,12 +26,12 @@ copy(join(root, 'dsh-plugin-desktop/dist/win-unpacked'), output)
 const extra = join(output, 'resources/ejianbao-runtime')
 for (const name of ['python312', 'node', 'browser']) copy(join(runtime, name), join(extra, name))
 copy(video, join(extra, 'video'))
-renameSync(join(output, '易宝工坊.exe'), join(output, 'e剪宝.exe'))
+renameSync(join(output, 'e宝工坊.exe'), join(output, 'e剪宝.exe'))
 writeFileSync(join(output, 'portable.json'), JSON.stringify({product: 'e剪宝', portable: true, schema: 1}) + '\n')
 writeFileSync(join(output, '使用说明.txt'), `e剪宝 U 盘便携版（Windows x64）
 
 1. 将整个“e剪宝U盘版”文件夹复制到 U 盘，不要只复制 EXE。
-2. 双击“e剪宝.exe”，在易宝工坊左侧 e图宝下方打开 e剪宝。
+2. 双击“e剪宝.exe”，在e宝工坊左侧 e图宝下方打开 e剪宝。
 3. 数字人口播：展开“个人 InferFlow 账户”，输入自己的 API Key 并连接。
 4. 上传授权形象照和参考录音、填写文案，点击估算费用，确认后生成。
 5. 已有口播视频可直接在本地制作；Python、FFmpeg、Node.js 和浏览器均已内置。

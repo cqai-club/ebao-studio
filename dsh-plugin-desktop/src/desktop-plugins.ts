@@ -50,6 +50,7 @@ export const DESKTOP_FEATURE_BUNDLES = new Set([
   'cqai-dsh-plugin-cqai-club-theme',
   'cqai-dsh-plugin-imagegen',
   'cqai-dsh-plugin-video',
+  'cqai-dsh-plugin-ejianbao',
   'cqai-dsh-plugin-publisher',
   '@xmanrui/dsh-im',
   'cqai-dsh-plugin-talkcraft',

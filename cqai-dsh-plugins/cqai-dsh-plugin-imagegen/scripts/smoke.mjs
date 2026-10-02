@@ -50,6 +50,9 @@ async function waitForSelectorCount(root, selector, count, timeout = 1200) {
 
 // ---------------------------------------------------------------- A. host half
 const host = await import(new URL('lib/index.js', root).href)
+// Exercise the built store in an isolated directory, never the user's canvas.
+const canvasSmokeRoot = mkdtempSync(join(tmpdir(), 'cqai-imagegen-smoke-canvas-'))
+const smokeCanvasStore = new host.canvasStore.constructor(canvasSmokeRoot)
 const hostLocale = await import(new URL('lib/locale-tables.js', root).href)
 // The host half renders skill copy through the same dictionaries the browser
 // bundle ships; wire that resolver here so the copy assertions see real text.
@@ -973,7 +976,7 @@ const skillLibraryFake = {
     if (request.asset !== undefined) {
       // The upload route stores into the real canvas store, so read it back
       // the same way the plugin does.
-      const found = await host.canvasStore.readAssets([request.asset])
+      const found = await smokeCanvasStore.readAssets([request.asset])
       const blob = found.get(request.asset.assetId)
       if (blob === undefined) message = 'missing upload'
       else {
@@ -1004,6 +1007,7 @@ const routes = host.makeRoutes({
   resolve: () => ({ apiUrl: `http://127.0.0.1:${upstreamPort}/v1`, apiKey: 'sk-test' }),
   resolvePrompt: () => ({ apiUrl: `http://127.0.0.1:${upstreamPort}/v1`, apiKey: 'sk-test', model: 'chat-test' }),
   history,
+  canvas: smokeCanvasStore,
   templates,
   favorites,
   resolveStorage: () => ({ endpoint: storageProbeEndpoint, region: 'ap-guangzhou', accessKey: 'AKID-test', secretKey: 'secret-test', prefix: 'dsh-imagegen' }),
@@ -3170,15 +3174,25 @@ await check('E1 client apply registers and renders the official image studio (js
         ok: true,
         json: async () => ({
           ok: true,
-          tasks: ecommerceSubmissions.map((payload, index) => ({
-            id: `ecommerce-task-${index + 1}`,
-            request: payload,
-            status: index === 0 ? 'completed' : 'queued',
-            createdAt: 1,
-            ...index === 0 ? { result: { images: [{ b64: 'cG5nLWRhdGE=', mime: 'image/png' }] } } : {},
-          })),
+          tasks: ecommerceSubmissions.map((payload, index) => {
+            const { image: _image, images: _images, ...metadata } = payload
+            return {
+              id: `ecommerce-task-${index + 1}`, request: metadata,
+              status: index === 0 ? 'completed' : 'queued', createdAt: 1,
+              resultAvailable: index === 0,
+            }
+          }),
         }),
       }
+    }
+    if (path.endsWith('/tasks/get')) {
+      const { id } = JSON.parse(init.body)
+      const index = ecommerceSubmissions.findIndex((_payload, i) => id === `ecommerce-task-${i + 1}`)
+      return { ok: true, json: async () => index < 0 ? { ok: false, code: 'not-found' } : {
+        ok: true, task: { id, request: ecommerceSubmissions[index], status: index === 0 ? 'completed' : 'queued', createdAt: 1,
+          ...index === 0 ? { result: { images: [{ b64: 'cG5nLWRhdGE=', mime: 'image/png' }] } } : {},
+        },
+      } }
     }
     throw new Error(`unexpected fetch: ${path}`)
   }
@@ -3906,6 +3920,7 @@ await check('E1 client apply registers and renders the official image studio (js
 })
 
 await new Promise(resolve => upstream.close(resolve))
+rmSync(canvasSmokeRoot, { recursive: true, force: true })
 
 // ------------------------------------------------------------------ summary
 console.log(results.join('\n'))

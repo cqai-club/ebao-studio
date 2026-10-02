@@ -41,6 +41,8 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
     files?: unknown
     dmg?: { icon?: unknown }
     mac?: {
+      executableName?: unknown
+      extraFiles?: unknown
       artifactName?: unknown
       extendInfo?: unknown
       hardenedRuntime?: unknown
@@ -89,7 +91,7 @@ const dshResolution = (name: string): unknown =>
 describe('published package surface', () => {
   it('keeps the private workspace version-neutral and versions the Beta package', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.9-beta.1')
+    expect(manifest.version).toBe('0.0.10-beta.1')
   })
 
   it('runs all desktop editions and community market typechecks from the root command', () => {
@@ -115,12 +117,14 @@ describe('published package surface', () => {
   it('sets a distinct Beta process identity before taking the single-instance lock', () => {
     expect(productIdentity).toContain("packageName: 'dsh-plugin-desktop-beta'")
     expect(productIdentity).toContain("packageName: 'dsh-plugin-desktop'")
-    expect(productIdentity).toContain("productName: '易宝工坊 Beta'")
+    expect(productIdentity).toContain("productName: 'e宝工坊 Beta'")
     expect(productIdentity).toContain("appId: 'ai.deepseek.dsh.desktop.beta'")
     expect(productIdentity).toContain('DESKTOP_PRODUCT_IDENTITY = DESKTOP_RELEASE_IDENTITIES.beta')
     expect(productIdentity).toContain('OTHER_DESKTOP_PRODUCT_IDENTITY = DESKTOP_RELEASE_IDENTITIES.stable')
+    expect(productIdentity).toContain("storageName: '易宝工坊'")
+    expect(productIdentity).toContain("storageName: '易宝工坊 Beta'")
     expect(main).toContain('app.setAppUserModelId(DESKTOP_APP_ID)')
-    const setName = main.indexOf('app.setName(PRODUCT_NAME)')
+    const setName = main.indexOf('app.setName(DESKTOP_STORAGE_NAME)')
     const start = main.indexOf('await start()', setName)
     const lock = main.indexOf('app.requestSingleInstanceLock()')
     expect(setName).toBeGreaterThanOrEqual(0)
@@ -864,7 +868,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.9-beta.1')
+    expect(manifest.version).toBe('0.0.10-beta.1')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
@@ -877,7 +881,15 @@ describe('published package surface', () => {
     })
     expect(manifest.bin).not.toHaveProperty('dsh-desktop')
     expect(manifest.bin).not.toHaveProperty('dsh-plugin-desktop')
-    expect(manifest.build?.productName).toBe('易宝工坊 Beta')
+    expect(manifest.build?.productName).toBe('e宝工坊 Beta')
+    // Keep Squirrel's relaunch path stable while Info.plist uses the new display name.
+    expect(manifest.build?.mac?.executableName).toBe('易宝工坊 Beta')
+    expect(manifest.build?.mac?.extendInfo).toMatchObject({ CFBundleDisplayName: '易宝工坊 Beta' })
+    expect(manifest.build?.mac?.extraFiles).toEqual([{
+      from: 'build/app-name-localizations',
+      to: 'Resources',
+      filter: ['*/InfoPlist.strings'],
+    }])
     expect(manifest.build?.appId).toBe('ai.deepseek.dsh.desktop.beta')
     expect(manifest.build?.asar).toEqual({ smartUnpack: true })
     expect(manifest.build).not.toHaveProperty('asarUnpack')
@@ -890,7 +902,7 @@ describe('published package surface', () => {
       'build/tray-iconTemplate.png',
       'build/tray-iconTemplate@2x.png',
       'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**',
-      'node_modules/cqai-dsh-plugin-short-video/runtime/**',
+      'node_modules/cqai-dsh-plugin-short-video/runtime/**', 'node_modules/cqai-dsh-plugin-video/runtime/**',
       ...uvExecutables,
     ])
     const windowsIcons = [
@@ -907,8 +919,8 @@ describe('published package surface', () => {
       'build/tray-icon-blue@1.5x.png',
       'build/tray-icon-blue@2x.png',
     ]
-    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', ...uvExecutables])
-    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', ...uvExecutables])
+    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', 'node_modules/cqai-dsh-plugin-video/runtime/**', ...uvExecutables])
+    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', 'node_modules/cqai-dsh-plugin-video/runtime/**', ...uvExecutables])
     expect(manifest.build?.electronFuses).toEqual({
       enableEmbeddedAsarIntegrityValidation: true,
       onlyLoadAppFromAsar: true,
@@ -950,7 +962,7 @@ describe('published package surface', () => {
       '!node_modules/cqai-dsh-plugin-talkcraft/upstream/runtime/models/**',
     ])
     expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
-    expect(manifest.build?.mac?.artifactName).toBe('易宝工坊-Beta-${version}-${arch}.${ext}')
+    expect(manifest.build?.mac?.artifactName).toBe('e宝工坊-Beta-${version}-${arch}.${ext}')
     expect(manifest.build?.mac?.mergeASARs).toBe(false)
     expect(manifest.build?.mac?.signIgnore).toEqual(['\\.(?:pak|dat|wasm)$'])
     expect(manifest.build?.win?.compression).toBe('normal')
@@ -959,7 +971,7 @@ describe('published package surface', () => {
       target: 'nsis',
       arch: ['x64'],
     }])
-    expect(manifest.build?.win?.artifactName).toBe('易宝工坊-Beta-${version}-${arch}-Portable.${ext}')
+    expect(manifest.build?.win?.artifactName).toBe('e宝工坊-Beta-${version}-${arch}-Portable.${ext}')
     expect(manifest.build?.nsis).toEqual({
       include: 'installer.nsh',
       installerIcon: 'build/app-icon.ico',
@@ -972,12 +984,12 @@ describe('published package surface', () => {
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
       differentialPackage: false,
-      shortcutName: '易宝工坊 Beta',
+      shortcutName: 'e宝工坊 Beta',
       useZip: false,
-      artifactName: '易宝工坊-Beta-${version}-${arch}-Setup.${ext}',
+      artifactName: 'e宝工坊-Beta-${version}-${arch}-Setup.${ext}',
     })
     expect(manifest.build?.linux?.icon).toBe('build/app-icon.png')
-    expect(manifest.build?.linux?.synopsis).toBe('易宝工坊 Beta desktop for DeepSeek Harness')
+    expect(manifest.build?.linux?.synopsis).toBe('e宝工坊 Beta desktop for DeepSeek Harness')
     // Electron derives the window's WM_CLASS from the root desktopName, and
     // syncDesktopName names the installed entry after it. Without the pair,
     // WM_CLASS falls back to the npm package name while the entry advertises
@@ -1057,6 +1069,7 @@ describe('published package surface', () => {
         CFBundleAllowMixedLocalizations: true,
         CFBundleDevelopmentRegion: 'en',
         CFBundleLocalizations: ['en', 'zh_CN'],
+        CFBundleDisplayName: '易宝工坊 Beta',
       },
       hardenedRuntime: true,
       mergeASARs: false,

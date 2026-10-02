@@ -1,16 +1,18 @@
-/** Stable and Beta identities used to locate each edition's private app data. */
+/** Display names are independent of the historical Electron data and credential identities. */
 export const DESKTOP_RELEASE_IDENTITIES = Object.freeze({
   stable: Object.freeze({
     releaseChannel: 'stable' as const,
     packageName: 'dsh-plugin-desktop',
-    productName: '易宝工坊',
+    productName: 'e宝工坊',
+    storageName: '易宝工坊',
     appId: 'ai.deepseek.dsh.desktop',
     homeDirectoryName: '.dsh',
   }),
   beta: Object.freeze({
     releaseChannel: 'beta' as const,
     packageName: 'dsh-plugin-desktop-beta',
-    productName: '易宝工坊 Beta',
+    productName: 'e宝工坊 Beta',
+    storageName: '易宝工坊 Beta',
     appId: 'ai.deepseek.dsh.desktop.beta',
     homeDirectoryName: '.dsh-beta',
   }),
@@ -24,6 +26,8 @@ export const OTHER_DESKTOP_PRODUCT_IDENTITY = DESKTOP_RELEASE_IDENTITIES.beta
 export const DESKTOP_PACKAGE_NAME = DESKTOP_PRODUCT_IDENTITY.packageName
 export const BETA_DESKTOP_PACKAGE_NAME = OTHER_DESKTOP_PRODUCT_IDENTITY.packageName
 export const DESKTOP_PRODUCT_NAME = DESKTOP_PRODUCT_IDENTITY.productName
+/** Preserve userData and safeStorage keys across product display-name changes. */
+export const DESKTOP_STORAGE_NAME = DESKTOP_PRODUCT_IDENTITY.storageName
 export const DESKTOP_APP_ID = DESKTOP_PRODUCT_IDENTITY.appId
 export const DESKTOP_RELEASE_CHANNEL = DESKTOP_PRODUCT_IDENTITY.releaseChannel
 export const DESKTOP_HOME_DIRECTORY_NAME = DESKTOP_PRODUCT_IDENTITY.homeDirectoryName

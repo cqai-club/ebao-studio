@@ -17,13 +17,13 @@ describe('native macOS application menu', () => {
   })
 
   it('localizes the complete Simplified Chinese menu while retaining native roles', () => {
-    const template = macApplicationMenuTemplate('易宝工坊', 'zh-CN')
+    const template = macApplicationMenuTemplate('e宝工坊', 'zh-CN')
 
     expect(template.map(item => item.label)).toEqual([
-      '易宝工坊', '文件', '编辑', '显示', '窗口',
+      'e宝工坊', '文件', '编辑', '显示', '窗口',
     ])
     expect(submenu(template[0]!).map(item => item.label).filter(Boolean)).toEqual([
-      '关于 易宝工坊', '服务', '隐藏 易宝工坊', '隐藏其他', '全部显示', '退出 易宝工坊',
+      '关于 e宝工坊', '服务', '隐藏 e宝工坊', '隐藏其他', '全部显示', '退出 e宝工坊',
     ])
     expect(submenu(template[1]!)).toEqual([
       expect.objectContaining({ label: '关闭窗口', role: 'close' }),
@@ -41,20 +41,20 @@ describe('native macOS application menu', () => {
   })
 
   it('keeps the English fallback complete', () => {
-    const template = macApplicationMenuTemplate('易宝工坊', 'en')
+    const template = macApplicationMenuTemplate('e宝工坊', 'en')
 
     expect(template.map(item => item.label)).toEqual([
-      '易宝工坊', 'File', 'Edit', 'View', 'Window',
+      'e宝工坊', 'File', 'Edit', 'View', 'Window',
     ])
     expect(submenu(template[0]!)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'About 易宝工坊', role: 'about' }),
-      expect.objectContaining({ label: 'Quit 易宝工坊', role: 'quit' }),
+      expect.objectContaining({ label: 'About e宝工坊', role: 'about' }),
+      expect.objectContaining({ label: 'Quit e宝工坊', role: 'quit' }),
     ]))
   })
 
   it('places trusted desktop actions in the application submenu', () => {
     const invokeTerminal = vi.fn()
-    const template = macApplicationMenuTemplate('易宝工坊', 'en', [{
+    const template = macApplicationMenuTemplate('e宝工坊', 'en', [{
       label: 'Open DSH Terminal',
       click: invokeTerminal,
     }, {

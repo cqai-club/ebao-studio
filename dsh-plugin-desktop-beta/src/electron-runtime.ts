@@ -103,7 +103,7 @@ const AUTO_UPDATE_RELEASE_CHANNEL = DESKTOP_RELEASE_CHANNEL as DesktopReleaseCha
 /** Main-process deadline for one Renderer generation to settle its client Loader. */
 export const RENDERER_BOOT_TIMEOUT_MS = 30_000
 
-/** Native adapter used by the 易宝工坊 launcher and owned by its Cordis shell plugin. */
+/** Native adapter used by the e宝工坊 launcher and owned by its Cordis shell plugin. */
 export class ElectronDesktopRuntime implements DesktopRuntime {
   setupOnboarding?: import('./setup-onboarding-bridge.ts').DesktopOnboardingBridge
   readonly platform: DesktopPlatform

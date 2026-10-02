@@ -18,9 +18,13 @@ MPT = RUNTIME / "mpt"
 sys.path.insert(0, str(MPT))
 os.chdir(MPT)
 
-# Keep every MoneyPrinterTurbo FFmpeg call on the binary in its private venv.
-import imageio_ffmpeg
-os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
+# Explicit overrides take precedence over the common application tool. Keep the
+# private imageio binary as a fallback for independently installed engines.
+configured_ffmpeg = os.environ.get("IMAGEIO_FFMPEG_EXE") or os.environ.get("FFMPEG_PATH") or os.environ.get("CQAI_FFMPEG")
+if not configured_ffmpeg:
+    import imageio_ffmpeg
+    configured_ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+os.environ["IMAGEIO_FFMPEG_EXE"] = configured_ffmpeg
 
 
 def send(kind, **data):
@@ -113,11 +117,18 @@ def main():
             from app.utils import utils
             from app.services import voice
             del VideoParams
-            send("health", python=True, ffmpeg=utils.check_ffmpeg_ready(),
+            ffmpeg_error = None
+            try:
+                ffmpeg_ready = utils.check_ffmpeg_ready()
+            except Exception as exc:
+                ffmpeg_ready = False
+                ffmpeg_error = f"{type(exc).__name__}: {exc}"
+            send("health", python=True, pythonPackages=True, ffmpeg=ffmpeg_ready,
+                 **({"error": ffmpeg_error} if ffmpeg_error else {}),
                  voices=[name for name in voice.get_all_azure_voices(["zh-CN", "en-US"]) if "-V2-" not in name], fonts=system_fonts(),
                  uv=bool(shutil.which("uv")))
         except Exception as exc:
-            send("health", python=False, ffmpeg=False, error=f"{type(exc).__name__}: {exc}",
+            send("health", python=False, pythonPackages=False, ffmpeg=False, error=f"{type(exc).__name__}: {exc}",
                  uv=bool(shutil.which("uv")))
         return
     if operation not in {"run", "content"} or len(sys.argv) != 3:
@@ -191,7 +202,7 @@ def main():
     from app.services import llm, material, state, task
     from app.utils import utils
     for key in ("pexels_api_keys", "pixabay_api_keys", "coverr_api_keys"):
-        value = payload.get("settings", {}).get(key, "")
+        value = os.environ.get({"pexels_api_keys": "MPT_PEXELS_API_KEY", "pixabay_api_keys": "MPT_PIXABAY_API_KEY", "coverr_api_keys": "MPT_COVERR_API_KEY"}[key], "")
         config.app[key] = [value] if value else []
 
     config.app["subtitle_provider"] = payload.get("settings", {}).get("subtitle_provider", "edge")

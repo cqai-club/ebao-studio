@@ -19,6 +19,7 @@ import { applyAdvancedShell } from './advanced-shell.ts'
 import { startRendererBootReporter } from './boot-health.ts'
 import { applyDesktopBrand } from './desktop-brand.tsx'
 import { applyDesktopSettings } from './desktop-settings.ts'
+import { registerDesktopUpdateAction } from './desktop-update-action.ts'
 import { installDesktopDirectoryPickerBridge } from './directory-picker.ts'
 import { desktopDeveloperActionsEnabled, parseDesktopClientEnvironment } from './environment.ts'
 import { applyExtendedShell } from './extended-shell.ts'
@@ -139,6 +140,9 @@ export function apply(ctx: ClientContext): void {
     environment,
     desktopDeveloperActionsEnabled(window.location.search),
   )
+  if (environment.platform === 'darwin' || environment.platform === 'win32') {
+    registerDesktopUpdateAction(ctx, desktopSettings.api)
+  }
   registerDesktopOnboarding(ctx, (snapshot, locale, finish, renderNavigation) => createElement<{ embedded?: EmbeddedSetupWizard }>(SetupWizardApp, {
     embedded: { input: snapshot.input, locale, renderNavigation, finish: selection => finish(snapshot.profile, selection) },
   }))

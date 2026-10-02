@@ -1,14 +1,14 @@
-# e剪宝
+# 数字人视频制作
 
-易宝工坊 / DeepSeek Harness 视频制作插件，基于 `dsh-shortvideo-pipeline`。
+e宝工坊 / DeepSeek Harness 视频制作插件，基于 `dsh-shortvideo-pipeline`。
 
-侧栏 **e图宝 → e剪宝 → 工作区**。通过官方 `sidebar.panellist` 和 `main` 插槽挂载，保留原有对话界面。
+启用聚合插件时通过 **e剪宝 → 数字人视频制作** 进入；停用聚合插件后恢复独立侧栏入口。页面通过公共 `ejianbao.workspace` 插槽贡献，旧 `main/cqai-video` 地址保留。视频引擎继续使用现有横屏输出、模型调用和任务目录。
 
 ## 使用
 
 1. 选择已有口播视频、数字人口播，或仅生成动效方案。
 2. 上传素材并填写文案。填写的文案优先于上传的文案文件。
-3. 数字人模式在“个人 InferFlow 账户”中输入自己的 API Key，验证后估算费用，再确认生成。密钥仅保留在本次运行的内存中。在制作记录中查看进度或继续任务。
+3. 数字人模式先登录产品账户并充值，获取积分报价，再确认生成。在制作记录中查看进度或继续任务。
 4. 完成后预览 MP4，下载成片、文案、计划、TSX 动效包和发布 JSON。
 
 已有口播视频默认全部本地处理；AI 文案优化、数字人和封面生成功能需用户在界面选择后才调用对应云服务。发布阶段仅准备素材，不登录或自动发布至任何平台。
@@ -21,15 +21,19 @@
 - Node.js 22+。在 `runtime/render-studio` 执行 `npm ci` 安装固定 Remotion 依赖。
 - Remotion 首次渲染需下载浏览器，可用 `EJIANBAO_BROWSER_EXECUTABLE` 指向本机 Chromium 浏览器。
 - `EJIANBAO_PYTHON` 可指定 Python 可执行文件；`FFMPEG_PATH` 可指定 FFmpeg。
-- 数字人直连个人 InferFlow 账户，API Key 通过本机接口传入 Host 内存，不写入任务文件；重启后需重新连接。无需部署 CQAI 托管视频后台。
+- 数字人使用产品账户服务，用户无需 InferFlow Key；运营方需先部署托管服务与 Relay `ejianbao` Task Plugin 渠道，详见 `docs/cqai/ejianbao-managed-service.md`。
 - 数字人模式关闭可选 AI 文案与封面。其他模式的这两项仍使用原有 `DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY` 配置。
 - 未安装 SenseVoice 模型时使用能量/停顿级字幕校准，界面明确显示校准等级。
+
+制作环境可安装 / 修复公共 uv、宿主 Node、Python 3.11 与 FFmpeg/ffprobe，基础工具保存在 `DSH_HOME/media-tools`，供三个视频功能使用。动效视频自己的 Python 包环境位于 `DSH_HOME/ejianbao/engine/.venv`，仍按现有 `runtime/requirements.txt` 安装；安装成功后立即使用，无需重启。Remotion 4.0.512 与浏览器保持原有独立准备方式，此安装流程不会安装或升级渲染器。
+
+`EJIANBAO_PYTHON`、`EJIANBAO_RUNTIME`、`EJIANBAO_NODE`、`EJIANBAO_BROWSER_EXECUTABLE` 与 `FFMPEG_PATH` 显式覆盖继续优先。指定外部 Python 时仅检查其包，不自动写入外部环境。环境 API 为 `GET /api/cqai-video/health`（`refresh=1` 强制重新检查）、`GET /api/cqai-video/setup` 与带 `x-ejianbao: 1` 的 `POST /api/cqai-video/setup`。
 
 任务保存到 `$DSH_HOME/ejianbao/jobs/<id>`。每个任务独立素材、渲染目录和产物。一次运行一个任务；取消时终止该任务子进程树；退出应用时中断任务，重新启动后可继续。已成功阶段会复用，修改素材请新建任务。
 
 ## 插件构建
 
-在易宝工坊仓库根目录执行：
+在e宝工坊仓库根目录执行：
 
 ```sh
 corepack yarn install

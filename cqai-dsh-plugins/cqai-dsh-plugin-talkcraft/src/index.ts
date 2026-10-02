@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-jobs'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { createMediaSettings, createMediaSettingsHandler } from 'cqai-dsh-media-settings'
 import { createReadStream, createWriteStream, existsSync, realpathSync, statSync } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { extname, dirname, join, sep } from 'node:path'
@@ -51,6 +52,8 @@ function serveFile(req: IncomingMessage, res: ServerResponse, path: string, down
 }
 
 export function apply(ctx: Context): void {
+  const mediaSettings = createMediaSettings({home: resolveDshHome(), credentials: ctx.credentials})
+  const handleMediaSettings = createMediaSettingsHandler(mediaSettings, {path: `${API}/media-settings`, engine: 'talkcraft'})
   const sourceUpstream = fileURLToPath(new URL('../upstream/', import.meta.url))
   const home = join(resolveDshHome(), 'talkcraft')
   const sourceRoot = dirname(sourceUpstream)
@@ -65,7 +68,7 @@ export function apply(ctx: Context): void {
   const secrets = new Secrets({
     readRecord: key => ctx.credentials.readRecord(key),
     modifyRecord: (key, mutate) => ctx.credentials.modifyRecord(key, mutate),
-  })
+  }, mediaSettings)
   const agents = new TalkCraftAgents()
   const work = new Pipeline(store, agents, secrets, upstream, modelDir, join(home, 'bin', process.platform === 'win32' ? 'node.cmd' : 'node'))
   const editor = new Workbench(store, upstream)
@@ -84,6 +87,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => {
     const activeUploads = new Set<string>()
     const unregister = ctx.webServer.register({kind: 'prefix', path: API, handler: async (req, res) => {
+      if (await handleMediaSettings(req, res)) return
       if (!permitted(req)) return json(res, 403, {error: '仅允许本机 Desktop 页面访问'})
       try {
         const url = new URL(req.url ?? '/', 'http://localhost')

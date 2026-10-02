@@ -29,9 +29,11 @@ describe('unified publisher client contract', () => {
 
   it('keeps submissions separate from execution results', () => {
     const source = [entry, video, article, history].join('\n')
-    // The article editor may refresh its currently bound Agent draft while the
-    // drawer is open; submission state must still be event or action driven.
-    expect([entry, video, history].join('\n')).not.toContain('setInterval(')
+    // Both text and video editors may refresh their currently bound Agent
+    // draft; submission state must still be event or action driven.
+    expect([entry, history].join('\n')).not.toContain('setInterval(')
+    expect(article).toContain('if (!active || !agentOpen || !selectedContentId) return')
+    expect(video).toContain('if (!active || !agentOpen || !selectedContentId) return')
     expect(source).not.toContain("api('jobs'")
     expect(source).not.toContain("api('status'")
     expect(source).toContain("showSuccess('已提交，请稍后到平台后台确认。')")

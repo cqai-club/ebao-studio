@@ -1,6 +1,8 @@
 # 口播视频制作插件（基于 TalkCraft）
 
-这是 DSH Desktop 的独立插件。Stable/Beta 开发版默认加载；当前默认插件尚不能通过界面启停。它有自己的侧栏、Host API、Agent 任务、`$DSH_HOME/talkcraft/jobs/<id>` 和 Credentials 记录；不调用 e剪宝。
+这是 DSH Desktop 的独立插件，Stable/Beta 默认加载。启用 `cqai-dsh-plugin-ejianbao` 时，页面位于“e剪宝 → 口播视频制作”；停用聚合插件后恢复独立入口。Host API、Agent 任务和 `$DSH_HOME/talkcraft/jobs/<id>` 保持独立；新草稿默认 9:16，恢复稿保留原参数。
+
+Pexels/Pixabay 与短视频使用公共 Credentials 记录，冲突旧值保留为功能覆盖；Fish Audio 保持原凭据记录。画幅和标准 Edge 音色 ID 由普通共享库 `cqai-dsh-media-settings` 管理。聚合标签或设置页往返保留草稿、已选文件和工作台 iframe；隐藏页暂停读取、播放与键盘操作，Host 制作任务继续执行。
 
 上游 TalkCraft 采用 [PolyForm Noncommercial 1.0.0](LICENSE)；个人非商用可以使用，商业使用需取得上游作者授权。安装包随插件附带完整许可证和版权声明。
 
@@ -13,7 +15,7 @@ corepack yarn install --immutable
 corepack yarn dev       # Stable；Beta 改用 corepack yarn dev:beta
 ```
 
-在插件“设置 → 制作状态”点击“一键安装所有缺失依赖”。安装器使用随包的 Node/npm 和 uv，在 `DSH_HOME/talkcraft/runtime/<版本>` 准备锁定的 Remotion、Python 虚拟环境（含 Edge TTS）与无头浏览器；FFmpeg/ffprobe 使用 Remotion 对应平台包的程序。FireRed 模型约 776 MB，下载到 `DSH_HOME/talkcraft/models/firered`，完整性校验后才标记就绪。已有兼容模型可通过 `FIRERED_ASR_MODEL_DIR` 指向包含 `model.int8.onnx` 和 `tokens.txt` 的目录。安装支持 Windows、macOS 和 Linux 的现有打包架构；无需修改系统 PATH，Desktop 启动不会自动升级依赖。
+在插件“设置 → 制作状态”点击“一键安装所有缺失依赖”。Node/npm 和 uv 使用应用内置工具；Python 3.11 与普通媒体处理用的 FFmpeg/ffprobe 由应用统一准备到 `DSH_HOME/media-tools`，可与其他视频功能复用。安装器在 `DSH_HOME/talkcraft/runtime/<版本>` 保留独立 Python 包环境（含 Edge TTS）、锁定的 Remotion 依赖及对应原生组件、无头浏览器；公共 FFmpeg 就绪不能代替 Remotion 原生组件检查。设置中的“口播 Python 包环境”表示依赖模块是否齐全。旧快照或公共工具尚未准备时，普通媒体命令继续使用原快照的工具。FireRed 模型约 776 MB，下载到 `DSH_HOME/talkcraft/models/firered`，完整性校验后才标记就绪。已有兼容模型可通过 `FIRERED_ASR_MODEL_DIR` 指向包含 `model.int8.onnx` 和 `tokens.txt` 的目录。安装支持 Windows、macOS 和 Linux 的现有打包架构；无需修改系统 PATH，Desktop 启动不会自动升级依赖。
 
 在新建视频的声音步骤可选择上传成品配音、Edge TTS 或 Fish Audio。Edge TTS 使用在线语音服务，不需要密钥；首次使用需在设置中完成依赖安装。音色列表在用户选择 Edge TTS 时从服务读取，中文优先，支持查找和查看全部语言，并在本机缓存一天；服务不可访问时显示基础中文音色。选中音色后点击“试听声音”，会用当前口播稿开头最多 80 字生成短样音，在页面直接播放；切换音色会清除旧试听。在插件的“设置”中可连接 Fish Audio、Pexels、Pixabay。密钥由 DSH Credentials 存储；任务 JSON 和日志仅存是否配置、素材来源及状态。画面至少上传一份，或启用“需要时找在线素材”并连接 Pexels/Pixabay。远端配音请求结果不明时任务停止，不自动重复提交；Edge TTS 可由用户明确重试，也可上传一份配音继续。
 

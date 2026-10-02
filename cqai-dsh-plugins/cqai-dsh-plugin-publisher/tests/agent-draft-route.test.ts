@@ -13,7 +13,7 @@ import { writeAgentDraftSession } from '../src/agent-draft-session.ts'
 const homes: string[] = []
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }) })
 
-describe('article Agent drawer binding route', () => {
+describe('Publisher draft Agent drawer binding route', () => {
   it('resolves cold sessions and archive state from sibling Cordis services', async () => {
     const home = mkdtempSync(join(tmpdir(), 'ebao-agent-sibling-route-'))
     homes.push(home)
@@ -114,6 +114,7 @@ describe('article Agent drawer binding route', () => {
       const second = createContent('article')
       const coldArticle = createContent('article')
       const imageNote = createContent('image-note')
+      const video = createContent('video')
       const bind = async (body: unknown) => {
         const req = Readable.from([Buffer.from(JSON.stringify(body))]) as IncomingMessage
         Object.assign(req, { method: 'POST', url: '/api/cqai-publisher/agent-draft-bind',
@@ -148,8 +149,15 @@ describe('article Agent drawer binding route', () => {
         status: 400, body: { error: '当前 Agent 会话不存在或不可用于编辑' },
       })
       expect(await bind({ sessionId, contentId: imageNote.id })).toMatchObject({
-        status: 400, body: { error: '当前 Agent 只支持编辑文章草稿' },
+        status: 200, body: { sessionId, contentId: imageNote.id },
       })
+      expect(await associated(imageNote.id)).toEqual({ status: 200,
+        body: { contentId: imageNote.id, sessionId } })
+      expect(await bind({ sessionId, contentId: video.id })).toMatchObject({
+        status: 200, body: { sessionId, contentId: video.id },
+      })
+      expect(await associated(video.id)).toEqual({ status: 200,
+        body: { contentId: video.id, sessionId } })
       const first = await bind({ sessionId, contentId: article.id })
       expect(first).toMatchObject({ status: 200, body: { sessionId, contentId: article.id } })
       expect(first.body.bindingToken).toMatch(/^[0-9a-f-]{36}$/u)

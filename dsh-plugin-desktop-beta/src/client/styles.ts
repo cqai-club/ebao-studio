@@ -40,10 +40,21 @@ body:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) 
 .dshDesktopConversationSurface { position: relative; grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; background: var(--dsw-alias-bg-base); }
 .dshDesktopMainPanelSurface { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .dshDesktopAgentDrawer { box-sizing: border-box; flex: 0 0 420px; width: 420px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-base); }
+.dshDesktopAgentDrawer[data-agent-drawer-side="left"] { border-left: 0; border-right: 1px solid var(--dsw-alias-border-l1); }
 .dshDesktopAgentDrawerHeader { box-sizing: border-box; flex: none; height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px 0 18px; border-bottom: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; }
+.dshDesktopAgentDrawerHeader > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dshDesktopAgentDrawerClose { flex: none; width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 22px; line-height: 1; cursor: pointer; }
 .dshDesktopAgentDrawerClose:hover, .dshDesktopAgentDrawerClose:focus-visible { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dshDesktopAgentDrawerClose:focus-visible { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 2px; }
+/* The context card scrolls within a small cap, leaving the native conversation its own flex seat. */
+.dshDesktopAgentDrawerSummary { box-sizing: border-box; flex: 0 1 auto; min-height: 0; max-height: min(180px, 25vh); overflow-y: auto; padding: 10px 14px; border-bottom: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-1); }
+.dshDesktopAgentDrawerSummary dl { margin: 0; }
+.dshDesktopAgentDrawerSummaryItem { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 10px; font-size: 12px; line-height: 1.5; }
+.dshDesktopAgentDrawerSummaryItem + .dshDesktopAgentDrawerSummaryItem { margin-top: 4px; }
+.dshDesktopAgentDrawerSummary dt { min-width: 0; overflow-wrap: anywhere; color: var(--dsw-alias-label-tertiary); }
+.dshDesktopAgentDrawerSummary dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); }
+.dshDesktopAgentDrawerSummary p { margin: 8px 0 0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; color: var(--dsw-alias-label-tertiary); }
+.dshDesktopAgentDrawerSummary p:first-child { margin-top: 0; }
 .dshDesktopAgentConversation { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
 /* ConversationRoot defaults to a 680px reading column. The drawer needs its own width. */
 .dshDesktopAgentDrawer [data-slot="main.conversation"] > * { --dsh-chat-content-width: max(0px, calc(var(--dsh-conversation-column-width, 0px) - 48px)); }
@@ -53,6 +64,8 @@ body:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) 
 .dshDesktopAgentDrawer[data-conversation-mode="simple"] [data-content-phase="hero"] .eBaoHomeDock { display: none; }
 .dshDesktopAgentDrawer[data-conversation-mode="simple"] [data-content-phase="hero"] [data-conversation-scroll] { justify-content: flex-end !important; }
 .dshDesktopConversationSurface[data-pub-agent-overlay] .dshDesktopAgentDrawer { position: absolute; z-index: 80; top: 0; right: 0; bottom: 0; width: min(460px, 100%); box-shadow: -12px 0 28px rgb(0 0 0 / 12%); }
+.dshDesktopConversationSurface[data-agent-drawer-overlay] .dshDesktopAgentDrawer { position: absolute; z-index: 80; top: 0; right: 0; bottom: 0; width: min(460px, 100%); box-shadow: -12px 0 28px rgb(0 0 0 / 12%); }
+.dshDesktopConversationSurface[data-agent-drawer-overlay] .dshDesktopAgentDrawer[data-agent-drawer-side="left"] { right: auto; left: 0; box-shadow: 12px 0 28px rgb(0 0 0 / 12%); }
 .dshDesktopRightbarSurface { position: relative; grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; overflow: visible; }
 .dshDesktopFrame[data-rightbar-fullscreen], .dshDesktopFrame[data-rightbar-fullscreen] .dshDesktopResizeHandle { transition: none; }
 .dshDesktopFrame[data-desktop-mode="advanced"][data-desktop-platform="win32"] { grid-template-rows: ${ADVANCED_WINDOWS_TITLEBAR_HEIGHT}px minmax(0, 1fr); }

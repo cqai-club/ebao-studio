@@ -1,6 +1,7 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { NextSettingsAdapter, projectSettings } from '../src/client/settings-adapter.ts'
 import { DEFAULT_PREFERENCES, type DesktopBridge, type DesktopBrowserLinks, type DesktopCommand, type DesktopState } from '../src/desktop-contract.ts'
+import type { NextUpdateState } from '../src/update-state.ts'
 
 function fixture() {
   const state: DesktopState = {
@@ -24,6 +25,44 @@ function fixture() {
   }
   return { state, links, commands, bridge, rejectNext: () => { fail = true }, adapter: new NextSettingsAdapter(bridge) }
 }
+
+it('reads fresh native update status without checking or downloading updates', async () => {
+  const { adapter, state, commands, bridge } = fixture()
+  const browserLinks = vi.spyOn(bridge, 'browserLinks')
+  expect(await adapter.api.readUpdateStatus()).toEqual({
+    supported: false, currentVersion: '0.1.0', availableVersion: null, checking: false, downloading: false,
+  })
+  state.version = '2.0.14-next'
+  state.updates = { phase: 'available', version: '2.0.15-next', installable: true }
+  expect(await adapter.api.readUpdateStatus()).toEqual({
+    supported: true, currentVersion: '2.0.14-next', availableVersion: '2.0.15-next', checking: false, downloading: false,
+  })
+  expect(adapter.getSnapshot()?.updates).toEqual(state.updates)
+  expect(commands).toEqual([])
+  expect(browserLinks).not.toHaveBeenCalled()
+})
+
+it.each<{ update: NextUpdateState; available: boolean; checking?: boolean; downloading?: boolean }>([
+  { update: { phase: 'idle', installable: true }, available: false },
+  { update: { phase: 'current', installable: true }, available: false },
+  { update: { phase: 'checking', installable: true }, available: false, checking: true },
+  { update: { phase: 'available', installable: true }, available: true },
+  { update: { phase: 'downloading', installable: true }, available: true, downloading: true },
+  { update: { phase: 'preparing', installable: true }, available: true, downloading: true },
+  { update: { phase: 'ready', installable: true }, available: true },
+  { update: { phase: 'installing', installable: true }, available: true, downloading: true },
+  { update: { phase: 'error', error: 'service', installable: true }, available: false },
+  { update: { phase: 'error', error: 'prepare', installable: true }, available: true },
+  { update: { phase: 'available', installable: false }, available: true },
+])('projects $update.phase/$update.error without exposing a stale or inactive version', async ({ update, available, checking = false, downloading = false }) => {
+  const { adapter, state, commands } = fixture()
+  state.updates = { version: '2.0.15-next', ...update }
+  expect(await adapter.api.readUpdateStatus()).toEqual({
+    supported: update.installable, currentVersion: state.version,
+    availableVersion: available ? '2.0.15-next' : null, checking, downloading,
+  })
+  expect(commands).toEqual([])
+})
 
 it('shares stable subscription snapshots and serializes independent preference writes', async () => {
   const { adapter, state } = fixture()

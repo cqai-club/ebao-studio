@@ -150,6 +150,7 @@ describe('desktop direct bundle management', () => {
     for (const feature of [
       'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-ejianbao',
       'cqai-dsh-plugin-publisher',
       '@xmanrui/dsh-im',
       'cqai-dsh-plugin-talkcraft',

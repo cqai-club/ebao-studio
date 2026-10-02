@@ -105,6 +105,7 @@ const DEFAULT_PRODUCT_BUNDLES = [
   CQAI_ACCOUNT_PACKAGE,
   CQAI_IMAGEGEN_PACKAGE,
   'cqai-dsh-plugin-video',
+  'cqai-dsh-plugin-ejianbao',
   'cqai-dsh-plugin-short-video',
   'cqai-dsh-plugin-talkcraft',
   CQAI_PUBLISHER_PACKAGE,

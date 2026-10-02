@@ -37,10 +37,11 @@ describe('desktop client environment', () => {
     } })
     const effect = vi.fn()
     const inject = vi.fn()
+    const register = vi.fn()
     const ctx = {
       effect,
       inject: vi.fn(),
-      slots: { inject },
+      slots: { inject, register },
       locale: { bind: () => (key: string) => key },
       configForms: { get: () => ({}) },
     } as unknown as ClientContext
@@ -50,7 +51,21 @@ describe('desktop client environment', () => {
         'sidebar.brand.mark',
         'conversation.hero.brand.mark',
         'settings.section',
+        ...(platform === 'linux' ? [] : ['sidebar.footer.action']),
       ])
+      const updateSeat = inject.mock.calls.find(([name]) => name === 'sidebar.footer.action')
+      if (platform === 'linux') {
+        expect(updateSeat).toBeUndefined()
+      } else {
+        const registerUpdate = updateSeat![1] as () => unknown
+        registerUpdate()
+        expect(register).toHaveBeenCalledWith(expect.objectContaining({
+          name: 'sidebar.footer.action', id: 'desktop-update', order: 1000, locale: 'desktop.settings',
+        }), expect.any(Function))
+        const injected = (register.mock.calls[0]![0] as { inject: () => { api: Record<string, unknown> } }).inject()
+        expect(injected.api.readUpdateStatus).toBeTypeOf('function')
+        expect(injected.api.checkForUpdates).toBeTypeOf('function')
+      }
       expect(effect.mock.calls.map(([, label]) => label)).not.toContain('desktop: independent compatibility frame styles')
     } finally {
       vi.unstubAllGlobals()

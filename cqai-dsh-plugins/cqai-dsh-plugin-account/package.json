@@ -1,7 +1,7 @@
 {
   "name": "@cqaiclub/dsn-account",
   "version": "0.1.1",
-  "description": "CQAI Club shared account and quota plugin for 易宝工坊",
+  "description": "CQAI Club shared account and quota plugin for e宝工坊",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

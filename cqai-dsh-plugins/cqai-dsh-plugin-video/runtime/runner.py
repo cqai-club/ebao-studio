@@ -43,12 +43,25 @@ def event(stage, status):
 
 def health():
     import importlib.util
+    def usable(executable):
+        try:
+            return bool(executable) and subprocess.run([executable, '-version'], capture_output=True, timeout=10).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+    try: ff = ffmpeg()
+    except (RuntimeError, OSError): ff = None
+    numpy = False
+    packages = False
     try:
-        ff = ffmpeg()
-    except RuntimeError:
-        ff = None
-    return {'python': True, 'version': sys.version.split()[0], 'ffmpeg': bool(ff),
-            'numpy': importlib.util.find_spec('numpy') is not None,
+        import numpy as np
+        numpy = True
+        import imageio_ffmpeg
+        packages = True
+    except Exception:
+        pass
+    return {'python': True, 'pythonPackages': packages, 'version': sys.version.split()[0], 'ffmpeg': usable(ff),
+            'ffprobe': usable(os.environ.get('CQAI_FFPROBE') or shutil.which('ffprobe')),
+            'numpy': numpy,
             'render': (BASE / 'render-studio/node_modules/@remotion/cli').is_dir(),
             'inferflow': (BASE / 'inferflow/bridge.py').is_file(),
             'semantic': (BASE / 'align-engine/models/sensevoice/model.int8.onnx').is_file()}

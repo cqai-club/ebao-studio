@@ -111,13 +111,13 @@ function fixture(mutateStaged = false): { options: WindowsNsisAbBuildOptions, ca
       if (args.includes('--dir')) {
         const app = join(output, 'win-unpacked')
         mkdirSync(join(app, 'resources', 'app.asar.unpacked', 'native'), { recursive: true })
-        writeFileSync(join(app, '易宝工坊.exe'), pe())
+        writeFileSync(join(app, 'e宝工坊.exe'), pe())
         writeFileSync(join(app, 'resources', 'app.asar'), 'one archive')
         writeFileSync(join(app, 'resources', 'app.asar.unpacked', 'native', 'addon.node'), 'native')
         return
       }
       mkdirSync(output, { recursive: true })
-      writeFileSync(join(output, '易宝工坊-9.8.7-x64-Setup.exe'), pe())
+      writeFileSync(join(output, 'e宝工坊-9.8.7-x64-Setup.exe'), pe())
       const prepackaged = args.find(value => value.startsWith('--prepackaged='))?.slice('--prepackaged='.length)
         ?? /--prepackaged=(?:"([^"]+)"|([^ ]+))/u.exec(args.at(-1) ?? '')?.slice(1).find(Boolean)
       if (prepackaged !== undefined) {
@@ -426,7 +426,7 @@ describe('Windows NSIS A/B packaging', () => {
     mkdirSync(join(resources, 'app.asar.unpacked'), { recursive: true })
     writeFileSync(join(source, 'package.json'), '{"name":"dsh-plugin-desktop"}\n')
     writeFileSync(join(source, 'lib', 'main.js'), 'export {}\n')
-    writeFileSync(join(installRoot, '易宝工坊.exe'), pe())
+    writeFileSync(join(installRoot, 'e宝工坊.exe'), pe())
     writeFileSync(join(resources, 'app.asar.unpacked', 'native.node'), 'native')
     // The library-level createPackage() promise resolves when it calls
     // WriteStream.end(), not when the file's finish event fires. A short-lived
@@ -439,11 +439,11 @@ describe('Windows NSIS A/B packaging', () => {
     const baselineUnpacked = identifyWindowsNsisAbTree(join(resources, 'app.asar.unpacked'))
     const baselineAppAsar = baselineResources.files.find(file => file.path === 'app.asar')?.sha256
     const sentinel = '.dsh-nsis-ab-old-sentinel-test'
-    writeFileSync(join(installRoot, 'Uninstall 易宝工坊.exe'), pe())
+    writeFileSync(join(installRoot, 'Uninstall e宝工坊.exe'), pe())
     writeFileSync(join(resources, 'app.asar.unpacked', sentinel), 'old')
 
     const inspection = inspectInstalledWindowsApp(installRoot, [
-      'Uninstall 易宝工坊.exe',
+      'Uninstall e宝工坊.exe',
       `resources\\app.asar.unpacked\\${sentinel}`,
     ])
     expect(inspection.valid, inspection.errors.join('\n')).toBe(true)
@@ -459,7 +459,7 @@ describe('Windows NSIS A/B packaging', () => {
   it('parses repeated exact application-relative inspector exclusions', () => {
     expect(parseInstalledWindowsAppArguments([
       '--ignore-relative-path',
-      'Uninstall 易宝工坊.exe',
+      'Uninstall e宝工坊.exe',
       '--install-root',
       'C:\\DSH',
       '--ignore-relative-path',
@@ -467,7 +467,7 @@ describe('Windows NSIS A/B packaging', () => {
     ])).toEqual({
       installRoot: 'C:\\DSH',
       ignoreRelativePaths: [
-        'Uninstall 易宝工坊.exe',
+        'Uninstall e宝工坊.exe',
         'resources/app.asar.unpacked/sentinel',
       ],
     })
@@ -484,7 +484,7 @@ describe('Windows NSIS A/B packaging', () => {
     roots.push(root)
     const resources = join(root, 'resources')
     mkdirSync(resources, { recursive: true })
-    writeFileSync(join(root, '易宝工坊.exe'), pe())
+    writeFileSync(join(root, 'e宝工坊.exe'), pe())
     writeFileSync(join(resources, 'app.asar'), 'not an asar')
 
     const inspection = inspectInstalledWindowsApp(root)
@@ -497,7 +497,7 @@ describe('Windows NSIS A/B packaging', () => {
   it('runs the shared packaged-runtime smoke with an Electron Builder-shaped context', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-installed-runtime-'))
     roots.push(root)
-    writeFileSync(join(root, '易宝工坊.exe'), pe())
+    writeFileSync(join(root, 'e宝工坊.exe'), pe())
     const contexts: Parameters<PackagedElectronSmoke>[0][] = []
 
     const result = probeInstalledWindowsRuntime(root, context => contexts.push(context), 'win32')
@@ -509,8 +509,8 @@ describe('Windows NSIS A/B packaging', () => {
       electronPlatformName: 'win32',
       arch: 1,
       packager: {
-        executableName: '易宝工坊',
-        appInfo: { productFilename: '易宝工坊' },
+        executableName: 'e宝工坊',
+        appInfo: { productFilename: 'e宝工坊' },
       },
     })
     expect(contexts[0]).not.toHaveProperty('executableName')

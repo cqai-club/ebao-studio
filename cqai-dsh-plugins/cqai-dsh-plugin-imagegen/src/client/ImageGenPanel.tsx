@@ -18,6 +18,8 @@ import { GooeyNav } from './GooeyNav.tsx'
 import { CanvasWorkspace } from './CanvasWorkspace.tsx'
 import { useImageGenLanguageTick } from './use-language.ts'
 import { buildNormalGenerationStream, isNormalGeneration, normalizeSize } from './normal-generation-stream.ts'
+import { createTaskPollingState, mergeTaskSummaries } from './generation-task-poll.ts'
+import { ecommerceSlotPrompt } from './ecommerce-prompts.ts'
 import type { CqaiImageProviderView, EcommerceRefRole, GeneratedImage, GenerateMode, GenerateRequest, GenerationTask, GenerationTaskStatus, HistoryEntry, HistoryImageRef, ProductSetDraft, ProductSetSlot } from '../protocol.ts'
 import { AGENT_IMAGE_API } from '../protocol.ts'
 import type { ImageGenConfig, ImageGenScope } from './settings-scope.ts'
@@ -70,12 +72,6 @@ const ECOMMERCE_DRAFT_STORAGE_KEY = 'dsh-imagegen-ecommerce-draft'
 const ECOMMERCE_ASSET_ROLES = ['product', 'packaging', 'detail', 'style'] as const
 type EcommerceAssetRole = Exclude<EcommerceRefRole, 'none'>
 const MAX_ECOMMERCE_ASSETS = 4
-const ECOMMERCE_ROLE_PROMPT_LABELS: Record<EcommerceAssetRole, string> = {
-  product: '商品主体',
-  packaging: '包装',
-  detail: '细节/角度',
-  style: '风格参考',
-}
 /** One uploaded product asset. Session-only: data URLs are far too large for
  *  the localStorage draft, so assets never persist across reloads. */
 interface ProductAsset {
@@ -322,22 +318,6 @@ function effectiveEcommerceLanguage(draft: ProductSetDraft): string {
   return draft.language === 'custom' ? draft.customLanguage?.trim() ?? '' : draft.language
 }
 
-function ecommercePrompt(draft: ProductSetDraft, slot: ProductSetSlot): string {
-  const info = draft.promptInfo.trim() || '突出商品真实材质、结构和核心价值；保持商品颜色、形状、Logo、包装文字和结构真实，不添加不存在的配件'
-  const language = effectiveEcommerceLanguage(draft) || '中文'
-  const refClause = slot.refRole !== undefined && slot.refRole !== 'none'
-    ? `本图以上传的${ECOMMERCE_ROLE_PROMPT_LABELS[slot.refRole]}图片为参考，商品与风格必须与参考图保持一致；`
-    : ''
-  return `电商${slot.label}：为${draft.productName.trim() || '该商品'}制作${slot.description}。商品品类：${draft.category}；平台：${draft.platform}；语言：${language}。${refClause}商品信息与要求：${info}。整体要求：商品主体清晰、比例真实、光线自然、画面干净、适合电商发布。`
-}
-
-/** Effective prompt for one image of a slot: the per-image override written in
- *  the pre-generation preview board wins over the auto-composed prompt. */
-function ecommerceSlotPrompt(draft: ProductSetDraft, slot: ProductSetSlot, index: number): string {
-  const override = draft.promptOverrides?.[`${slot.key}-${index + 1}`]
-  return override !== undefined && override.trim() !== '' ? override : ecommercePrompt(draft, slot)
-}
-
 /** Consistency prefix for slots generated after the main image exists. */
 function withAnchorNote(prompt: string): string {
   return '商品套图一致性约束：附件是本套商品的主图，图中商品（外形、颜色、材质、Logo、包装文字）必须与附件完全一致，不得重新发明商品。' + prompt
@@ -525,8 +505,12 @@ export function ImageGenPanel(props: {
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [tasks, setTasks] = useState<GenerationTask[]>([])
   const tasksRef = useRef<GenerationTask[]>([])
+  const taskPollingState = useRef(createTaskPollingState())
+  const taskPollingBusy = useRef(false)
+  const galleryLoaded = useRef(false)
   const [taskTrayOpen, setTaskTrayOpen] = useState(false)
   const [comparison, setComparison] = useState<ComparisonSession | null>(null)
+  const comparisonRef = useRef(comparison)
   const [comparisonFullscreen, setComparisonFullscreen] = useState(false)
   const [ecommerce, setEcommerce] = useState<ProductSetDraft>(() => {
     try {
@@ -554,6 +538,7 @@ export function ImageGenPanel(props: {
   const [ecommercePreview, setEcommercePreview] = useState(false)
   const [ecommerceGenerating, setEcommerceGenerating] = useState(false)
   const [ecommerceEnhancing, setEcommerceEnhancing] = useState(false)
+  const [ecommercePolishing, setEcommercePolishing] = useState<string | null>(null)
   const [ecommerceProjectId, setEcommerceProjectId] = useState<string | null>(null)
   const [ecommerceAssets, setEcommerceAssets] = useState<ProductAsset[]>([])
   /** History-restored product set currently shown in the results canvas. */
@@ -680,18 +665,28 @@ export function ImageGenPanel(props: {
     ...normalTasks.map(task => normalizeSize(task.request.size)),
   ])]
 
-  // Load the host-persisted history and gallery once on mount (they live in
-  // ~/.dsh on the DSH host, so every browser/device sees the same lists).
+  // History feeds the default result stream; gallery is requested when opened.
   useEffect(() => {
     let disposed = false
     api.historyList()
       .then(entries => { if (!disposed) setHistory(entries) })
       .catch(() => { /* history unavailable — leave the list empty */ })
-    api.galleryList()
-      .then(entries => { if (!disposed) setGallery(entries) })
-      .catch(() => { /* gallery unavailable — leave the list empty */ })
     return () => { disposed = true }
   }, [api])
+
+  useEffect(() => {
+    if (tab !== 'gallery' && workspace !== 'canvas' || galleryLoaded.current) return
+    let disposed = false
+    void api.galleryList().then(entries => {
+      if (disposed) return
+      galleryLoaded.current = true
+      setGallery(entries)
+    }).catch(() => {})
+    return () => { disposed = true }
+  }, [api, tab, workspace])
+
+  useEffect(() => { tasksRef.current = tasks }, [tasks])
+  useEffect(() => { comparisonRef.current = comparison }, [comparison])
 
   // Chat toolviews publish durable refs after they finish loading. Decode the
   // refs through the same host-authorized route and make them the current
@@ -717,35 +712,34 @@ export function ImageGenPanel(props: {
 
   useEffect(() => {
     let disposed = false
-    const refresh = (): void => {
-      void api.taskList().then(next => {
+    const refresh = async (): Promise<void> => {
+      if (taskPollingBusy.current) return
+      taskPollingBusy.current = true
+      try {
+        const summaries = await api.taskList()
         if (disposed) return
-        const newlyCompleted = next.filter(task => task.status === 'completed'
-          && task.result !== undefined
-          && !tasksRef.current.some(old => old.id === task.id && old.status === 'completed'))
+        const { tasks: next, newlyCompleted } = await mergeTaskSummaries(summaries, tasksRef.current, id => api.taskGet(id), taskPollingState.current)
+        if (disposed) return
         tasksRef.current = next
-        setTasks(previous => {
-          const completed = next.find(task => task.status === 'completed'
-            && !previous.some(old => old.id === task.id && old.status === 'completed')
-            && !comparison?.taskIds.includes(task.id))
-          if (completed?.result !== undefined) {
-            setImages(completed.result.images)
-            if (completed.result.history !== undefined) setHistory(completed.result.history)
-            setError(completed.result.historyError ?? null)
-          }
-          return next
-        })
+        setTasks(next)
+        const completed = newlyCompleted.find(task => !comparisonRef.current?.taskIds.includes(task.id))
+        if (completed?.result !== undefined) {
+          setImages(completed.result.images)
+          if (completed.result.history !== undefined) setHistory(completed.result.history)
+          setError(completed.result.historyError ?? null)
+        }
         if (newlyCompleted.length > 0) {
           void api.historyList().then(entries => {
             if (!disposed) setHistory(entries)
           }).catch(() => {})
         }
-      }).catch(() => {})
+      } catch { /* Keep the last known state while the host is unavailable. */ }
+      finally { taskPollingBusy.current = false }
     }
-    refresh()
-    const timer = window.setInterval(refresh, 1500)
+    void refresh()
+    const timer = window.setInterval(() => { void refresh() }, 1500)
     return () => { disposed = true; window.clearInterval(timer) }
-  }, [api, comparison])
+  }, [api])
 
   // Close the model dropdown when clicking anywhere outside it.
   const modelMenuRef = useRef<HTMLDivElement>(null)
@@ -810,6 +804,28 @@ export function ImageGenPanel(props: {
     } finally {
       setEcommerceEnhancing(false)
     }
+  }
+
+  const polishEcommercePrompt = async (slot: ProductSetSlot, index: number): Promise<void> => {
+    if (ecommercePolishing !== null) return
+    if (cqaiProvider.state !== 'signed-in') {
+      setError(cqaiProvider.message ?? '请先登录 CQAI Club 后再使用提示词润色。')
+      return
+    }
+    const key = `${slot.key}-${index + 1}`
+    const source = ecommerceSlotPrompt(ecommerce, slot, index)
+    setEcommercePolishing(key)
+    setError(null)
+    try {
+      const polished = await api.polishPrompt(source)
+      // A user may switch products or edit the draft while the model is busy.
+      setEcommerce(previous => {
+        const currentSlot = previous.slots.find(item => item.key === slot.key)
+        if (currentSlot === undefined || ecommerceSlotPrompt(previous, currentSlot, index) !== source) return previous
+        return { ...previous, promptOverrides: { ...previous.promptOverrides, [key]: polished } }
+      })
+    } catch (caught) { setError(errorMessage(caught)) }
+    finally { setEcommercePolishing(null) }
   }
 
   /** Read up to five reference images. The first remains the primary image;
@@ -1532,7 +1548,7 @@ export function ImageGenPanel(props: {
   const generateDisabled = submitting || activeModel === '' || promptOverLimit
   const ecommerceSlots = ecommerce.slots.filter(slot => slot.enabled && slot.count > 0)
   const ecommerceTotal = ecommerceSlots.reduce((total, slot) => total + slot.count, 0)
-  const ecommerceGenerateDisabled = submitting || ecommerceGenerating || ecommerceSlots.length === 0 || ecommerce.productName.trim() === '' || (ecommerce.language === 'custom' && effectiveEcommerceLanguage(ecommerce) === '')
+  const ecommerceGenerateDisabled = submitting || ecommerceGenerating || ecommercePolishing !== null || ecommerceSlots.length === 0 || ecommerce.productName.trim() === '' || (ecommerce.language === 'custom' && effectiveEcommerceLanguage(ecommerce) === '')
   const ecommerceFileInput = useRef<HTMLInputElement>(null)
   /** Which group (主图/风格) the shared file input uploads into. */
   const ecommerceUploadRoleRef = useRef<'product' | 'style'>('product')
@@ -1743,7 +1759,7 @@ export function ImageGenPanel(props: {
                   onClick={() => { void viewHistoryGroup(group) }}
                 >
                   {entry.images.length > 0 ? (
-                    <img className={css.historyThumb} src={entry.images[0]!.url} alt="" />
+                    <img className={css.historyThumb} src={entry.images[0]!.url} alt="" loading="lazy" decoding="async" />
                   ) : (
                     <span className={css.historyThumbPlaceholder} />
                   )}
@@ -1900,7 +1916,7 @@ export function ImageGenPanel(props: {
                             else if (taskPreviewImages.length > 0) openPreview(taskPreviewImages, 0)
                           }}
                         >
-                          <img className={css.normalCardImage} src={imageSrc} alt={request.prompt} />
+                          <img className={css.normalCardImage} src={imageSrc} alt={request.prompt} loading="lazy" decoding="async" />
                           <span className={css.normalCardStatus}>{tt(`tasks.${status}` as never)}</span>
                           {imageCount > 1 ? <span className={css.normalCardImageCount}>{imageCount} {tt('history.images')}</span> : null}
                           <span className={css.normalCardZoom}>{tt('preview.open')}</span>
@@ -2660,7 +2676,7 @@ export function ImageGenPanel(props: {
                           <input type="checkbox" checked={selectedGalleryIds.has(entry.id)} onChange={() => { setGallerySelecting(true); toggleGallerySelection(entry.id) }} />
                         </label>
                         <button type="button" className={css.galleryImageButton} data-selecting={gallerySelecting ? '' : undefined} onClick={() => { if (gallerySelecting) toggleGallerySelection(entry.id); else void viewGalleryEntry(entry) }} title={gallerySelecting ? tt('gallery.select') : tt('preview.open')}>
-                          <img className={css.galleryImage} src={image.url} alt={entry.prompt} />
+                          <img className={css.galleryImage} src={image.url} alt={entry.prompt} loading="lazy" decoding="async" />
                           <span className={css.galleryBadge}>{entry.mode === 'edit' ? tt('mode.edit') : tt('mode.text')}</span>
                         </button>
                         <div className={css.galleryCardActions}>
@@ -2732,6 +2748,14 @@ export function ImageGenPanel(props: {
                     <div key={key} className={css.ecommercePromptCard}>
                       <header>
                         <span className={css.ecommercePromptBadge}>{slot.label}{slot.count > 1 ? ` · 第 ${index + 1} 张` : ''}</span>
+                        <div className={css.ecommercePromptActions}>
+                          <button
+                            type="button"
+                            className={css.galleryBulkButton}
+                            disabled={ecommercePolishing !== null}
+                            aria-label={`${slot.label} ${index + 1} · ${tt('ecommerce.polishPrompt')}`}
+                            onClick={() => { void polishEcommercePrompt(slot, index) }}
+                          >{ecommercePolishing === key ? tt('ecommerce.polishingPrompt') : tt('ecommerce.polishPrompt')}</button>
                         {edited ? (
                           <button
                             type="button"
@@ -2747,9 +2771,11 @@ export function ImageGenPanel(props: {
                         ) : (
                           <span className={css.ecommercePromptAuto}>{tt('ecommerce.promptAutoHint')}</span>
                         )}
+                        </div>
                       </header>
                       <textarea
                         value={edited ? override : ecommerceSlotPrompt(ecommerce, slot, index)}
+                        aria-label={`${slot.label} ${index + 1}`}
                         onChange={event => setEcommerce(previous => ({ ...previous, promptOverrides: { ...previous.promptOverrides, [key]: event.target.value } }))}
                         rows={5}
                       />

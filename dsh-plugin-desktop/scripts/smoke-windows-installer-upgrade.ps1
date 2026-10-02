@@ -16,8 +16,9 @@ $taskBaseInstaller = (Resolve-Path -LiteralPath $BaseInstaller).Path
 $taskCandidateInstaller = (Resolve-Path -LiteralPath $CandidateInstaller).Path
 $taskBaseExpectedVersion = (Get-Item -LiteralPath $taskBaseInstaller).VersionInfo.ProductVersion
 $taskCandidateExpectedVersion = (Get-Item -LiteralPath $taskCandidateInstaller).VersionInfo.ProductVersion
+$taskAppProcessNames = @('易宝工坊.exe', '易宝工坊 Beta.exe', 'e宝工坊.exe', 'e宝工坊 Beta.exe')
 $taskExistingProcesses = @(Get-CimInstance Win32_Process | Where-Object {
-  $_.Name -ieq '易宝工坊.exe'
+  $taskAppProcessNames -icontains $_.Name
 })
 $taskUninstallRoots = @(
   'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
@@ -25,11 +26,25 @@ $taskUninstallRoots = @(
   'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
 )
 $taskExistingInstalls = @(Get-ItemProperty $taskUninstallRoots -ErrorAction SilentlyContinue | Where-Object {
-  $_.DisplayName -match '^易宝工坊'
+  $_.DisplayName -match '^(?:易宝工坊|e宝工坊)(?:$|\s)'
 })
 
-if ($taskExistingProcesses.Count -gt 0 -or $taskExistingInstalls.Count -gt 0) {
-  throw 'Refusing to run while an existing 易宝工坊 process or installation is present.'
+$taskShortcutRoots = @(
+  [Environment]::GetFolderPath('Desktop')
+  [Environment]::GetFolderPath('StartMenu')
+  [Environment]::GetFolderPath('CommonDesktopDirectory')
+  [Environment]::GetFolderPath('CommonStartMenu')
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+function Get-TaskAppShortcuts {
+  return @($taskShortcutRoots | ForEach-Object {
+    Get-ChildItem -LiteralPath $_ -Filter '*.lnk' -Recurse -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.BaseName -match '^(?:易宝工坊|e宝工坊)(?:$|\s)' }
+  })
+}
+$taskExistingShortcuts = @(Get-TaskAppShortcuts)
+
+if ($taskExistingProcesses.Count -gt 0 -or $taskExistingInstalls.Count -gt 0 -or $taskExistingShortcuts.Count -gt 0) {
+  throw 'Refusing to run while an existing e宝工坊 process, installation, or shortcut is present.'
 }
 
 $taskTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
@@ -38,10 +53,11 @@ $taskInstallRoot = Join-Path $taskRoot 'app'
 $taskUserData = Join-Path $env:APPDATA '易宝工坊'
 $taskDshHome = Join-Path $taskRoot 'dsh-home'
 $taskActiveRunMarker = Join-Path $taskUserData 'crash-evidence\active-run.json'
-$taskAppPath = Join-Path $taskInstallRoot '易宝工坊.exe'
-$taskUninstallerPath = Join-Path $taskInstallRoot 'Uninstall 易宝工坊.exe'
+$taskAppFilenames = @('e宝工坊.exe', '易宝工坊.exe')
+$taskAppPath = Join-Path $taskInstallRoot $taskAppFilenames[0]
+$taskUninstallerFilenames = @('Uninstall e宝工坊.exe', 'Uninstall 易宝工坊.exe')
 if (Test-Path -LiteralPath $taskActiveRunMarker) {
-  throw 'Refusing to overwrite an existing 易宝工坊 active run marker.'
+  throw 'Refusing to overwrite an existing e宝工坊 active run marker.'
 }
 $taskResult = [ordered]@{
   scenario = "temporary install and DSH_HOME: $taskBaseExpectedVersion to $taskCandidateExpectedVersion upgrade and fixed-version overwrite"
@@ -80,6 +96,14 @@ $taskResult = [ordered]@{
   success = $false
 }
 
+function Resolve-TaskInstalledFile([string[]]$taskFilenames) {
+  foreach ($taskFilename in $taskFilenames) {
+    $taskPath = Join-Path $taskInstallRoot $taskFilename
+    if (Test-Path -LiteralPath $taskPath -PathType Leaf) { return $taskPath }
+  }
+  throw "Installed test file is missing: $($taskFilenames -join ', ')"
+}
+
 function Start-TaskInstaller([string]$taskInstallerPath) {
   $taskStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
   $taskProcess = Start-Process -FilePath $taskInstallerPath -ArgumentList @(
@@ -115,7 +139,7 @@ function Wait-TaskProcess([bool]$taskShouldExist, [int]$taskTimeoutSeconds = 30)
     }
     Start-Sleep -Milliseconds 250
   } while ([DateTime]::UtcNow -lt $taskDeadline)
-  throw "Timed out waiting for 易宝工坊 process state: shouldExist=$taskShouldExist"
+  throw "Timed out waiting for e宝工坊 process state: shouldExist=$taskShouldExist"
 }
 
 function Wait-TaskActiveRunMarker([bool]$taskShouldExist, [int]$taskTimeoutSeconds = 30) {
@@ -150,9 +174,10 @@ try {
   $taskBaseInstall = Start-TaskInstaller $taskBaseInstaller
   $taskResult.baseInstallExitCode = $taskBaseInstall.exitCode
   $taskResult.baseInstallElapsedMs = $taskBaseInstall.elapsedMs
-  if ($taskBaseInstall.exitCode -ne 0 -or -not (Test-Path -LiteralPath $taskAppPath)) {
+  if ($taskBaseInstall.exitCode -ne 0) {
     throw "Base installer failed with exit code $($taskBaseInstall.exitCode)."
   }
+  $taskAppPath = Resolve-TaskInstalledFile $taskAppFilenames
   $taskResult.baseInstalledVersion = (Get-Item -LiteralPath $taskAppPath).VersionInfo.ProductVersion
   if (-not (Test-TaskVersionEquals $taskResult.baseInstalledVersion $taskBaseExpectedVersion)) {
     throw "Expected base version $taskBaseExpectedVersion but installed $($taskResult.baseInstalledVersion)."
@@ -171,6 +196,7 @@ try {
   }
   Wait-TaskProcess $false | Out-Null
   $taskResult.baseProcessStopped = $true
+  $taskAppPath = Resolve-TaskInstalledFile $taskAppFilenames
   $taskResult.upgradedVersion = (Get-Item -LiteralPath $taskAppPath).VersionInfo.ProductVersion
   if (-not (Test-TaskVersionEquals $taskResult.upgradedVersion $taskCandidateExpectedVersion)) {
     throw "Expected upgraded version $taskCandidateExpectedVersion but installed $($taskResult.upgradedVersion)."
@@ -210,8 +236,10 @@ try {
     Stop-Process -Id $taskProcess.ProcessId -Force -ErrorAction SilentlyContinue
   }
 
-  if (Test-Path -LiteralPath $taskUninstallerPath) {
-    $taskUninstaller = Start-Process -FilePath $taskUninstallerPath -ArgumentList '/S' -PassThru -Wait -WindowStyle Hidden
+  $taskUninstallerPath = @($taskUninstallerFilenames | ForEach-Object { Join-Path $taskInstallRoot $_ } |
+    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
+  if ($taskUninstallerPath.Count -gt 0) {
+    $taskUninstaller = Start-Process -FilePath $taskUninstallerPath[0] -ArgumentList '/S' -PassThru -Wait -WindowStyle Hidden
     $taskResult.uninstallExitCode = $taskUninstaller.ExitCode
   }
 
@@ -235,19 +263,11 @@ try {
   $taskResult.testProcessesRemaining = $taskRemainingProcesses.Count
 
   $taskRemainingInstalls = @(Get-ItemProperty $taskUninstallRoots -ErrorAction SilentlyContinue | Where-Object {
-    $_.DisplayName -match '^易宝工坊'
+    $_.DisplayName -match '^(?:易宝工坊|e宝工坊)(?:$|\s)'
   })
   $taskResult.uninstallEntryRemoved = $taskRemainingInstalls.Count -eq 0
 
-  $taskShortcutRoots = @(
-    [Environment]::GetFolderPath('Desktop')
-    [Environment]::GetFolderPath('StartMenu')
-    [Environment]::GetFolderPath('CommonDesktopDirectory')
-    [Environment]::GetFolderPath('CommonStartMenu')
-  ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-  $taskRemainingShortcuts = @($taskShortcutRoots | ForEach-Object {
-    Get-ChildItem -LiteralPath $_ -Filter '*易宝工坊*' -Recurse -ErrorAction SilentlyContinue
-  })
+  $taskRemainingShortcuts = @(Get-TaskAppShortcuts)
   $taskResult.shortcutsRemoved = $taskRemainingShortcuts.Count -eq 0
 
   if (Test-Path -LiteralPath $taskActiveRunMarker) {
