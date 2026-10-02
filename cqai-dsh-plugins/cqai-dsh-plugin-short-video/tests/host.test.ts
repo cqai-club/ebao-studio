@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { IncomingMessage } from 'node:http'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { artifactPath, artifactsFor, copyAudioPreview, needsText, permitted, storedMaterialArtifactsFor, validateContentRequest, validateDraft, validateSubtitleSrt } from '../src/index.ts'
+import { artifactPath, artifactsFor, copyAudioPreview, needsText, permitted, prepareJobFolder, storedMaterialArtifactsFor, validateContentRequest, validateDraft, validateSubtitleSrt } from '../src/index.ts'
 import { audioPreviewReuseIssue, defaultParams, defaultSettings, groupJobsByWorkflow, materialKeyIssue, materialPreviewReuseIssue, stageRequirements, subtitlePreviewReuseIssue, workflowAudioPreview, workflowDisplayJob, workflowDraft, workflowIdForJob, workflowIdForNewJob, type Job } from '../src/protocol.ts'
 
 function draft(params: Record<string, unknown>) {
@@ -21,6 +21,31 @@ function completedPreview(params: Record<string, unknown>, withSubtitle = true):
   }
 }
 describe('short-video local job boundary', () => {
+  it('opens task outputs and the actual material location while a job is running', async () => {
+    const root=await mkdtemp(join(tmpdir(),'short-video-folders-'))
+    const job={...completedPreview({video_source:'pixabay'}),status:'running' as const}
+    try {
+      expect(await prepareJobFolder(root,job,'task')).toBe(await realpath(join(root,'storage','tasks',job.id)))
+      expect(await prepareJobFolder(root,job,'materials')).toBe(await realpath(join(root,'storage','cache_videos')))
+      expect(await prepareJobFolder(root,{...job,params:{...job.params,video_source:'local'}},'materials')).toBe(await realpath(join(root,'storage','local_videos')))
+      for(const video_source of ['cqai_video','openai_image'])expect(await prepareJobFolder(root,{...job,params:{...job.params,video_source}},'materials')).toBe(await realpath(join(root,'storage','tasks',job.id)))
+      await expect(prepareJobFolder(root,job,'../../outside')).rejects.toThrow('文件夹类型无效')
+      await expect(prepareJobFolder(root,{...job,id:'../outside'},'task')).rejects.toThrow('任务 ID 无效')
+    } finally {await rm(root,{recursive:true,force:true})}
+  })
+  it('rejects a linked folder outside the data root before creating or opening it', async () => {
+    const root=await mkdtemp(join(tmpdir(),'short-video-folder-boundary-'))
+    const outside=await mkdtemp(join(tmpdir(),'short-video-folder-outside-'))
+    const job=completedPreview({video_source:'pixabay'})
+    try {
+      await mkdir(join(root,'storage'))
+      await symlink(outside,join(root,'storage','tasks'),process.platform==='win32'?'junction':'dir')
+      await symlink(outside,join(root,'storage','cache_videos'),process.platform==='win32'?'junction':'dir')
+      await expect(prepareJobFolder(root,job,'task')).rejects.toThrow('超出短视频数据目录')
+      await expect(prepareJobFolder(root,job,'materials')).rejects.toThrow('超出短视频数据目录')
+      expect(await readdir(outside)).toEqual([])
+    } finally {await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true})}
+  })
   it('counts failed previews, retries, and the final render as one workflow', () => {
     const workflowId='00000000-0000-0000-0000-000000000001'
     const failed={...completedPreview({video_subject:'城市故事'}),id:workflowId,workflowId,status:'failed' as const,createdAt:'2026-09-24T01:00:00Z'}
