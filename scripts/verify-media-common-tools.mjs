@@ -9,7 +9,8 @@ import {commonToolEnvironment, commonToolSteps, installCommonMediaTools, sharedM
 
 const exec = promisify(execFile)
 const parent = resolve(tmpdir())
-const home = await mkdtemp(join(parent, 'cqai-common-media-smoke-'))
+// macOS's ffprobe launcher must also work in user paths with spaces and quotes.
+const home = await mkdtemp(join(parent, "cqai-common-media-smoke-quoted ' "))
 try {
   const python = commonToolSteps(home).find(step => step.id === 'python')
   if (!await python.ready()) await python.run(line => console.log(line))

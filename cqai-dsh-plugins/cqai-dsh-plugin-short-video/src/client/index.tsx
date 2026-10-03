@@ -149,6 +149,7 @@ function Studio({active=true,onOpenSettings}:Partial<EjianbaoWorkspaceOwner>){
   const [subtitleEditors,setSubtitleEditors]=useState<Record<number,string>>({})
   const [bgmFile,setBgmFile]=useState<File>()
   const [busy,setBusy]=useState('')
+  const [openingFolder,setOpeningFolder]=useState('')
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const [preview,setPreview]=useState<ContentResult>()
@@ -277,6 +278,14 @@ function Studio({active=true,onOpenSettings}:Partial<EjianbaoWorkspaceOwner>){
   const check=(label:string,key:string)=><label className="sv-check"><input type="checkbox" disabled={!!busy} checked={Boolean(value(key))} onChange={e=>update(key,e.target.checked)}/>{label}</label>
   const action=async<T,>(label:string,operation:()=>Promise<T>)=>{setBusy(label);setError('');setNotice('');try{return await operation()}catch(e){setError(e instanceof Error?e.message:String(e));return undefined}finally{setBusy('')}}
   const saveSettings=()=>void action('保存设置…',async()=>{const next=await api<Settings>('settings',{subtitle_provider:settings.subtitle_provider,video_codec:settings.video_codec});setSettings(next);setSavedSettings(next);setNotice('设置已保存。新任务会使用这些设置。')})
+  async function openJobFolder(item:Job,kind:'task'|'materials'){
+    setOpeningFolder(kind);setError('');setNotice('')
+    try{
+      const result=await api<{path:string}>(`open-folder?id=${encodeURIComponent(item.id)}&kind=${kind}`,{})
+      setNotice(`已打开${kind==='materials'?'素材':'任务'}文件夹：${result.path}`)
+    }catch(e){setError(e instanceof Error?e.message:String(e))}
+    finally{setOpeningFolder('')}
+  }
   function openWorkflow(group:WorkflowGroup,navigate=true){
     initialHydrated.current=true;activeWorkflowId.current=group.id;viewRevision.current++
     const saved=new Map(group.jobs.flatMap(item=>manifests[item.id]?[[item.id,manifests[item.id]] as const]:[]))
@@ -556,6 +565,10 @@ function Studio({active=true,onOpenSettings}:Partial<EjianbaoWorkspaceOwner>){
           <p className="sv-help">{String(job.params.video_subject||job.params.video_script||'未命名').slice(0,100)} · {new Date(job.createdAt).toLocaleString()}</p>
           <p className="sv-sub">{labels[job.status]} · {job.progress}%</p>
           <progress className="sv-progress" aria-label="任务进度" max="100" value={job.progress}/>
+          <div className="sv-actions">
+            <Button variant="outline" disabled={!!openingFolder} aria-busy={openingFolder==='task'} title="打开当前任务保存配音、字幕和成片的文件夹" onClick={()=>void openJobFolder(job,'task')}>{openingFolder==='task'?'正在打开…':'打开文件夹'}</Button>
+            {['materials','subtitle','video'].includes(job.stopAt)&&<Button variant="outline" disabled={!!openingFolder} aria-busy={openingFolder==='materials'} title="打开素材保存目录；素材库和本地上传目录由多个任务共用" onClick={()=>void openJobFolder(job,'materials')}>{openingFolder==='materials'?'正在打开…':'打开素材文件夹'}</Button>}
+          </div>
           {job.error&&<div className="sv-error">{job.error}</div>}
           {job.subtitleDurations?.map((duration,index)=><p className="sv-help" key={`duration-${index}`}>成片 {index+1} 实际时长：{duration.toFixed(1)} 秒</p>)}
           {Array.isArray(job.state?.warnings)&&job.state.warnings.map((warning,index)=>warning?.code==='missing_original_audio'?<p className="sv-help" key={`warning-${index}`}>成片 {warning.video_index} 有 {warning.silent_clips} 个镜头没有音轨，已填充静音。</p>:warning?.code==='material_shorter_than_target'?<p className="sv-help" key={`warning-${index}`}>成片 {warning.video_index} 的素材仅能剪出约 {Number(warning.actual_duration).toFixed(1)} 秒，未自动增加付费镜头。</p>:null)}

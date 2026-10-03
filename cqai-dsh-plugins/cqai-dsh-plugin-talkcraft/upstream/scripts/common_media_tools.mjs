@@ -24,8 +24,9 @@ export function sharedMediaBinary(name, snapshot, env = process.env) {
       || typeof marker.ffmpegPath !== 'string' || !/^imageio\/imageio_ffmpeg\/binaries\/ffmpeg-[A-Za-z0-9_.-]+$/.test(marker.ffmpegPath)) return undefined;
     const root = path.join(directory, 'node_modules', '@remotion', pkg);
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    if (name === 'ffprobe' && process.platform === 'darwin' && (marker.ffprobePath !== 'bin/ffprobe' || !file(path.join(root, 'ffprobe')))) return undefined;
     const binary = name === 'ffmpeg' ? path.join(directory, marker.ffmpegPath)
-      : path.join(root, `ffprobe${process.platform === 'win32' ? '.exe' : ''}`);
+      : process.platform === 'darwin' ? path.join(directory, 'bin', 'ffprobe') : path.join(root, `ffprobe${process.platform === 'win32' ? '.exe' : ''}`);
     const relative = path.relative(fs.realpathSync(directory), fs.realpathSync(binary));
     if (relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
     return manifest.version === COMMON_FFMPEG_VERSION && file(binary) ? binary : undefined;

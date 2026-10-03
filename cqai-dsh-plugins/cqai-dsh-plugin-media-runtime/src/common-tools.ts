@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { makeNodeShim, nodeEnvironment, npmCli, python311, pythonEnvironment, run, uvEnvironment, uvExecutable, type SetupStep } from './index.ts'
@@ -41,18 +41,30 @@ export function commonMediaPackage(platform: string = process.platform, arch: st
 export function commonToolsHome(home: string): string {return join(home, 'media-tools')}
 export function commonFFmpegDirectory(home: string): string {return join(commonToolsHome(home), 'ffmpeg', COMMON_FFMPEG_VERSION)}
 const markerName = '.media-tools-ready.json'
+function ffprobePath(packageName: string): string {
+  return process.platform === 'darwin' ? 'bin/ffprobe' : `node_modules/${packageName}/ffprobe${process.platform === 'win32' ? '.exe' : ''}`
+}
+function macProbeLauncher(directory: string): string {
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  if (/[\r\n]/.test(directory)) throw new Error('媒体工具路径不能包含换行符')
+  // Remotion's macOS ffprobe loads bare dylib names. Set its private search
+  // path inside the launcher, since macOS strips DYLD_* when starting /bin/sh.
+  return `#!/bin/sh\nDYLD_LIBRARY_PATH=${quote(directory)} exec ${quote(join(directory, 'ffprobe'))} "$@"\n`
+}
 
 /** Never select an incomplete installation, even while another engine is preparing tools. */
 export function sharedMediaTool(home: string, name: 'ffmpeg' | 'ffprobe'): string | undefined {
   try {
     const root = commonFFmpegDirectory(home), packageName = commonMediaPackage()
-    const marker = JSON.parse(readFileSync(join(root, markerName), 'utf8')) as {version?: string; package?: string; ffmpegProvider?: string; ffmpegPath?: string}
+    const marker = JSON.parse(readFileSync(join(root, markerName), 'utf8')) as {version?: string; package?: string; ffmpegProvider?: string; ffmpegPath?: string; ffprobePath?: string}
     const directory = join(root, 'node_modules', packageName)
     const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as {version?: string}
     if (marker.version !== COMMON_FFMPEG_VERSION || marker.package !== packageName || manifest.version !== COMMON_FFMPEG_VERSION || marker.ffmpegProvider !== COMMON_FFMPEG_PROVIDER) return
     const relative = `imageio/imageio_ffmpeg/binaries/${fullFFmpegSelection().binary}`
     if (marker.ffmpegPath !== relative) return
-    const path = name === 'ffmpeg' ? join(root, relative) : join(directory, process.platform === 'win32' ? `${name}.exe` : name)
+    const path = name === 'ffmpeg' ? join(root, relative) : join(root, ffprobePath(packageName))
+    if (name === 'ffprobe' && process.platform === 'darwin' && (marker.ffprobePath !== ffprobePath(packageName) || readFileSync(path, 'utf8') !== macProbeLauncher(directory))) return
+    if (name === 'ffprobe' && process.platform === 'darwin' && (!statSync(join(directory, 'ffprobe')).isFile() || statSync(join(directory, 'ffprobe')).size === 0)) return
     if (!realpathSync(path).startsWith(realpathSync(root) + sep)) return
     return statSync(path).isFile() && statSync(path).size > 0 ? path : undefined
   } catch {return undefined}
@@ -103,6 +115,12 @@ export async function installCommonMediaTools(home: string, log: (line: string) 
   await run(uvExecutable(), installArguments, {env: environment, log})
   const directory = join(root, 'node_modules', packageName)
   const ffmpegPath = `imageio/imageio_ffmpeg/binaries/${full.binary}`
+  const probePath = ffprobePath(packageName)
+  if (process.platform === 'darwin') {
+    await mkdir(join(root, 'bin'), {recursive: true})
+    await writeFile(join(root, probePath), macProbeLauncher(directory), {mode: 0o700})
+    chmodSync(join(root, probePath), 0o700)
+  }
   if (!await probe(join(root, ffmpegPath), ['-version'])) {
     // Older hardlinked installations could damage the extracted wheel cache too.
     log('FFmpeg 检查失败，重新获取已锁定的工具包')
@@ -110,10 +128,10 @@ export async function installCommonMediaTools(home: string, log: (line: string) 
     await run(uvExecutable(), installArguments, {env: environment, log})
   }
   for (const name of ['ffmpeg', 'ffprobe']) {
-    const binary = name === 'ffmpeg' ? join(root, ffmpegPath) : join(directory, process.platform === 'win32' ? `${name}.exe` : name)
+    const binary = name === 'ffmpeg' ? join(root, ffmpegPath) : join(root, probePath)
     if (!await probe(binary, ['-version'])) throw new Error(`公共 ${name} 安装后未通过检查`)
   }
-  await writeFile(join(root, markerName), JSON.stringify({version: COMMON_FFMPEG_VERSION, package: packageName, ffmpegProvider: COMMON_FFMPEG_PROVIDER, ffmpegPath}) + '\n')
+  await writeFile(join(root, markerName), JSON.stringify({version: COMMON_FFMPEG_VERSION, package: packageName, ffmpegProvider: COMMON_FFMPEG_PROVIDER, ffmpegPath, ffprobePath: probePath}) + '\n')
 }
 
 export function commonToolSteps(home: string): SetupStep[] {
