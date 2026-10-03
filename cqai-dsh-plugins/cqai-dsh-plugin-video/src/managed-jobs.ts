@@ -31,6 +31,7 @@ export class ManagedJobs {
   async generate(job: Job, signal: AbortSignal): Promise<void> {
     if (job.cloud?.provider === 'inferflow') throw new Error('旧版个人 InferFlow 任务不能切换到产品账户，请使用原版本继续或新建任务')
     if (!job.cloud) throw new Error('请先获取并确认报价')
+    if (!job.cloud.submissionStarted && !job.cloud.runId && job.cloud.quote.pricingSource !== 'relay') throw new Error('请重新获取并确认账户实时报价')
     const assertAccount = async () => {
       if ((await this.account.getAccount()).userId !== job.cloud!.accountId) throw new Error('当前登录账户与制作任务不一致，请切回原账户')
     }
