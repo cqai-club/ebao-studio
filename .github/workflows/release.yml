@@ -126,9 +126,6 @@ jobs:
       - run: corepack enable
       - name: Run Windows package gate
         run: yarn workspace dsh-plugin-desktop check:win-package
-      - name: Verify fresh Windows video environment installation
-        timeout-minutes: 10
-        run: node scripts/verify-media-common-tools.mjs --short-video
       - name: Build unsigned Windows installer
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
@@ -137,6 +134,16 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: yarn workspace dsh-plugin-desktop dist:win-portable
+      - name: Verify fresh packaged Windows video environment installation
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $app = Join-Path $PWD 'dsh-plugin-desktop/dist/win-unpacked'
+          $executables = @(Get-ChildItem -LiteralPath $app -Filter '*.exe' -File)
+          if ($executables.Count -ne 1) { throw 'Expected one packaged Desktop executable' }
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          & $executables[0].FullName scripts/verify-media-common-tools.mjs --short-video --runtime-root (Join-Path $app 'resources/app.asar')
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows video environment installation failed' }
       - name: Stage Windows release assets and updater metadata
         shell: pwsh
         run: |

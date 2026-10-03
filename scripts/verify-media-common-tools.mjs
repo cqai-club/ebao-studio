@@ -5,7 +5,15 @@ import {tmpdir} from 'node:os'
 import {join, resolve, sep} from 'node:path'
 import {execFile} from 'node:child_process'
 import {promisify} from 'node:util'
-import {commonToolEnvironment, commonToolSteps, installCommonMediaTools, sharedMediaTool} from '../cqai-dsh-plugins/cqai-dsh-plugin-media-runtime/lib/index.js'
+import {fileURLToPath, pathToFileURL} from 'node:url'
+
+const runtimeArgument = process.argv.indexOf('--runtime-root')
+const packagedRoot = runtimeArgument < 0 ? undefined : process.argv[runtimeArgument + 1]
+if (runtimeArgument >= 0 && !packagedRoot) throw new Error('--runtime-root requires the packaged app.asar path')
+const moduleUrl = name => packagedRoot
+  ? pathToFileURL(join(resolve(packagedRoot), 'node_modules', name, 'lib', 'index.js')).href
+  : new URL(`../cqai-dsh-plugins/${name}/lib/index.js`, import.meta.url).href
+const {commonToolEnvironment, commonToolSteps, installCommonMediaTools, sharedMediaTool} = await import(moduleUrl('cqai-dsh-plugin-media-runtime'))
 
 const exec = promisify(execFile)
 const parent = resolve(tmpdir())
@@ -37,10 +45,11 @@ try {
   await exec(sharedMediaTool(home, 'ffmpeg'), ['-version'], {windowsHide: true, timeout: 15000})
   console.log('Shared FFmpeg/ffprobe: filters, H.264 + AAC encode/probe, installation reuse and damaged-tool repair passed.')
   if (process.argv.includes('--short-video')) {
-    const {setupEngine, checkHealth} = await import('../cqai-dsh-plugins/cqai-dsh-plugin-short-video/lib/index.js')
+    const {setupEngine, checkHealth} = await import(moduleUrl('cqai-dsh-plugin-short-video'))
     const root = join(home, 'short-video')
-    const {fileURLToPath} = await import('node:url')
-    const runtime = fileURLToPath(new URL('../cqai-dsh-plugins/cqai-dsh-plugin-short-video/runtime/', import.meta.url))
+    const runtime = packagedRoot
+      ? join(resolve(packagedRoot).replace(/\.asar(?=$|[\\/])/, '.asar.unpacked'), 'node_modules', 'cqai-dsh-plugin-short-video', 'runtime')
+      : fileURLToPath(new URL('../cqai-dsh-plugins/cqai-dsh-plugin-short-video/runtime/', import.meta.url))
     await setupEngine(root, runtime, commonToolEnvironment(home).CQAI_MEDIA_TOOLS_HOME, line => console.log(line))
     const health = await checkHealth(root, runtime)
     assert.equal(health.uv, true, 'bundled uv must run')
