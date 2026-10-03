@@ -126,6 +126,9 @@ jobs:
       - run: corepack enable
       - name: Run Windows package gate
         run: yarn workspace dsh-plugin-desktop check:win-package
+      - name: Verify fresh Windows video environment installation
+        timeout-minutes: 10
+        run: node scripts/verify-media-common-tools.mjs --short-video
       - name: Build unsigned Windows installer
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
@@ -301,9 +304,9 @@ jobs:
           cat > RELEASE_NOTES.md <<'NOTES'
           ## 本次预发布版本
 
-          本版本新增 e剪宝统一视频工作区，整合数字人、短视频和口播视频，统一媒体参数、凭据和环境安装入口。公共 Python、FFmpeg 与 ffprobe 使用应用私有环境，支持重复安装检查和损坏修复；各视频引擎保留独立依赖安装和日志。
+          本版本修复 e剪宝制作环境安装失败：应用私有 Python 3.11 的检测参数冲突会导致 Windows 等平台下载后仍无法通过检查；构建时补齐媒体运行库 uv 执行权限。Windows 发布流程新增真实的首次环境安装验证，检查共享媒体工具、短视频锁定依赖、Python 识别和字幕字体。
 
-          图像画布增强上游更新同步、预览与电商提示词，并扩展社区模板来源；修复关闭期间完成的生图任务恢复和结果轮询重试。桌面新增通用 Agent 抽屉，更新入口移至侧栏头像上方，产品显示名称调整为 e宝工坊并兼容已有安装身份。插件市场升级至 1.66.8，Agents Anywhere 2.0.3 按发布时官方 main 验证。修复独立数字人设置接口及安装包中的 Python 运行脚本路径。TalkCraft 上游采用 PolyForm Noncommercial 1.0.0；商业使用需取得作者授权。
+          修复 macOS ffprobe 的私有动态库加载和系统字体发现，优先选择可用中文字体，解决字幕找不到系统字体的错误。短视频当前任务记录新增“打开文件夹”和“打开素材文件夹”，制作过程中也可以查看已下载素材。插件市场与 Agents Anywhere 按发布时最新版本验证。TalkCraft 上游采用 PolyForm Noncommercial 1.0.0；商业使用需取得作者授权。
 
           ### 下载与自动更新
 

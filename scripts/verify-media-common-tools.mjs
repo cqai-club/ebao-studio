@@ -36,6 +36,20 @@ try {
   await installCommonMediaTools(home, line => console.log(line))
   await exec(sharedMediaTool(home, 'ffmpeg'), ['-version'], {windowsHide: true, timeout: 15000})
   console.log('Shared FFmpeg/ffprobe: filters, H.264 + AAC encode/probe, installation reuse and damaged-tool repair passed.')
+  if (process.argv.includes('--short-video')) {
+    const {setupEngine, checkHealth} = await import('../cqai-dsh-plugins/cqai-dsh-plugin-short-video/lib/index.js')
+    const root = join(home, 'short-video')
+    const {fileURLToPath} = await import('node:url')
+    const runtime = fileURLToPath(new URL('../cqai-dsh-plugins/cqai-dsh-plugin-short-video/runtime/', import.meta.url))
+    await setupEngine(root, runtime, commonToolEnvironment(home).CQAI_MEDIA_TOOLS_HOME, line => console.log(line))
+    const health = await checkHealth(root, runtime)
+    assert.equal(health.uv, true, 'bundled uv must run')
+    assert.equal(health.pythonPackages, true, JSON.stringify(health))
+    assert.equal(health.python, true, 'installed Python must be discovered after setup')
+    assert.equal(health.ffmpeg, true, 'short-video engine must use working FFmpeg')
+    assert(Array.isArray(health.fonts) && health.fonts.length > 0, 'subtitle system fonts must be discovered')
+    console.log('Short Video: fresh locked dependency installation, Python discovery, FFmpeg and subtitle fonts passed.')
+  }
 } finally {
   const target = resolve(home)
   assert(target.startsWith(parent + sep) && target.split(sep).at(-1).startsWith('cqai-common-media-smoke-'))
