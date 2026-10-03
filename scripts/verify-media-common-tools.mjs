@@ -6,13 +6,19 @@ import {join, resolve, sep} from 'node:path'
 import {execFile} from 'node:child_process'
 import {promisify} from 'node:util'
 import {fileURLToPath, pathToFileURL} from 'node:url'
+import {existsSync} from 'node:fs'
 
 const runtimeArgument = process.argv.indexOf('--runtime-root')
 const packagedRoot = runtimeArgument < 0 ? undefined : process.argv[runtimeArgument + 1]
 if (runtimeArgument >= 0 && !packagedRoot) throw new Error('--runtime-root requires the packaged app.asar path')
-const moduleUrl = name => packagedRoot
-  ? pathToFileURL(join(resolve(packagedRoot), 'node_modules', name, 'lib', 'index.js')).href
-  : new URL(`../cqai-dsh-plugins/${name}/lib/index.js`, import.meta.url).href
+const moduleUrl = name => {
+  if (!packagedRoot) return new URL(`../cqai-dsh-plugins/${name}/lib/index.js`, import.meta.url).href
+  // Deploy can keep the private media runtime nested under its engine.
+  const directories = ['node_modules', join('node_modules', 'cqai-dsh-plugin-short-video', 'node_modules')]
+  const entry = directories.map(directory => join(resolve(packagedRoot), directory, name, 'lib', 'index.js')).find(existsSync)
+  if (!entry) throw new Error(`Packaged runtime is missing ${name}`)
+  return pathToFileURL(entry).href
+}
 const {commonToolEnvironment, commonToolSteps, installCommonMediaTools, sharedMediaTool} = await import(moduleUrl('cqai-dsh-plugin-media-runtime'))
 
 const exec = promisify(execFile)
