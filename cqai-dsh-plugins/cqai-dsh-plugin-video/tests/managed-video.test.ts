@@ -16,11 +16,17 @@ it('uses the account transport, sends a stable idempotency key and filters vendo
 })
 
 it('requires a nonexpired server quote with integer billing units', async () => {
-  const request = vi.fn<AccountRequest>().mockResolvedValue(Response.json({id: 'q1', amount: 123, unit: '积分', expiresAt: new Date(Date.now() + 60000).toISOString()}))
+  const request = vi.fn<AccountRequest>().mockResolvedValue(Response.json({id: 'q1', amount: 123, unit: '积分', pricingSource: 'relay', estimatedSeconds: 10, expiresAt: new Date(Date.now() + 60000).toISOString()}))
   const provider = new ManagedVideoProvider(request)
-  expect((await provider.quote('测试')).amount).toBe(123)
-  request.mockResolvedValue(Response.json({id: 'q1', amount: 0.1, unit: '积分', expiresAt: '2000-01-01'}))
+  expect(await provider.quote('测试')).toMatchObject({amount: 123, pricingSource: 'relay', estimatedSeconds: 10})
+  request.mockResolvedValue(Response.json({id: 'q1', amount: 0.1, unit: '积分', pricingSource: 'relay', estimatedSeconds: 10, expiresAt: '2000-01-01'}))
   await expect(provider.quote('测试')).rejects.toMatchObject({code: 'protocol'})
+})
+
+it('reports an old account service instead of accepting another historical estimate', async () => {
+  const request = vi.fn<AccountRequest>().mockResolvedValue(Response.json({id: 'q1', amount: 2820, unit: '额度单位（预估）', displayAmount: '0.0564 积分', expiresAt: new Date(Date.now() + 60000).toISOString()}))
+  await expect(new ManagedVideoProvider(request).quote('测试')).rejects.toMatchObject({code: 'unavailable', message: expect.stringContaining('更新服务')})
+  expect(request.mock.calls.map(([path]) => path)).toEqual(['/v1/ejianbao/quotes'])
 })
 
 it('rejects path traversal before sending account credentials and downloads only through account service', async () => {

@@ -18,6 +18,21 @@ it('refuses to resume a legacy personal-account job through the product account'
   } finally {await store.dispose(); rmSync(root, {recursive: true, force: true})}
 })
 
+it('requires a real Relay quote before submitting an unstarted historical job', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'ejb-managed-'))
+  const store = new JobStore(root, root)
+  const job = store.create({mode: 'digitalhuman', title: 'historical', text: '测试', duration: 6, optimize: false, covers: false, studio: false})
+  job.cloud = {accountId: 7, quote: {id: 'old-quote', amount: 2820, unit: '积分', expiresAt: new Date(Date.now() + 60000).toISOString()}}
+  const fetchAi = vi.fn<AccountRequest>()
+  const getAccount = vi.fn(async () => ({userId: 7}))
+  try {
+    await expect(new ManagedJobs(store, {getAccount, fetchAi}).generate(job, new AbortController().signal)).rejects.toThrow('重新获取并确认账户实时报价')
+    expect(fetchAi).not.toHaveBeenCalled()
+    expect(getAccount).not.toHaveBeenCalled()
+    expect(job.cloud.submissionStarted).toBeUndefined()
+  } finally {await store.dispose(); rmSync(root, {recursive: true, force: true})}
+})
+
 it('resumes a lost submission acknowledgement with the same request key, then downloads once', async () => {
   const root = mkdtempSync(join(tmpdir(), 'ejb-managed-'))
   const store = new JobStore(root, root)
@@ -25,7 +40,7 @@ it('resumes a lost submission acknowledgement with the same request key, then do
   const dir = store.dir(job.id)
   for (const file of ['avatar.png', 'voice.m4a', 'script.txt']) writeFileSync(join(dir, file), 'fixture')
   job.uploads = {avatar: {file: 'avatar.png', name: 'avatar.png'}, voice: {file: 'voice.m4a', name: 'voice.m4a'}}
-  job.cloud = {accountId: 7, quote: {id: 'quote1', amount: 10, unit: '积分', expiresAt: new Date(Date.now() + 60000).toISOString()}}
+  job.cloud = {accountId: 7, quote: {id: 'quote1', amount: 10, unit: '积分', pricingSource: 'relay', estimatedSeconds: 10, expiresAt: new Date(Date.now() + 60000).toISOString()}}
   let failFirst = true
   const keys: string[] = []
   const request = vi.fn<AccountRequest>(async (path, init) => {

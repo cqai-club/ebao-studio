@@ -70,7 +70,9 @@ export class ManagedVideoProvider {
   }
   async quote(script: string, signal?: AbortSignal): Promise<VideoQuote> {
     const data = await this.json(`${BASE}/quotes`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({script, mode: 'digitalhuman'})}, signal)
+    if (data.pricingSource !== 'relay') throw new ManagedVideoError('unavailable', '账户服务尚未支持实时视频报价，请联系管理员更新服务后重试')
     if (typeof data.unit !== 'string' || data.unit.length > 24 || !data.unit.trim()
+      || typeof data.estimatedSeconds !== 'number' || !Number.isSafeInteger(data.estimatedSeconds) || data.estimatedSeconds < 10 || data.estimatedSeconds > 1800
       || typeof data.expiresAt !== 'string' || !Number.isFinite(Date.parse(data.expiresAt)) || Date.parse(data.expiresAt) <= Date.now()) return protocol()
     return {id: id(data.id), amount: amount(data.amount), unit: data.unit, expiresAt: data.expiresAt,
       ...(typeof data.displayAmount === 'string' && /^(?:[¥$]\d+\.\d{4}|\d+\.\d{4} 积分)$/.test(data.displayAmount) ? {displayAmount: data.displayAmount} : {}),
