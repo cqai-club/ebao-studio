@@ -10,6 +10,7 @@ import shutil
 import sys
 import traceback
 from pathlib import Path
+from system_fonts import system_fonts
 
 WIRE = sys.stdout
 sys.stdout = sys.stderr
@@ -42,22 +43,6 @@ def request(kind, **data):
         raise RuntimeError(str(response.get("error") or "CQAI Club request failed"))
     return response.get("value")
 
-
-def system_fonts():
-    roots = []
-    if os.name == "nt":
-        roots.append(Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts")
-    else:
-        roots.extend([Path("/usr/share/fonts"), Path("/usr/local/share/fonts"),
-                      Path.home() / ".local/share/fonts"])
-    fonts = []
-    for root in roots:
-        if not root.is_dir():
-            continue
-        for item in root.rglob("*"):
-            if item.is_file() and item.suffix.lower() in {".ttf", ".ttc", ".otf"}:
-                fonts.append({"name": item.name, "path": str(item.resolve())})
-    return sorted(fonts, key=lambda item: item["name"].lower())[:300]
 
 def voice_timing_path(task_dir):
     return task_dir / ".private" / "voice-timing.json"
@@ -293,8 +278,7 @@ def main():
         if not chosen:
             if not fonts:
                 raise ValueError("no system font found; disable subtitles or install a font")
-            preferred = next((f for f in fonts if f["name"].lower() in {"msyh.ttc", "dejavusans.ttf", "arial.ttf"}), fonts[0])
-            params.font_name = preferred["path"]
+            params.font_name = fonts[0]["path"]
     if params.video_source == "local":
         uploaded = payload.get("uploads", {}).get("material", [])
         local_root = Path(utils.storage_dir("local_videos", create=True)).resolve()

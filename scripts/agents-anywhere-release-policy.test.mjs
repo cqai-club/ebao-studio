@@ -124,9 +124,9 @@ test('rejects corrupted or replaced vendor bytes', t => {
   assert.throws(() => assertPreparedAaRelease(root, commit), /checksum mismatch/)
 })
 
-test('repairs the 0644 uv payload for both Mac architectures in all channels', { skip: process.platform === 'win32' }, t => {
+test('repairs the 0644 uv payload for both Mac architectures in all channels and media runtime', { skip: process.platform === 'win32' }, t => {
   const { root } = fixture(t)
-  const files = AA_WORKSPACES.flatMap(workspace => ['arm64', 'x64'].map(arch =>
+  const files = [...AA_WORKSPACES, 'cqai-dsh-plugins/cqai-dsh-plugin-media-runtime'].flatMap(workspace => ['arm64', 'x64'].map(arch =>
     join(root, workspace, 'node_modules', '@dataiku', `uv-darwin-${arch}`, 'bin', 'uv')))
   for (const path of files) {
     mkdirSync(dirname(path), { recursive: true })

@@ -32,11 +32,12 @@ const fixture = () => {
   const ffmpegPath = `imageio/imageio_ffmpeg/binaries/${ffmpegName}`
   const commonFfmpeg = write(join(shared, ffmpegPath))
   write(join(common, 'package.json'), JSON.stringify({name: `@remotion/${platformPackage}`, version: COMMON_FFMPEG_VERSION}))
-  const marker = {version: COMMON_FFMPEG_VERSION, package: `@remotion/${platformPackage}`, ffmpegProvider: 'imageio-ffmpeg@0.6.0', ffmpegPath}
+  const commonFfprobe = process.platform === 'darwin' ? write(join(shared, 'bin', 'ffprobe'), `#!/bin/sh\nDYLD_LIBRARY_PATH='${common}' exec '${join(common, 'ffprobe')}' "$@"\n`) : join(common, binaryName('ffprobe'))
+  const marker = {version: COMMON_FFMPEG_VERSION, package: `@remotion/${platformPackage}`, ffmpegProvider: 'imageio-ffmpeg@0.6.0', ffmpegPath, ffprobePath: process.platform === 'darwin' ? 'bin/ffprobe' : `node_modules/@remotion/${platformPackage}/${binaryName('ffprobe')}`}
   write(join(shared, '.media-tools-ready.json'), JSON.stringify(marker))
   for (const name of ['ffmpeg', 'ffprobe']) {write(join(common, binaryName(name))); write(join(native, binaryName(name)))}
   write(join(native, binaryName('remotion')))
-  return {home, snapshot, upstream, native, shared, common, commonFfmpeg, marker}
+  return {home, snapshot, upstream, native, shared, common, commonFfmpeg, commonFfprobe, marker}
 }
 
 afterEach(() => {for (const root of roots.splice(0)) rmSync(root, {recursive: true, force: true})})
@@ -45,7 +46,7 @@ describe('shared ordinary media tools and isolated Remotion natives', () => {
   it('prefers a published shared tool without redirecting native compositor resolution', () => {
     const f = fixture()
     expect(ffmpegExecutable(f.upstream, 'ffmpeg', f.home)).toBe(f.commonFfmpeg)
-    expect(ffmpegExecutable(f.upstream, 'ffprobe', f.home)).toBe(join(f.common, binaryName('ffprobe')))
+    expect(ffmpegExecutable(f.upstream, 'ffprobe', f.home)).toBe(f.commonFfprobe)
     expect(remotionCompositorExecutable(f.upstream, 'ffmpeg')).toBe(join(f.native, binaryName('ffmpeg')))
     expect(remotionCompositorExecutable(f.upstream, 'remotion')).toBe(join(f.native, binaryName('remotion')))
   })
@@ -65,7 +66,7 @@ describe('shared ordinary media tools and isolated Remotion natives', () => {
     const explicit = write(join(f.home, 'custom-ffmpeg'))
     const env = {CQAI_FFMPEG: explicit, CQAI_FFPROBE: join(f.home, 'missing-ffprobe')}
     expect(ffmpegExecutable(f.upstream, 'ffmpeg', f.home, env)).toBe(explicit)
-    expect(ffmpegExecutable(f.upstream, 'ffprobe', f.home, env)).toBe(join(f.common, binaryName('ffprobe')))
+    expect(ffmpegExecutable(f.upstream, 'ffprobe', f.home, env)).toBe(f.commonFfprobe)
     expect(remotionCompositorExecutable(f.upstream, 'ffmpeg')).toBe(join(f.native, binaryName('ffmpeg')))
   })
 
@@ -98,7 +99,7 @@ describe('shared ordinary media tools and isolated Remotion natives', () => {
   it('uses the same published shared path in the owned segment-rendering adapter', () => {
     const f = fixture()
     expect(sharedMediaBinary('ffmpeg', f.snapshot, {})).toBe(f.commonFfmpeg)
-    expect(sharedMediaBinary('ffprobe', undefined, {DSH_HOME: f.home})).toBe(join(f.common, binaryName('ffprobe')))
+    expect(sharedMediaBinary('ffprobe', undefined, {DSH_HOME: f.home})).toBe(f.commonFfprobe)
     const explicit = write(join(f.home, 'explicit-ffmpeg'))
     expect(sharedMediaBinary('ffmpeg', f.snapshot, {CQAI_FFMPEG: explicit})).toBe(explicit)
     expect(existsSync(remotionCompositorExecutable(f.upstream, 'remotion'))).toBe(true)
