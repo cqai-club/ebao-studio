@@ -142,8 +142,11 @@ jobs:
           $executables = @(Get-ChildItem -LiteralPath $app -Filter '*.exe' -File)
           if ($executables.Count -ne 1) { throw 'Expected one packaged Desktop executable' }
           $env:ELECTRON_RUN_AS_NODE = '1'
-          & $executables[0].FullName scripts/verify-media-common-tools.mjs --short-video --runtime-root (Join-Path $app 'resources/app.asar')
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows video environment installation failed' }
+          # PowerShell does not wait for a Windows GUI executable invoked with &.
+          # Wait for Electron's Node process and check its actual exit code.
+          $arguments = @('scripts/verify-media-common-tools.mjs', '--short-video', '--runtime-root', ('"{0}"' -f (Join-Path $app 'resources/app.asar')))
+          $process = Start-Process -FilePath $executables[0].FullName -ArgumentList $arguments -NoNewWindow -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Packaged Windows video environment installation failed ($($process.ExitCode))" }
       - name: Stage Windows release assets and updater metadata
         shell: pwsh
         run: |
@@ -310,6 +313,8 @@ jobs:
           fi
           cat > RELEASE_NOTES.md <<'NOTES'
           ## 本次预发布版本
+
+          数字人视频现在获取账户服务的 Relay 实时报价，显示获取进度、失败原因和费用确认提示，防止重复点击及使用历史估算提交生成。修复小红书及多入口登录状态误判，保留完整账号会话，并明确提示无法确认的登录状态。
 
           本版本修复 e剪宝制作环境安装失败：应用私有 Python 3.11 的检测参数冲突会导致 Windows 等平台下载后仍无法通过检查；构建时补齐媒体运行库 uv 执行权限。Windows 发布流程新增真实的首次环境安装验证，检查共享媒体工具、短视频锁定依赖、Python 识别和字幕字体。
 
