@@ -29,7 +29,7 @@ describe('shared image data root', () => {
 
     expect(requested).toBe(' ./next-image-root ')
     expect(resolveImageDataRoot(requested)).toBe(path.resolve('./next-image-root'))
-    expect(imageDataRoot()).toBe('/tmp/cqai-imagegen-current')
+    expect(imageDataRoot()).toBe(path.resolve('/tmp/cqai-imagegen-current'))
   })
 
   it('uses the inherited root when a section replacement or unset removes the override', () => {

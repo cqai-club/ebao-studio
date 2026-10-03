@@ -4,6 +4,7 @@ import { OidcClient, Prompt } from '../src/oidc.ts'
 
 const issuer = 'https://auth.example.test/oidc'
 const resource = 'https://account.example.test'
+const portalResource = 'https://club.example.test/'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -60,6 +61,30 @@ describe('OidcClient', () => {
     expect(request.codeVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/u)
     expect(request.expiresAt).toBeGreaterThan(Date.now())
     expect(requests).toHaveLength(1)
+  })
+
+  it('requests both resources in one browser authorization and refreshes a portal token', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    const client = new OidcClient({
+      issuer,
+      clientId: 'client-123',
+      resource,
+      additionalResources: [portalResource],
+      scopes: ['openid', 'offline_access', 'ai:invoke', 'activity:publish'],
+      timeoutMs: 1000,
+      fetchImpl: async (input, init) => {
+        requests.push({ url: String(input), init })
+        if (String(input).endsWith('/.well-known/openid-configuration')) return json(discovery())
+        return json({ access_token: 'header.payload.signature', refresh_token: 'rotated', expires_in: 3600 })
+      },
+    })
+    const authorization = await client.createAuthorizationRequest('http://127.0.0.1:38992/callback')
+    const parameters = new URL(authorization.authorizationUrl).searchParams
+    expect(parameters.getAll('resource')).toEqual([resource, portalResource])
+    expect(parameters.get('scope')).toContain('activity:publish')
+
+    await client.refreshAccessToken('first-refresh', undefined, portalResource)
+    expect(requestBody(requests[1]?.init).get('resource')).toBe(portalResource)
   })
 
   it('exchanges the callback code with the redirect URI, verifier, and resource', async () => {

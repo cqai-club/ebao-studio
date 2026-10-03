@@ -14,6 +14,8 @@ describe('local task boundary', () => {
   it('rejects malformed jobs and cross-origin mutations', () => {
     expect(() => validateOptions({...options, duration: NaN})).toThrow()
     expect(() => validateOptions({...options, mode: '../render'})).toThrow()
+    expect(() => validateOptions({...options, mode: 'digitalhuman', text: '字'.repeat(5001)})).toThrow()
+    expect(validateOptions({...options, text: '字'.repeat(5001)}).text).toHaveLength(5001)
     const req = (headers: object, method = 'POST') => ({method, headers: {host: '127.0.0.1:43120', ...headers}, socket: {remoteAddress: '127.0.0.1'}} as IncomingMessage)
     expect(permitted(req({'x-ejianbao': '1', origin: 'https://evil.example'}))).toBe(false)
     expect(permitted(req({}))).toBe(false)

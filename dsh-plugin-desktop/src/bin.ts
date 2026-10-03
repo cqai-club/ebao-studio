@@ -1,4 +1,4 @@
-/** Headless-safe npm launcher for the 易宝工坊 Electron executable. */
+/** Headless-safe npm launcher for the e宝工坊 Electron executable. */
 
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -9,7 +9,7 @@ import { exportDesktopDiagnostics } from './diagnostic-export.ts'
 import { DESKTOP_WORKSPACE_ARGUMENT } from './launch-workspace-path.ts'
 import {
   DESKTOP_PACKAGE_NAME,
-  DESKTOP_PRODUCT_NAME,
+  DESKTOP_STORAGE_NAME,
 } from './product-identity.ts'
 
 /** Parsed launcher action. */
@@ -26,7 +26,7 @@ export interface DesktopCliRequest {
 /** Human-readable launcher help. */
 export const DESKTOP_CLI_HELP = `Usage: dsh-plugin-desktop [options] [folder]
 
-Launch 易宝工坊 with the selected Web-capable profile.
+Launch e宝工坊 with the selected Web-capable profile.
 
 Arguments:
   folder                register the folder as a workspace and open it
@@ -73,7 +73,7 @@ function packageVersion(): string {
   return manifest.version
 }
 
-/** Resolve the Electron user-data location without importing Electron. */
+/** Resolve the historical Electron user-data location independently of the display name. */
 export function defaultDesktopUserDataDirectory(
   platform: NodeJS.Platform = process.platform,
   environment: NodeJS.ProcessEnv = process.env,
@@ -83,13 +83,13 @@ export function defaultDesktopUserDataDirectory(
   if (platform === 'win32') {
     const appData = environment.APPDATA
     if (appData === undefined || appData.length === 0) {
-      throw new Error('APPDATA is unavailable; cannot locate 易宝工坊 diagnostics')
+      throw new Error('APPDATA is unavailable; cannot locate e宝工坊 diagnostics')
     }
-    return path.join(appData, DESKTOP_PRODUCT_NAME)
+    return path.join(appData, DESKTOP_STORAGE_NAME)
   }
-  if (platform === 'darwin') return path.join(homeDirectory, 'Library', 'Application Support', DESKTOP_PRODUCT_NAME)
+  if (platform === 'darwin') return path.join(homeDirectory, 'Library', 'Application Support', DESKTOP_STORAGE_NAME)
   const config = environment.XDG_CONFIG_HOME
-  return path.join(config === undefined || config.length === 0 ? path.join(homeDirectory, '.config') : config, DESKTOP_PRODUCT_NAME)
+  return path.join(config === undefined || config.length === 0 ? path.join(homeDirectory, '.config') : config, DESKTOP_STORAGE_NAME)
 }
 
 export interface DesktopCliOptions {
@@ -117,7 +117,7 @@ async function launchElectron(workspacePath?: string): Promise<number> {
       + `  npm install -g ${DESKTOP_PACKAGE_NAME}\n`
       + 'Or add electron to the profile before launching:\n'
       + '  dsh plugin --profile <name> add electron\n'
-      + 'Or use the packaged 易宝工坊 application.\n',
+      + 'Or use the packaged e宝工坊 application.\n',
     )
     return 1
   }

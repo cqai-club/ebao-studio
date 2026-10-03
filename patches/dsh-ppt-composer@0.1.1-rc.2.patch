@@ -1,0 +1,46 @@
+diff --git a/lib/client.js b/lib/client.js
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -1375,13 +1375,6 @@
+ 				locale: NS,
+ 				inject: injectHero
+ 			}, OfficePptStandardComposerDock));
+-			ctx.slots.inject("conversation.composer.dock", () => ctx.slots.register({
+-				name: "conversation.composer.dock",
+-				id: "dsh-ppt",
+-				order: 20,
+-				locale: NS,
+-				inject: injectHero
+-			}, OfficePptStandardComposerDock));
+ 		}
+ 		//#endregion
+ 		//#region src/client/index.ts
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -9,5 +9,6 @@
+   },
+   "type": "module",
++  "icon": "assets/plugin-icon.svg",
+   "main": "lib/index.js",
+   "types": "lib/types/index.d.ts",
+   "exports": {
+@@ -27,5 +28,6 @@
+   },
+   "files": [
++    "assets",
+     "lib",
+     "skills",
+     "cordis.patch.yml",
+diff --git a/assets/plugin-icon.svg b/assets/plugin-icon.svg
+new file mode 100644
+--- /dev/null
++++ b/assets/plugin-icon.svg
+@@ -0,0 +1,7 @@
++<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none">
++  <defs><linearGradient id="paint" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse"><stop stop-color="#DB943A"/><stop offset="1" stop-color="#C95C38"/></linearGradient></defs>
++  <rect x="2.5" y="3" width="19" height="14" rx="2" fill="#FFF0DE" stroke="url(#paint)" stroke-width="1.8"/>
++  <rect x="5.5" y="6" width="4" height="6" rx=".7" fill="#ECA348"/>
++  <path d="M11.5 7h6M11.5 10h4.5M9 21l3-4 3 4" stroke="url(#paint)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
++  <circle cx="18" cy="13" r="1" fill="#C95C38"/>
++</svg>

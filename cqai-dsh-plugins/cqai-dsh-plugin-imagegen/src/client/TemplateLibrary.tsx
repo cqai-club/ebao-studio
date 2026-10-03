@@ -172,7 +172,7 @@ export function TemplateLibrary(props: {
   }, [selected, onClose])
 
   const refresh = async (): Promise<void> => {
-    if (refreshing) return
+    if (refreshing || TEMPLATE_SOURCES.find(source => source.id === activeSource)?.refreshable === false) return
     setRefreshing(true)
     setNotice(null)
     try {
@@ -252,9 +252,11 @@ export function TemplateLibrary(props: {
             ) : null}
           </span>
           <span className={css.headerActions}>
-            <Button variant="outline" size="sm" disabled={refreshing || cacheAll.running} onClick={() => { void refresh() }}>
-              {refreshing ? tt('templates.refreshing') : tt('templates.refresh')}
-            </Button>
+            {activeMeta.refreshable === false ? null : (
+              <Button variant="outline" size="sm" disabled={refreshing || cacheAll.running} onClick={() => { void refresh() }}>
+                {refreshing ? tt('templates.refreshing') : tt('templates.refresh')}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

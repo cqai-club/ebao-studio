@@ -27,6 +27,8 @@ function fixture() {
         if (!(index in hookState)) hookState[index] = initial
         return [hookState[index], (value: unknown) => { hookState[index] = value }]
       },
+      useCallback: (callback: unknown) => callback,
+      useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
       useEffect() {}, useId: () => 'description', useRef: () => ({ current: null }),
     }
     if (id === 'react-dom') return {}
@@ -68,6 +70,8 @@ function fixture() {
   const setRowEnabled = vi.fn()
   const props = {
     useStore: (select: (state: unknown) => unknown) => select(navigation.getSnapshot()), actions: navigation.actions,
+    installedCardEntries: { subscribe: noop, getSnapshot: () => [] },
+    shellAvailable: { subscribe: noop, getSnapshot: () => false },
     t: (key: string) => key, ensure: vi.fn(), resolveText: (text: string) => text,
     useConfigurations: () => [], usePluginManager: () => state, useConfigLedger: () => ledger, setEnabled, setRowEnabled,
     renderSlot: (name: string, owner: Record<string, unknown>, options?: unknown) => {
@@ -76,7 +80,7 @@ function fixture() {
     },
   }
   return { state, remote, item, ledger, setEnabled, setRowEnabled,
-    page: () => { cursor = 0; return Page!(props) }, overview: () => overview!,
+    page: () => { cursor = 0; return render(Page!(props)) }, overview: () => overview!,
   }
 }
 

@@ -20,6 +20,7 @@ export default [
     outDir: 'lib',
     dts: false,
     clean: false,
+    loader: { '.svg': 'dataurl' },
     deps: {
       neverBundle: [
         'react',

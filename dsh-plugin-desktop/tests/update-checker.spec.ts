@@ -61,6 +61,14 @@ describe('strict SemVer parsing', () => {
 })
 
 describe('public Desktop version check', () => {
+  it('reports a valid stable-only feed as unavailable to Beta', async () => {
+    await expect(checkForDesktopUpdate({
+      currentVersion: '0.0.8-beta.1',
+      channel: 'beta',
+      request: async () => Response.json({ channel: 'stable', version: '0.0.8' }),
+    })).resolves.toEqual({ status: 'channel-unavailable', currentVersion: '0.0.8-beta.1' })
+  })
+
   it('uses only the fixed no-cache version endpoint and reports a newer stable version', async () => {
     const controller = new AbortController()
     const calls: Array<{ url: string, init: RequestInit }> = []

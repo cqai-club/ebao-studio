@@ -2,22 +2,20 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { MediaSettingsEditor, mediaRequest, mountVideoWorkspace } from 'cqai-dsh-media-settings/client'
+import type { EjianbaoWorkspaceOwner, MediaDefaults, MediaSettingsPublic } from 'cqai-dsh-media-settings/contracts'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { Button, Input, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useEffect, useRef, useState } from 'react'
+import pluginIcon from '../../assets/plugin-icon.svg'
 import { API, audioPreviewReuseIssue, defaultParams, defaultSettings, groupJobsByWorkflow, materialKeyIssue, materialPreviewReuseIssue, needsText, stageRequirements, subtitlePreviewReuseIssue, workflowAudioPreview, workflowDisplayJob, workflowDraft, type Catalog, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind, type WorkflowGroup } from '../protocol.ts'
+import { draftDefaultPatch } from './draft-defaults.ts'
 
 export const inject = ['slots']
 const PANEL = 'cqai-short-video' as MainPanelId
 const initial: Draft = {textModel:'',imageModel:'',videoModel:'',stopAt:'video',params:{...defaultParams}}
 const stages: {id:Stage;label:string}[] = [{id:'script',label:'文案'},{id:'terms',label:'关键词'},{id:'materials',label:'素材'},{id:'audio',label:'配音'},{id:'subtitle',label:'字幕'},{id:'video',label:'完整成片'}]
 const sources = [{id:'pexels',name:'Pexels 素材库'},{id:'pixabay',name:'Pixabay 素材库'},{id:'coverr',name:'Coverr 素材库'},{id:'openai_image',name:'CQAI Club 图片生成'},{id:'cqai_video',name:'CQAI Club 视频生成'},{id:'local',name:'本地视频 / 图片'}]
-const stockKeyLinks = [
-  {key:'pexels_api_keys', name:'Pexels', href:'https://www.pexels.com/api/key/'},
-  {key:'pixabay_api_keys', name:'Pixabay', href:'https://pixabay.com/api/docs/'},
-  {key:'coverr_api_keys', name:'Coverr', href:'https://coverr.co/developers'},
-] as const
 const transitions = [{id:'',name:'无转场'},{id:'Shuffle',name:'随机'},{id:'FadeIn',name:'渐入'},{id:'FadeOut',name:'渐出'},{id:'SlideIn',name:'滑入'},{id:'SlideOut',name:'滑出'},{id:'ZoomIn',name:'放大'},{id:'ZoomOut',name:'缩小'}]
 const scriptLanguages = [{id:'',name:'自动识别'},{id:'zh-CN',name:'简体中文'},{id:'zh-HK',name:'香港中文'},{id:'zh-TW',name:'繁体中文'},{id:'en-US',name:'English'},{id:'ca-ES',name:'Català'},{id:'de-DE',name:'Deutsch'},{id:'es-ES',name:'Español'},{id:'fr-FR',name:'Français'},{id:'it-IT',name:'Italiano'},{id:'ru-RU',name:'Русский'},{id:'vi-VN',name:'Tiếng Việt'},{id:'th-TH',name:'ไทย'},{id:'tr-TR',name:'Türkçe'}]
 const normalizeLanguage=(value:unknown):string=>value==='zh'?'zh-CN':value==='en'?'en-US':typeof value==='string'?value:''
@@ -48,8 +46,8 @@ function savedManifest(value:unknown):SavedManifest {
     })),
   }
 }
-async function api<T>(route:string,data?:unknown):Promise<T>{
-  const response=await fetch(`${API}/${route}`,data===undefined?{}:{method:'POST',headers:{'content-type':'application/json','x-short-video':'1'},body:JSON.stringify(data)})
+async function api<T>(route:string,data?:unknown,signal?:AbortSignal):Promise<T>{
+  const response=await fetch(`${API}/${route}`,data===undefined?{signal}:{signal,method:'POST',headers:{'content-type':'application/json','x-short-video':'1'},body:JSON.stringify(data)})
   if(!response.headers.get('content-type')?.includes('application/json'))throw new Error('短视频制作服务暂未就绪')
   const result=await response.json();if(!response.ok)throw new Error(result.error||'请求失败');return result as T
 }
@@ -58,7 +56,7 @@ async function upload(id:string,kind:UploadKind,file:File):Promise<Job>{
   const value=await response.json();if(!response.ok)throw new Error(value.error||'上传失败');return value as Job
 }
 function url(job:Job,file:string,download=false){return `${API}/artifact?id=${encodeURIComponent(job.id)}&file=${encodeURIComponent(file)}${download?'&download=1':''}`}
-function Icon(){return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m9 9 6 3-6 3V9ZM3 8h18"/></svg>}
+function ShortVideoPanelIcon({size = 20}:{size?:number}){return <img className="cqai-plugin-panel-icon" src={pluginIcon} width={size} height={size} alt="" draggable={false}/>}
 const css = `
 .sv { height: 100%; overflow: auto; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; }
 .sv * { box-sizing: border-box; }
@@ -132,7 +130,7 @@ const css = `
 @media (max-width: 900px) { .sv-wrap { padding: 20px 18px 48px; } .sv-grid, .sv-row, .sv-row3 { grid-template-columns: 1fr; } }
 @media (max-width: 520px) { .sv-history-row { flex-wrap: wrap; } .sv-history-row .sv-job { flex-basis: 100%; } .sv-history-delete { margin-left: auto; } }
 `
-function Studio(){
+function Studio({active=true,onOpenSettings}:Partial<EjianbaoWorkspaceOwner>){
   const [tab,setTab]=useState<'create'|'audio'|'assets'|'subtitle'|'advanced'|'history'|'settings'>('create')
   const [draft,setDraft]=useState<Draft>(initial)
   const [settings,setSettings]=useState<Settings>(defaultSettings)
@@ -161,6 +159,10 @@ function Studio(){
   const initialHydrated=useRef(false)
   const activeWorkflowId=useRef('')
   const viewRevision=useRef(0)
+  const newDefaults=useRef<MediaDefaults>({aspect:'9:16',edgeVoiceId:'zh-CN-XiaoxiaoNeural'})
+  const defaultDirty=useRef(new Set<string>())
+  const openSettings=()=>onOpenSettings?onOpenSettings():setTab('settings')
+  const newParams=(defaults:MediaDefaults)=>({...defaultParams,...draftDefaultPatch(defaults,new Set(),health?.voices)})
   const job=selected===null?jobs[0]:jobs.find(x=>x.id===selected)
   const workflows=groupJobsByWorkflow(jobs)
   const currentWorkflow=workflows.find(group=>group.jobs.some(item=>item.id===job?.id))
@@ -198,6 +200,7 @@ function Studio(){
   const modelNeeded=!draft.params.video_script||(!materialPreviewReady&&needsText(draft))||stageRequirements(draft).imageModel||(!materialPreviewReady&&stageRequirements(draft).videoModel)
   const materialKeyWarning=savedSettings?materialKeyIssue(draft,savedSettings):undefined
   const update=(key:string,value:unknown)=>{
+    if(key==='video_aspect'||key==='voice_name')defaultDirty.current.add(key)
     setPreview(undefined)
     if(['video_script','voice_name','voice_rate','voice_volume','audio_source'].includes(key))setVoicePreviewId('')
     // Keep the source task selected so the UI can explain why its paid clips are stale.
@@ -255,14 +258,15 @@ function Studio(){
     })).then(entries=>{if(active)setSubtitleEditors(Object.fromEntries(entries))}).catch(()=>{})
     return()=>{active=false}
   },[subtitleEditorKey])
-  useEffect(()=>{let active=true;const poll=()=>{void api<Job[]>('jobs').then(data=>{if(!active)return;setJobs(data);if(!initialHydrated.current){initialHydrated.current=true;const recent=groupJobsByWorkflow(data)[0];if(recent)openWorkflow(recent,false)}}).catch(()=>{})}
-    void reloadCatalog().catch(e=>setError(e.message));void api<Settings>('settings').then(value=>{if(active){setSettings(value);setSavedSettings(value)}}).catch(()=>{});void api<Health>('health').then(setHealth).catch(()=>{});poll()
+  useEffect(()=>{if(!active)return;let live=true;const controller=new AbortController();const read=<T,>(route:string)=>api<T>(route,undefined,controller.signal);const poll=()=>{void read<Job[]>('jobs').then(data=>{if(!live)return;setJobs(data);if(!initialHydrated.current){initialHydrated.current=true;const recent=groupJobsByWorkflow(data)[0];if(recent)openWorkflow(recent,false)}}).catch(()=>{})}
+    void read<Catalog>('catalog').then(c=>{if(!live)return;setCatalog(c);setDraft(prev=>({...prev,textModel:prev.textModel||c.defaultText||c.text[0]?.id||'',imageModel:prev.imageModel||c.defaultImage||c.image[0]?.id||'',videoModel:prev.videoModel||c.video?.[0]?.id||''}))}).catch(e=>{if(live)setError(e.message)});void read<Settings>('settings').then(value=>{if(live){setSettings(value);setSavedSettings(value)}}).catch(()=>{});void read<Health>('health').then(data=>{if(live)setHealth(data)}).catch(()=>{});poll()
+    void read<MediaSettingsPublic>('media-settings').then(value=>{if(!live)return;const defaults=value.effective||value.defaults;newDefaults.current=defaults;if(!activeWorkflowId.current&&viewRevision.current===0)setDraft(previous=>({...previous,params:{...previous.params,...draftDefaultPatch(defaults,defaultDirty.current,health?.voices)}}))}).catch(()=>{})
     let previousSetup='idle'
-    const setupPoll=()=>{void api<Setup>('setup').then(state=>{if(!active)return;setHealth(value=>({...value,setup:state}));if(previousSetup==='running'&&state.status!=='running')void api<Health>('health').then(data=>{if(active)setHealth(data)}).catch(()=>{});previousSetup=state.status}).catch(()=>{})}
+    const setupPoll=()=>{void read<Setup>('setup').then(state=>{if(!live)return;setHealth(value=>({...value,setup:state}));if(previousSetup==='running'&&state.status!=='running')void read<Health>('health').then(data=>{if(live)setHealth(data)}).catch(()=>{});previousSetup=state.status}).catch(()=>{})}
     void setupPoll()
-    const timer=setInterval(poll,2000);const healthTimer=setInterval(()=>{void api<Health>('health').then(data=>{if(active)setHealth(data)}).catch(()=>{})},10000);const setupTimer=setInterval(setupPoll,2000)
-    return()=>{active=false;clearInterval(timer);clearInterval(healthTimer);clearInterval(setupTimer)}
-  },[])
+    const timer=setInterval(poll,2000);const healthTimer=setInterval(()=>{void read<Health>('health').then(data=>{if(live)setHealth(data)}).catch(()=>{})},10000);const setupTimer=setInterval(setupPoll,2000)
+    return()=>{live=false;controller.abort();clearInterval(timer);clearInterval(healthTimer);clearInterval(setupTimer)}
+  },[active])
   useEffect(()=>{pageRef.current?.scrollTo(0,0)},[tab])
   const field=(label:string,key:string,help?:string,multiline=false)=>{
     const maxLength:Record<string,number>={video_subject:500,video_script:30000,video_terms:4000,video_script_prompt:2000,custom_system_prompt:8000}
@@ -272,7 +276,7 @@ function Studio(){
   const choice=(label:string,key:string,items:{id:string;name:string}[])=><div className="sv-field"><label htmlFor={key}>{label}</label><select className="sv-input" id={key} disabled={!!busy} value={String(value(key)??'')} onChange={e=>update(key,key==='video_transition_mode'&&!e.target.value?null:e.target.value)}>{items.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></div>
   const check=(label:string,key:string)=><label className="sv-check"><input type="checkbox" disabled={!!busy} checked={Boolean(value(key))} onChange={e=>update(key,e.target.checked)}/>{label}</label>
   const action=async<T,>(label:string,operation:()=>Promise<T>)=>{setBusy(label);setError('');setNotice('');try{return await operation()}catch(e){setError(e instanceof Error?e.message:String(e));return undefined}finally{setBusy('')}}
-  const saveSettings=()=>void action('保存设置…',async()=>{const next=await api<Settings>('settings',settings);setSettings(next);setSavedSettings(next);setNotice('设置已保存。新任务会使用这些设置。')})
+  const saveSettings=()=>void action('保存设置…',async()=>{const next=await api<Settings>('settings',{subtitle_provider:settings.subtitle_provider,video_codec:settings.video_codec});setSettings(next);setSavedSettings(next);setNotice('设置已保存。新任务会使用这些设置。')})
   function openWorkflow(group:WorkflowGroup,navigate=true){
     initialHydrated.current=true;activeWorkflowId.current=group.id;viewRevision.current++
     const saved=new Map(group.jobs.flatMap(item=>manifests[item.id]?[[item.id,manifests[item.id]] as const]:[]))
@@ -390,9 +394,12 @@ function Studio(){
   }
   function startNew(){
     initialHydrated.current=true;activeWorkflowId.current='';viewRevision.current++
-    setDraft({...initial,textModel:catalog?.defaultText||catalog?.text[0]?.id||'',imageModel:catalog?.defaultImage||catalog?.image[0]?.id||'',videoModel:catalog?.video?.[0]?.id||'',params:{...defaultParams}})
+    defaultDirty.current=new Set()
+    const generation=viewRevision.current
+    setDraft({...initial,textModel:catalog?.defaultText||catalog?.text[0]?.id||'',imageModel:catalog?.defaultImage||catalog?.image[0]?.id||'',videoModel:catalog?.video?.[0]?.id||'',params:newParams(newDefaults.current)})
     setSelected('');setWorkflowId('');setVoicePreviewId('');setMaterialPreviewId('');setSubtitlePreviewId('');setMaterials([]);setVoiceFile(undefined);setBgmFile(undefined);setPreview(undefined)
     setFilter('all');setError('');setNotice('');setTab('create')
+    void mediaRequest<MediaSettingsPublic>(API,'media-settings').then(publicSettings=>{const defaults=publicSettings.effective||publicSettings.defaults;newDefaults.current=defaults;if(viewRevision.current!==generation||activeWorkflowId.current)return;setDraft(previous=>({...previous,params:{...previous.params,...draftDefaultPatch(defaults,defaultDirty.current,health?.voices)}}))}).catch(cause=>{if(viewRevision.current===generation)setError(cause instanceof Error?cause.message:'无法读取默认设置')})
   }
   function deleteJob(item:Job){
     void action('删除任务…',async()=>{
@@ -434,7 +441,7 @@ function Studio(){
   function exportPreset(){const blob=new Blob([JSON.stringify(draft,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='short-video-preset.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
   async function importPreset(file:File){await action('导入预设…',async()=>{const value=JSON.parse(await file.text()) as Partial<Draft>;if(!value.params||typeof value.params!=='object')throw new Error('预设格式无效');const keys=Object.keys(defaultParams);const params=Object.fromEntries(Object.entries(value.params).filter(([key])=>keys.includes(key)));params.video_language=normalizeLanguage(params.video_language);initialHydrated.current=true;activeWorkflowId.current='';viewRevision.current++;setDraft({...initial,textModel:catalog?.text.some(m=>m.id===value.textModel)?value.textModel||'':'',imageModel:catalog?.image.some(m=>m.id===value.imageModel)?value.imageModel||'':'',videoModel:catalog?.video?.some(m=>m.id===value.videoModel)?value.videoModel||'':'',stopAt:stages.some(s=>s.id===value.stopAt)?value.stopAt!:'video',params:{...defaultParams,...params}});setSelected('');setWorkflowId('');setPreview(undefined);setVoicePreviewId('');setMaterialPreviewId('');setSubtitlePreviewId('');setMaterials([]);setVoiceFile(undefined);setBgmFile(undefined);setNotice('预设已导入，模型仅保留当前 CQAI Club 账号可用的选择。')})}
   return <section className="sv" ref={pageRef} onChangeCapture={()=>{initialHydrated.current=true}}><style>{css}</style><div className="sv-wrap">
-    <header className="sv-top"><div className="sv-top-copy"><h1>短视频制作</h1><p className="sv-sub">准备文案、声音、素材和字幕，然后开始制作。</p></div><div className="sv-top-actions"><Button variant="primary" aria-label="新增短视频任务" disabled={!!busy} onClick={startNew}>新增</Button><Button variant="outline" aria-current={tab==='history'?'page':undefined} onClick={()=>setTab('history')}>历史任务</Button><Button variant="outline" aria-current={tab==='settings'?'page':undefined} onClick={()=>setTab('settings')}>设置</Button></div></header>
+    <header className="sv-top"><div className="sv-top-copy"><h1>短视频制作</h1><p className="sv-sub">准备文案、声音、素材和字幕，然后开始制作。</p></div><div className="sv-top-actions"><Button variant="primary" aria-label="新增短视频任务" disabled={!!busy} onClick={startNew}>新增</Button><Button variant="outline" aria-current={tab==='history'?'page':undefined} onClick={()=>setTab('history')}>历史任务</Button>{!onOpenSettings && <Button variant="outline" aria-current={tab==='settings'?'page':undefined} onClick={openSettings}>设置</Button>}</div></header>
     <nav className="sv-tabs" aria-label="短视频制作步骤">{([['create','主题与文案'],['assets','素材与画面'],['audio','声音'],['subtitle','字幕'],['advanced','制作']] as const).map(([id,label])=><button type="button" key={id} aria-current={tab===id?'page':undefined} onClick={()=>setTab(id)}>{label}</button>)}</nav>
     {error&&<div className="sv-error">{error}</div>}{notice&&<div className="sv-success">{notice}</div>}
     {tab==='create'&&<div className="sv-grid"><div>
@@ -461,7 +468,7 @@ function Studio(){
       </div>
     </div><aside><div className="sv-card"><h2>制作顺序</h2><p className="sv-help">先选素材来源和画面，再选声音、字幕并制作成片。AI 视频按目标时长生成；其他素材在制作时按实际声音时长准备。</p><p className="sv-help">已有文案也可直接粘贴；需要素材关键词时使用“单独生成关键词”。</p>
       <div className="sv-kv"><Tag tone={health?.python?'success':'neutral'}>Python {health?.python?'就绪':'未就绪'}</Tag><Tag tone={health?.ffmpeg?'success':'neutral'}>FFmpeg {health?.ffmpeg?'就绪':'未就绪'}</Tag></div>
-      {health?.python===false&&<Button variant="outline" onClick={()=>setTab('settings')}>前往安装运行环境</Button>}</div>
+      {health?.python===false&&(onOpenSettings ? <p className="sv-help">请打开 e剪宝 顶部的“设置”准备运行环境。</p> : <Button variant="outline" onClick={openSettings}>前往安装运行环境</Button>)}</div>
       <div className="sv-card"><h2>预设</h2><p className="sv-help">导入或导出表单参数；不会导出账号凭据或本地素材。</p><div className="sv-actions"><Button variant="outline" disabled={!!busy} onClick={exportPreset}>导出 JSON</Button><Button variant="outline" disabled={!!busy} onClick={()=>importRef.current?.click()}>导入 JSON</Button></div><input ref={importRef} type="file" hidden accept=".json,application/json" onChange={e=>{const f=e.target.files?.[0];if(f)void importPreset(f);e.target.value=''}}/></div>
     </aside></div>}
     {tab==='assets'&&<div className="sv-grid"><div><div className="sv-card"><h2>素材与画面</h2>{choice('视频 / 图片来源','video_source',sources)}
@@ -476,8 +483,8 @@ function Studio(){
         {materialPreview?.materialAudio?.map((group,index)=><p className="sv-help" key={index}>成片 {index+1}：{group.filter(Boolean).length} 个有声镜头、{group.filter(item=>!item).length} 个无声镜头；素材总长约 {(materialPreview.materialDurations?.[index]||[]).reduce((sum,seconds)=>sum+seconds,0).toFixed(1)} 秒</p>)}
         {!!materialPreview?.materialShots?.length&&<details><summary>镜头对应的远端任务和本地文件</summary>{materialPreview.materialShots.map(shot=><p className="sv-help" key={shot.clipIndex}>成片 {shot.videoIndex} · 镜头 {shot.clipIndex} · {shot.remoteTaskId||'远端任务 ID 未记录'} · {shot.file}</p>)}</details>}
       </>}
-      {draft.params.video_source==='pexels'||draft.params.video_source==='pixabay'||draft.params.video_source==='coverr'?<p className="sv-help">素材平台 API Key 在“设置”页配置。授权与可用素材以平台为准。</p>:null}
-      {materialKeyWarning&&<div className="sv-error">{materialKeyWarning}<div className="sv-actions"><Button variant="outline" onClick={()=>setTab('settings')}>前往设置</Button></div></div>}
+      {draft.params.video_source==='pexels'||draft.params.video_source==='pixabay'||draft.params.video_source==='coverr'?<p className="sv-help">素材平台 API Key 在{onOpenSettings ? 'e剪宝 顶部的“设置”' : '“设置”页'}配置。授权与可用素材以平台为准。</p>:null}
+      {materialKeyWarning&&<div className="sv-error">{materialKeyWarning}{onOpenSettings ? <p className="sv-help">请在 e剪宝 顶部的“设置”中配置素材平台连接。</p> : <div className="sv-actions"><Button variant="outline" onClick={openSettings}>前往设置</Button></div>}</div>}
       <p className="sv-help">当前关键词：{String(value('video_terms')||'未填写；可以返回主题与文案页生成或修改')}</p>{check('按文案顺序匹配镜头','match_materials_to_script')}
       <div className="sv-actions"><Button variant="outline" onClick={()=>setTab('create')}>返回主题与文案</Button><Button variant="primary" onClick={()=>setTab('audio')}>下一步：声音</Button></div></div>
       {currentWorkflow&&(materialAttempt||localMaterialRecord||videoTaskRecord)&&<div className="sv-card"><h2>已保存的素材结果</h2>
@@ -529,7 +536,7 @@ function Studio(){
          {subtitleText?.jobId===subtitleRecord.id&&subtitleText.file===subtitleArtifact.file&&<pre className="sv-log">{subtitleText.text}</pre>}
          <a className="sv-artifact" href={url(subtitleRecord,subtitleArtifact.file,true)} download={subtitleArtifact.name}>↓ 下载 {subtitleArtifact.name}</a>
        </div>}
-     </div><aside><div className="sv-card"><h2>字幕引擎</h2>{audioSource==='tts'?<><div className="sv-field"><label htmlFor="subtitle_provider">字幕生成方式</label><select className="sv-input" id="subtitle_provider" value={settings.subtitle_provider} onChange={e=>setSettings({...settings,subtitle_provider:e.target.value as Settings['subtitle_provider']})}><option value="edge">Edge TTS 对齐</option><option value="whisper">Whisper 识别</option></select></div>{settings.subtitle_provider!==savedSettings?.subtitle_provider&&<p className="sv-help">字幕引擎尚未保存。</p>}<Button variant="primary" disabled={!!busy} onClick={saveSettings}>保存字幕引擎</Button></>:<p className="sv-help">当前声音来源自动使用 Whisper；识别结果以实际语音为准。</p>}</div>{voicePreviewReady&&<div className="sv-card"><h2>已确认的声音</h2>{voicePreview!.artifacts.filter(a=>a.kind==='audio').map(a=><audio controls preload="metadata" key={a.file} src={url(voicePreview!,a.file)}/>)}</div>}{subtitleReuseIssue&&<div className="sv-error">{subtitleReuseIssue}</div>}<div className="sv-actions"><Button variant="outline" onClick={()=>setTab('audio')}>返回声音</Button><Button variant="primary" onClick={()=>setTab('advanced')}>下一步：制作</Button></div></aside></div>}
+     </div><aside><div className="sv-card"><h2>字幕引擎</h2>{audioSource==='tts' ? onOpenSettings ? <p className="sv-help">当前使用 {subtitleProvider==='whisper' ? 'Whisper 识别' : 'Edge TTS 对齐'}。请在 e剪宝 顶部的“设置”中修改字幕引擎。</p> : <><div className="sv-field"><label htmlFor="subtitle_provider">字幕生成方式</label><select className="sv-input" id="subtitle_provider" value={settings.subtitle_provider} onChange={e=>setSettings({...settings,subtitle_provider:e.target.value as Settings['subtitle_provider']})}><option value="edge">Edge TTS 对齐</option><option value="whisper">Whisper 识别</option></select></div>{settings.subtitle_provider!==savedSettings?.subtitle_provider&&<p className="sv-help">字幕引擎尚未保存。</p>}<Button variant="primary" disabled={!!busy} onClick={saveSettings}>保存字幕引擎</Button></> : <p className="sv-help">当前声音来源自动使用 Whisper；识别结果以实际语音为准。</p>}</div>{voicePreviewReady&&<div className="sv-card"><h2>已确认的声音</h2>{voicePreview!.artifacts.filter(a=>a.kind==='audio').map(a=><audio controls preload="metadata" key={a.file} src={url(voicePreview!,a.file)}/>)}</div>}{subtitleReuseIssue&&<div className="sv-error">{subtitleReuseIssue}</div>}<div className="sv-actions"><Button variant="outline" onClick={()=>setTab('audio')}>返回声音</Button><Button variant="primary" onClick={()=>setTab('advanced')}>下一步：制作</Button></div></aside></div>}
     {tab==='advanced'&&<><div className="sv-grid"><div><div className="sv-card"><h2>制作参数</h2>
       <div className="sv-row">{choice('拼接顺序','video_concat_mode',[{id:'random',name:'随机'},{id:'sequential',name:'顺序'}])}{choice('转场','video_transition_mode',transitions)}</div>
       <div className="sv-row">{draft.params.video_source!=='cqai_video'&&number('生成成片数量','video_count',1,5)}{number('渲染线程','n_threads',1,16)}</div>
@@ -540,7 +547,7 @@ function Studio(){
       {modelNeeded&&!catalog?.signedIn&&<div className="sv-error">需要模型时，请先在“设置 · CQAI Club”登录账号。</div>}
       {stageRequirements(draft).videoModel&&!draft.videoModel&&<div className="sv-error">请先在“素材与画面”选择 CQAI Club 视频模型。</div>}
       {selectedStageIssue&&<div className="sv-error">{selectedStageIssue}</div>}
-      {materialKeyWarning&&<div className="sv-error">{materialKeyWarning}<div className="sv-actions"><Button variant="outline" onClick={()=>setTab('settings')}>前往设置</Button></div></div>}
+      {materialKeyWarning&&<div className="sv-error">{materialKeyWarning}{onOpenSettings ? <p className="sv-help">请在 e剪宝 顶部的“设置”中配置素材平台连接。</p> : <div className="sv-actions"><Button variant="outline" onClick={openSettings}>前往设置</Button></div>}</div>}
       <div className="sv-actions"><Button variant="outline" onClick={()=>setTab('subtitle')}>返回字幕</Button><Button variant="primary" disabled={!!busy||(!String(value('video_subject')||'').trim()&&!String(value('video_script')||'').trim())||(modelNeeded&&!catalog?.signedIn)||(stageRequirements(draft).videoModel&&!draft.videoModel)||!!selectedStageIssue||health?.python===false} onClick={()=>void create()}>{busy||(draft.stopAt==='audio'?'生成配音':draft.stopAt==='materials'?'准备素材':draft.stopAt==='subtitle'?'生成字幕':'开始制作')}</Button></div>
        <p className="sv-help">模型请求和第三方素材服务可能消耗额度。渲染期间请保持应用运行。</p></div></aside></div>
       <section className="sv-card" aria-label="当前任务记录">
@@ -585,15 +592,11 @@ function Studio(){
       <div className="sv-actions"><Button variant="primary" disabled={health?.setup?.status==='running'||!!busy} onClick={()=>void action('启动安装…',async()=>{const setup=await api<Setup>('setup',{});setHealth(value=>({...value,setup}));setNotice('正在安装缺失依赖，完成后自动复检。')})}>{health?.setup?.status==='running'?'正在安装…':'安装 / 修复依赖'}</Button><Button variant="outline" onClick={()=>void api<Health>('health').then(setHealth)}>重新检查</Button></div>
       {health?.setup?.items?.map(item=><p className="sv-help" key={item.id}>{item.status==='running'?'正在处理':item.status==='completed'||item.status==='ready'?'✓':item.status==='failed'?'失败':'待处理'} {item.label}{item.detail?`：${item.detail}`:''}</p>)}
       {health?.setup?.status==='failed'&&<p className="sv-error">有依赖安装失败；点击按钮可重试未就绪项。</p>}{health?.setup?.logs?.length?<pre className="sv-log">{health.setup.logs.join('\n')}</pre>:null}
-    </div><div className="sv-card"><h2>素材平台</h2><p className="sv-help">这些密钥仅用于素材搜索；脚本和 AI 图片模型仍通过 CQAI Club 账号调用。填写后请点击下方“保存设置”。</p>
-      {stockKeyLinks.map(({key,name,href})=><div className="sv-field" key={key}><div className="sv-key-heading"><label htmlFor={key}>{name} API Key</label><a href={href} target="_blank" rel="noopener noreferrer" aria-label={`获取 ${name} API Key（打开官网）`}>获取 API Key ↗</a></div><Input className="sv-native-input" id={key} type="password" value={settings[key]} onChange={e=>setSettings({...settings,[key]:e.target.value})}/></div>)}
-      <Button variant="primary" disabled={!!busy} onClick={saveSettings}>保存设置</Button>
-     </div></div><aside><div className="sv-card"><h2>编码</h2>
+    </div><div className="sv-card"><MediaSettingsEditor api={API} engine="shortVideo" onChange={()=>{void api<Settings>('settings').then(next=>{setSettings(next);setSavedSettings(next)}).catch(()=>{})}}/>     </div></div><aside><div className="sv-card"><h2>编码</h2>
       <div className="sv-field"><label>FFmpeg 编码器</label><select className="sv-input" value={settings.video_codec} onChange={e=>setSettings({...settings,video_codec:e.target.value as Settings['video_codec']})}><option value="libx264">CPU · H.264</option><option value="h264_nvenc">NVIDIA NVENC</option><option value="h264_qsv">Intel QSV</option><option value="h264_amf">AMD AMF</option></select></div>
       <Button variant="primary" disabled={!!busy} onClick={saveSettings}>保存设置</Button></div><div className="sv-card"><h2>模型来源</h2><p className="sv-help">仅从 CQAI Club 账号读取模型。当前文本模型 {catalog?.text.length??0} 个，图片模型 {catalog?.image.length??0} 个，视频模型 {catalog?.video?.length??0} 个。</p><Button variant="outline" onClick={()=>void reloadCatalog().catch(e=>setError(e.message))}>刷新模型列表</Button></div></aside></div>}
   </div></section>
 }
 export function apply(ctx:Context):void{
-  ctx.slots.inject('main',()=>ctx.slots.register({name:'main',key:PANEL},Studio))
-  ctx.slots.inject('sidebar.panellist',()=>ctx.slots.register({name:'sidebar.panellist',id:PANEL,order:42,label:'短视频制作'},({size}:PropsRuntime<'sidebar.panellist'>)=><span style={{display:'inline-flex',width:size,height:size,alignItems:'center',justifyContent:'center'}}><Icon/></span>))
+  mountVideoWorkspace(ctx,{id:'short-video',panelId:PANEL,label:'短视频制作',order:42,icon:ShortVideoPanelIcon,component:Studio})
 }

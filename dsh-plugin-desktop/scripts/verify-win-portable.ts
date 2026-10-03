@@ -44,9 +44,9 @@ export function verifyWindowsPortable(
   }
   const archive = new AdmZip(portablePath)
   const entries = archive.getEntries().filter(entry => !entry.isDirectory)
-  const executable = entries.find(entry => entry.entryName.replaceAll('\\', '/') === '易宝工坊.exe')
+  const executable = entries.find(entry => entry.entryName.replaceAll('\\', '/') === 'e宝工坊.exe')
   if (executable === undefined) {
-    throw new Error(`Windows portable archive is missing 易宝工坊.exe: ${portablePath}`)
+    throw new Error(`Windows portable archive is missing e宝工坊.exe: ${portablePath}`)
   }
   if (!entries.some(entry => entry.entryName.replaceAll('\\', '/') === 'resources/app.asar')) {
     throw new Error(`Windows portable archive is missing resources/app.asar: ${portablePath}`)
@@ -54,7 +54,7 @@ export function verifyWindowsPortable(
   assertPortableExecutableBuffer(
     executable.getData(),
     'Windows portable application',
-    `${portablePath}:易宝工坊.exe`,
+    `${portablePath}:e宝工坊.exe`,
   )
   const publisherRoot = 'resources/publisher/'
   const workerEntryName = `${publisherRoot}${WINDOWS_PUBLISHER_EXECUTABLE}`

@@ -10,7 +10,7 @@
 
 - CQAI Club OAuth/PKCE 浏览器登录和本地凭证管理；
 - 账号、额度和可用模型目录；
-- Desktop 设置页中的 CQAI Club 账号标签；
+- Stable/Beta 账号菜单中的 CQAI Club 页面（Next 暂时沿用设置入口）；
 - `cqaiclub` LLM Provider，以及供后续业务插件复用的 Host 服务。
 
 账号插件、`cqai-dsh-plugin-imagegen` 和 `cqai-dsh-plugin-market` 都作为 Desktop 的默认产品 bundle 自动进入保留的

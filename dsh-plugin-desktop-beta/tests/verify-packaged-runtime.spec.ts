@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,9 +26,11 @@ import {
   MAX_SHERPA_ONNX_SMART_UNPACK_BYTES,
   MAX_UNPACKED_RUNTIME_BYTES,
   MAX_UNPACKED_RUNTIME_FILES,
+  preparePackagedMacExecutables,
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
+  REQUIRED_DSH_IM_RUNTIME_ENTRIES,
   REQUIRED_DSH_PPT_RUNTIME_ENTRIES,
   REQUIRED_DSH_CLI_RUNTIME_ENTRIES,
   REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES,
@@ -72,7 +75,7 @@ function context(
     ...(arch === undefined ? {} : { arch }),
     packager: {
       ...(executableName === undefined ? {} : { executableName }),
-      appInfo: { productFilename: '易宝工坊 Beta' },
+      appInfo: { productFilename: electronPlatformName === 'darwin' ? '易宝工坊 Beta' : 'e宝工坊 Beta' },
     },
   }
 }
@@ -290,6 +293,10 @@ describe('packaged desktop runtime verification', () => {
     }
   })
 
+  it('does not require the independently installed club activities plugin in app.asar', () => {
+    expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES.some(entry => entry.includes('@cqaiclub/dsh-plugin-activities'))).toBe(false)
+  })
+
   it('keeps the default 一稿多发 bundle present in app.asar', () => {
     expect(REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES).toEqual([
       'node_modules/cqai-dsh-plugin-publisher/package.json',
@@ -298,6 +305,19 @@ describe('packaged desktop runtime verification', () => {
       'node_modules/cqai-dsh-plugin-publisher/lib/client.js',
     ])
     for (const entry of REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES) {
+      expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
+    }
+  })
+
+  it('keeps the default IM bundle present in app.asar', () => {
+    expect(REQUIRED_DSH_IM_RUNTIME_ENTRIES).toEqual([
+      'node_modules/@xmanrui/dsh-im/package.json',
+      'node_modules/@xmanrui/dsh-im/cordis.patch.yml',
+      'node_modules/@xmanrui/dsh-im/lib/index.js',
+      'node_modules/@xmanrui/dsh-im/lib/client.js',
+      'node_modules/@xmanrui/dsh-im/assets/logo-plugin-message-link-gradient.webp',
+    ])
+    for (const entry of REQUIRED_DSH_IM_RUNTIME_ENTRIES) {
       expect(REQUIRED_PACKAGED_RUNTIME_ENTRIES).toContain(entry)
     }
   })
@@ -431,16 +451,34 @@ describe('packaged desktop runtime verification', () => {
     expect(calls).toEqual(['static', 'aa', 'report'])
   })
 
-  it.skipIf(process.platform === 'win32')('rejects a 0644 packaged uv before signing', () => {
+  it('prepares packaged executables before checking AA and reporting the inventory', async () => {
+    const runtimeContext = context('/build', 'darwin', 4)
+    const calls: string[] = []
+    await afterPack(
+      runtimeContext,
+      () => { calls.push('static'); return { files: 4, bytes: 1024, groups: [] } },
+      () => { calls.push('report') },
+      () => { calls.push('aa') },
+      () => { calls.push('prepare-executables') },
+    )
+    expect(calls).toEqual(['static', 'prepare-executables', 'aa', 'report'])
+  })
+
+  it.skipIf(process.platform === 'win32')('repairs copied 0644 executables and retains the AA content checks', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-packaged-uv-'))
     try {
       const base = context(root, 'darwin', 4)
       const target: PackagedRuntimeContext = {
         ...base, packager: { ...base.packager, platformSpecificBuildOptions: { asar: false } },
       }
-      const files = ['arm64', 'x64'].map(arch => join(
-        resolvePackagedApplicationRoot(target), 'node_modules', '@dataiku', `uv-darwin-${arch}`, 'bin', 'uv',
-      ))
+      const files = [
+        '@dataiku/uv-darwin-arm64/bin/uv',
+        '@dataiku/uv-darwin-x64/bin/uv',
+        'node-pty/prebuilds/darwin-arm64/spawn-helper',
+        'node-pty/prebuilds/darwin-x64/spawn-helper',
+        '@tencent-qqmail/agently-cli-darwin-arm64/bin/agently-cli',
+        '@tencent-qqmail/agently-cli-darwin-x64/bin/agently-cli',
+      ].map(entry => join(resolvePackagedApplicationRoot(target), 'node_modules', entry))
       for (const path of files) {
         mkdirSync(join(path, '..'), { recursive: true })
         writeFileSync(path, 'uv fixture')
@@ -448,7 +486,11 @@ describe('packaged desktop runtime verification', () => {
       }
       const read = (path: string): Buffer => Buffer.from(path.endsWith('package.json') ? '{"version":"1.0.0"}' : 'same AA')
       expect(() => verifyPackagedAgentsAnywhere(target, read, read)).toThrow()
-      for (const path of files) chmodSync(path, 0o755)
+      preparePackagedMacExecutables(target)
+      for (const path of files) {
+        expect(statSync(path).mode & 0o777).toBe(0o755)
+        expect(readFileSync(path, 'utf8')).toBe('uv fixture')
+      }
       expect(() => verifyPackagedAgentsAnywhere(target, read, read)).not.toThrow()
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -487,7 +529,7 @@ describe('packaged desktop runtime verification', () => {
     [
       'win32',
       join('/build', 'resources', 'app.asar'),
-      join('/build', '易宝工坊 Beta.exe'),
+      join('/build', 'e宝工坊 Beta.exe'),
     ],
   ])('inspects the %s selective ASAR layout', (platform, expectedPath, expectedExecutable) => {
     const runtimeContext = context('/build', platform)
@@ -701,6 +743,21 @@ describe('packaged desktop runtime verification', () => {
     )).toThrow('non-allowlisted package roots: node_modules/unexpected-native')
   })
 
+  it('unpacks only the IM plugin\'s nested Sharp binary and the QQ Mail CLI', () => {
+    const nativeEntries = [
+      'node_modules/@xmanrui/dsh-im/node_modules/@img/sharp-win32-x64/lib/sharp.node',
+      'node_modules/@tencent-qqmail/agently-cli-win32-x64/bin/agently-cli.exe',
+    ]
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex(nativeEntries), '/build/resources/app.asar.unpacked',
+      nativeEntries.map(path => ({ path, bytes: 10 })),
+    )).not.toThrow()
+    const host = 'node_modules/@xmanrui/dsh-im/lib/index.js'
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([host]), '/build/resources/app.asar.unpacked', [{ path: host, bytes: 10 }],
+    )).toThrow('non-allowlisted package roots: node_modules/@xmanrui/dsh-im')
+  })
+
   it('rejects an unreviewed desktop-owned physical asset', () => {
     const path = 'build/accidental-large-documentation.pdf'
     expect(() => verifySelectiveUnpackedRuntime(
@@ -764,12 +821,14 @@ describe('packaged desktop runtime verification', () => {
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-win32-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/cqai-dsh-plugin-short-video')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/cqai-dsh-plugin-video')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/fs-ext')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/node-pty')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@dataiku/uv-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@vscode/ripgrep-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@img/sharp-')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@tencent-qqmail/agently-cli-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/@deepseek-ai/libreoffice-kit-')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES).toContain('node_modules/sherpa-onnx-')
   })
@@ -921,6 +980,7 @@ describe('packaged desktop runtime verification', () => {
   it.each([
     'build/app-icon.png',
     'build/tray-icon-white@2x.png',
+    'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
     'node_modules/@vscode/ripgrep-win32-x64/bin/rg.exe',
     'node_modules/node-pty/prebuilds/win32-x64/conpty.node',
   ])('fails loud when selective physical entry %s is absent', (missing) => {

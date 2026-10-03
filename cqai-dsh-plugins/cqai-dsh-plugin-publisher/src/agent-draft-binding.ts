@@ -27,7 +27,6 @@ export class AgentDraftBindings {
     }
     if (!CONTENT_ID.test(contentId)) throw new Error('草稿 ID 无效')
     const content = readContent(contentId, env)
-    if (content.contentType !== 'article') throw new Error('当前 Agent 只支持编辑文章草稿')
     const binding = { sessionId, contentId: content.id, bindingToken: randomUUID() }
     this.bySession.set(sessionId, binding)
     return binding
@@ -48,7 +47,7 @@ export class AgentDraftBindings {
   require(sessionId: string, contentId: string, bindingToken: string): AgentDraftBinding {
     const binding = this.current(sessionId)
     if (!binding || binding.contentId !== contentId || binding.bindingToken !== bindingToken) {
-      throw new Error('当前文章已切换或 Agent 抽屉已关闭，请重新读取草稿')
+      throw new Error('当前草稿已切换或 Agent 抽屉已关闭，请重新读取草稿')
     }
     return binding
   }

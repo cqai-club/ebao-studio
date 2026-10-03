@@ -1,6 +1,6 @@
 # 短视频制作
 
-独立的 DSH Cordis 插件，使用 MoneyPrinterTurbo 1.3.7 的视频流水线。制作页面沿用易宝工坊的控件和主题；与“e剪宝”是两个插件、两个任务目录。
+独立的 DSH Cordis 插件，使用 MoneyPrinterTurbo 1.3.7 的视频流水线。制作页面沿用e宝工坊的控件和主题。启用 `cqai-dsh-plugin-ejianbao` 时位于“e剪宝 → 短视频制作”；停用聚合插件后恢复独立入口。任务目录及 API 保持独立。
 
 ## 第一阶段功能
 
@@ -25,15 +25,17 @@
 
 ## 使用
 
-在易宝工坊仓库根目录启动开发版（Git Bash）：
+在e宝工坊仓库根目录启动开发版（Git Bash）：
 
 ```bash
 corepack yarn dev
 ```
 
-默认 `desktop` Profile 同时包含“e剪宝”和“短视频制作”，并使用当前 `DSH_HOME` 的登录状态和任务数据。如果使用新的 `DSH_HOME`，需要在该目录重新登录 CQAI Club。
+默认 `desktop` Profile 独立加载三个视频功能及 e剪宝聚合入口，并使用当前 `DSH_HOME` 的登录状态和任务数据。如果使用新的 `DSH_HOME`，需要在该目录重新登录 CQAI Club。
 
-首次打开“设置”页，点击“安装 / 修复依赖”。Desktop 随包提供 uv；若没有兼容的现有 Python 3.11，uv 会将其下载到 `DSH_HOME/media-tools/python`。MoneyPrinterTurbo 使用随插件附带的 `uv.lock`，虚拟环境位于 `DSH_HOME/short-video/engine/.venv`，FFmpeg 由锁定的 `imageio-ffmpeg` 提供并实际执行检查，无需系统预装。安装中可查看逐项进度，失败后重试只处理未就绪项。素材与任务位于 `DSH_HOME/short-video/`。可以用 `MPT_PYTHON` 环境变量指定兼容的现有 Python 3.11。
+公共设置由 `cqai-dsh-media-settings` 保存。新草稿默认竖屏 9:16、晓晓音色；已有任务、浏览器草稿和导入预设保留显式参数。Pexels/Pixabay 共用 Credentials 记录，Coverr 使用短视频专属记录，公开设置 API 只返回是否配置。旧配置中不同素材密钥会保留为功能覆盖，修改公共连接不会自动取消覆盖。
+
+首次打开“设置”页，点击“安装 / 修复依赖”。Desktop 随包提供 uv；公共宿主 Node、Python 3.11 与固定版本 FFmpeg/ffprobe 保存在 `DSH_HOME/media-tools`，供三个视频功能复用。MoneyPrinterTurbo 使用随插件附带的 `uv.lock`，包环境仍独立位于 `DSH_HOME/short-video/engine/.venv`。FFmpeg 优先使用显式 `IMAGEIO_FFMPEG_EXE` / `FFMPEG_PATH` 覆盖，再使用公共工具，未安装公共工具时保留锁定 `imageio-ffmpeg` 的后备程序。安装中可查看逐项进度，失败后重试只处理未就绪项。素材与任务位于 `DSH_HOME/short-video/`。可以用 `MPT_PYTHON` 环境变量指定兼容的现有 Python 3.11。
 
 原仓库的其它付费 AI 视频提供商、专有 TTS/音乐模型、Upload-Post 自动发布、云端批量脚本报价尚未接入此插件。CQAI Club 视频生成会在开始制作前提示按镜头计费。字幕使用本机系统字体；原仓库附带的字体与歌曲不在插件包内。
 

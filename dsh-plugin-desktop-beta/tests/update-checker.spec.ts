@@ -66,7 +66,7 @@ describe('strict SemVer parsing', () => {
 })
 
 describe('public Desktop version check', () => {
-  it('isolates Beta checks and rejects an unlabelled or stable response', async () => {
+  it('isolates Beta checks and distinguishes a stable-only feed from a failed check', async () => {
     const calls: RequestInit[] = []
     const request = vi.fn(async (_url: string, init: RequestInit) => {
       calls.push(init)
@@ -92,6 +92,14 @@ describe('public Desktop version check', () => {
       currentVersion: '2.0.5-beta.2',
       channel: 'beta',
       request: async () => channelVersionResponse('2.0.5', 'stable'),
+    })).resolves.toEqual({
+      status: 'channel-unavailable',
+      currentVersion: '2.0.5-beta.2',
+    })
+    await expect(checkForDesktopUpdate({
+      currentVersion: '2.0.5-beta.2',
+      channel: 'beta',
+      request: async () => channelVersionResponse('invalid', 'stable'),
     })).resolves.toBeNull()
   })
 

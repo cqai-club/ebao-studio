@@ -166,6 +166,8 @@ export interface MarketSurfaceProps {
   readonly t: MarketSettingsTabProps['t']
   readonly showHeader?: boolean
   readonly initialView?: MarketView
+  /** Route the Installed tab to a parent plugin-management page when embedded. */
+  readonly onOpenInstalled?: () => void
 }
 
 function retainEnabledCatalog(
@@ -241,7 +243,7 @@ function mergeInstallablePages(
   }
 }
 
-export function MarketSurface({ initialView = 'discover', readLocale, t, showHeader = true }: MarketSurfaceProps) {
+export function MarketSurface({ initialView = 'discover', readLocale, t, showHeader = true, onOpenInstalled }: MarketSurfaceProps) {
   const [view, setView] = useState<MarketView>(initialView)
   const [state, setState] = useState<MarketStateResponse>()
   const [catalog, setCatalog] = useState<MarketCatalogResponse>()
@@ -914,7 +916,10 @@ export function MarketSurface({ initialView = 'discover', readLocale, t, showHea
           <Pill active={view === 'installable'} aria-pressed={view === 'installable'} onClick={() => selectMarketView('installable')}>
             <IconDownloadOutlineRegular size={14} /><span>{t('installable')}</span>
           </Pill>
-          <Pill active={view === 'installed'} aria-pressed={view === 'installed'} onClick={() => selectMarketView('installed')}>
+          <Pill active={view === 'installed'} aria-pressed={view === 'installed'} onClick={() => {
+            if (onOpenInstalled !== undefined) onOpenInstalled()
+            else selectMarketView('installed')
+          }}>
             <IconCheckOutlineRegular size={14} /><span>{t('installed')}</span>
           </Pill>
           <Pill active={view === 'sources'} aria-pressed={view === 'sources'} onClick={() => selectMarketView('sources')}>

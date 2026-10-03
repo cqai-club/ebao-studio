@@ -1,4 +1,4 @@
-/** Headless version checks against the public 易宝工坊 release service. */
+/** Headless version checks against the public e宝工坊 release service. */
 
 import {
   assertDesktopInstallationId,
@@ -6,7 +6,7 @@ import {
   type DesktopInstallationId,
 } from './desktop-installation-id.ts'
 
-/** Public endpoint returning the latest 易宝工坊 version for a requested channel. */
+/** Public endpoint returning the latest e宝工坊 version for a requested channel. */
 export const DESKTOP_VERSION_ENDPOINT = 'https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json'
 
 /** Header carrying the installed Desktop version to the fixed version endpoint. */
@@ -60,8 +60,12 @@ export interface UpdateCheckOptions {
   readonly installationId?: DesktopInstallationId
 }
 
-/** Successful comparison returned by the stable version service. */
+/** Validated result from the Desktop version feed. */
 export type UpdateCheckResult = {
+  /** The shared feed is healthy but has no release for the requested Beta channel. */
+  readonly status: 'channel-unavailable'
+  readonly currentVersion: string
+} | {
   /** Whether the service reports a version newer than the installed application. */
   readonly status: 'up-to-date' | 'update-available'
   /** Canonical installed version, including any prerelease identifiers. */
@@ -74,8 +78,10 @@ export type UpdateCheckResult = {
    * a hard integrity gate before execution; they are optional only because
    * the version endpoint does not publish digests yet.
    */
-  readonly installerSha256?: Readonly<Partial<Record<'win32' | 'darwin', string>>>
+  readonly installerSha256?: InstallerDigests
 }
+
+type InstallerDigests = Readonly<Partial<Record<'win32' | 'darwin', string>>>
 
 const SEMVER_PATTERN =
   /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/u
@@ -117,7 +123,7 @@ export function compareSemVerVersions(left: string, right: string): number | nul
 }
 
 /**
- * Check the fixed 易宝工坊 version endpoint for a release in one channel.
+ * Check the fixed e宝工坊 version endpoint for a release in one channel.
  * @param options - installed version, caller-owned signal, and optional request adapter.
  * @returns a successful comparison, or null when any request or validation step fails.
  */
@@ -166,6 +172,13 @@ export async function checkForDesktopUpdate(
     digestInput = JSON.parse(body)
   } catch {
     digestInput = undefined
+  }
+  if (options.channel === 'beta'
+    && isRecord(digestInput)
+    && digestInput.channel === 'stable'
+    && typeof digestInput.version === 'string'
+    && parseCanonicalChannelVersion(digestInput.version, 'stable') !== null) {
+    return { status: 'channel-unavailable', currentVersion: current.version }
   }
   const latest = parseVersionResponse(body, options.channel)
   if (latest === null) return null
@@ -281,7 +294,7 @@ export function parseCanonicalChannelVersion(
  * Hex digits are case-normalized; absent or malformed fields simply leave the
  * digest gate unset for that platform.
  */
-function parseInstallerDigestResponse(value: unknown): UpdateCheckResult['installerSha256'] | undefined {
+function parseInstallerDigestResponse(value: unknown): InstallerDigests | undefined {
   if (!isRecord(value) || !isRecord(value.sha256)) return undefined
   const digests: Partial<Record<'win32' | 'darwin', string>> = {}
   const normalize = (digest: unknown): string | undefined => {

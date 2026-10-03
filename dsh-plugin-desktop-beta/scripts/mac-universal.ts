@@ -119,6 +119,14 @@ export const MACOS_UNIVERSAL_NATIVE_ENTRIES = [
     arch: 'x86_64',
     path: 'node_modules/node-pty/prebuilds/darwin-x64/spawn-helper',
   },
+  {
+    arch: 'arm64',
+    path: 'node_modules/@tencent-qqmail/agently-cli-darwin-arm64/bin/agently-cli',
+  },
+  {
+    arch: 'x86_64',
+    path: 'node_modules/@tencent-qqmail/agently-cli-darwin-x64/bin/agently-cli',
+  },
 ] as const satisfies readonly { readonly arch: MacUniversalArch; readonly path: string }[]
 
 /** Generated host-architecture files that must never shadow the prebuilt pair. */
@@ -138,7 +146,7 @@ export interface MacUniversalPreparationOptions {
 }
 
 /**
- * Validate both CPU runtime trees and restore node-pty and uv execute bits.
+ * Validate both CPU runtime trees and restore the reviewed executable bits.
  * Yarn intentionally disables lifecycle scripts, so the package step owns this
  * deterministic permission repair for both architectures.
  * @param options - Desktop root and injectable filesystem operations.
@@ -158,7 +166,7 @@ export function prepareMacUniversalRuntime(
   }
 
   for (const entry of entries) {
-    if (entry.path.endsWith('/spawn-helper') || entry.path.endsWith('/bin/uv')) {
+    if (entry.path.endsWith('/spawn-helper') || entry.path.endsWith('/bin/uv') || entry.path.endsWith('/bin/agently-cli')) {
       options.chmod(join(root, entry.path), 0o755)
     }
   }

@@ -35,7 +35,7 @@ function bootstrap(root: string, profileDir: string): DesktopPnpmBootstrap {
     activeProfileName: 'web',
     activeProfileDir: profileDir,
     homeDir: join(root, 'home'),
-    appExecutable: join(root, '易宝工坊'),
+    appExecutable: join(root, 'e宝工坊'),
     pnpmBinPath: join(root, 'runtime', 'pnpm.mjs'),
     electronVersion: '43.4.0',
     nodeBinDir: join(root, 'runtime', 'node-bin'),

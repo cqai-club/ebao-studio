@@ -1,16 +1,19 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-credentials'
+import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { createMediaSettings, createMediaSettingsHandler, type MediaSettingsStore } from 'cqai-dsh-media-settings'
 import type { DsnAccountService } from '@cqaiclub/dsn-account'
 import { isChatModel, isImageGenerationModel, isVideoCatalogEntry, isVideoModel } from '@cqaiclub/dsn-account'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { SetupManager, python311, pythonEnvironment, run as runCommand, uvEnvironment, uvExecutable } from 'cqai-dsh-plugin-media-runtime'
+import { SetupManager, commonToolSteps, commonToolEnvironment, python311, pythonEnvironment, run as runCommand, uvExecutable } from 'cqai-dsh-plugin-media-runtime'
 import { createHash, randomUUID } from 'node:crypto'
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { extname, join, resolve, sep, basename } from 'node:path'
+import { extname, join, resolve, sep, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -20,7 +23,7 @@ import { createVideoMaterial, validateVideoMaterialRequest } from './video-provi
 export { needsText } from './protocol.ts'
 
 export const name = 'cqai-short-video'
-export const inject = ['webServer', 'dsnAccount', 'llm']
+export const inject = ['webServer', 'dsnAccount', 'llm', 'credentials']
 const MAX_BODY = 300_000
 const MAX_UPLOAD: Record<UploadKind, number> = { material: 1024 * 1024 * 1024, audio: 250 * 1024 * 1024, bgm: 150 * 1024 * 1024 }
 const EXTENSIONS: Record<UploadKind, readonly string[]> = {
@@ -103,10 +106,9 @@ export function validateContentRequest(raw: unknown): {action: ContentAction; dr
   if (action === 'terms' && !draft.params.video_script) throw new Error('请先填写视频文案')
   return {action, draft}
 }
-function validateSettings(raw: unknown): Settings {
+function validateSettings(raw: unknown): Pick<Settings, 'subtitle_provider' | 'video_codec'> {
   if (!isRecord(raw)) throw new Error('设置格式无效')
-  const result = {...defaultSettings}
-  for (const key of ['pexels_api_keys', 'pixabay_api_keys', 'coverr_api_keys'] as const) result[key] = asText(raw[key] ?? '', 1000)
+  const result = {subtitle_provider: defaultSettings.subtitle_provider, video_codec: defaultSettings.video_codec}
   if (raw.subtitle_provider !== 'edge' && raw.subtitle_provider !== 'whisper') throw new Error('字幕引擎无效')
   result.subtitle_provider = raw.subtitle_provider
   if (!['libx264', 'h264_nvenc', 'h264_qsv', 'h264_amf'].includes(String(raw.video_codec))) throw new Error('编码器无效')
@@ -148,6 +150,9 @@ function physicalRuntime(): string {
 function pythonPath(dataRoot: string): string {
   const venv = join(dataRoot, 'engine', '.venv')
   return process.platform === 'win32' ? join(venv, 'Scripts', 'python.exe') : join(venv, 'bin', 'python')
+}
+export function shortVideoEnvironment(dataRoot: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return {...commonToolEnvironment(dirname(dataRoot), base), MPT_DSH_DATA_ROOT: dataRoot, PYTHONUTF8: '1'}
 }
 function terminate(child: ChildProcess): void {
   if (!child.pid) return
@@ -276,6 +281,9 @@ export function validateSubtitleSrt(srt: string, duration: number): void {
 export function apply(ctx: Context): void {
   const dsnAccount = (ctx as Context & { dsnAccount: DsnAccountService }).dsnAccount
   const root = join(resolveDshHome(), 'short-video')
+  const mediaSettings = createMediaSettings({home: resolveDshHome(), credentials: ctx.credentials})
+  const handleMediaSettings = createMediaSettingsHandler(mediaSettings, {path: `${API}/media-settings`, engine: 'shortVideo'})
+  const getSettings = () => readSettings(root, mediaSettings)
   const jobsRoot = join(root, 'jobs')
   const runtime = physicalRuntime()
   const jobs = new Map<string, Job>()
@@ -286,16 +294,14 @@ export function apply(ctx: Context): void {
   const writes = new Map<string, Promise<void>>()
   let healthCache: Promise<Record<string,unknown>> | undefined
   let healthAt=0
-  const health=()=>{
-    if(!healthCache||Date.now()-healthAt>30_000){healthAt=Date.now();healthCache=checkHealth(root,runtime)}
+  const health=(force=false)=>{
+    if(force||!healthCache||Date.now()-healthAt>30_000){healthAt=Date.now();healthCache=checkHealth(root,runtime)}
     return healthCache
   }
   const uvHome=join(resolveDshHome(),'media-tools')
   const setup=new SetupManager(()=>[
-    {id:'uv',label:'内置 uv',ready:async()=>probeUv(),run:async(log)=>{await runCommand(uvExecutable(),['--version'],{log})}},
-    {id:'python',label:'Python 3.11',ready:async()=>{try{await python311(uvHome);return true}catch{return false}},run:async(log)=>{await mkdir(uvHome,{recursive:true});await runCommand(uvExecutable(),['python','install','3.11'],{env:uvEnvironment(uvHome),log})}},
+    ...commonToolSteps(resolveDshHome()),
     {id:'engine',label:'MoneyPrinterTurbo 锁定环境',ready:async()=>engineReady(root,runtime),run:async(log)=>setupEngine(root,runtime,uvHome,log)},
-    {id:'ffmpeg',label:'FFmpeg',ready:async()=>Boolean((await checkHealth(root,runtime)).ffmpeg),run:async(log)=>{log('从锁定的 imageio-ffmpeg 依赖检查内置程序');await setupEngine(root,runtime,uvHome,log)}},
   ])
   let lastSetupFinishedAt=0
   const setupSnapshot=()=>{const state=setup.snapshot();if(state.status!=='running'&&state.status!=='idle'&&state.updatedAt!==lastSetupFinishedAt){healthCache=undefined;lastSetupFinishedAt=state.updatedAt}return state}
@@ -394,7 +400,7 @@ export function apply(ctx: Context): void {
     try {
       await writeFile(requestFile, JSON.stringify({action, params:draft.params}), 'utf8')
       child = spawn(pythonPath(root), [join(runtime, 'bridge.py'), 'content', requestFile], {
-        windowsHide:true, cwd:runtime, env:{...process.env, MPT_DSH_DATA_ROOT:root, PYTHONUTF8:'1'}, stdio:['pipe','pipe','pipe'],
+        windowsHide:true, cwd:runtime, env:shortVideoEnvironment(root), stdio:['pipe','pipe','pipe'],
       })
       contentChildren.add(child)
       res.once('close', disconnected)
@@ -466,7 +472,7 @@ export function apply(ctx: Context): void {
     const requirements = stageRequirements(job)
     if (requirements.materialUpload && !job.uploads.material.length) throw new Error('请上传本地视频或图片素材')
     if (requirements.backgroundMusicUpload && !job.uploads.bgm) throw new Error('请上传自定义背景音乐')
-    const settings = await readSettings(root)
+    const settings = await getSettings()
     const keyIssue = materialKeyIssue(job, settings)
     if (keyIssue) throw new Error(keyIssue)
     const preview = job.audioPreviewJobId ? jobs.get(job.audioPreviewJobId) : undefined
@@ -491,7 +497,8 @@ export function apply(ctx: Context): void {
     job.status='running';job.progress=0;job.error=undefined;job.logs=[];await save(job)
     const videoAbort = new AbortController()
     videoAborts.set(job.id, videoAbort)
-    const child=spawn(pythonPath(root),[join(runtime,'bridge.py'),'run',requestFile],{windowsHide:true,cwd:runtime,env:{...process.env,MPT_DSH_DATA_ROOT:root,PYTHONUTF8:'1'},stdio:['pipe','pipe','pipe']})
+    const providerEnvironment = await mediaProviderEnvironment(mediaSettings)
+    const child=spawn(pythonPath(root),[join(runtime,'bridge.py'),'run',requestFile],{windowsHide:true,cwd:runtime,env:shortVideoEnvironment(root,{...process.env,...providerEnvironment}),stdio:['pipe','pipe','pipe']})
     children.set(job.id,child)
     let stdout='', stderr='', gotResult=false, fatal=''
     child.stderr.on('data',(chunk:Buffer)=>{stderr+=chunk.toString();const lines=stderr.split(/\r?\n/);stderr=lines.pop()||'';for(const line of lines){if(line.trim()){job.logs.push(line.slice(0,1000));job.logs=job.logs.slice(-150)}}})
@@ -538,13 +545,13 @@ export function apply(ctx: Context): void {
   const start = async (job: Job) => {
     if (job.status === 'running') throw new Error('任务已在运行')
     if (children.size || [...jobs.values()].some(other=>other.status==='running')) throw new Error('一次只能制作一条短视频')
-    const keyIssue = materialKeyIssue(job, await readSettings(root))
+    const keyIssue = materialKeyIssue(job, await getSettings())
     if (keyIssue) throw new Error(keyIssue)
     verifyJobInputs(job)
     if (job.audioPreviewJobId) {
       const preview = jobs.get(job.audioPreviewJobId)
       if (!preview) throw new Error('找不到已确认的配音任务，请重新生成配音')
-      const settings=await readSettings(root)
+      const settings=await getSettings()
       const previewIssue = audioPreviewReuseIssue(preview, job, subtitleProviderFor(job,settings))
       if (previewIssue) throw new Error(previewIssue)
     }
@@ -555,6 +562,7 @@ export function apply(ctx: Context): void {
   }
   ctx.effect(() => {
     const unregister=ctx.webServer.register({kind:'prefix',path:API,handler:async(req,res)=>{
+      if(await handleMediaSettings(req,res))return
       if(!permitted(req))return json(res,403,{error:'仅允许本机应用访问'})
       try {
         const url=new URL(req.url||'', 'http://localhost');const action=url.pathname.slice(API.length+1)
@@ -564,11 +572,11 @@ export function apply(ctx: Context): void {
           const request=validateContentRequest(await readJson(req))
           return json(res,200,await generateContent(request.action,request.draft,res))
         }
-        if(req.method==='GET' && action==='settings')return json(res,200,await readSettings(root))
-        if(req.method==='POST' && action==='settings'){const settings=validateSettings(await readJson(req));await mkdir(root,{recursive:true});await writeFile(join(root,'settings.json'),JSON.stringify(settings,null,2));return json(res,200,settings)}
-        if(req.method==='GET' && action==='health'){const state=setupSnapshot();return json(res,200,{...(await health()),setup:state})}
+        if(req.method==='GET' && action==='settings')return json(res,200,await getSettings())
+        if(req.method==='POST' && action==='settings'){await patchSettings(root,await readJson(req),mediaSettings);return json(res,200,await getSettings())}
+        if(req.method==='GET' && action==='health'){const state=setupSnapshot();return json(res,200,{...(await health(url.searchParams.get('refresh')==='1')),setup:state})}
         if(req.method==='GET' && action==='setup')return json(res,200,setupSnapshot())
-        if(req.method==='POST' && action==='setup'){const state=setup.start();healthCache=undefined;return json(res,202,state)}
+        if(req.method==='POST' && action==='setup'){if(children.size||contentChildren.size||contentReserved)throw new Error('正在制作，请等待当前任务完成后修复环境');const state=setup.start();healthCache=undefined;return json(res,202,state)}
         if(req.method==='GET' && action==='jobs')return json(res,200,[...jobs.values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))
          if(req.method==='POST' && action==='jobs'){
              const raw=await readJson(req),draft=validateDraft(raw)
@@ -577,7 +585,7 @@ export function apply(ctx: Context): void {
             const requestedWorkflowId=isRecord(raw)?raw.workflowId:undefined
             if(requestedWorkflowId!==undefined && (typeof requestedWorkflowId!=='string'||!/^[a-f0-9-]{36}$/.test(requestedWorkflowId)))throw new Error('制作流程 ID 无效')
             const preview=previewId?get(previewId):undefined
-             if(preview){const settings=await readSettings(root),issue=audioPreviewReuseIssue(preview,draft,subtitleProviderFor(draft,settings));if(issue)throw new Error(issue)}
+             if(preview){const settings=await getSettings(),issue=audioPreviewReuseIssue(preview,draft,subtitleProviderFor(draft,settings));if(issue)throw new Error(issue)}
              if(preview&&['script','terms'].includes(draft.stopAt))throw new Error('当前阶段无需复用配音')
              const materialId=isRecord(raw)?raw.materialPreviewJobId:undefined
              const subtitleId=isRecord(raw)?raw.subtitlePreviewJobId:undefined
@@ -595,7 +603,7 @@ export function apply(ctx: Context): void {
             try {
             if(preview){
               job.uploads.audio=await copyAudioPreview(join(root,'storage','tasks'),preview,id,
-                preview.stopAt==='subtitle' && Boolean(draft.params.subtitle_enabled) && preview.subtitleProvider===subtitleProviderFor(draft,await readSettings(root)) && preview.params.subtitle_display_mode===draft.params.subtitle_display_mode)
+                preview.stopAt==='subtitle' && Boolean(draft.params.subtitle_enabled) && preview.subtitleProvider===subtitleProviderFor(draft,await getSettings()) && preview.params.subtitle_display_mode===draft.params.subtitle_display_mode)
               job.audioPreviewJobId=preview.id
               job.subtitleProvider=preview.subtitleProvider
             }
@@ -653,16 +661,40 @@ function requireDirsImpl(path: string): string[] {
   return readdirSync(path,{withFileTypes:true}).filter(e=>e.isDirectory()).map(e=>e.name)
 }
 import { readdirSync } from 'node:fs'
-async function readSettings(root:string):Promise<Settings>{
-  try{return validateSettings(JSON.parse(await readFile(join(root,'settings.json'),'utf8')))}catch{return {...defaultSettings}}
+export async function readSettings(root:string, mediaSettings: MediaSettingsStore):Promise<Settings>{
+  const publicState = await mediaSettings.readPublic('shortVideo')
+  let ordinary: Pick<Settings, 'subtitle_provider' | 'video_codec'> = {...defaultSettings}
+  try {
+    const parsed: unknown = JSON.parse(await readFile(join(root,'settings.json'),'utf8'))
+    if (!isRecord(parsed)) throw new Error('设置格式无效')
+    ordinary = validateSettings({...defaultSettings, ...parsed})
+  } catch(error) {if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error}
+  return {...ordinary, pexelsConfigured: !!publicState.effective?.pexels, pixabayConfigured: !!publicState.effective?.pixabay, coverrConfigured: publicState.coverrConfigured}
+}
+export async function patchSettings(root: string, value: unknown, mediaSettings: MediaSettingsStore): Promise<void> {
+  if (!isRecord(value) || Object.keys(value).some(key => !['subtitle_provider','video_codec','pexelsConfigured','pixabayConfigured','coverrConfigured'].includes(key))) throw new Error('设置字段无效，素材密钥请在公共设置中修改')
+  await mediaSettings.migrateLegacy()
+  await mkdir(root, {recursive: true, mode: 0o700})
+  const path = join(root, 'settings.json')
+  await withFileLock(path, async () => {
+    let original: Record<string, unknown> = {}
+    try {const parsed: unknown = JSON.parse(await readFile(path, 'utf8')); if (!isRecord(parsed)) throw new Error('设置格式无效'); original = parsed} catch(error) {if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error}
+    const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ['subtitle_provider','video_codec'].includes(key)))
+    const checked = validateSettings({...defaultSettings, ...original, ...fields})
+    await writeFileAtomic(path, JSON.stringify({...original, ...checked}, null, 2), {mode: 0o600, dirMode: 0o700})
+  })
+}
+export async function mediaProviderEnvironment(mediaSettings: MediaSettingsStore): Promise<Record<string, string>> {
+  const [pexels,pixabay,coverr] = await Promise.all(['pexels','pixabay','coverr'].map(provider => mediaSettings.readCredential(provider as 'pexels'|'pixabay'|'coverr','shortVideo')))
+  return {MPT_PEXELS_API_KEY: pexels ?? '', MPT_PIXABAY_API_KEY: pixabay ?? '', MPT_COVERR_API_KEY: coverr ?? ''}
 }
 export async function checkHealth(root:string,runtime:string):Promise<Record<string,unknown>>{
   return new Promise(resolveHealth=>{
-    const child=spawn(pythonPath(root),[join(runtime,'bridge.py'),'health'],{windowsHide:true,cwd:runtime,env:{...process.env,MPT_DSH_DATA_ROOT:root,PYTHONUTF8:'1'},stdio:['ignore','pipe','pipe']})
+    const child=spawn(pythonPath(root),[join(runtime,'bridge.py'),'health'],{windowsHide:true,cwd:runtime,env:shortVideoEnvironment(root),stdio:['ignore','pipe','pipe']})
     let output='';const timer=setTimeout(()=>terminate(child),45000)
     child.stdout.on('data',chunk=>{output+=chunk.toString()})
     child.on('error',()=>{})
-    child.once('close',()=>{clearTimeout(timer);const line=output.split(/\r?\n/).find(x=>x.startsWith('MPT_EVENT '));let result:Record<string,unknown>;try{result=JSON.parse(line!.slice(10))}catch{result={python:false,ffmpeg:false,error:'运行环境尚未就绪，请点击安装 / 修复依赖'}};let locked=false;try{locked=readFileSync(join(root,'engine','.setup-lock'),'utf8').trim()===engineLockHash(runtime)}catch{};void probeUv().then(uv=>resolveHealth({...result,python:Boolean(result.python)&&locked,uv}))})
+    child.once('close',()=>{clearTimeout(timer);const line=output.split(/\r?\n/).find(x=>x.startsWith('MPT_EVENT '));let result:Record<string,unknown>;try{result=JSON.parse(line!.slice(10))}catch{result={python:false,ffmpeg:false,error:'运行环境尚未就绪，请点击安装 / 修复依赖'}};let locked=false;try{locked=readFileSync(join(root,'engine','.setup-lock'),'utf8').trim()===engineLockHash(runtime)}catch{};const pythonPackages=Boolean(result.pythonPackages??result.python)&&locked;void probeUv().then(uv=>resolveHealth({...result,python:pythonPackages,pythonPackages,uv}))})
   })
 }
 async function probeUv():Promise<boolean>{
@@ -678,6 +710,6 @@ export async function setupEngine(root:string,runtime:string,uvHome:string,log:(
   await copyFile(join(runtime,'mpt','pyproject.toml'),join(engine,'pyproject.toml'))
   await copyFile(join(runtime,'mpt','uv.lock'),join(engine,'uv.lock'))
   await runCommand(uvExecutable(),['sync','--locked','--no-dev','--no-install-project','--python',selection.python,'--project',engine],
-    {cwd:engine,env:{...pythonEnvironment(uvHome,selection),UV_PROJECT_ENVIRONMENT:join(engine,'.venv')},log})
+    {cwd:engine,env:{...shortVideoEnvironment(root,pythonEnvironment(uvHome,selection)),UV_PROJECT_ENVIRONMENT:join(engine,'.venv')},log})
   await writeFile(join(engine,'.setup-lock'),engineLockHash(runtime))
 }

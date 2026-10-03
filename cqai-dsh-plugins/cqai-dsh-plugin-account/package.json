@@ -1,7 +1,7 @@
 {
   "name": "@cqaiclub/dsn-account",
   "version": "0.1.1",
-  "description": "CQAI Club shared account and quota plugin for 易宝工坊",
+  "description": "CQAI Club shared account and quota plugin for e宝工坊",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -30,6 +30,7 @@
     "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-locale": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-conversation": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-layout": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-settings": "0.1.7-rc.2",
@@ -52,6 +53,7 @@
     "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-locale": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-conversation": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-layout": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-settings": "0.1.7-rc.2",
@@ -84,6 +86,7 @@
       "inject": [
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-primitives",
         "@deepseek-ai/dsh-client-ui-renderer",

@@ -1,11 +1,11 @@
 /**
  * Verify every production dependency shipped inside the desktop installers
- * carries a permissive license that allows redistribution.
+ * carries a license or a recorded separate authorization allowing redistribution.
  *
  * Walks the production dependency graph (dependencies + optionalDependencies,
  * excluding dev/peer) starting from this package manifest. Fails when a
  * package has no license field and no LICENSE file, or when its license is
- * not on the redistribution allowlist.
+ * neither on the redistribution allowlist nor covered by a recorded authorization.
  *
  * @module scripts/verify-licenses
  */
@@ -14,6 +14,7 @@ import { createRequire } from 'node:module'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { redistributionAuthorization, redistributionAuthorizationNotices } from './redistribution-authorizations.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const workspaceRoot = dirname(packageRoot)
@@ -37,6 +38,8 @@ const ALLOWED_LICENSES = new Set([
   'CC0-1.0',
   'Zlib',
   'Python-2.0',
+  // mailsplit grants a choice of MIT or EUPL; Desktop uses the MIT option.
+  '(MIT OR EUPL-1.1+)',
 ])
 
 /**
@@ -50,6 +53,8 @@ const NOTICE_LICENSES = new Set([
   'BlueOak-1.0.0',
   'LGPL-3.0-or-later',
   'Apache-2.0 AND LGPL-3.0-or-later',
+  'Artistic-2.0',
+  'CC-BY-3.0',
 ])
 
 /** MatrixMedia source-built Helper bundled beside app.asar by `build.mac.extraResources`. */
@@ -109,10 +114,12 @@ function licenseExpression(manifest) {
   if (typeof value === 'string') return value
   if (typeof value === 'object' && value !== null && typeof value.type === 'string') return value.type
   if (Array.isArray(manifest.licenses)) {
-    return manifest.licenses
+    const expression = manifest.licenses
       .map((item) => (typeof item === 'string' ? item : item.type))
       .filter(Boolean)
       .join(' OR ')
+    // qrcode-terminal 0.12.0 uses pre-SPDX metadata for Apache-2.0.
+    return expression === 'Apache 2.0' ? 'Apache-2.0' : expression
   }
   return undefined
 }
@@ -120,16 +127,24 @@ function licenseExpression(manifest) {
 const failures = []
 const seen = new Set()
 const manifests = []
+const authorizations = []
 const queue = [{ name: rootManifest.name ?? 'dsh-plugin-desktop-beta', manifestPath: join(packageRoot, 'package.json') }]
 
 for (let index = 0; index < queue.length; index += 1) {
   const current = queue[index]
-  if (current === undefined || seen.has(current.name)) continue
-  seen.add(current.name)
+  if (current === undefined || seen.has(current.manifestPath)) continue
+  seen.add(current.manifestPath)
   const manifest = JSON.parse(readFileSync(current.manifestPath, 'utf8'))
 
   if (current.name !== rootManifest.name) {
     const license = licenseExpression(manifest)
+    const authorization = redistributionAuthorization(manifest, license)
+    if (authorization) {
+      if (!authorizations.includes(authorization)) authorizations.push(authorization)
+      if (!existsSync(join(workspaceRoot, authorization.reference))) {
+        failures.push(`${current.name}: separate authorization record is missing: ${authorization.reference}`)
+      }
+    }
     const hasLicenseFile = existsSync(join(dirname(current.manifestPath), 'LICENSE'))
       || existsSync(join(dirname(current.manifestPath), 'LICENSE.md'))
       || existsSync(join(dirname(current.manifestPath), 'LICENSE.txt'))
@@ -139,7 +154,7 @@ for (let index = 0; index < queue.length; index += 1) {
       if (!hasLicenseFile) {
         failures.push(`${current.name}: license refers to ${JSON.stringify(license)} but no LICENSE file is shipped`)
       }
-    } else if (license !== undefined && !ALLOWED_LICENSES.has(license) && !NOTICE_LICENSES.has(license)) {
+    } else if (license !== undefined && !ALLOWED_LICENSES.has(license) && !NOTICE_LICENSES.has(license) && !authorization) {
       failures.push(`${current.name}: license ${JSON.stringify(license)} is not on the redistribution allowlist`)
     }
     manifests.push({ name: current.name, version: manifest.version, license: license ?? 'SEE LICENSE FILE' })
@@ -167,7 +182,11 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-const noticeOnly = manifests.filter(entry => NOTICE_LICENSES.has(entry.license))
+// Separate dependency locations can contain identical copies; disclose each
+// package/version/license once while still checking every dependency location.
+const noticePackages = [...new Map(manifests.map(entry =>
+  [JSON.stringify([entry.name, entry.version, entry.license]), entry])).values()]
+const noticeOnly = noticePackages.filter(entry => NOTICE_LICENSES.has(entry.license))
 const noticesArg = process.argv.indexOf('--notices')
 if (noticesArg !== -1) {
   const target = process.argv[noticesArg + 1]
@@ -177,21 +196,25 @@ if (noticesArg !== -1) {
   }
   const lines = [
     '# Third-Party Notices',
-    '易宝工坊 distributes the following third-party packages inside its installers.',
-    'Each package ships with its own license text in the application files; this list records',
-    'the package names, versions, and licenses for transparency.',
+    'e宝工坊 distributes the following third-party packages inside its installers.',
+    'This list records package names, versions, and licenses for transparency.',
+    'Package license texts accompany the application when supplied by the package.',
     '',
     ...bundledApplicationNotices(),
+    ...redistributionAuthorizationNotices(authorizations),
     '## npm dependencies',
     '| Package | Version | License |',
     '| --- | --- | --- |',
-    ...manifests
+    ...noticePackages
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(entry => `| ${entry.name} | ${entry.version ?? ''} | ${entry.license} |`),
     '',
+    noticeOnly.some(entry => entry.name === 'spdx-exceptions')
+      ? 'spdx-exceptions data: The Linux Foundation; contributor Kyle E. Mitchell. Licensed under Creative Commons Attribution 3.0 Unported (https://creativecommons.org/licenses/by/3.0/).'
+      : '',
     noticeOnly.length === 0
       ? ''
-      : `> Notice-required licenses in use: ${[...new Set(noticeOnly.map(entry => entry.license))].join(', ')}. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.`,
+      : `> Notice-required licenses in use: ${[...new Set(noticeOnly.map(entry => entry.license))].join(', ')}. See package LICENSE files where supplied; npm's Artistic-2.0 license ships with npm.`,
     '',
   ].filter(line => line !== '')
   writeFileSync(join(packageRoot, target), lines.join('\n'))
@@ -199,6 +222,6 @@ if (noticesArg !== -1) {
 
 const total = seen.size - 1
 const summary = noticeOnly.length === 0
-  ? `verify-licenses: ${total} production packages carry redistribution-safe licenses`
+  ? `verify-licenses: ${total} production packages checked`
   : `verify-licenses: ${total} production packages checked; ${noticeOnly.length} use notice-required licenses (${[...new Set(noticeOnly.map(entry => entry.license))].join(', ')})`
-process.stdout.write(`${summary}\n`)
+process.stdout.write(`${summary}${authorizations.length ? `; ${authorizations.length} covered by recorded separate authorizations` : ''}\n`)

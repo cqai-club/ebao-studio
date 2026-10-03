@@ -18,6 +18,7 @@ import {
   type DesktopSetupWizardSelection,
 } from '../../setup-wizard-contract.ts'
 import { desktopSetupWizardCopy, type DesktopSetupWizardCopy } from '../../setup-wizard-copy.ts'
+import { isStableDesktopRelease } from '../../product-identity.ts'
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert.tsx'
 import { Badge } from '../components/ui/badge.tsx'
 import { Button } from '../components/ui/button.tsx'
@@ -63,19 +64,28 @@ export const DESKTOP_SETUP_WIZARD_STEPS = Object.freeze([
   'success',
 ] as const satisfies readonly DesktopSetupWizardStep[])
 
+/** Stable first-run setup fixes its desktop mode; Linux keeps browser access. */
+export function desktopSetupWizardSteps(platform: DesktopSetupWizardInput['platform']): readonly DesktopSetupWizardStep[] {
+  if (!isStableDesktopRelease()) return DESKTOP_SETUP_WIZARD_STEPS
+  return DESKTOP_SETUP_WIZARD_STEPS.filter(step => step !== 'mode'
+    && (platform === 'linux' || step !== 'browser'))
+}
+
 export function previousDesktopSetupWizardStep(
   step: DesktopSetupWizardStep,
+  steps: readonly DesktopSetupWizardStep[] = DESKTOP_SETUP_WIZARD_STEPS,
 ): DesktopSetupWizardStep | undefined {
-  const index = DESKTOP_SETUP_WIZARD_STEPS.indexOf(step)
-  return index > 0 ? DESKTOP_SETUP_WIZARD_STEPS[index - 1] : undefined
+  const index = steps.indexOf(step)
+  return index > 0 ? steps[index - 1] : undefined
 }
 
 export function nextDesktopSetupWizardStep(
   step: DesktopSetupWizardStep,
+  steps: readonly DesktopSetupWizardStep[] = DESKTOP_SETUP_WIZARD_STEPS,
 ): DesktopSetupWizardStep | undefined {
-  const index = DESKTOP_SETUP_WIZARD_STEPS.indexOf(step)
-  return index >= 0 && index < DESKTOP_SETUP_WIZARD_STEPS.length - 1
-    ? DESKTOP_SETUP_WIZARD_STEPS[index + 1]
+  const index = steps.indexOf(step)
+  return index >= 0 && index < steps.length - 1
+    ? steps[index + 1]
     : undefined
 }
 
@@ -502,6 +512,7 @@ export function SetupWizardWelcome({
   onStart,
   onSkip,
   embedded = false,
+  enhancedByDefault = false,
 }: {
   readonly appVersion: string
   readonly copy: DesktopSetupWizardCopy
@@ -509,6 +520,7 @@ export function SetupWizardWelcome({
   readonly onStart: () => void
   readonly onSkip: () => void
   readonly embedded?: boolean
+  readonly enhancedByDefault?: boolean
 }): JSX.Element {
   return <div className="flex flex-1 items-center justify-center py-5" data-align="center" data-setup-step="welcome">
     <div className="dshSetupWelcome flex w-full max-w-xl flex-col items-stretch text-left">
@@ -530,6 +542,7 @@ export function SetupWizardWelcome({
             <span className="mt-1 block break-all text-base font-semibold">{profileName}</span>
           </div>
           <p className="text-sm leading-relaxed text-muted-foreground">{copy.firstProfileSetup}</p>
+          {enhancedByDefault && <p className="text-sm leading-relaxed text-muted-foreground">{copy.enhancedByDefault}</p>}
         </CardContent>
       </Card>
       <div className="dshSetupActions mt-8 flex flex-wrap items-center justify-end gap-3">
@@ -546,18 +559,20 @@ export function SetupWizardNavigation({
   onBack,
   onNext,
   onSkip,
+  steps = DESKTOP_SETUP_WIZARD_STEPS,
 }: {
   readonly copy: DesktopSetupWizardCopy
   readonly step: DesktopSetupWizardStep
   readonly onBack: () => void
   readonly onNext: () => void
   readonly onSkip: () => void
+  readonly steps?: readonly DesktopSetupWizardStep[]
 }): JSX.Element | null {
   if (step === 'welcome' || step === 'success') return null
   return <footer className="flex shrink-0 items-center justify-between gap-3 border-t pt-4">
     <SetupWizardSkipDialog copy={copy} onSkip={onSkip} />
     <div className="flex items-center gap-2">
-      <Button aria-label={copy.back} disabled={previousDesktopSetupWizardStep(step) === undefined} onClick={onBack} size="icon" title={copy.back} type="button" variant="outline"><ArrowLeft /></Button>
+      <Button aria-label={copy.back} disabled={previousDesktopSetupWizardStep(step, steps) === undefined} onClick={onBack} size="icon" title={copy.back} type="button" variant="outline"><ArrowLeft /></Button>
       <Button aria-label={copy.next} onClick={onNext} size="icon" title={copy.next} type="button"><ArrowRight /></Button>
     </div>
   </footer>
@@ -718,6 +733,8 @@ export function SetupWizardApp({ embedded }: { embedded?: EmbeddedSetupWizard } 
     return <><DesktopFrame /><main className="dshNativeContent flex h-screen items-center justify-center p-6"><div className="w-full max-w-lg space-y-4"><Alert variant="destructive"><AlertTriangle /><AlertTitle>{copy.title}</AlertTitle><AlertDescription>{copy.invalidState}</AlertDescription></Alert><div className="flex justify-end"><SetupWizardSkipDialog copy={copy} onSkip={() => { window.location.assign(`${SCHEME}//skip`) }} outlined /></div></div></main></>
   }
 
+  const steps = desktopSetupWizardSteps(input.platform)
+
   const requestExposure = (requested: DesktopSetupWizardNetworkExposure): void => {
     if (requested === 'lan' && (selection.mode !== 'compatibility' || !selection.openBrowser)) return
     if (desktopSetupWizardRequiresLanAcknowledgement(
@@ -751,7 +768,7 @@ export function SetupWizardApp({ embedded }: { embedded?: EmbeddedSetupWizard } 
   }
 
   const advance = (): void => {
-    const next = nextDesktopSetupWizardStep(step)
+    const next = nextDesktopSetupWizardStep(step, steps)
     if (next === undefined) return
     if (step === 'browser' && desktopSetupWizardRequiresLanAcknowledgement(
       selection.networkExposure,
@@ -777,14 +794,14 @@ export function SetupWizardApp({ embedded }: { embedded?: EmbeddedSetupWizard } 
   }
 
   const back = (): void => {
-    const previous = previousDesktopSetupWizardStep(step)
+    const previous = previousDesktopSetupWizardStep(step, steps)
     if (previous !== undefined) setStep(previous)
   }
-  const stepIndex = DESKTOP_SETUP_WIZARD_STEPS.indexOf(step)
+  const stepIndex = steps.indexOf(step)
   return <>{embedded ? null : <DesktopFrame />}<div ref={wizard} className={embedded ? 'dshSetupWizard' : undefined} lang={locale}>
   {embedded && <header className="dshSetupProgress">
-    <ol aria-label={locale === 'zh' ? '引导进度' : 'Setup progress'}>{DESKTOP_SETUP_WIZARD_STEPS.map((item, index) => <li key={item} aria-current={item === step ? 'step' : undefined}><span className="sr-only">{index + 1}</span></li>)}</ol>
-    <span>{stepIndex + 1} / {DESKTOP_SETUP_WIZARD_STEPS.length}</span>
+    <ol aria-label={locale === 'zh' ? '引导进度' : 'Setup progress'}>{steps.map((item, index) => <li key={item} aria-current={item === step ? 'step' : undefined}><span className="sr-only">{index + 1}</span></li>)}</ol>
+    <span>{stepIndex + 1} / {steps.length}</span>
   </header>}
   <main className={`dshNativeContent ${embedded ? 'dshSetupMain' : 'h-screen overflow-hidden p-5 sm:p-6'}`} aria-busy={busy}><fieldset disabled={busy} className={embedded ? 'dshSetupFieldset' : 'mx-auto flex h-full w-full max-w-3xl flex-col border-0 p-0'}>
     {failure && <Alert variant="destructive"><AlertDescription>{failure}</AlertDescription></Alert>}
@@ -794,8 +811,9 @@ export function SetupWizardApp({ embedded }: { embedded?: EmbeddedSetupWizard } 
           appVersion={input.appVersion}
           embedded={Boolean(embedded)}
           copy={copy}
+          enhancedByDefault={isStableDesktopRelease() && input.platform !== 'linux' && input.mode === 'advanced'}
           onSkip={skip}
-          onStart={() => { setStep('mode') }}
+          onStart={() => { setStep(steps[1]!) }}
           profileName={input.profileName}
         />
         : step === 'success'
@@ -806,12 +824,13 @@ export function SetupWizardApp({ embedded }: { embedded?: EmbeddedSetupWizard } 
     {!embedded && <SetupWizardNavigation
       copy={copy}
       onBack={() => {
-        const previous = previousDesktopSetupWizardStep(step)
+        const previous = previousDesktopSetupWizardStep(step, steps)
         if (previous !== undefined) setStep(previous)
       }}
       onNext={advance}
       onSkip={skip}
       step={step}
+      steps={steps}
     />}
   </fieldset></main>
   {embedded && <nav className="dshSetupNavigation" aria-label={locale === 'zh' ? '引导导航' : 'Setup navigation'}>

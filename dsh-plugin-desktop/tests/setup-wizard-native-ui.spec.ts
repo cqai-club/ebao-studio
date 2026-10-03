@@ -10,6 +10,7 @@ import {
   confirmDesktopSetupWizardBrowserCompatibility,
   decodeDesktopSetupWizardInput,
   DESKTOP_SETUP_WIZARD_STEPS,
+  desktopSetupWizardSteps,
   desktopSetupWizardSkipRequiresLanAcknowledgement,
   nextDesktopSetupWizardStep,
   previousDesktopSetupWizardStep,
@@ -24,6 +25,7 @@ import {
 import { Button } from '../src/native-ui/components/ui/button.tsx'
 import { DialogClose } from '../src/native-ui/components/ui/dialog.tsx'
 import { desktopSetupWizardCopy } from '../src/setup-wizard-copy.ts'
+import { isStableDesktopRelease } from '../src/product-identity.ts'
 
 const input: DesktopSetupWizardInput = {
   appVersion: '2.0.6-beta.1',
@@ -96,6 +98,20 @@ function elementTree(node: ReactNode): readonly ReactElement[] {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('Setup Wizard step flow', () => {
+  it('keeps mode and browser choices out of Stable Windows/macOS setup', () => {
+    const full = DESKTOP_SETUP_WIZARD_STEPS
+    const desktop = isStableDesktopRelease()
+      ? full.filter(step => step !== 'mode' && step !== 'browser') : full
+    const linux = isStableDesktopRelease()
+      ? full.filter(step => step !== 'mode') : full
+    expect(desktopSetupWizardSteps('win32')).toEqual(desktop)
+    expect(desktopSetupWizardSteps('darwin')).toEqual(desktop)
+    expect(desktopSetupWizardSteps('linux')).toEqual(linux)
+    expect(nextDesktopSetupWizardStep('welcome', desktop)).toBe(desktop[1])
+    expect(previousDesktopSetupWizardStep('material', desktop))
+      .toBe(isStableDesktopRelease() ? 'welcome' : 'mode')
+  })
+
   it('starts with an introduction and keeps browser access as the final setting page', () => {
     expect(DESKTOP_SETUP_WIZARD_STEPS).toEqual([
       'welcome',

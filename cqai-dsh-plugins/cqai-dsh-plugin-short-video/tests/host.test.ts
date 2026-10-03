@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { IncomingMessage } from 'node:http'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { artifactPath, artifactsFor, copyAudioPreview, needsText, permitted, storedMaterialArtifactsFor, validateContentRequest, validateDraft, validateSubtitleSrt } from '../src/index.ts'
@@ -101,14 +101,14 @@ describe('short-video local job boundary', () => {
   })
   it('asks for the selected stock API key before starting visual material work', () => {
     for (const [source, key, name] of [
-      ['pexels', 'pexels_api_keys', 'Pexels'],
-      ['pixabay', 'pixabay_api_keys', 'Pixabay'],
-      ['coverr', 'coverr_api_keys', 'Coverr'],
+      ['pexels', 'pexelsConfigured', 'Pexels'],
+      ['pixabay', 'pixabayConfigured', 'Pixabay'],
+      ['coverr', 'coverrConfigured', 'Coverr'],
     ] as const) {
       const job = draft({video_script:'已写好的旁白',video_source:source})
       expect(materialKeyIssue(job, defaultSettings)).toContain(`${name} API Key`)
       expect(materialKeyIssue({...job,stopAt:'subtitle'}, defaultSettings)).toBeUndefined()
-      expect(materialKeyIssue(job, {...defaultSettings,[key]:'example-key'})).toBeUndefined()
+      expect(materialKeyIssue(job, {...defaultSettings,[key]:true})).toBeUndefined()
       expect(materialKeyIssue({...job,stopAt:'audio'}, defaultSettings)).toBeUndefined()
     }
     expect(materialKeyIssue(draft({video_script:'已写好的旁白',video_source:'local'}), defaultSettings)).toBeUndefined()
@@ -166,12 +166,12 @@ describe('short-video local job boundary', () => {
       await writeFile(join(root,'storage','tasks',job.id,'script.json'),JSON.stringify({material_sources:[{local_file:'stock.mp4'},{local_file:'../unlisted.mp4'}]}))
       const stock=storedMaterialArtifactsFor(root,job)
       expect(stock.map(item=>item.file)).toEqual(['saved-materials/cache/stock.mp4'])
-      expect(artifactPath(root,{...job,artifacts:stock},stock[0].file)).toBe(join(root,'storage','cache_videos','stock.mp4'))
+      expect(artifactPath(root,{...job,artifacts:stock},stock[0].file)).toBe(await realpath(join(root,'storage','cache_videos','stock.mp4')))
       expect(()=>artifactPath(root,{...job,artifacts:stock},'saved-materials/cache/unlisted.mp4')).toThrow('文件不在任务产物中')
       const uploaded={...job,params:{...job.params,video_source:'local'},uploads:{material:['upload.png']}}
       const local=storedMaterialArtifactsFor(root,uploaded)
       expect(local.map(item=>item.file)).toEqual(['saved-materials/local/upload.png'])
-      expect(artifactPath(root,{...uploaded,artifacts:local},local[0].file)).toBe(join(root,'storage','local_videos','upload.png'))
+      expect(artifactPath(root,{...uploaded,artifacts:local},local[0].file)).toBe(await realpath(join(root,'storage','local_videos','upload.png')))
     } finally {await rm(root,{recursive:true,force:true})}
   })
   it('copies confirmed narration and subtitle into the final task without altering the preview', async () => {

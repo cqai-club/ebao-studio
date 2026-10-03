@@ -1,7 +1,8 @@
 diff --git a/lib/client.js b/lib/client.js
+index fa7b856..eb01157 100644
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -28,6 +28,8 @@
+@@ -28,6 +28,8 @@ window.__ModuleLoader__.load({
  			return `${bundle}#${rowId}`;
  		}
  		const SLOTS = [
@@ -10,7 +11,7 @@ diff --git a/lib/client.js b/lib/client.js
  			"plugins.item",
  			"plugins.bundle.config",
  			"plugins.row.config"
-@@ -42,6 +44,8 @@
+@@ -42,6 +44,8 @@ window.__ModuleLoader__.load({
  			let revision = -1;
  			let ledger = {
  				items: [],
@@ -19,7 +20,7 @@ diff --git a/lib/client.js b/lib/client.js
  				bundles: /* @__PURE__ */ new Set(),
  				rows: /* @__PURE__ */ new Set()
  			};
-@@ -59,6 +63,8 @@
+@@ -59,6 +63,8 @@ window.__ModuleLoader__.load({
  								id: entry.options.id ?? "",
  								label: (0, _deepseek_ai_dsh_client_ui_slots.resolveSlotLabel)(entry.options.label) ?? ""
  							})),
@@ -28,7 +29,10 @@ diff --git a/lib/client.js b/lib/client.js
  							bundles: keysOf("plugins.bundle.config"),
  							rows: keysOf("plugins.row.config")
  						};
-@@ -211,6 +217,14 @@
+@@ -208,10 +214,18 @@ window.__ModuleLoader__.load({
+ 		* @param resolveText - current-locale package text resolver.
+ 		* @returns the row's display title and optional description.
+ 		*/
 +		const DESKTOP_ROW_DESCRIPTIONS = new Map([
 +			["@deepseek-ai/dsh-time-context", { en: "Durable per-step context with the current time and elapsed time", zh: "为每一步提供可持久化的时间上下文，包含当前时间和已用时间。" }],
 +			["@deepseek-ai/dsh-schedule", { en: "Host-wide durable reminders with shared management and original-Session delivery", zh: "统一管理后台服务中的持久化提醒，到期后在原对话中继续执行。" }],
@@ -44,7 +48,8 @@ diff --git a/lib/client.js b/lib/client.js
 +				description: description === void 0 ? void 0 : resolveText(description) || void 0
  			};
  		}
-@@ -1641,9 +1655,15 @@
+ 		/**
+@@ -1641,9 +1655,15 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** The top every page shares: the crumb that leads back, then the icon with the page's actions at its right. */
@@ -60,7 +65,7 @@ diff --git a/lib/client.js b/lib/client.js
  				"data-window-drag": true,
  				children: [(0, react_jsx_runtime.jsxs)("button", {
  					type: "button",
-@@ -1665,7 +1677,7 @@
+@@ -1665,7 +1685,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** One package as a card that opens its page: its name, its one-liner, its tags, and its bundle switch. */
@@ -69,7 +74,7 @@ diff --git a/lib/client.js b/lib/client.js
  			const { title, description, beta } = packageText(pkg, resolveText);
  			const status = packageStatus(pkg);
  			return (0, react_jsx_runtime.jsxs)("li", {
-@@ -1688,13 +1700,15 @@
+@@ -1688,13 +1708,15 @@ window.__ModuleLoader__.load({
  						children: t("statusProblem")
  					}) : null] }),
  					description,
@@ -87,7 +92,7 @@ diff --git a/lib/client.js b/lib/client.js
  				}), (0, react_jsx_runtime.jsx)(MetadataError, {
  					error: pkg.meta?.error,
  					t
-@@ -1741,7 +1755,7 @@
+@@ -1741,7 +1763,7 @@ window.__ModuleLoader__.load({
  		* contributed actions, its title with the contributed badges over its
  		* one-liner, the form the entry renders, and the contributed sections.
  		*/
@@ -96,7 +101,7 @@ diff --git a/lib/client.js b/lib/client.js
  			const subject = {
  				kind: "item",
  				id: item.id
-@@ -1780,7 +1794,7 @@
+@@ -1780,7 +1802,7 @@ window.__ModuleLoader__.load({
  							"data-plugin-config": true,
  							children: renderSlot("plugins.item", {
  								view: "page",
@@ -105,7 +110,21 @@ diff --git a/lib/client.js b/lib/client.js
  							}, { only: item.id })
  						}), renderSlot("plugins.detail.section", { subject })]
  					})
-@@ -2717,11 +2731,12 @@
+@@ -2697,6 +2719,13 @@ window.__ModuleLoader__.load({
+ 			const ledger = props.useConfigLedger((snapshot) => snapshot);
+ 			const view = props.useStore((state) => state.view), { setView } = props.actions;
+ 			const [activation, setActivation] = (0, react.useState)(null);
++			const installedEntries = (0, react.useSyncExternalStore)(props.installedCardEntries.subscribe, props.installedCardEntries.getSnapshot, props.installedCardEntries.getSnapshot);
++			const [reportedInstalledCount, setReportedInstalledCount] = (0, react.useState)(0);
++			const reportInstalledCount = (0, react.useCallback)((count) => {
++				const safeCount = Number.isSafeInteger(count) && count >= 0 ? count : 0;
++				setReportedInstalledCount((current) => current === safeCount ? current : safeCount);
++			}, []);
++			const additionalInstalledCount = installedEntries.length > 0 ? reportedInstalledCount : 0;
+ 			(0, react.useEffect)(() => {
+ 				ensure();
+ 			}, [ensure]);
+@@ -2717,11 +2746,12 @@ window.__ModuleLoader__.load({
  				};
  			}, [highlight, clearHighlight]);
  			const noticeLine = state.notice === null ? null : noticeText(state.notice, t);
@@ -120,7 +139,7 @@ diff --git a/lib/client.js b/lib/client.js
  			const openItem = view.kind === "item" ? ledger.items.find((item) => item.id === view.id) : void 0;
  			const openRow = view.kind === "row" && openPkg !== void 0 ? openPkg.rows.find((row) => row.rowId === view.rowId) : void 0;
  			const showsCards = openPkg === void 0 && openItem === void 0;
-@@ -2740,8 +2755,24 @@
+@@ -2740,8 +2770,24 @@ window.__ModuleLoader__.load({
  					});
  				}
  			});
@@ -145,7 +164,7 @@ diff --git a/lib/client.js b/lib/client.js
  				t,
  				resolveText,
  				busy: state.busy.includes(pkg.name),
-@@ -2758,7 +2789,7 @@
+@@ -2758,7 +2804,7 @@ window.__ModuleLoader__.load({
  					props.setEnabled(pkg.name, enabled);
  				}
  			}, pkg.name);
@@ -154,7 +173,32 @@ diff --git a/lib/client.js b/lib/client.js
  				item,
  				t,
  				renderSlot,
-@@ -2793,8 +2824,10 @@
+@@ -2769,7 +2815,7 @@ window.__ModuleLoader__.load({
+ 					});
+ 				}
+ 			}, `item:${item.id}`))];
+-			const renderGroup = (id, heading, cards) => cards.length === 0 ? null : (0, react_jsx_runtime.jsxs)("section", {
++			const renderGroup = (id, heading, cards) => cards.length === 0 && !(id === "bundles" && installedEntries.length > 0) ? null : (0, react_jsx_runtime.jsxs)("section", {
+ 				className: PluginManagerPage_module_css_default.group,
+ 				"data-plugin-scope": "global",
+ 				"data-plugin-group": id,
+@@ -2780,12 +2826,12 @@ window.__ModuleLoader__.load({
+ 						children: heading
+ 					}), (0, react_jsx_runtime.jsx)("span", {
+ 						className: PluginManagerPage_module_css_default.count,
+-						"data-plugin-count": cards.length,
+-						children: cards.length
++						"data-plugin-count": cards.length + (id === "bundles" ? additionalInstalledCount : 0),
++						children: cards.length + (id === "bundles" ? additionalInstalledCount : 0)
+ 					})]
+ 				}), (0, react_jsx_runtime.jsx)("ul", {
+ 					className: PluginManagerPage_module_css_default.cards,
+-					children: cards
++					children: [id === "bundles" ? renderSlot("plugins.installed.cards", { reportCount: reportInstalledCount }) : null, ...cards]
+ 				})]
+ 			});
+ 			return (0, react_jsx_runtime.jsxs)("section", {
+@@ -2793,8 +2839,10 @@ window.__ModuleLoader__.load({
  				"data-plugin-panel": true,
  				"aria-busy": state.status === "loading",
  				children: [
@@ -165,11 +209,10 @@ diff --git a/lib/client.js b/lib/client.js
  						"data-window-drag": true,
  						children: [(0, react_jsx_runtime.jsxs)("div", { children: [(0, react_jsx_runtime.jsx)("h1", {
  							className: PluginManagerPage_module_css_default.pageTitle,
-@@ -2826,6 +2859,18 @@
- 								children: t(state.install.requestId === void 0 ? "addPlugin" : "installViewTask")
+@@ -2827,6 +2875,18 @@ window.__ModuleLoader__.load({
  							})]
  						})]
-+					}) : null,
+ 					}) : null,
 +					showsCards && loaded ? renderSlot("plugins.overview", {
 +						onOpenBundle: (name) => {
 +							if (!available.some((pkg) => pkg.name === name)) return;
@@ -181,10 +224,11 @@ diff --git a/lib/client.js b/lib/client.js
 +							setActivation(null);
 +							setView({ kind: "item", id });
 +						}
- 					}) : null,
++					}) : null,
  					showsCards && state.status === "loading" ? (0, react_jsx_runtime.jsxs)("p", {
  						className: `${PluginManagerPage_module_css_default.status} ${PluginManagerPage_module_css_default.statusWithDot}`,
-@@ -2892,6 +2937,7 @@
+ 						role: "status",
+@@ -2892,6 +2952,7 @@ window.__ModuleLoader__.load({
  					}) : null,
  					loaded && openItem !== void 0 ? (0, react_jsx_runtime.jsx)(ItemDetail, {
  						form: formFor(openItem.id),
@@ -192,10 +236,53 @@ diff --git a/lib/client.js b/lib/client.js
  						item: openItem,
  						t,
  						renderSlot,
-@@ -3438,6 +3484,11 @@
+@@ -2899,7 +2960,7 @@ window.__ModuleLoader__.load({
+ 							setView({ kind: "list" });
+ 						}
+ 					}) : null,
+-					loaded && showsCards ? officialCards.length === 0 && mine.length === 0 && state.status !== "error" ? (0, react_jsx_runtime.jsx)("p", {
++					loaded && showsCards ? officialCards.length === 0 && mine.length === 0 && installedEntries.length === 0 && state.status !== "error" ? (0, react_jsx_runtime.jsx)("p", {
+ 						className: PluginManagerPage_module_css_default.empty,
+ 						children: t("empty")
+ 					}) : (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+@@ -3381,6 +3442,13 @@ window.__ModuleLoader__.load({
+ 		/** The id shared by the sidebar entry and the main panel it opens. */
+ 		const PANEL_ID = "plugins";
+ 		/** Services required by the sidebar registration and the Remote methods; the inventory says whether the Host manages a profile. */
++		function PluginManagerShell(props) {
++			const nativeView = props.useStore((state) => state.view);
++			const showList = (0, react.useCallback)(() => props.actions.setView({ kind: "list" }), [props.actions]);
++			const hasShell = (0, react.useSyncExternalStore)(props.shellAvailable.subscribe, props.shellAvailable.getSnapshot, props.shellAvailable.getSnapshot);
++			const content = (0, react_jsx_runtime.jsx)(PluginManagerPage, props);
++			return hasShell ? props.renderSlot("plugins.shell", { content, nativeView, showList }, { fallback: content }) : content;
++		}
+ 		const inject = [
+ 			"slots",
+ 			"locale",
+@@ -3425,6 +3493,14 @@ window.__ModuleLoader__.load({
+ 				};
+ 			}, "ui-plugin-manager: host invalidations");
+ 			const configLedger = configLedgerSource(ctx);
++			const installedCardEntries = {
++				getSnapshot: () => ctx.slots.entries("plugins.installed.cards"),
++				subscribe: (listener) => ctx.slots.subscribe("plugins.installed.cards", listener)
++			};
++			const shellAvailable = {
++				getSnapshot: () => ctx.slots.entriesOfSlot("plugins.shell").length > 0,
++				subscribe: (listener) => ctx.slots.subscribe("plugins.shell", listener)
++			};
+ 			ctx.slots.inject("main", function* () {
+ 				const handle = createNavigationStore(), instance = handle.create();
+ 				const store = {
+@@ -3436,8 +3511,15 @@ window.__ModuleLoader__.load({
+ 					key: PANEL_ID,
+ 					locale: NS,
  					store,
- 					inject: () => controller.inject(configLedger, (text) => ctx.locale.resolveText(text)),
+-					inject: () => controller.inject(configLedger, (text) => ctx.locale.resolveText(text)),
++					inject: () => ({ ...controller.inject(configLedger, (text) => ctx.locale.resolveText(text)), installedCardEntries, shellAvailable }),
  					children: {
++						"plugins.shell": { kind: "single", scope: "root" },
++						"plugins.installed.cards": { kind: "list", scope: "root" },
 +						"plugins.header.leading": { kind: "single", scope: "root" },
 +						"plugins.overview": { kind: "list", scope: "root" },
 +						"plugins.bundle.hidden": { kind: "keyed", scope: "root" },
@@ -204,7 +291,53 @@ diff --git a/lib/client.js b/lib/client.js
  						"plugins.item": {
  							kind: "list",
  							scope: "root"
-@@ -3499,4 +3550,4 @@
+@@ -3467,7 +3549,7 @@ window.__ModuleLoader__.load({
+ 							scope: "root"
+ 						}
+ 					}
+-				}, PluginManagerPage);
++				}, PluginManagerShell);
+ 				yield ctx.layout.panelInfo.subscribe(() => {
+ 					if (ctx.layout.panelInfo.getSnapshot().activePanelId !== "plugins") instance.actions.setView({ kind: "list" });
+ 				});
+@@ -3482,13 +3564,29 @@ window.__ModuleLoader__.load({
+ 					disposeNavigation();
+ 				};
+ 			});
+-			ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
+-				name: "sidebar.panellist",
+-				id: PANEL_ID,
+-				order: 0,
+-				label: () => t("panel"),
+-				locale: NS
+-			}, PluginsPanelIcon));
++			ctx.slots.inject("sidebar.panellist", () => {
++				const registerSidebar = () => ctx.slots.register({
++					name: "sidebar.panellist",
++					id: PANEL_ID,
++					order: 0,
++					label: () => t("panel"),
++					locale: NS
++				}, PluginsPanelIcon);
++				if (globalThis.dshDesktop?.cqaiPrimaryLogin !== true) return registerSidebar();
++				let disposeSidebar;
++				const syncSidebar = () => {
++					if (ctx.slots.entriesOfSlot("plugins.shell").length > 0) {
++						disposeSidebar?.();
++						disposeSidebar = void 0;
++					} else if (disposeSidebar === void 0) disposeSidebar = registerSidebar();
++				};
++				const unsubscribe = ctx.slots.subscribe("plugins.shell", syncSidebar);
++				syncSidebar();
++				return () => {
++					unsubscribe();
++					disposeSidebar?.();
++				};
++			});
+ 		}
+ 		//#endregion
+ 		exports.NS = NS;
+@@ -3499,4 +3597,4 @@ window.__ModuleLoader__.load({
  	}
  });
  
@@ -212,22 +345,24 @@ diff --git a/lib/client.js b/lib/client.js
 \ No newline at end of file
 +//# sourceMappingURL=client.js.map
 diff --git a/lib/types/client/PluginManagerPage.d.ts b/lib/types/client/PluginManagerPage.d.ts
+index 3dce4c0..089ad00 100644
 --- a/lib/types/client/PluginManagerPage.d.ts
 +++ b/lib/types/client/PluginManagerPage.d.ts
-@@ -13,7 +13,7 @@
+@@ -13,7 +13,7 @@ import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStor
  import type { createNavigationStore } from './navigation-store.ts';
  import { type PluginManagerFace } from './manager-store.ts';
  /** Full component props assembled by the main slot renderer. */
 -export type PluginManagerPageProps = PropsRuntime<'main'> & PropsLocale<'pluginManager'> & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation' | 'plugins.detail.actions' | 'plugins.detail.badge' | 'plugins.detail.section'> & InjectFace<PluginManagerFace> & PropsStore<ReturnType<typeof createNavigationStore>>;
-+export type PluginManagerPageProps = PropsRuntime<'main'> & PropsLocale<'pluginManager'> & PropsRenderSlots<'plugins.header.leading' | 'plugins.overview' | 'plugins.bundle.actions' | 'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation' | 'plugins.detail.actions' | 'plugins.detail.badge' | 'plugins.detail.section'> & InjectFace<PluginManagerFace> & PropsStore<ReturnType<typeof createNavigationStore>>;
++export type PluginManagerPageProps = PropsRuntime<'main'> & PropsLocale<'pluginManager'> & PropsRenderSlots<'plugins.shell' | 'plugins.installed.cards' | 'plugins.header.leading' | 'plugins.overview' | 'plugins.bundle.actions' | 'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation' | 'plugins.detail.actions' | 'plugins.detail.badge' | 'plugins.detail.section'> & InjectFace<PluginManagerFace> & PropsStore<ReturnType<typeof createNavigationStore>> & { readonly installedCardEntries: { readonly getSnapshot: () => readonly unknown[]; readonly subscribe: (listener: () => void) => () => void; }; readonly shellAvailable: { readonly getSnapshot: () => boolean; readonly subscribe: (listener: () => void) => () => void; }; };
  /** Render the plugin manager: the official plugins and installed bundles, their pages, the install dialog, and the confirmation. */
  export declare function PluginManagerPage(props: PluginManagerPageProps): ReactNode;
  //# sourceMappingURL=PluginManagerPage.d.ts.map
 \ No newline at end of file
 diff --git a/lib/types/client/config-ledger.d.ts b/lib/types/client/config-ledger.d.ts
+index 3abc24e..8f49351 100644
 --- a/lib/types/client/config-ledger.d.ts
 +++ b/lib/types/client/config-ledger.d.ts
-@@ -19,6 +19,8 @@
+@@ -19,6 +19,8 @@ export interface OfficialItem {
   */
  export interface ConfigLedger {
      readonly items: readonly OfficialItem[];
@@ -236,7 +371,7 @@ diff --git a/lib/types/client/config-ledger.d.ts b/lib/types/client/config-ledge
      readonly bundles: ReadonlySet<string>;
      readonly rows: ReadonlySet<string>;
  }
-@@ -35,4 +37,4 @@
+@@ -35,4 +37,4 @@ export declare function rowConfigKey(bundle: string, rowId: string): string;
   * @returns the ledger source; its snapshot changes only when a ledger or the locale does.
   */
  export declare function configLedgerSource(ctx: ClientContext): HostObservable<ConfigLedger>;
@@ -244,6 +379,7 @@ diff --git a/lib/types/client/config-ledger.d.ts b/lib/types/client/config-ledge
 \ No newline at end of file
 +//# sourceMappingURL=config-ledger.d.ts.map
 diff --git a/lib/types/client/slot-contract.d.ts b/lib/types/client/slot-contract.d.ts
+index f7ba8cc..bf7095c 100644
 --- a/lib/types/client/slot-contract.d.ts
 +++ b/lib/types/client/slot-contract.d.ts
 @@ -15,6 +15,7 @@
@@ -254,7 +390,7 @@ diff --git a/lib/types/client/slot-contract.d.ts b/lib/types/client/slot-contrac
  import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client';
  /** The view the page asks a configuration entry for. */
  export interface PluginConfigViewProps {
-@@ -22,6 +23,8 @@
+@@ -22,6 +23,8 @@ export interface PluginConfigViewProps {
      readonly view: 'summary' | 'page';
      /** Host-owned configuration values and write actions for this page's entry. */
      readonly form?: ConfigPageForm | undefined;
@@ -263,10 +399,20 @@ diff --git a/lib/types/client/slot-contract.d.ts b/lib/types/client/slot-contrac
  }
  /** One row of a bundle as a detail contribution sees it. */
  export interface PluginRowRef {
-@@ -72,6 +75,21 @@
+@@ -72,6 +75,31 @@ export interface PluginActivationOwnerProps {
  }
  declare module '@deepseek-ai/dsh-client-ui-slots' {
      interface SlotMap {
++        /** Embed the native page while retaining its controller and detail navigation. */
++        'plugins.shell': { kind: 'single'; scope: 'root'; owner: {
++            readonly content: ReactNode;
++            readonly nativeView: { readonly kind: string };
++            readonly showList: () => void;
++        }; };
++        /** Extra cards inside the native Installed group; the composer reports their count. */
++        'plugins.installed.cards': { kind: 'list'; scope: 'root'; owner: {
++            readonly reportCount: (count: number) => void;
++        }; };
 +        /** Native sidebar control, separate from the scrolling page header. */
 +        'plugins.header.leading': { kind: 'single'; scope: 'root'; };
 +        /** Controls above the ordinary plugin cards. */
@@ -285,7 +431,7 @@ diff --git a/lib/types/client/slot-contract.d.ts b/lib/types/client/slot-contrac
          /** Optional guidance after the user enables a bundle from the list, keyed by npm package name. */
          'plugins.bundle.activation': {
              kind: 'keyed';
-@@ -153,4 +171,4 @@
+@@ -153,4 +181,4 @@ export interface ConfigPageForm {
      /** Submit all field edits together with the revision the editor read. */
      readonly mutate: ConfigForm<Record<string, unknown>>['mutate'];
  }

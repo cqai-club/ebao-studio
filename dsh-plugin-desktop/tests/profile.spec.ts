@@ -24,6 +24,7 @@ import {
   desktopBundleList,
   ensureDesktopProfile,
   prepareDesktopProfile,
+  seedStableDesktopProfileModeForFirstUse,
   migrateDesktopSettingsDocumentSections,
   readDesktopShellMode,
   resolveDesktopSettingsDocument,
@@ -33,6 +34,7 @@ import {
 import { setDesktopProfileBundleSelected } from '../src/desktop-plugins.ts'
 import { migrateLegacyAgentPresetSettings } from '../src/setup-wizard-settings.ts'
 import { DESKTOP_MARKET_IDENTITIES } from '../src/desktop-market.ts'
+import { isStableDesktopRelease } from '../src/product-identity.ts'
 
 const homes: string[] = []
 
@@ -101,6 +103,26 @@ afterEach(() => {
 describe('desktop profile composition', {
   timeout: process.platform === 'win32' ? 10_000 : 5_000,
 }, () => {
+  it('seeds enhanced mode only for an untouched Stable Profile on Windows or macOS', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const expectedMode = isStableDesktopRelease() ? 'advanced' : 'compatibility'
+    expect(seedStableDesktopProfileModeForFirstUse(dir, 'linux')).toBe(false)
+    expect(seedStableDesktopProfileModeForFirstUse(dir, 'win32')).toBe(isStableDesktopRelease())
+    expect(prepareDesktopProfile(undefined, home, 'win32').mode).toBe(expectedMode)
+    expect(seedStableDesktopProfileModeForFirstUse(dir, 'darwin')).toBe(false)
+
+    const macHome = temporaryHome()
+    const macDir = ensureDesktopProfile(macHome)
+    expect(seedStableDesktopProfileModeForFirstUse(macDir, 'darwin')).toBe(isStableDesktopRelease())
+    expect(prepareDesktopProfile(undefined, macHome, 'darwin').mode).toBe(expectedMode)
+
+    const existing = temporaryHome()
+    writeDesktopShellPreferences(existing, ['mode: compatibility'])
+    expect(seedStableDesktopProfileModeForFirstUse(ensureDesktopProfile(existing), 'win32')).toBe(false)
+    expect(prepareDesktopProfile(undefined, existing, 'win32').mode).toBe('compatibility')
+  })
+
   it('ships a PowerShell-backed minimal preset for Windows', () => {
     // dsh 0.1.7-alpha.1 moved shipped preset declarations out of a filesystem preset
     // root and into one patch file per preset, carried by the Web bundle.
@@ -165,14 +187,45 @@ describe('desktop profile composition', {
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-ejianbao',
       'cqai-dsh-plugin-short-video',
       'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-publisher',
+      '@xmanrui/dsh-im',
       'cqai-dsh-plugin-market',
+      'dsh-skill-mcp-panel',
       'dsh-ppt-composer',
+      'cqai-dsh-plugin-desktop-presentation',
+      'cqai-dsh-plugin-cqai-club-theme',
       'third-party-one',
       'third-party-two',
     ])
+  })
+
+  it('removes the old bundled activities row but preserves a later manual install', () => {
+    const packageName = '@cqaiclub/dsh-plugin-activities'
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const path = join(dir, 'package.json')
+    const manifest = JSON.parse(readFileSync(path, 'utf8')) as {
+      dependencies?: Record<string, string>
+      dsh: { profile: { bundles: string[] } }
+    }
+    manifest.dsh.profile.bundles.push(packageName)
+    writeFileSync(path, JSON.stringify(manifest, undefined, 2) + '\n')
+
+    ensureDesktopProfile(home)
+    const withoutManualInstall = JSON.parse(readFileSync(path, 'utf8')) as typeof manifest
+    expect(withoutManualInstall.dsh.profile.bundles).not.toContain(packageName)
+
+    withoutManualInstall.dependencies = { ...withoutManualInstall.dependencies, [packageName]: 'file:./club-activities.tgz' }
+    withoutManualInstall.dsh.profile.bundles.push(packageName)
+    writeFileSync(path, JSON.stringify(withoutManualInstall, undefined, 2) + '\n')
+
+    ensureDesktopProfile(home)
+    const manuallyInstalled = JSON.parse(readFileSync(path, 'utf8')) as typeof manifest
+    expect(manuallyInstalled.dependencies).toHaveProperty(packageName)
+    expect(manuallyInstalled.dsh.profile.bundles.at(-1)).toBe(packageName)
   })
 
   it('repairs a base-only CLI profile without replacing dependencies', () => {
@@ -199,11 +252,16 @@ describe('desktop profile composition', {
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-ejianbao',
       'cqai-dsh-plugin-short-video',
       'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-publisher',
+      '@xmanrui/dsh-im',
       'cqai-dsh-plugin-market',
+      'dsh-skill-mcp-panel',
       'dsh-ppt-composer',
+      'cqai-dsh-plugin-desktop-presentation',
+      'cqai-dsh-plugin-cqai-club-theme',
       'third-party-plugin',
     ])
     expect(repaired.dependencies).toEqual({ 'dsh-ppt': '0.1.1-rc.2', 'third-party-plugin': '^1.2.3' })
@@ -238,12 +296,35 @@ describe('desktop profile composition', {
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
       'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-ejianbao',
       'cqai-dsh-plugin-short-video',
       'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-publisher',
+      '@xmanrui/dsh-im',
       'cqai-dsh-plugin-market',
+      'dsh-skill-mcp-panel',
       'dsh-ppt-composer',
+      'cqai-dsh-plugin-desktop-presentation',
+      'cqai-dsh-plugin-cqai-club-theme',
     ])
+  })
+
+  it('lets plugin management disable and restore the CQAI Club theme', () => {
+    const home = temporaryHome()
+    const managementStatePath = join(home, 'user-data', 'plugin-management', 'state.json')
+    mkdirSync(dirname(managementStatePath), { recursive: true })
+    writeFileSync(managementStatePath, JSON.stringify({
+      version: 1,
+      profiles: [{ profileName: 'desktop', disabledBundles: ['cqai-dsh-plugin-cqai-club-theme'] }],
+    }) + '\n')
+
+    const disabled = prepareDesktopProfile(undefined, home, 'win32', 'desktop', managementStatePath)
+    expect(disabled.profile.layers.some(layer => layer.packageName === 'cqai-dsh-plugin-cqai-club-theme')).toBe(false)
+    expect(disabled.profile.layers.some(layer => layer.packageName === 'cqai-dsh-plugin-desktop-presentation')).toBe(true)
+
+    writeFileSync(managementStatePath, JSON.stringify({ version: 1, profiles: [] }) + '\n')
+    const restored = prepareDesktopProfile(undefined, home, 'win32', 'desktop', managementStatePath)
+    expect(restored.profile.layers.some(layer => layer.packageName === 'cqai-dsh-plugin-cqai-club-theme')).toBe(true)
   })
 
   it('marks legacy isolated Profile dependencies for one-time migration', () => {
@@ -405,6 +486,10 @@ virtualStoreDirMaxLength: 60
       name: '@deepseek-ai/dsh-host-directory-picker-auto',
     }))
     expect(rows.find(row => row.id === 'directory-picker')?.disabled).toBeFalsy()
+    expect(rows.find(row => row.id === 'cqai-club-theme')).toEqual(expect.objectContaining({
+      name: 'cqai-dsh-plugin-cqai-club-theme',
+      disabled: false,
+    }))
     expect(rows.map(row => row.id)).not.toContain('desktop-directory-picker-browse-host')
     expect(rows.map(row => row.id)).not.toContain('desktop-directory-picker-browse-surface')
     expect(rows.find(row => row.id === 'llm-deepseek')).toEqual(expect.objectContaining({
@@ -615,7 +700,7 @@ virtualStoreDirMaxLength: 60
     })
   })
 
-  it('does not let community-management disables suppress a third-party market', () => {
+  it('keeps Desktop plugin disables across Market provider changes', () => {
     const home = temporaryHome()
     const packageName = 'third-party-plugin'
     installBundle(home, packageName, '- insert:\n    - id: third-party-marker\n      name: cordis:example\n')
@@ -640,9 +725,7 @@ virtualStoreDirMaxLength: 60
       managementStatePath,
       { requested: 'dsh-market', effective: 'dsh-market', legacyDefaulted: false },
     )
-    expect(composeEntries([external.patches])).toContainEqual(expect.objectContaining({
-      id: 'third-party-marker',
-    }))
+    expect(composeEntries([external.patches]).some(row => row.id === 'third-party-marker')).toBe(false)
 
     const community = prepareDesktopProfile(
       undefined,
@@ -655,6 +738,39 @@ virtualStoreDirMaxLength: 60
     expect(composeEntries([community.patches])).not.toContainEqual(expect.objectContaining({
       id: 'third-party-marker',
     }))
+  })
+
+  it('filters disabled shipped features for every Market provider without removing their declarations', () => {
+    const home = temporaryHome()
+    const features = [
+      'cqai-dsh-plugin-imagegen',
+      'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-ejianbao',
+      'cqai-dsh-plugin-publisher',
+      '@xmanrui/dsh-im',
+      'cqai-dsh-plugin-talkcraft',
+      'cqai-dsh-plugin-short-video',
+      'dsh-ppt-composer',
+    ]
+    const profileDir = ensureDesktopProfile(home)
+    const manifestPath = join(profileDir, 'package.json')
+    const before = readFileSync(manifestPath, 'utf8')
+    const statePath = join(home, 'user-data', 'plugin-management', 'state.json')
+    mkdirSync(dirname(statePath), { recursive: true })
+    writeFileSync(statePath, JSON.stringify({
+      version: 1,
+      profiles: [{ profileName: 'desktop', disabledBundles: features }],
+    }) + '\n')
+
+    for (const requested of ['community-market', 'dsh-market', 'disabled'] as const) {
+      const prepared = prepareDesktopProfile(undefined, home, 'darwin', 'desktop', statePath, {
+        requested, effective: requested, legacyDefaulted: false,
+      })
+      for (const feature of features) {
+        expect(prepared.profile.layers.some(layer => layer.packageName === feature)).toBe(false)
+      }
+    }
+    expect(readFileSync(manifestPath, 'utf8')).toBe(before)
   })
 
   it('ignores obsolete startup-recovery disable state for every market provider', () => {

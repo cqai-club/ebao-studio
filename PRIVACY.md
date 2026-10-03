@@ -1,13 +1,13 @@
-# 易宝工坊 Privacy Policy
+# e宝工坊 Privacy Policy
 
 [中文](PRIVACY.zh.md)
 
 - **Version:** 1.1
 - **Effective and last updated:** September 21, 2026
 
-易宝工坊 is a local-first, open-source desktop application. This policy explains what information the official 易宝工坊 distribution and official online services process, why they process it, who receives it, and what choices you have.
+e宝工坊 is a local-first, open-source desktop application. This policy explains what information the official e宝工坊 distribution and official online services process, why they process it, who receives it, and what choices you have.
 
-In this policy, “we” means the **CQAI Club project maintainer team** that maintains and publishes the official 易宝工坊 distribution under the [`cqai-club`](https://github.com/cqai-club) GitHub organization. 易宝工坊 is an independent community project and has no affiliation, partnership, authorization, or endorsement relationship with DeepSeek.
+In this policy, “we” means the **CQAI Club project maintainer team** that maintains and publishes the official e宝工坊 distribution under the [`cqai-club`](https://github.com/cqai-club) GitHub organization. e宝工坊 is an independent community project and has no affiliation, partnership, authorization, or endorsement relationship with DeepSeek.
 
 For privacy questions or rights requests, email [t4wefan@qq.com](mailto:t4wefan@qq.com). Do not put installation identifiers, logs, credentials, or other private information in a public GitHub Issue.
 
@@ -15,19 +15,19 @@ For privacy questions or rights requests, email [t4wefan@qq.com](mailto:t4wefan@
 
 This policy applies to:
 
-- 易宝工坊 provided through the [official GitHub repository](https://github.com/cqai-club/ebao-studio), its `release/desktop-version.json` manifest, and GitHub Release assets; and
+- e宝工坊 provided through the [official GitHub repository](https://github.com/cqai-club/ebao-studio), its `release/desktop-version.json` manifest, and GitHub Release assets; and
 - privacy requests, support email, or issue reports that you voluntarily send to the project maintainers.
 
 This policy does not control processing performed by third-party forks, modified builds, third-party distributors, model providers, plugins, marketplace sources, or package services. A third-party build may use different update endpoints or release assets; its distributor is responsible for disclosing that processing.
 
 ## 2. Summary
 
-- 易宝工坊 profiles, settings, workspaces, sessions, logs, and crash files remain on your device by default.
-- The official update service does not require a 易宝工坊 account. Its version-check code does not intentionally send prompts, responses, file contents, workspace paths, profile names, session contents, API keys, MAC addresses, or hardware serial numbers.
+- e宝工坊 profiles, settings, workspaces, sessions, logs, and crash files remain on your device by default.
+- The official update service does not require a e宝工坊 account. Its version-check code does not intentionally send prompts, responses, file contents, workspace paths, profile names, session contents, API keys, MAC addresses, or hardware serial numbers.
 - Packaged macOS and Windows builds check for updates by default and send a locally generated, persistently stored random installation UUID. This is a pseudonymous identifier that may qualify as personal data under applicable law. It is not a hardware ID and does not guarantee one value per physical machine.
 - Installer downloads do not receive that installation UUID from Desktop, although the website, download host, and network infrastructure still receive ordinary network metadata.
-- Diagnostic archives are created locally only when you export them and are never uploaded automatically by 易宝工坊.
-- Model services, plugins, marketplace sources, and package services that you choose process data under their own terms. They do not become subject to this policy merely because 易宝工坊 can connect to them.
+- Diagnostic archives are created locally only when you export them and are never uploaded automatically by e宝工坊.
+- Model services, plugins, marketplace sources, and package services that you choose process data under their own terms. They do not become subject to this policy merely because e宝工坊 can connect to them.
 
 ## 3. Official version checks
 
@@ -65,6 +65,8 @@ The installation UUID:
 - identifies one Desktop user-data directory, not a physical machine. Different operating-system users, user-data directories, or app copies on the same computer can have different UUIDs, while copied user data may copy the UUID; and
 - normally persists until the file or application user data is deleted, becomes corrupt, and is rebuilt.
 
+The display name is e宝工坊. The user-data directory retains the legacy 易宝工坊 name so existing settings, login state and the installation UUID continue to be used.
+
 Default locations are:
 
 - macOS: `~/Library/Application Support/易宝工坊/identity/installation-id`;
@@ -74,7 +76,7 @@ Deleting this file only causes a new UUID to be generated at the next launch. It
 
 ### 3.4 Purposes
 
-The version request retrieves the repository-owned manifest and supports update notices for the selected channel. GitHub may process request metadata to deliver and protect its service under its own terms and privacy policy. The project does not operate a separate update API for this request, does not claim access to GitHub's raw delivery logs, and does not use the installation UUID for analytics, advertising profiles, cross-service tracking, or sale. A version check requires no login, and the client sends no name, email address, or 易宝工坊 account ID in that request.
+The version request retrieves the repository-owned manifest and supports update notices for the selected channel. GitHub may process request metadata to deliver and protect its service under its own terms and privacy policy. The project does not operate a separate update API for this request, does not claim access to GitHub's raw delivery logs, and does not use the installation UUID for analytics, advertising profiles, cross-service tracking, or sale. A version check requires no login, and the client sends no name, email address, or e宝工坊 account ID in that request.
 
 ## 4. Installer downloads, the website, and project communications
 
@@ -99,7 +101,7 @@ The following information remains on your device by default rather than being up
 | Desktop logs | Stored below the Electron user-data directory. A file rotates at 10 MiB; files older than seven days are removed at startup; and the log directory is held below 200 MiB. Logs can still contain paths, workspace IDs, session IDs, commands, or plugin messages. |
 | Local crash files | Electron Crashpad collects them locally and is configured not to upload to a crash server. They may contain fragments of process memory. |
 | Diagnostic ZIP archives | Created only when you export one. They may contain logs, system and version information, paths, workspace or session IDs, bounded lifecycle and plugin IDs, and crash files within a shared 50 MiB evidence budget. The application retains the three newest archives that it manages; copies you make elsewhere are outside that limit. |
-| System notifications | Turn and job notices use generic completion or failure copy without session names, user text, job contents, or error details; update notices include the available version. The operating system handles them locally without a 易宝工坊 remote-push service. Notification history or cross-device synchronization depends on your system account settings. |
+| System notifications | Turn and job notices use generic completion or failure copy without session names, user text, job contents, or error details; update notices include the available version. The operating system handles them locally without a e宝工坊 remote-push service. Notification history or cross-device synchronization depends on your system account settings. |
 | Installation UUID | Stored as described in Section 3 and sent to the official update endpoint during a version check. |
 
 Credential masking reduces risk but cannot guarantee that a log or diagnostic archive contains no sensitive information. Review an archive and remove information you do not want a recipient to see before sharing it.
@@ -108,7 +110,7 @@ Uninstalling the application may leave Electron user data, the DSH home, profile
 
 ## 6. Third-party services you choose
 
-易宝工坊 is a composable plugin platform. The following transfers are triggered by services, sources, plugins, or actions you choose. Each recipient processes information under its own privacy terms.
+e宝工坊 is a composable plugin platform. The following transfers are triggered by services, sources, plugins, or actions you choose. Each recipient processes information under its own privacy terms.
 
 ### 6.1 Model and tool services
 
@@ -203,7 +205,7 @@ We do not make decisions with legal or similarly significant effects about you s
 
 ## 12. Children
 
-易宝工坊 is a tool for developers and people able to manage a local computing environment and is not directed specifically to children. Minors should use it with a guardian's guidance. If you believe we processed a child's personal data without satisfying applicable requirements, contact us so that we can investigate and take appropriate action.
+e宝工坊 is a tool for developers and people able to manage a local computing environment and is not directed specifically to children. Minors should use it with a guardian's guidance. If you believe we processed a child's personal data without satisfying applicable requirements, contact us so that we can investigate and take appropriate action.
 
 ## 13. Changes to this policy
 

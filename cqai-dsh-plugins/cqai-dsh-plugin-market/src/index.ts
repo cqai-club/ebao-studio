@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommunityMarketService } from 'dsh-community-market'
+import { registerPluginManagementRoutes, type DesktopPlugins } from './plugin-management-routes.js'
 
 /**
  * Host half of the CQAI market plugin. The installation engine remains owned
@@ -23,6 +24,13 @@ const CQAI_POLICY = {
 } as const
 
 export function apply(ctx: Context): void {
+  ctx.inject(['webServer', 'desktopPlugins'], desktopCtx => {
+    const plugins = desktopCtx.get('desktopPlugins') as DesktopPlugins
+    desktopCtx.effect(
+      () => registerPluginManagementRoutes(desktopCtx, plugins),
+      'cqai-market: plugin management routes',
+    )
+  })
   ctx.inject(['communityMarket'], marketCtx => {
     const market = marketCtx.get('communityMarket') as CommunityMarketService
     marketCtx.effect(

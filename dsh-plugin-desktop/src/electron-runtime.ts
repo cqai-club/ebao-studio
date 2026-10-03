@@ -103,7 +103,7 @@ const AUTO_UPDATE_RELEASE_CHANNEL = DESKTOP_RELEASE_CHANNEL as DesktopReleaseCha
 /** Main-process deadline for one Renderer generation to settle its client Loader. */
 export const RENDERER_BOOT_TIMEOUT_MS = 30_000
 
-/** Native adapter used by the 易宝工坊 launcher and owned by its Cordis shell plugin. */
+/** Native adapter used by the e宝工坊 launcher and owned by its Cordis shell plugin. */
 export class ElectronDesktopRuntime implements DesktopRuntime {
   setupOnboarding?: import('./setup-onboarding-bridge.ts').DesktopOnboardingBridge
   readonly platform: DesktopPlatform
@@ -828,6 +828,18 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   /** Report one user-triggered check without exposing network or response details. */
   private async showManualUpdateCheckResult(result: UpdateCheckResult | null): Promise<void> {
     const copy = desktopNativeCopy(this.currentLocale)
+    if (result?.status === 'channel-unavailable') {
+      await this.showUpdateMessageBox({
+        type: 'info',
+        title: copy.betaUpdateUnavailableTitle,
+        message: copy.betaUpdateUnavailableMessage,
+        detail: copy.installedVersion(result.currentVersion),
+        buttons: [copy.ok],
+        defaultId: 0,
+        noLink: true,
+      })
+      return
+    }
     if (result === null) {
       await this.showUpdateMessageBox({
         type: 'warning',

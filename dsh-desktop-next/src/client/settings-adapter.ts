@@ -1,8 +1,9 @@
 /** Adapt Next's native state to the existing Desktop settings components. */
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { DesktopSettingsApi, DesktopSettingsView } from '../../../dsh-plugin-desktop-beta/src/client/desktop-settings-api.ts'
+import type { DesktopSettingsApi, DesktopSettingsView, DesktopUpdateStatus } from '../../../dsh-plugin-desktop-beta/src/client/desktop-settings-api.ts'
 import type { DesktopNotificationSettings, DesktopShellSettings } from '../../../dsh-plugin-desktop-beta/src/client/DesktopSettingsSection.tsx'
 import { DEFAULT_PROFILE, type DesktopBridge, type DesktopBrowserLinks, type DesktopCommand, type DesktopPreferences, type DesktopState } from '../desktop-contract.ts'
+import { updateAction } from '../update-state.ts'
 
 /** The part of a dsh `ConfigForm` the Desktop settings components read and write. */
 type DesktopConfigForm<T> = Pick<ConfigForm<T>, 'getSnapshot' | 'subscribe' | 'set'>
@@ -87,6 +88,20 @@ export class NextSettingsAdapter {
     const state = await this.refresh()
     return projectSettings(state, await this.bridge.browserLinks())
   }
+  private async readUpdateStatus(): Promise<DesktopUpdateStatus> {
+    const state = await this.refresh()
+    const update = state.updates
+    const available = update && (['available', 'downloading', 'preparing', 'ready', 'installing'].includes(update.phase)
+      || update.phase === 'error' && updateAction(update) === 'download-update')
+    return {
+      supported: update?.installable ?? false,
+      currentVersion: state.version,
+      availableVersion: available ? update.version ?? null : null,
+      checking: update?.phase === 'checking',
+      // Keep the shared action busy while native preparation or installation owns the update.
+      downloading: !!update && ['downloading', 'preparing', 'installing'].includes(update.phase),
+    }
+  }
   readonly api: DesktopSettingsApi = {
     read: () => this.readSettings(),
     createProfile: async name => { await this.command({ type: 'create', name }); return this.readSettings() },
@@ -100,6 +115,7 @@ export class NextSettingsAdapter {
     restartToRecovery: () => this.command({ type: 'restart-recovery' }),
     reloadRenderer: () => this.command({ type: 'reload' }),
     toggleDeveloperTools: () => this.command({ type: 'devtools' }),
+    readUpdateStatus: () => this.readUpdateStatus(),
     checkForUpdates: () => this.command({ type: 'check-updates' }),
     exportDiagnostics: () => this.command({ type: 'diagnostics' }),
   }

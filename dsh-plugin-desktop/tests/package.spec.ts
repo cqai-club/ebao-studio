@@ -42,6 +42,8 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
     files?: unknown
     dmg?: { icon?: unknown }
     mac?: {
+      executableName?: unknown
+      extraFiles?: unknown
       extendInfo?: unknown
       hardenedRuntime?: unknown
       icon?: unknown
@@ -211,6 +213,7 @@ describe('published package surface', () => {
       dshmarket: expect.stringMatching(/^\d+\.\d+\.\d+/),
       'react-dom': '18.3.1',
     })
+    expect(manifest.dependencies).not.toHaveProperty('@cqaiclub/dsh-plugin-activities')
     expect(manifest.optionalDependencies ?? {}).not.toHaveProperty('dshmarket')
   })
 
@@ -823,13 +826,21 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.8')
+    expect(manifest.version).toBe('0.0.10')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
       directory: 'dsh-plugin-desktop',
     })
-    expect(manifest.build?.productName).toBe('易宝工坊')
+    expect(manifest.build?.productName).toBe('e宝工坊')
+    // Keep Squirrel's relaunch path stable while Info.plist uses the new display name.
+    expect(manifest.build?.mac?.executableName).toBe('易宝工坊')
+    expect(manifest.build?.mac?.extendInfo).toMatchObject({ CFBundleDisplayName: '易宝工坊' })
+    expect(manifest.build?.mac?.extraFiles).toEqual([{
+      from: 'build/app-name-localizations',
+      to: 'Resources',
+      filter: ['*/InfoPlist.strings'],
+    }])
     expect(manifest.build?.appId).toBe('ai.deepseek.dsh.desktop')
     expect(manifest.build?.asar).toEqual({ smartUnpack: true })
     expect(manifest.build).not.toHaveProperty('asarUnpack')
@@ -842,7 +853,7 @@ describe('published package surface', () => {
       'build/tray-iconTemplate.png',
       'build/tray-iconTemplate@2x.png',
       'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**',
-      'node_modules/cqai-dsh-plugin-short-video/runtime/**',
+      'node_modules/cqai-dsh-plugin-short-video/runtime/**', 'node_modules/cqai-dsh-plugin-video/runtime/**',
       ...uvExecutables,
     ])
     const windowsIcons = [
@@ -859,8 +870,8 @@ describe('published package surface', () => {
       'build/tray-icon-blue@1.5x.png',
       'build/tray-icon-blue@2x.png',
     ]
-    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', ...uvExecutables])
-    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', ...uvExecutables])
+    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', 'node_modules/cqai-dsh-plugin-video/runtime/**', ...uvExecutables])
+    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', 'node_modules/cqai-dsh-plugin-video/runtime/**', ...uvExecutables])
     expect(manifest.build?.electronFuses).toEqual({
       enableEmbeddedAsarIntegrityValidation: true,
       onlyLoadAppFromAsar: true,
@@ -890,6 +901,11 @@ describe('published package surface', () => {
         to: 'node_modules/@agents-anywhere/dsh-bridge-next',
         filter: ['**/*'],
       },
+      {
+        from: 'node_modules/@xmanrui/dsh-im',
+        to: 'node_modules/@xmanrui/dsh-im',
+        filter: ['**/*', '!node_modules/**'],
+      },
       '!node_modules/node-pty/build/**',
       '!node_modules/fs-ext/build/**',
       '!node_modules/cqai-dsh-plugin-talkcraft/upstream/runtime/.venv/**',
@@ -917,13 +933,13 @@ describe('published package surface', () => {
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
       differentialPackage: false,
-      shortcutName: '易宝工坊',
+      shortcutName: 'e宝工坊',
       uninstallerIcon: 'build/app-icon.ico',
       useZip: false,
       artifactName: 'eBao-Studio-${version}-${arch}-Setup.${ext}',
     })
     expect(manifest.build?.linux?.icon).toBe('build/app-icon.png')
-    expect(manifest.build?.linux?.synopsis).toBe('易宝工坊 desktop for DeepSeek Harness')
+    expect(manifest.build?.linux?.synopsis).toBe('e宝工坊 desktop for DeepSeek Harness')
     // Electron derives the window's WM_CLASS from the root desktopName, and
     // syncDesktopName names the installed entry after it. Without the pair,
     // WM_CLASS falls back to the npm package name while the entry advertises
@@ -997,6 +1013,7 @@ describe('published package surface', () => {
         CFBundleAllowMixedLocalizations: true,
         CFBundleDevelopmentRegion: 'en',
         CFBundleLocalizations: ['en', 'zh_CN'],
+        CFBundleDisplayName: '易宝工坊',
       },
       hardenedRuntime: true,
       mergeASARs: false,
@@ -1008,6 +1025,7 @@ describe('published package surface', () => {
     }))
     expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
     expect(manifest.build?.files).toContain('!node_modules/node-pty/build/**')
+    expect(manifest.build?.mac?.x64ArchFiles).toContain('@tencent-qqmail/agently-cli-darwin-*')
     expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')
     expect(manifest.devDependencies?.['@electron/asar']).toBe('3.4.1')
     expect(manifest.devDependencies?.['@electron/fuses']).toBe('1.8.0')

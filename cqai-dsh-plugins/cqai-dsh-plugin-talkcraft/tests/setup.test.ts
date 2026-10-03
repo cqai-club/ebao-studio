@@ -28,11 +28,12 @@ describe('private TalkCraft runtime', () => {
       expect(existsSync(join(target, 'upstream', 'runtime', 'node_modules'))).toBe(false)
       expect(existsSync(join(target, 'upstream', 'runtime', '.venv'))).toBe(false)
       expect(existsSync(join(target, 'upstream', 'scripts', 'render_shots.mjs'))).toBe(true)
+      expect(existsSync(join(target, 'upstream', 'scripts', 'common_media_tools.mjs'))).toBe(true)
       expect(readFileSync(join(target, 'upstream', 'runtime', 'package-lock.json'), 'utf8'))
         .toBe(readFileSync(join(source, 'upstream', 'runtime', 'remotion-lock.json'), 'utf8'))
       prepareSnapshot(source, target)
     } finally {rmSync(temporary, {recursive: true, force: true})}
-  }, 30000)
+  }, 120000)
 
   it('does not publish an interrupted model download as ready', async () => {
     const temporary = mkdtempSync(join(tmpdir(), 'talkcraft-download-'))

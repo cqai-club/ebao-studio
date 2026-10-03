@@ -13,7 +13,7 @@ import type {
 } from './window-material.ts'
 import type { DesktopSetupWizardSettings } from './setup-wizard-settings.ts'
 
-/** Electron platforms supported by the 易宝工坊 native adapter. */
+/** Electron platforms supported by the e宝工坊 native adapter. */
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
 
 /** Native presentation modes selected by the desktop-shell Cordis row. */
@@ -281,7 +281,7 @@ export interface DesktopRuntime {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Electron adapter provided by the 易宝工坊 launcher. */
+    /** Electron adapter provided by the e宝工坊 launcher. */
     desktopRuntime: DesktopRuntime
   }
 }

@@ -21,7 +21,7 @@ try {
     $_.Path -and $_.Path.StartsWith($taskRoot, [System.StringComparison]::CurrentCultureIgnoreCase)
   })
   $taskFixedMatches = @($taskProcesses | Where-Object {
-    $_.Path -and [System.IO.Path]::GetFileName($_.Path) -ieq '易宝工坊 Beta.exe'
+    $_.Path -and @('e宝工坊 Beta.exe', '易宝工坊 Beta.exe') -icontains [System.IO.Path]::GetFileName($_.Path)
   })
 
   [ordered]@{

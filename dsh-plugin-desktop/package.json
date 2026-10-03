@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-desktop",
-  "version": "0.0.8",
-  "description": "易宝工坊: an Electron shell composed as a DeepSeek Harness Cordis plugin",
+  "version": "0.0.10",
+  "description": "e宝工坊: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
@@ -115,14 +115,14 @@
     }
   },
   "scripts": {
-    "build": "node ../scripts/prepare-agents-anywhere-runtime.mjs && yarn workspace cqai-dsh-plugin-media-runtime build && yarn workspace cqai-dsh-plugin-video build && yarn workspace cqai-dsh-plugin-short-video build && yarn workspace cqai-dsh-plugin-talkcraft build && yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && yarn workspace cqai-dsh-plugin-publisher build && node scripts/generate-windows-app-icon.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.client.config.ts && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "node ../scripts/prepare-agents-anywhere-runtime.mjs && yarn workspace cqai-dsh-media-settings build && yarn workspace cqai-dsh-plugin-media-runtime build && yarn workspace cqai-dsh-plugin-video build && yarn workspace cqai-dsh-plugin-short-video build && yarn workspace cqai-dsh-plugin-talkcraft build && yarn workspace cqai-dsh-plugin-ejianbao build && yarn workspace @cqaiclub/dsn-account build && yarn workspace cqai-dsh-plugin-imagegen build && yarn workspace cqai-dsh-plugin-market build && yarn workspace dsh-skill-mcp-panel build && yarn workspace cqai-dsh-plugin-publisher build && yarn workspace cqai-dsh-plugin-desktop-presentation build && yarn workspace cqai-dsh-plugin-cqai-club-theme build && node scripts/generate-windows-app-icon.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.client.config.ts && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "verify:closure": "node --test scripts/runtime-closure.spec.mjs && node scripts/verify-runtime-closure.mjs",
     "verify:cli": "node scripts/verify-cli-runtime.mjs",
     "verify:loader": "node scripts/verify-loader-boot.mjs",
     "verify:profile": "node scripts/verify-profile-boot.mjs",
-    "verify:licenses": "node scripts/verify-licenses.mjs",
+    "verify:licenses": "node --test scripts/redistribution-authorizations.spec.mjs && node scripts/verify-licenses.mjs",
     "verify:operations": "node --test scripts/operation-reliability.spec.mjs && node scripts/verify-operation-reliability.mjs",
     "verify:notices": "node scripts/verify-licenses.mjs --notices THIRD_PARTY_NOTICES.md",
     "verify:vendor": "node ../scripts/verify-publisher-source.mjs",
@@ -148,7 +148,7 @@
     "icons:export": "node ../scripts/export-app-icons.mjs --channel stable"
   },
   "dependencies": {
-    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.2-desktop.ca9c0db1ced6f.r1188e1a1.tgz",
+    "@agents-anywhere/dsh-bridge-next": "file:../vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.0.3-desktop.c7df5b31f3fe2.r1188e1a1.tgz",
     "@cqaiclub/dsn-account": "0.1.1",
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/cordis-plugin-group": "1.0.4",
@@ -308,8 +308,12 @@
     "@deepseek-ai/dsh-workflow": "0.1.7-rc.2",
     "@deepseek-ai/dsh-workspace": "0.1.7-rc.2",
     "@deepseek-ai/schemastery": "^3.18.4",
+    "@xmanrui/dsh-im": "4.32.0",
     "adm-zip": "^0.6.0",
     "builder-util-runtime": "9.7.0",
+    "cqai-dsh-plugin-cqai-club-theme": "0.1.0",
+    "cqai-dsh-plugin-desktop-presentation": "0.1.0",
+    "cqai-dsh-plugin-ejianbao": "0.1.0",
     "cqai-dsh-plugin-imagegen": "0.1.0",
     "cqai-dsh-plugin-market": "0.1.0",
     "cqai-dsh-plugin-publisher": "0.1.0",
@@ -319,7 +323,8 @@
     "dsh-community-market": "0.1.0-dev.0",
     "dsh-ppt": "0.1.1-rc.2",
     "dsh-ppt-composer": "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz",
-    "dshmarket": "1.66.5",
+    "dsh-skill-mcp-panel": "2.1.3",
+    "dshmarket": "1.66.8",
     "electron-updater": "6.8.9",
     "fs-ext": "2.1.1",
     "katex": "^0.16.47",
@@ -371,10 +376,10 @@
   },
   "build": {
     "appId": "ai.deepseek.dsh.desktop",
-    "productName": "易宝工坊",
+    "productName": "e宝工坊",
     "protocols": [
       {
-        "name": "易宝工坊",
+        "name": "e宝工坊",
         "schemes": [
           "dsh-desktop"
         ]
@@ -414,6 +419,14 @@
           "**/*"
         ]
       },
+      {
+        "from": "node_modules/@xmanrui/dsh-im",
+        "to": "node_modules/@xmanrui/dsh-im",
+        "filter": [
+          "**/*",
+          "!node_modules/**"
+        ]
+      },
       "!node_modules/node-pty/build/**",
       "!node_modules/fs-ext/build/**",
       "!node_modules/cqai-dsh-plugin-talkcraft/upstream/runtime/.venv/**",
@@ -427,6 +440,7 @@
         "build/tray-iconTemplate@2x.png",
         "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**",
         "node_modules/cqai-dsh-plugin-short-video/runtime/**",
+        "node_modules/cqai-dsh-plugin-video/runtime/**",
         "node_modules/@dataiku/uv-*/bin/**",
         "node_modules/cqai-dsh-plugin-media-runtime/node_modules/@dataiku/uv-*/bin/**"
       ],
@@ -454,7 +468,8 @@
         "CFBundleLocalizations": [
           "en",
           "zh_CN"
-        ]
+        ],
+        "CFBundleDisplayName": "易宝工坊"
       },
       "hardenedRuntime": true,
       "icon": "build/app-icon-mac.png",
@@ -463,8 +478,18 @@
       "signIgnore": [
         "\\.(?:pak|dat|wasm)$"
       ],
-      "x64ArchFiles": "**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,sherpa-onnx-darwin-*/**}",
-      "artifactName": "eBao-Studio-${version}-${arch}.${ext}"
+      "x64ArchFiles": "**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,sherpa-onnx-darwin-*/**,@tencent-qqmail/agently-cli-darwin-*/**}",
+      "artifactName": "eBao-Studio-${version}-${arch}.${ext}",
+      "executableName": "易宝工坊",
+      "extraFiles": [
+        {
+          "from": "build/app-name-localizations",
+          "to": "Resources",
+          "filter": [
+            "*/InfoPlist.strings"
+          ]
+        }
+      ]
     },
     "win": {
       "asarUnpack": [
@@ -475,6 +500,7 @@
         "build/tray-icon-white@2x.png",
         "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**",
         "node_modules/cqai-dsh-plugin-short-video/runtime/**",
+        "node_modules/cqai-dsh-plugin-video/runtime/**",
         "node_modules/@dataiku/uv-*/bin/**",
         "node_modules/cqai-dsh-plugin-media-runtime/node_modules/@dataiku/uv-*/bin/**"
       ],
@@ -515,7 +541,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "differentialPackage": false,
-      "shortcutName": "易宝工坊",
+      "shortcutName": "e宝工坊",
       "uninstallerIcon": "build/app-icon.ico",
       "useZip": false,
       "artifactName": "eBao-Studio-${version}-${arch}-Setup.${ext}"
@@ -529,6 +555,7 @@
         "build/tray-icon-blue@2x.png",
         "node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**",
         "node_modules/cqai-dsh-plugin-short-video/runtime/**",
+        "node_modules/cqai-dsh-plugin-video/runtime/**",
         "node_modules/@dataiku/uv-*/bin/**",
         "node_modules/cqai-dsh-plugin-media-runtime/node_modules/@dataiku/uv-*/bin/**"
       ],
@@ -551,7 +578,7 @@
       "executableName": "dsh-desktop",
       "syncDesktopName": true,
       "artifactName": "eBao-Studio-${version}-${arch}.${ext}",
-      "synopsis": "易宝工坊 desktop for DeepSeek Harness",
+      "synopsis": "e宝工坊 desktop for DeepSeek Harness",
       "maintainer": "CQAI Club"
     },
     "npmRebuild": false,

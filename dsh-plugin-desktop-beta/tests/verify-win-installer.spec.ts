@@ -24,8 +24,8 @@ function fixture(version = '2.0.0'): {
   const dist = join(root, 'dist')
   const unpacked = join(dist, 'win-unpacked')
   mkdirSync(unpacked, { recursive: true })
-  const installer = join(dist, `易宝工坊-Beta-${version}-x64-Setup.exe`)
-  const application = join(unpacked, '易宝工坊 Beta.exe')
+  const installer = join(dist, `e宝工坊-Beta-${version}-x64-Setup.exe`)
+  const application = join(unpacked, 'e宝工坊 Beta.exe')
   const publisher = join(unpacked, 'resources', 'publisher')
   mkdirSync(join(publisher, 'resources'), { recursive: true })
   writeFileSync(installer, portableExecutable())
@@ -55,7 +55,7 @@ describe('Windows installer artifact verification', () => {
     const value = fixture('1.9.0')
 
     expect(() => verifyWindowsInstaller({ desktopRoot: value.root, version: '2.0.0' }))
-      .toThrow('易宝工坊-Beta-2.0.0-x64-Setup.exe')
+      .toThrow('e宝工坊-Beta-2.0.0-x64-Setup.exe')
   })
 
   it('rejects an artifact without a Windows PE header', () => {

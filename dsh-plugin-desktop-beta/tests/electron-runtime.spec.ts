@@ -241,7 +241,7 @@ const electron = vi.hoisted(() => {
     Menu: {
       buildFromTemplate: vi.fn((template: unknown[]) => {
         const first = template[0] as { label?: unknown, submenu?: unknown } | undefined
-        if (first?.label === '易宝工坊' && Array.isArray(first.submenu)) {
+        if (first?.label === 'e宝工坊' && Array.isArray(first.submenu)) {
           applicationMenuTemplates.push(template)
         } else {
           menuTemplates.push(template)
@@ -320,8 +320,8 @@ const spec: DesktopShellSpec = {
     name: 'x-dsh-desktop-renderer',
     value: Buffer.alloc(32, 9).toString('base64url'),
   },
-  productName: '易宝工坊',
-  windowTitle: '易宝工坊',
+  productName: 'e宝工坊',
+  windowTitle: 'e宝工坊',
   iconPath: '/tmp/app-icon.png',
   trayIcons: {
     templatePath: '/tmp/tray-iconTemplate.png',
@@ -424,13 +424,13 @@ describe('Electron desktop runtime', () => {
     expect(electron.chromeWebContents.loadFile).toHaveBeenCalledWith(expect.stringMatching(/compatibility-chrome\.html$/))
     expect(electron.webContents.loadURL).toHaveBeenCalledWith(spec.url)
     expect(electron.browserWindows[0]?.webContents).not.toBe(electron.webContents)
-    expect(electron.browserWindows[0]?.accessibleTitle).toBe('易宝工坊')
+    expect(electron.browserWindows[0]?.accessibleTitle).toBe('e宝工坊')
     expect(spec.readThemeSource).toHaveBeenCalledOnce()
     expect(electron.nativeTheme.themeSource).toBe('system')
     expect(electron.browserWindows[0]?.removeMenu).not.toHaveBeenCalled()
     expect(electron.app.dock.setIcon).toHaveBeenCalledWith(electron.appIcon)
     expect(electron.applicationMenuTemplates[0]?.map(item => (item as { label?: string }).label)).toEqual([
-      '易宝工坊', '文件', '编辑', '显示', '窗口',
+      'e宝工坊', '文件', '编辑', '显示', '窗口',
     ])
     expect(electron.Menu.setApplicationMenu).toHaveBeenCalledWith({
       template: electron.applicationMenuTemplates[0],
@@ -795,10 +795,10 @@ describe('Electron desktop runtime', () => {
     await runtime.mountScheduled()
 
     expect(electron.browserWindowOptions[0]).toEqual(expect.objectContaining({
-      title: '易宝工坊',
+      title: 'e宝工坊',
       autoHideMenuBar: true,
     }))
-    expect(electron.browserWindows[0]?.accessibleTitle).toBe('易宝工坊')
+    expect(electron.browserWindows[0]?.accessibleTitle).toBe('e宝工坊')
     expect(electron.browserWindows[0]?.removeMenu).toHaveBeenCalledOnce()
     expect(electron.app.dock.setIcon).not.toHaveBeenCalled()
     expect(electron.Menu.setApplicationMenu).not.toHaveBeenCalled()
@@ -928,7 +928,7 @@ describe('Electron desktop runtime', () => {
 
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
       type: 'error',
-      buttons: ['Restart 易宝工坊', 'Open DSH Terminal', 'Dismiss'],
+      buttons: ['Restart e宝工坊', 'Open DSH Terminal', 'Dismiss'],
       defaultId: 0,
       cancelId: 2,
       detail: expect.stringContaining('0 / 0x00000000'),
@@ -1401,7 +1401,7 @@ describe('Electron desktop runtime', () => {
     expect(runtime.locale).toBe('zh')
     expect((electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label))
       .toEqual(expect.arrayContaining([
-        '打开 易宝工坊',
+        '打开 e宝工坊',
         '模式：兼容模式',
         '退出',
       ]))
@@ -1410,7 +1410,7 @@ describe('Electron desktop runtime', () => {
     expect(runtime.locale).toBe('en')
     expect((electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label))
       .toEqual(expect.arrayContaining([
-        'Open 易宝工坊',
+        'Open e宝工坊',
         'Mode: Compatibility Mode',
         'Quit',
       ]))
@@ -1420,7 +1420,7 @@ describe('Electron desktop runtime', () => {
     expect(runtime.locale).toBe('zh')
     expect((electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label))
       .toEqual(expect.arrayContaining([
-        '打开 易宝工坊',
+        '打开 e宝工坊',
         '模式：兼容模式',
         '退出',
       ]))
@@ -2031,7 +2031,7 @@ describe('Electron desktop runtime', () => {
 
     const labels = (electron.menuTemplates.at(-1) as Array<{ label?: string }>).map(item => item.label)
     expect(labels).toEqual([
-      'Open 易宝工坊', 'Reload Interface', undefined,
+      'Open e宝工坊', 'Reload Interface', undefined,
       'Earlier Tool', 'Later Tool', undefined,
       'Check for Updates…', undefined,
       'Mode: Compatibility Mode', undefined,
@@ -2092,7 +2092,7 @@ describe('Electron desktop runtime', () => {
     const application = (electron.applicationMenuTemplates.at(-1) as Array<{
       label?: string
       submenu?: Array<{ label?: string, submenu?: unknown }>
-    }>).find(item => item.label === '易宝工坊')
+    }>).find(item => item.label === 'e宝工坊')
     expect(application?.submenu).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Profile: desktop' }),
     ]))
@@ -2292,7 +2292,7 @@ describe('Electron desktop runtime', () => {
       title: 'Plugin Load Failed',
       message: 'Some plugins could not be loaded.',
       detail: expect.stringContaining('dsh-vision-router'),
-      buttons: ['Open DSH Terminal', 'Restart 易宝工坊', 'Dismiss'],
+      buttons: ['Open DSH Terminal', 'Restart e宝工坊', 'Dismiss'],
     }))
     const recoveryCalls = electron.dialog.showMessageBox.mock.calls as unknown as Array<[{ detail?: string }]>
     expect(recoveryCalls[0]?.[0].detail).toContain('vision_crop')
@@ -2388,7 +2388,7 @@ describe('Electron desktop runtime', () => {
 
     expect(restart).not.toHaveBeenCalled()
     expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'question', title: 'Restart 易宝工坊', buttons: ['Restart', 'Cancel'], defaultId: 1, cancelId: 1,
+      type: 'question', title: 'Restart e宝工坊', buttons: ['Restart', 'Cancel'], defaultId: 1, cancelId: 1,
     }))
 
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
@@ -2561,7 +2561,7 @@ describe('Electron desktop runtime', () => {
     expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
       activeWindow,
       expect.objectContaining({
-        title: '易宝工坊 Is Up to Date',
+        title: 'e宝工坊 Is Up to Date',
         detail: 'Installed version: 2.0.0',
         buttons: ['OK'],
       }),
@@ -2575,6 +2575,36 @@ describe('Electron desktop runtime', () => {
         buttons: ['OK'],
       }),
     )
+
+    await runtime.updates.showManualCheckResult({
+      status: 'channel-unavailable',
+      currentVersion: '0.0.8-beta.1',
+    })
+    expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
+      activeWindow,
+      expect.objectContaining({
+        title: 'Beta Update Information Unavailable',
+        message: 'The update feed currently lists only the stable release.',
+        detail: 'Installed version: 0.0.8-beta.1',
+        buttons: ['OK'],
+      }),
+    )
+
+    runtime.setLocalePreference('zh')
+    await runtime.updates.showManualCheckResult({
+      status: 'channel-unavailable',
+      currentVersion: '0.0.8-beta.1',
+    })
+    expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
+      activeWindow,
+      expect.objectContaining({
+        title: '暂无 Beta 更新信息',
+        message: '更新源目前仅提供稳定版的版本信息。',
+        detail: '当前版本：0.0.8-beta.1',
+        buttons: ['确定'],
+      }),
+    )
+    runtime.setLocalePreference('en')
 
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
     await expect(runtime.updates.confirmDownload('2.1.0')).resolves.toBe(false)
@@ -2598,7 +2628,7 @@ describe('Electron desktop runtime', () => {
       expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
         activeWindow,
         expect.objectContaining({
-          title: '易宝工坊 Update Downloaded',
+          title: 'e宝工坊 Update Downloaded',
           buttons: ['Restart and Update', 'Later'],
         }),
       )
@@ -2628,7 +2658,7 @@ describe('Electron desktop runtime', () => {
     const updateAction = vi.fn()
     const releaseUpdateAction = runtime.updates.registerNotificationAction('open-update', updateAction)
     runtime.updates.notify({
-      title: '易宝工坊 Update Available',
+      title: 'e宝工坊 Update Available',
       body: 'Click to review the update.',
       action: 'open-update',
     })

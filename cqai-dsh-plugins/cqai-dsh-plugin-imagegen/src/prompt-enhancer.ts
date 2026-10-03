@@ -38,16 +38,81 @@ async function responseJson(response: Response): Promise<Record<string, unknown>
 
 type ModelRecord = Record<string, unknown> & { id: string }
 
-async function listModelRecords(config: ModelListConfig): Promise<ModelRecord[]> {
-  if (config.apiUrl.trim() === '') throw new Error('API URL is required')
-  const response = await fetch(endpoint(config.apiUrl, '/models'), { headers: headers(config.apiKey) })
-  const body = await responseJson(response)
-  const data = Array.isArray(body.data) ? body.data : []
-  return data.flatMap(item => {
-    if (item === null || typeof item !== 'object' || typeof (item as { id?: unknown }).id !== 'string') return []
-    const id = (item as { id: string }).id.trim()
-    return id === '' ? [] : [{ ...(item as Record<string, unknown>), id }]
+/** Resolve discovery paths independently of the generation protocol. */
+function modelListUrls(config: ModelListConfig): string[] {
+  const base = config.apiUrl.trim().replace(/\/+$/, '')
+  if (base === '') throw new Error('API URL is required')
+  let url: URL
+  try { url = new URL(base) } catch { return [endpoint(base, '/models')] }
+  const path = url.pathname.replace(/\/+$/, '')
+  const discoveryBase = path.replace(/\/(?:chat\/completions|models)$/i, '')
+  url.pathname = `${discoveryBase}/models`
+  url.search = ''
+  url.hash = ''
+  const urls = [url.toString()]
+  // A gateway homepage may return HTML at /models but expose its API at /v1.
+  if (!/\/v\d+(?:[a-z0-9._-]*)?$/i.test(discoveryBase)) {
+    url.pathname = `${discoveryBase}/v1/models`
+    urls.push(url.toString())
+  }
+  return [...new Set(urls)]
+}
+
+function boundedMessage(value: string, limit = 320): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, limit)
+}
+
+function modelErrorMessage(body: unknown, fallback: string): string {
+  if (body === null || typeof body !== 'object') return fallback
+  const record = body as Record<string, unknown>
+  const error = record.error
+  const nestedMessage = error !== null && typeof error === 'object' ? (error as { message?: unknown }).message : undefined
+  const message = typeof nestedMessage === 'string' && nestedMessage.trim() !== '' ? nestedMessage : record.message
+  return typeof message === 'string' && message.trim() !== '' ? boundedMessage(message) : fallback
+}
+
+function modelRecordsOf(body: unknown): ModelRecord[] | undefined {
+  const record = body !== null && typeof body === 'object' ? body as Record<string, unknown> : undefined
+  const candidate = Array.isArray(body) ? body : Array.isArray(record?.data) ? record.data : Array.isArray(record?.models) ? record.models : undefined
+  if (candidate === undefined) return undefined
+  return candidate.flatMap(item => {
+    const id = typeof item === 'string' ? item.trim()
+      : item !== null && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string'
+        ? (item as { id: string }).id.trim() : ''
+    return id === '' ? [] : [{ ...(item !== null && typeof item === 'object' ? item as Record<string, unknown> : {}), id }]
   })
+}
+
+async function listModelRecords(config: ModelListConfig): Promise<ModelRecord[]> {
+  let lastError: Error | undefined
+  for (const url of modelListUrls(config)) {
+    let response: Response
+    try {
+      response = await fetch(url, { headers: headers(config.apiKey) })
+    } catch (error) {
+      lastError = new Error(boundedMessage(error instanceof Error ? error.message : String(error)))
+      continue
+    }
+    const text = await response.text().catch(() => '')
+    let body: unknown
+    try { body = JSON.parse(text) as unknown } catch { body = undefined }
+    if (!response.ok) {
+      lastError = new Error(modelErrorMessage(body, `HTTP ${response.status}`))
+      // Authentication failures and other service errors must not cause retries.
+      if (response.status !== 404 && response.status !== 405) throw lastError
+      continue
+    }
+    if (body === undefined) {
+      const type = boundedMessage(response.headers.get('content-type') ?? 'unknown content-type', 80)
+      const sample = boundedMessage(text, 160)
+      lastError = new Error(`模型接口返回了非 JSON 响应（HTTP ${response.status}, ${type}）${sample === '' ? '' : `：${sample}`}`)
+      continue
+    }
+    const records = modelRecordsOf(body)
+    if (records !== undefined) return records
+    lastError = new Error(modelErrorMessage(body, '模型接口响应中没有 data/models 列表'))
+  }
+  throw lastError ?? new Error('模型接口不可用')
 }
 
 function textOf(value: unknown): string[] {
@@ -196,6 +261,15 @@ export async function enhancePrompt(config: PromptModelConfig, prompt: string): 
   return chatComplete(config, {
     temperature: 0.7,
     system: 'You are an expert image-prompt editor. Expand the user request into one vivid, specific image-generation prompt. Preserve intent and language. Add only useful visual detail: subject, composition, lighting, materials, color, camera/style and quality. Return only the finished prompt, with no preface or markdown.',
+    content: prompt,
+  })
+}
+
+/** Polish one existing generation prompt without changing its purpose. */
+export async function polishPrompt(config: PromptModelConfig, prompt: string): Promise<string> {
+  return chatComplete(config, {
+    temperature: 0.35,
+    system: '你是电商生图提示词编辑。请在保持图片用途、商品事实、平台、语言和原有结构不变的前提下，润色文字并补充可执行的视觉细节，减少重复和空泛表达。只输出最终提示词，不要解释、标题或 Markdown。',
     content: prompt,
   })
 }

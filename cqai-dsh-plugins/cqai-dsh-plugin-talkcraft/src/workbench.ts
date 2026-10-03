@@ -2,8 +2,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
-import { nodeEnvironment } from 'cqai-dsh-plugin-media-runtime'
+import { commonToolEnvironment, nodeEnvironment } from 'cqai-dsh-plugin-media-runtime'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { JobStore } from './store.ts'
+import { writeWorkbenchVisibilityConfig } from './workbench-visibility.ts'
 
 async function availablePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
@@ -32,7 +34,8 @@ export class Workbench {
     const thumbDir = join(this.upstream, 'gallery', 'thumbs')
     if (existsSync(thumbDir)) cpSync(thumbDir, join(publicDir, 'cardthumbs'), {recursive: true, force: false, errorOnExist: false})
     const root = join(this.upstream, 'workbench')
-    const generator = spawn(process.execPath, [join(root, 'scripts', 'gen-index.mjs')], {cwd: root, env: nodeEnvironment({...process.env, TALKCRAFT_PROJECT: this.store.directory(id)}), windowsHide: true})
+    const environment = nodeEnvironment(commonToolEnvironment(resolveDshHome(), {...process.env, TALKCRAFT_PROJECT: this.store.directory(id)}))
+    const generator = spawn(process.execPath, [join(root, 'scripts', 'gen-index.mjs')], {cwd: root, env: environment, windowsHide: true})
     this.openingId = id
     let generateCode: number
     try {generateCode = await new Promise<number>((resolve, reject) => {generator.once('error', reject); generator.once('close', code => resolve(code ?? -1))})}
@@ -42,7 +45,8 @@ export class Workbench {
     this.store.get(id)
     const vite = join(this.upstream, 'runtime', 'node_modules', 'vite', 'bin', 'vite.js')
     if (!existsSync(vite)) throw new Error('工作台依赖未安装，请先在设置中一键安装')
-    const child = spawn(process.execPath, [vite, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {cwd: root, env: nodeEnvironment({...process.env, TALKCRAFT_PROJECT: this.store.directory(id)}), windowsHide: true})
+    const config = writeWorkbenchVisibilityConfig(this.store.directory(id), root)
+    const child = spawn(process.execPath, [vite, '--config', config, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {cwd: root, env: environment, windowsHide: true})
     this.active = {id, port, child}
     try {
       await new Promise<void>((resolve, reject) => {
@@ -51,7 +55,7 @@ export class Workbench {
         const onData = (chunk: Buffer) => {output = (output + chunk.toString()).slice(-3000); if (output.includes(`127.0.0.1:${port}`)) {clearTimeout(timer); resolve()}}
         child.stdout.on('data', onData); child.stderr.on('data', onData)
         child.once('error', error => {clearTimeout(timer); reject(error)})
-        child.once('exit', code => {clearTimeout(timer); reject(new Error(`工作台启动失败 (${code}): ${output.slice(-500)}`))})
+        child.once('exit', code => {clearTimeout(timer); reject(new Error(`工作台启动失败 (${code}): ${output}`))})
       })
       return `http://127.0.0.1:${port}/?tracks`
     } catch (error) {await this.close(); throw error}

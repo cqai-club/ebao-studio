@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   accessSync,
+  chmodSync,
   constants,
   existsSync,
   lstatSync,
@@ -91,8 +92,9 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
   'node_modules/@dataiku/uv-darwin-arm64',
   'node_modules/@dataiku/uv-darwin-x64',
   'node_modules/@dataiku/uv-win32-x64',
-  // The Short Video package carries explicitly unpacked runtime executables.
+  // The video packages carry explicitly unpacked Python runtime scripts.
   'node_modules/cqai-dsh-plugin-short-video',
+  'node_modules/cqai-dsh-plugin-video',
   'node_modules/fs-ext',
   'node_modules/koffi',
   'node_modules/node-addon-require-builtin',
@@ -109,6 +111,7 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES = [
   'node_modules/@deepseek-ai/node-addon-system-',
   'node_modules/@img/sharp-',
   'node_modules/@koromix/koffi-',
+  'node_modules/@tencent-qqmail/agently-cli-',
   'node_modules/@vscode/ripgrep-',
   'node_modules/node-addon-require-builtin-',
   'node_modules/sherpa-onnx-',
@@ -135,12 +138,29 @@ export const REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES = [
   'node_modules/cqai-dsh-plugin-imagegen/lib/client.js',
 ] as const
 
+/** Bundled Skills and MCP manager required by the default Desktop profile. */
+export const REQUIRED_SKILL_MCP_PANEL_RUNTIME_ENTRIES = [
+  'node_modules/dsh-skill-mcp-panel/package.json',
+  'node_modules/dsh-skill-mcp-panel/cordis.patch.yml',
+  'node_modules/dsh-skill-mcp-panel/lib/index.js',
+  'node_modules/dsh-skill-mcp-panel/lib/client.js',
+] as const
+
 /** 一稿多发 bundle surface required for the default Desktop profile to boot. */
 export const REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES = [
   'node_modules/cqai-dsh-plugin-publisher/package.json',
   'node_modules/cqai-dsh-plugin-publisher/cordis.patch.yml',
   'node_modules/cqai-dsh-plugin-publisher/lib/index.js',
   'node_modules/cqai-dsh-plugin-publisher/lib/client.js',
+] as const
+
+/** IM bot bundle required by the default Desktop profile. */
+export const REQUIRED_DSH_IM_RUNTIME_ENTRIES = [
+  'node_modules/@xmanrui/dsh-im/package.json',
+  'node_modules/@xmanrui/dsh-im/cordis.patch.yml',
+  'node_modules/@xmanrui/dsh-im/lib/index.js',
+  'node_modules/@xmanrui/dsh-im/lib/client.js',
+  'node_modules/@xmanrui/dsh-im/assets/logo-plugin-message-link-gradient.webp',
 ] as const
 
 /** PPT authoring, composer, and a representative bundled template preview. */
@@ -193,7 +213,9 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js',
   ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
   ...REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
+  ...REQUIRED_SKILL_MCP_PANEL_RUNTIME_ENTRIES,
   ...REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
+  ...REQUIRED_DSH_IM_RUNTIME_ENTRIES,
   ...REQUIRED_DSH_PPT_RUNTIME_ENTRIES,
   'node_modules/open/index.js',
   // In-app update staging and its abort bridge must remain ASAR-integrity protected.
@@ -202,32 +224,35 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'node_modules/pnpm/bin/pnpm.mjs',
 ] as const
 
-/** macOS-only desktop assets loaded by nativeImage from physical paths. */
+/** macOS assets and external Python runtime scripts loaded from physical paths. */
 export const REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon-mac.png',
   'build/tray-iconTemplate.png',
   'build/tray-iconTemplate@2x.png',
+  'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
 ] as const
 
-/** Windows desktop assets, including white notification-area DPI variants. */
+/** Windows assets, including white notification-area DPI variants, and Python runtime scripts. */
 export const REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon.png',
   'build/tray-icon-white.png',
   'build/tray-icon-white@1.25x.png',
   'build/tray-icon-white@1.5x.png',
   'build/tray-icon-white@2x.png',
+  'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
 ] as const
 
-/** Linux desktop assets, including brand-color DPI variants. */
+/** Linux assets, including brand-color DPI variants, and Python runtime scripts. */
 export const REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon.png',
   'build/tray-icon-blue.png',
   'build/tray-icon-blue@1.25x.png',
   'build/tray-icon-blue@1.5x.png',
   'build/tray-icon-blue@2x.png',
+  'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
 ] as const
 
-/** Complete cross-platform asset surface, used only as a closed allowlist. */
+/** Complete cross-platform physical asset surface, used only as a closed allowlist. */
 export const REQUIRED_UNPACKED_RUNTIME_ENTRIES = [
   ...REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
   ...REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
@@ -668,9 +693,11 @@ function unpackedGroupRoot(path: string): string {
   return unpackedPackageRoot(path) ?? `desktop/${path.split('/')[0] ?? '(root)'}`
 }
 
-function allowedSmartUnpackPackageRoot(root: string): boolean {
+function allowedSmartUnpackPackageRoot(root: string, entry: string): boolean {
   return ALLOWED_SMART_UNPACK_PACKAGE_ROOTS.some(candidate => root === candidate)
     || ALLOWED_SMART_UNPACK_PACKAGE_PREFIXES.some(prefix => root.startsWith(prefix))
+    || (root === 'node_modules/@xmanrui/dsh-im'
+      && entry.startsWith('node_modules/@xmanrui/dsh-im/node_modules/@img/sharp-'))
 }
 
 /** Summarize smart-unpacked payload by package root for actionable build output. */
@@ -791,7 +818,7 @@ export function verifySelectiveUnpackedRuntime(
   }
   const unexpectedPackageRoots = [...new Set(normalizedFiles.flatMap((file) => {
     const root = unpackedPackageRoot(file.path)
-    return root === undefined || allowedSmartUnpackPackageRoot(root)
+    return root === undefined || allowedSmartUnpackPackageRoot(root, file.path)
       || file.path.startsWith('node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/') ? [] : [root]
   }))].sort()
   if (unexpectedPackageRoots.length > 0) {
@@ -975,6 +1002,19 @@ export function reportUnpackedRuntime(summary: UnpackedRuntimeSummary): void {
   process.stdout.write(`dsh-plugin-desktop: packaged runtime inventory: ${formatUnpackedRuntimeSummary(summary)}\n`)
 }
 
+/** Restore reviewed macOS executable permissions after dependency trees are copied. */
+export function preparePackagedMacExecutables(
+  context: PackagedRuntimeContext,
+  chmod: (path: string, mode: number) => void = chmodSync,
+): void {
+  if (context.electronPlatformName !== 'darwin') return
+  const root = usesAsarLayout(context) ? resolvePackagedUnpackedRoot(context) : resolvePackagedApplicationRoot(context)
+  for (const entry of MACOS_UNIVERSAL_NATIVE_ENTRIES.filter(entry =>
+    entry.path.endsWith('/bin/uv') || entry.path.endsWith('/spawn-helper') || entry.path.endsWith('/bin/agently-cli'))) {
+    chmod(join(root, entry.path), 0o755)
+  }
+}
+
 /** Verify the AA version and built entry sealed into the actual installation payload. */
 export function verifyPackagedAgentsAnywhere(
   context: PackagedRuntimeContext,
@@ -1046,9 +1086,11 @@ export async function afterPack(
   verify: typeof verifyPackagedRuntime = verifyPackagedRuntime,
   report: (summary: UnpackedRuntimeSummary) => void = reportUnpackedRuntime,
   verifyAa: typeof verifyPackagedAgentsAnywhere = verifyPackagedAgentsAnywhere,
+  prepareRuntime: typeof preparePackagedMacExecutables = preparePackagedMacExecutables,
 ): Promise<void> {
   const summary = verify(context)
   try {
+    prepareRuntime(context)
     verifyAa(context)
   } catch (error) {
     try {

@@ -18,6 +18,7 @@ export interface DesktopSetupWizardCopy {
   readonly welcomeTitle: string
   readonly welcomeBody: string
   readonly firstProfileSetup: string
+  readonly enhancedByDefault: string
   readonly startSetup: string
   readonly presentationTitle: string
   readonly presentationBody: string
@@ -93,11 +94,12 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     aaNextDesktop: 'If the Agents-Anywhere desktop app is installed on this computer, manage the connection directly in that app.',
 
     beta: 'Beta',
-    title: 'Set up 易宝工坊',
+    title: 'Set up e宝工坊',
     profile: 'Profile',
-    welcomeTitle: 'Welcome to 易宝工坊',
+    welcomeTitle: 'Welcome to e宝工坊',
     welcomeBody: 'Set up window appearance, phone connection, and notifications for the current Profile.',
     firstProfileSetup: 'Complete Desktop setup before using this configuration environment (Profile) for the first time.',
+    enhancedByDefault: 'Enhanced mode is the default. To use browser access, switch modes in Desktop settings after setup.',
     startSetup: 'Start setup',
     presentationTitle: 'Choose a window mode',
     presentationBody: 'Choose a window layout and desktop controls.',
@@ -137,7 +139,7 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     marketDisabled: 'Turn off plugin market',
     marketDisabledBody: 'Do not load a plugin market interface.',
     communityMarket: 'dsh-community-market',
-    communityMarketBody: 'The open market built into 易宝工坊, including custom data sources.',
+    communityMarketBody: 'The open market built into e宝工坊, including custom data sources.',
     dshMarket: 'dsh-market',
     dshMarketBody: 'The popular community market powered by awesome-dsh-plugin data.',
     notificationsTitle: 'Set up Desktop notifications',
@@ -156,7 +158,7 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     confirmSkip: 'Skip setup',
     successTitle: 'Setup complete',
     successBody: 'Desktop settings have been saved for the current Profile.',
-    startUsing: 'Start using 易宝工坊',
+    startUsing: 'Start using e宝工坊',
     invalidState: 'Setup information could not be loaded. Close this window and try again.',
   },
   zh: {
@@ -171,11 +173,12 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     aaNextDesktop: '如果本机已安装 Agents-Anywhere 桌面端，直接在桌面端管理连接即可。',
 
     beta: 'Beta',
-    title: '设置 易宝工坊',
+    title: '设置 e宝工坊',
     profile: 'Profile',
-    welcomeTitle: '欢迎使用 易宝工坊',
+    welcomeTitle: '欢迎使用 e宝工坊',
     welcomeBody: '为当前 Profile 设置窗口外观、手机连接和桌面通知。',
     firstProfileSetup: '首次使用此配置环境（Profile），请先完成桌面设置。',
+    enhancedByDefault: '默认使用增强模式。如需浏览器访问，请在完成设置后前往桌面设置切换模式。',
     startSetup: '开始设置',
     presentationTitle: '选择窗口模式',
     presentationBody: '选择窗口布局和桌面操作方式。',
@@ -215,7 +218,7 @@ const COPY: Record<DesktopLocale, DesktopSetupWizardCopy> = {
     marketDisabled: '关闭插件市场',
     marketDisabledBody: '不加载插件市场界面。',
     communityMarket: 'dsh-community-market',
-    communityMarketBody: '易宝工坊 内置的开放市场，并支持自定义数据源。',
+    communityMarketBody: 'e宝工坊 内置的开放市场，并支持自定义数据源。',
     dshMarket: 'dsh-market',
     dshMarketBody: '使用 awesome-dsh-plugin 数据的热门社区市场。',
     notificationsTitle: '设置桌面通知',

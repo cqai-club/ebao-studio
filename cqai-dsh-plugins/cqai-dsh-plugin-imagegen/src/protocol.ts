@@ -37,6 +37,7 @@ export interface CqaiImageProviderView {
 export const PROMPT_ENHANCE_API = {
   models: '/api/dsh-imagegen/prompt-enhance/models',
   enhance: '/api/dsh-imagegen/prompt-enhance',
+  polish: '/api/dsh-imagegen/prompt-enhance/polish',
 } as const
 
 /** Host-mediated candidate discovery for the configured image API. */
@@ -63,6 +64,7 @@ export const USAGE_API = '/api/dsh-imagegen/usage' as const
 export const TASK_API = {
   submit: '/api/dsh-imagegen/tasks/submit',
   list: '/api/dsh-imagegen/tasks/list',
+  get: '/api/dsh-imagegen/tasks/get',
   cancel: '/api/dsh-imagegen/tasks/cancel',
   retry: '/api/dsh-imagegen/tasks/retry',
 } as const
@@ -110,6 +112,7 @@ export const CANVAS_API = {
   read: '/api/dsh-imagegen/canvas/read',
   save: '/api/dsh-imagegen/canvas/save',
   remove: '/api/dsh-imagegen/canvas/remove',
+  favorite: '/api/dsh-imagegen/canvas/favorite',
   assetUpload: '/api/dsh-imagegen/canvas/asset/upload',
   assetImport: '/api/dsh-imagegen/canvas/asset/import',
   asset: '/api/dsh-imagegen/canvas/asset',
@@ -174,6 +177,8 @@ export interface TemplateSourceMeta {
   homepage: string
   /** One-line description of the source (tab tooltip). */
   description: string
+  /** Bundled community snapshots are updated with product releases. */
+  refreshable?: boolean
 }
 
 /**
@@ -195,6 +200,27 @@ export const TEMPLATE_SOURCES: TemplateSourceMeta[] = [
     homepage: 'https://gpt-image2.canghe.ai/',
     description: 'GPT-Image2 Prompt Gallery（gpt-image2.canghe.ai，定期更新）',
   },
+  {
+    id: 'handraw',
+    label: '手绘模板库',
+    homepage: 'https://github.com/yang0/handraw-style',
+    description: '手绘风格、排版图型与主题色图鉴',
+    refreshable: false,
+  },
+  {
+    id: 'prompt-signal',
+    label: 'Prompt/Signal',
+    homepage: 'https://github.com/andy7076/image_prompt',
+    description: '社区精选生图提示词',
+    refreshable: false,
+  },
+  {
+    id: 'evolink',
+    label: 'GPT Image 2 案例库',
+    homepage: 'https://github.com/EvoLinkAI/awesome-gpt-image-2-prompts',
+    description: '电商、广告、人像、海报、角色与 UI 案例',
+    refreshable: false,
+  },
 ]
 
 /** Default source id when a request does not name one (legacy clients). */
@@ -207,8 +233,8 @@ export function isTemplateSourceId(id: string): boolean {
 
 /** One prompt-library case as the browser consumes it. */
 export interface TemplateCase {
-  /** Upstream case number (stable across refreshes). */
-  id: number
+  /** Stable upstream id; existing numeric ids remain valid. */
+  id: number | string
   /** Short case title. */
   title: string
   /** Full reusable prompt text. */
@@ -836,6 +862,7 @@ export interface CanvasSummary {
   title: string
   revision: number
   nodeCount: number
+  favorite?: boolean
   createdAt: number
   updatedAt: number
 }
@@ -1011,6 +1038,11 @@ export interface GenerationTask extends EcommerceTaskMeta {
   finishedAt?: number
   result?: GenerateResult
   error?: string
+}
+
+/** Lightweight polling shape; image references and results remain host-side. */
+export interface GenerationTaskSummary extends Omit<GenerationTask, 'result'> {
+  resultAvailable: boolean
 }
 
 /** One history image reference as the browser consumes it (a served URL). */

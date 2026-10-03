@@ -79,21 +79,6 @@ jobs:
             throw new Error(`release index does not select stable ${releaseVersion}`)
           }
           NODE
-      - name: Temporarily skip AA profile smoke in CI
-        # Remove this step after AA Host service activation is fixed.
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFileSync, writeFileSync } from 'node:fs'
-
-          for (const workspace of ['dsh-plugin-desktop', 'dsh-plugin-desktop-beta']) {
-            const path = `${workspace}/package.json`
-            const manifest = JSON.parse(readFileSync(path, 'utf8'))
-            const smoke = ' && yarn run verify:aa'
-            if (!manifest.scripts.check.includes(smoke)) throw new Error(`AA check not found in ${workspace}`)
-            manifest.scripts.check = manifest.scripts.check.replace(smoke, '')
-            writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`)
-          }
-          NODE
       - name: Run complete headless gate
         run: yarn check
 
@@ -307,18 +292,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          release_title="易宝工坊 ${RELEASE_TAG}（预发布）"
+          release_title="e宝工坊 ${RELEASE_TAG}（预发布）"
           macos_note='macOS 自动更新构件必须使用 Developer ID 签名并完成 Apple 公证；本工作流会在缺少签名或公证凭据时失败，而不会发布不可自动更新的 macOS 构件。'
           if [[ "$MACOS_UNSIGNED_TEST" == 'true' ]]; then
-            release_title="易宝工坊 ${RELEASE_TAG}（未签名 macOS 测试预发布）"
+            release_title="e宝工坊 ${RELEASE_TAG}（未签名 macOS 测试预发布）"
             macos_note='本次 macOS 构件是未签名测试包：仅供测试者明确下载、在 Gatekeeper 提示中手动授权打开及验证更新发现链路。它不是生产 macOS 自动更新构件；不要将其作为正式发布或静默替换的依据。后续生产 macOS 发布仍必须使用 Developer ID 签名并完成 Apple 公证。'
           fi
           cat > RELEASE_NOTES.md <<'NOTES'
           ## 本次预发布版本
 
-          本版本新增独立的“口播视频制作”插件，提供文案、配音、画面、分镜确认、预览和多轨工作台。该插件目前面向开发验证；本地语音、渲染和浏览器运行环境仍需按插件 README 手动准备，安装包尚未集成这些依赖。其上游 TalkCraft 采用 PolyForm Noncommercial 1.0.0，个人非商用可以使用；商业使用需取得作者授权。
+          本版本新增 e剪宝统一视频工作区，整合数字人、短视频和口播视频，统一媒体参数、凭据和环境安装入口。公共 Python、FFmpeg 与 ffprobe 使用应用私有环境，支持重复安装检查和损坏修复；各视频引擎保留独立依赖安装和日志。
 
-          CQAI 插件市场入口现在位于左下角账号菜单。桌面版还改进了后台任务通知，避免内部 Agent 作业产生面向用户的完成提示，并同步了 Agents Anywhere 与插件市场依赖。
+          图像画布增强上游更新同步、预览与电商提示词，并扩展社区模板来源；修复关闭期间完成的生图任务恢复和结果轮询重试。桌面新增通用 Agent 抽屉，更新入口移至侧栏头像上方，产品显示名称调整为 e宝工坊并兼容已有安装身份。插件市场升级至 1.66.8，Agents Anywhere 2.0.3 按发布时官方 main 验证。修复独立数字人设置接口及安装包中的 Python 运行脚本路径。TalkCraft 上游采用 PolyForm Noncommercial 1.0.0；商业使用需取得作者授权。
 
           ### 下载与自动更新
 

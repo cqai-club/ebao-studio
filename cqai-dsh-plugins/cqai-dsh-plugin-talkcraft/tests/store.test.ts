@@ -6,7 +6,9 @@ import { JobStore } from '../src/store.ts'
 import { TalkCraftAgents } from '../src/agent.ts'
 import { Pipeline } from '../src/pipeline.ts'
 import { Workbench } from '../src/workbench.ts'
-import { apply, permitted } from '../src/index.ts'
+import { apply, inject, permitted } from '../src/index.ts'
+import { createMediaSettings, type CredentialsFace } from 'cqai-dsh-media-settings'
+import type { CredentialKey, CredentialRecord } from '@deepseek-ai/dsh-credentials'
 import { downloadSelected, searchCandidates } from '../src/media.ts'
 import { Secrets } from '../src/secrets.ts'
 import { normalizeEdgeVoices } from '../src/edge-voices.ts'
@@ -18,6 +20,17 @@ import { createServer, type ServerResponse } from 'node:http'
 
 const roots: string[] = []
 const createStore = () => {const root = mkdtempSync(join(tmpdir(), 'talkcraft-test-')); roots.push(root); return new JobStore(root)}
+const memoryCredentials = (): CredentialsFace => {
+  const records = new Map<CredentialKey, CredentialRecord>()
+  let pending = Promise.resolve()
+  return {
+    readRecord: async key => {await pending; return structuredClone(records.get(key))},
+    modifyRecord: async (key, mutate) => {
+      const next = pending.then(async () => {const value=await mutate(structuredClone(records.get(key)));if(value)records.set(key,structuredClone(value));return structuredClone(records.get(key))})
+      pending=next.then(()=>{},()=>{});return next
+    },
+  }
+}
 afterEach(() => {vi.unstubAllGlobals(); for (const root of roots.splice(0)) {const target = resolve(root), base = resolve(tmpdir()); if (!target.startsWith(base + sep)) throw new Error('unsafe test cleanup'); rmSync(target, {recursive: true, force: true})}})
 
 describe('独立任务目录', () => {
@@ -281,9 +294,8 @@ describe('API boundary', () => {
     writeFileSync(join(root, 'talkcraft', 'edge-voices.json'), JSON.stringify({savedAt: Date.now(), voices: EDGE_VOICES}))
     let handler: ((req: IncomingMessage, res: ServerResponse) => void) | undefined
     let dispose: (() => Promise<void>) | undefined
-    let record: {kind: 'grant'; payload: Record<string, unknown>} | undefined
     let credentialsReady = false
-    const credentials = {readRecord: async () => record, modifyRecord: async (_key: unknown, mutate: (value: typeof record) => Promise<typeof record>) => {record = await mutate(record); return record}}
+    const credentials = memoryCredentials()
     const ctx = {
       webServer: {register: (route: {handler: typeof handler}) => {handler = route.handler; return () => {handler = undefined}}},
       get credentials() {if (!credentialsReady) throw new Error('cannot get property "credentials" without inject'); return credentials},
@@ -292,8 +304,9 @@ describe('API boundary', () => {
     }
     const server = createServer((req, res) => handler?.(req, res))
     try {
-      apply(ctx as never)
+      expect(inject).toContain('credentials')
       credentialsReady = true
+      apply(ctx as never)
       await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
       const address = server.address(); if (!address || typeof address === 'string') throw new Error('missing address')
       const base = `http://127.0.0.1:${address.port}/api/cqai-talkcraft/`
@@ -390,13 +403,13 @@ describe('素材与凭据', () => {
     expect(readFileSync(store.file(job.id, 'remotion/public/assets/pexels-image-1.jpg'))).toEqual(Buffer.from([1, 2, 3]))
   })
   it('keeps service keys in the DSH credential record instead of a job', async () => {
-    let record: {kind: 'grant'; payload: Record<string, unknown>} | undefined
-    const credentials = {readRecord: async () => record, modifyRecord: async (_key: unknown, mutate: (value: typeof record) => Promise<typeof record>) => {record = await mutate(record); return record}}
-    const secrets = new Secrets(credentials as never)
+    const credentials = memoryCredentials()
+    const store = createStore()
+    const secrets = new Secrets(credentials, createMediaSettings({home:store.root,credentials}))
     await secrets.set('fish', 'secret-for-test')
     expect((await secrets.read()).fish).toBe('secret-for-test')
     expect(await secrets.publicState()).toEqual({fish: true, pexels: false, pixabay: false})
-    const store = createStore(), job = store.create({text: '一段文案。'})
+    const job = store.create({text: '一段文案。'})
     expect(readFileSync(store.file(job.id, 'job.json'), 'utf8')).not.toContain('secret-for-test')
   })
   it('reports a preset without file and terminal tools before starting', async () => {

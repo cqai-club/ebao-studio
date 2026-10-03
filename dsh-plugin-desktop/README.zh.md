@@ -1,8 +1,8 @@
-# 易宝工坊
+# e宝工坊
 
 [English](README.md) | 中文
 
-`dsh-plugin-desktop` 在 Electron 中运行 DSH，同时仍然参与普通 Cordis 组合。安装后的应用名称为 **易宝工坊**。该包提供 `dsh-plugin-desktop` 可执行命令和 `dsh-desktop` 别名；已注册的 npm 包名是可靠的 `npx` 入口。
+`dsh-plugin-desktop` 在 Electron 中运行 DSH，同时仍然参与普通 Cordis 组合。安装后的应用名称为 **e宝工坊**。该包提供 `dsh-plugin-desktop` 可执行命令和 `dsh-desktop` 别名；已注册的 npm 包名是可靠的 `npx` 入口。
 
 ## 架构
 
@@ -34,23 +34,25 @@ Login-shell 恢复完成后，Launcher 才创建 layered launch-environment snap
 
 ## 模式设置与重启边界
 
-DSH home `settings.yaml` 文档中的 `dsh-desktop.mode` 字段是单一事实源：
+当前 Profile 的 `cordis.patch.yml` 通过 `desktop-shell` row 保存窗口模式：
 
 ```yaml
-dsh-desktop:
-  mode: compatibility # compatibility、extended 或 advanced
-  macosMaterial: transparent # off 或 transparent
+- id: desktop-shell
+  config:
+    mode: advanced # compatibility、extended 或 advanced
 ```
 
-Launcher 会在组合一个 generation 之前，读取当前 `@deepseek-ai/dsh-settings-file` row 解析到的同一份文件。Host 通过标准 settings service 注册 `dsh-desktop` namespace。profile manifest 中没有平行的模式值。
+Launcher 在启动前组合该 Profile row。旧版 DSH home `settings.yaml` 中的设置会一次性导入 Profile patch layer。Host 通过标准 settings service 提供模式设置；profile manifest 中没有平行的模式值。
 
-用户可以从托盘选择另一种模式，也可以手工编辑 DSH home 中的 `settings.yaml` 文档。托盘会更新已注册的 `dsh-desktop` settings namespace，手工编辑则修改 settings provider 观察的同一文件。修改提交后会请求一次有序重启：先 dispose 当前 Cordis 树，仅当零退出码的 shutdown 成功时才让 Electron relaunch。应用绝不会在存活的 renderer generation 中热切换 root slot、原生窗口材质或 Loader row。
+用户可在桌面设置或托盘中切换模式，两者都会更新 Profile 的 settings row。提交后会请求一次有序重启：先 dispose 当前 Cordis 树，仅当零退出码的 shutdown 成功时才让 Electron relaunch。应用不会在存活的 renderer generation 中热切换 root slot、原生窗口材质或 Loader row。
 
 Linux 只支持兼容模式。其托盘模式命令会被禁用，自定义窗口模式值会被拒绝，而不会静默降级。
 
+正式版在 Windows 与 macOS 上首次使用全新 Profile 时，会将增强模式写入该 Profile 作为默认模式。首次设置引导不显示模式选择，也不提供与增强模式冲突的普通浏览器访问选项；如需浏览器访问，可在设置完成后切换到兼容模式并开启。已有 Profile 的模式设置保持不变。Beta 与 Linux 沿用各自现有行为。
+
 ## 兼容模式
 
-`dsh-desktop.mode` 默认为 `compatibility`。在 macOS 与 Windows 上，该模式会在当前 DSH profile 的官方 Web surface 上方创建一条独立的 36 CSS 像素 Desktop frame，并保留原生红绿灯或窗口按钮。居中的标识、模式 pill、拖动区域与图标操作只属于该 frame；完整官方页面从它下方开始，不参与 frame 的布局或安全区计算。Linux 保留普通原生 frame 作为兼容 fallback。
+未写入模式且不满足首次使用条件的 Profile 仍回退到 `compatibility`。在 macOS 与 Windows 上，该模式会在当前 DSH profile 的官方 Web surface 上方创建一条独立的 36 CSS 像素 Desktop frame，并保留原生红绿灯或窗口按钮。居中的标识、模式 pill、拖动区域与图标操作只属于该 frame；完整官方页面从它下方开始，不参与 frame 的布局或安全区计算。Linux 保留普通原生 frame 作为兼容 fallback。
 
 desktop Client module 会校验模式与平台 marker，在兼容模式下只注册独立 frame overlay 与固定 launcher 操作，不替换任何官方呈现。它不提供或替换 `layout` service，不注册 `root` 或 `sidebar` occupant，也不改动 conversation surface。Desktop 自有的启动健康报告属于能力 effect；兼容模式仍会保留被选 profile 自身的 layout、sidebar 与 conversation 组合，普通 `desktop` 与 `web` profile 因而会原样保留官方 row。上游 dialog 仍是内容 overlay，并被限制在 Desktop frame 下方。
 
@@ -92,7 +94,7 @@ desktop sidebar surface 会把上游 sidebar-fill token 局部设为透明，因
 
 根目录的构建、开发启动及打包命令会先运行 `corepack yarn market:prepare`，查询 npm 的 `latest`，并同步 Stable、Beta、Next 内置的 `dshmarket`。解析后的精确版本与锁文件仍可复现，应一同提交。Desktop 的市场自更新与回滚兼容补丁会保留；查询、安装或补丁应用失败时停止准备，不会静默沿用旧版。`corepack yarn market:check` 只检查版本新鲜度，不修改文件。已安装应用不会在启动时下载或热替换插件；现有包选择机制会在应用与当前 Profile 已安装的副本中选择较新版本，不删除任何一方。
 
-该包由仓库根目录的 Yarn workspace 管理。相邻的 `deepseek-harness/` checkout 仍是独立的上游 pnpm 项目，不属于 Yarn workspace。请从仓库根目录安装并验证 易宝工坊：
+该包由仓库根目录的 Yarn workspace 管理。相邻的 `deepseek-harness/` checkout 仍是独立的上游 pnpm 项目，不属于 Yarn workspace。请从仓库根目录安装并验证 e宝工坊：
 
 ```sh
 yarn install
@@ -136,7 +138,7 @@ dsh plugin update
 
 显式 `--profile <name>` 始终具有更高优先级，可用于在切换前准备其他 profile。
 
-`dshmarket@1.2.3` 尚未预装，也不是 易宝工坊 的 dependency。该版本仍从 config/argv 解析 profile，并通过私有 child-process 代码启动 `dsh plugin`；它既不读取 `desktopProfiles`，也不使用 `desktopPnpm`，package exports 也没有 runner injection seam。后续兼容版本必须动态探测 Desktop service，同时在普通 DSH 中保留现有 CLI fallback。此外，`1.2.3` 的源码仓库与 npm tarball 均未包含完整 MIT 许可文本或版权通知，因此该版本尚未通过内置再分发 gate。用户主动安装第三方 package 与 Desktop 将其嵌入 application archive 或 installer 是两个独立边界。
+`dshmarket@1.2.3` 尚未预装，也不是 e宝工坊 的 dependency。该版本仍从 config/argv 解析 profile，并通过私有 child-process 代码启动 `dsh plugin`；它既不读取 `desktopProfiles`，也不使用 `desktopPnpm`，package exports 也没有 runner injection seam。后续兼容版本必须动态探测 Desktop service，同时在普通 DSH 中保留现有 CLI fallback。此外，`1.2.3` 的源码仓库与 npm tarball 均未包含完整 MIT 许可文本或版权通知，因此该版本尚未通过内置再分发 gate。用户主动安装第三方 package 与 Desktop 将其嵌入 application archive 或 installer 是两个独立边界。
 
 Required injection、可选 Desktop 适配、TypeScript 示例、cancellation 与 fallback 指南详见[面向插件作者的 service 文档](docs/plugin-services.zh.md)。
 
@@ -175,7 +177,7 @@ npx dsh-plugin-desktop
 
 Release operator 必须在匹配的 `v<version>` GitHub 预发布标签下发布 `eBao-Studio-<version>-universal.dmg`、`eBao-Studio-<version>-universal.zip`、`eBao-Studio-<version>-x64-Setup.exe`、`eBao-Studio-<version>-x64-Portable.zip`、`latest.yml`、`latest-mac.yml` 及对应的 `SHA256SUMS`，再在 `release/desktop-version.json` 中公开该稳定版本。发布流程会在发布前后检查精确的资产集合、SHA-256 校验和及更新元数据 SHA-512。常规标签发布只有在配置的 Developer ID 证书和 Apple 公证凭据生成已签名、已公证的 macOS 更新构件时才会通过。Release operator 只能对已有的规范标签通过 `workflow_dispatch` 选择 `unsigned-test` 模式；它会把 macOS 构件标记为未签名测试发布，要求测试者手动下载并通过 Gatekeeper，且不作生产级原地自动更新承诺。清单值缺失、不可用、不匹配或格式无效时，Desktop 不会显示任何提示；更新资产缺失或无法验证时，用户确认后的下载会安全失败。
 
-在 macOS 与 Windows 上，**打开 DSH 终端** 会打开以当前激活 profile 为工作目录的系统终端。未打包的开发启动会在设置页标题区显示 **导出诊断信息**、**打开 DSH 终端** 和包含 **重启 Desktop**、**重启到恢复模式** 的重启菜单；正式打包版默认不注册这组设置页操作，等效的诊断与恢复能力仍保留在托盘中。任何重启路径都会先显示确认，再开始有序 Cordis shutdown 和 Electron relaunch。终端欢迎信息会显示应用版本、当前 profile、profile 目录与 DSH home，并列出配置与插件管理命令。在该终端内，裸 `dsh`、`dsh --dump-config`，以及没有选择 profile 的 plugin 子命令都会默认使用当前激活 profile；显式 `--profile` 与上游 `web` alias 会保留原有含义。易宝工坊 会在自身 user-data 目录下按 profile 生成私有 `dsh`、`pnpm` 与 `node` shim，设置 `DSH_HOME`，使用当前 profile 作为工作目录，并且只在该终端的 `PATH` 前置 shim 目录；之后切换 profile 不会改变已经打开的终端命令。它不会修改全局环境或 shell 启动文件。macOS launcher 会先保留用户的交互式 zsh 或 bash 设置，再恢复 desktop 自有变量。Windows 会依次选择 PowerShell 7、Windows PowerShell 或命令提示符，并在新的 Windows Terminal 窗口中打开；如果 `wt.exe` 不可用，则由私有 `cmd start` broker 创建可见控制台。同步启动失败与 broker 非正常退出会使用 Desktop dialog surface。Linux 不组合该终端命令。
+在 macOS 与 Windows 上，**打开 DSH 终端** 会打开以当前激活 profile 为工作目录的系统终端。未打包的开发启动会在设置页标题区显示 **导出诊断信息**、**打开 DSH 终端** 和包含 **重启 Desktop**、**重启到恢复模式** 的重启菜单；正式打包版默认不注册这组设置页操作，等效的诊断与恢复能力仍保留在托盘中。任何重启路径都会先显示确认，再开始有序 Cordis shutdown 和 Electron relaunch。终端欢迎信息会显示应用版本、当前 profile、profile 目录与 DSH home，并列出配置与插件管理命令。在该终端内，裸 `dsh`、`dsh --dump-config`，以及没有选择 profile 的 plugin 子命令都会默认使用当前激活 profile；显式 `--profile` 与上游 `web` alias 会保留原有含义。e宝工坊 会在自身 user-data 目录下按 profile 生成私有 `dsh`、`pnpm` 与 `node` shim，设置 `DSH_HOME`，使用当前 profile 作为工作目录，并且只在该终端的 `PATH` 前置 shim 目录；之后切换 profile 不会改变已经打开的终端命令。它不会修改全局环境或 shell 启动文件。macOS launcher 会先保留用户的交互式 zsh 或 bash 设置，再恢复 desktop 自有变量。Windows 会依次选择 PowerShell 7、Windows PowerShell 或命令提示符，并在新的 Windows Terminal 窗口中打开；如果 `wt.exe` 不可用，则由私有 `cmd start` broker 创建可见控制台。同步启动失败与 broker 非正常退出会使用 Desktop dialog surface。Linux 不组合该终端命令。
 
 Desktop 的确认、警告、错误与结果统一使用基于 shadcn 的 `DesktopDialogWindow`。每个 dialog 都是独立、沙箱化的模态 `BrowserWindow`，在可用时以当前 Desktop 窗口为 parent；它不是官方 Web 页面内部的组件或 portal。作为 parent 子窗口的纯操作 dialog 不显示窗口按钮，也不会渲染空白 frame；只有独立显示并带有 macOS 红绿灯或 Windows 窗口按钮的 dialog 才使用共享的 36 像素 utility frame。Escape 或可用的窗口关闭操作会映射为有界取消，并且只向 main process 返回一次本地结果。操作系统的文件打开选择器仍保持原生，因为它负责选择系统路径，而不是展示 Desktop 操作。
 
@@ -185,9 +187,13 @@ Desktop 的确认、警告、错误与结果统一使用基于 shadcn 的 `Deskt
 
 启动健康后，主进程每五秒检查一次可见应用内容。连续两次页面为空或探测无响应，即使渲染进程未退出，也会触发有次数上限的自动恢复；无响应的渲染进程会被终止并在新进程中重载。可见窗口恢复成功还要求视口中存在有效内容，不能仅凭插件激活就判定成功。隐藏、最小化、页面导航以及恢复时页面或 Loader 尚未就绪期间暂停检查。每次探测限时十秒，并丢弃过期导航结果和长时间休眠后的超时结果。探测检查 DOM 可见性，不检查截图像素，不能诊断仅发生在 GPU 显示链路中的故障。
 
-启动健康后，如果界面进程意外退出（包括内存不足），应用会静默重载现有窗口，不重启 Host、不弹窗，也不唤起已隐藏的窗口。只有页面加载完成且客户端 Loader 上报健康，才算恢复成功；恢复尝试在 30 秒内未完成则视为超时。最多自动尝试三次：首次不延迟，后续分别等待一秒、三秒；恢复后保持健康满一分钟才重置重试次数。连续失败时暂停自动恢复，并打开系统原生兜底提示：**再次尝试恢复** 授权新一轮有次数上限的恢复，**暂不处理** 则保留后台服务运行。可从托盘选择 **打开 易宝工坊** 再次打开提示，或选择 **导出诊断信息…** 继续调查。重载期间画面可能短暂中断，未发送的输入可能丢失；此机制不修复崩溃或内存增长的根因。启动失败仍使用既有恢复流程；主动终止 renderer 和应用退出期间不会发起自动恢复。
+启动健康后，如果界面进程意外退出（包括内存不足），应用会静默重载现有窗口，不重启 Host、不弹窗，也不唤起已隐藏的窗口。只有页面加载完成且客户端 Loader 上报健康，才算恢复成功；恢复尝试在 30 秒内未完成则视为超时。最多自动尝试三次：首次不延迟，后续分别等待一秒、三秒；恢复后保持健康满一分钟才重置重试次数。连续失败时暂停自动恢复，并打开系统原生兜底提示：**再次尝试恢复** 授权新一轮有次数上限的恢复，**暂不处理** 则保留后台服务运行。可从托盘选择 **打开 e宝工坊** 再次打开提示，或选择 **导出诊断信息…** 继续调查。重载期间画面可能短暂中断，未发送的输入可能丢失；此机制不修复崩溃或内存增长的根因。启动失败仍使用既有恢复流程；主动终止 renderer 和应用退出期间不会发起自动恢复。
 
-易宝工坊 将 UTF-8 日志写入 Electron 用户数据目录：Windows 位于 `%APPDATA%\易宝工坊\logs`，macOS 位于 `~/Library/Application Support/易宝工坊/logs`。完整日志使用 `dsh-YYYY-MM-DD.log`，warning 与 error 还会写入 `dsh-YYYY-MM-DD.error.log`。单文件达到 10 MiB 后轮转，启动时删除七天前的文件，整个目录保持在 200 MiB 以下。`dsh-desktop.logLevel` 设置控制详细程度，默认为 `info`。
+e宝工坊 将 UTF-8 日志写入 Electron 用户数据目录：Windows 位于 `%APPDATA%\易宝工坊\logs`，macOS 位于 `~/Library/Application Support/易宝工坊/logs`。完整日志使用 `dsh-YYYY-MM-DD.log`，warning 与 error 还会写入 `dsh-YYYY-MM-DD.error.log`。单文件达到 10 MiB 后轮转，启动时删除七天前的文件，整个目录保持在 200 MiB 以下。`dsh-desktop.logLevel` 设置控制详细程度，默认为 `info`。
+
+应用显示名称已更改为 e宝工坊；用户数据目录与凭据存储标识继续使用原有的 易宝工坊 名称，以便更新后保留已有设置、登录状态和日志。DSH home 与应用 ID 也继续沿用原有标识。
+
+macOS 的实际应用包仍为 `易宝工坊.app`，可执行文件仍为 `Contents/MacOS/易宝工坊`，以便更新器能够重新启动已有安装。英文与简体中文的 `InfoPlist.strings` 将显示名称本地化为 e宝工坊；原始 `CFBundleDisplayName` 保留 易宝工坊，与应用包文件名对应，`CFBundleName` 使用 e宝工坊。Windows 的可执行文件名称为 `e宝工坊.exe`。
 
 在 macOS 与 Windows 上，从托盘选择 **导出诊断信息…**，应用会在相邻的 `diagnostics` 目录创建 ZIP，并在系统文件管理器中定位它。导出在 Electron 主线程之外执行，会在共享的 50 MiB evidence cap 内收集最近的自有日志和本地 Crashpad `.dmp`，并在存在时包含 `crash-evidence/active-run.json` 标记，同时加入 `system-info.txt`，只保留最新三份 ZIP。创建任何文件前，确认对话框会说明隐私边界。系统会脱敏可识别的凭据，但日志仍可能包含本地路径、工作区 ID、会话 ID、提示词、工具输出或第三方插件消息；crash dump 可能包含进程内存片段。分享诊断包前应先检查内容，公开上传时尤其如此。
 
@@ -234,7 +240,7 @@ corepack.cmd yarn dist:win
 
 该流程不要求 Python 或 Visual Studio C++ Build Tools。Windows 命令会直接使用 `node-pty` 内置的 x64 Node-API 二进制，而不会让 Electron Builder 从源码重新编译；如果安装包 staging tree 缺少这些二进制，packaged-runtime gate 会直接拒绝产物。
 
-`dist:win` 会拒绝非 Windows 或非 x64 宿主，先执行一组 Windows 可运行的 gate，其中包括 build、全部 TypeScript compiler face、打包与原生 shell 聚焦测试，以及 runtime-closure verifier；随后再构建 NSIS 安装向导，并校验生成的两个 PE 文件。完整跨平台 suite 仍由 CI 持有，因为其中部分 POSIX 执行测试不是 Windows 程序。安装向导支持当前用户安装或提升权限后的所有用户安装，可更改安装目录，会创建开始菜单与桌面快捷方式，并且卸载应用时保留 DSH 用户数据。版本 `2.0.5` 会输出到 `dsh-plugin-desktop\dist\易宝工坊-2.0.5-x64-Setup.exe`；用于 smoke 测试的未封装程序仍位于 `dsh-plugin-desktop\dist\win-unpacked\易宝工坊.exe`。
+`dist:win` 会拒绝非 Windows 或非 x64 宿主，先执行一组 Windows 可运行的 gate，其中包括 build、全部 TypeScript compiler face、打包与原生 shell 聚焦测试，以及 runtime-closure verifier；随后再构建 NSIS 安装向导，并校验生成的两个 PE 文件。完整跨平台 suite 仍由 CI 持有，因为其中部分 POSIX 执行测试不是 Windows 程序。安装向导支持当前用户安装或提升权限后的所有用户安装，可更改安装目录，会创建开始菜单与桌面快捷方式，并且卸载应用时保留 DSH 用户数据。版本 `2.0.5` 会输出到 `dsh-plugin-desktop\dist\eBao-Studio-2.0.5-x64-Setup.exe`；用于 smoke 测试的未封装程序仍位于 `dsh-plugin-desktop\dist\win-unpacked\e宝工坊.exe`。
 
 该本地命令会主动移除 Windows 证书变量，并设置 `signExecutable=false`。产物可以安装测试，但没有 Authenticode publisher，因此 Windows 可能显示 Unknown publisher 或 SmartScreen 警告。签名后的 Windows release、证书校验、安装器升级与卸载测试，以及原生 UI 和 sandbox smoke 仍是独立的发布 gate。
 
@@ -246,7 +252,7 @@ corepack.cmd yarn dist:win
 corepack.cmd yarn dist:win-portable
 ```
 
-产物为 `dsh-plugin-desktop\\dist\\eBao-Studio-2.0.5-x64-Portable.zip`。用户解压到任意可写目录后运行其中的 `易宝工坊.exe`，不需要安装器、管理员权限、开始菜单注册或卸载步骤。它仍会把 profile、日志和缓存写入 Windows 默认用户数据目录，因此这是便携分发方式，不是把数据完全封装在 exe 旁边的自包含沙箱。绿色 ZIP 不会交给 NSIS 自动更新流程，新版本需要手动替换并重新解压。本地构建没有签名，Windows 可能显示 Unknown publisher 或 SmartScreen 警告；签名后的绿色版仍属于正式发布 gate。
+产物为 `dsh-plugin-desktop\\dist\\eBao-Studio-2.0.5-x64-Portable.zip`。用户解压到任意可写目录后运行其中的 `e宝工坊.exe`，不需要安装器、管理员权限、开始菜单注册或卸载步骤。它仍会把 profile、日志和缓存写入 Windows 默认用户数据目录，因此这是便携分发方式，不是把数据完全封装在 exe 旁边的自包含沙箱。绿色 ZIP 不会交给 NSIS 自动更新流程，新版本需要手动替换并重新解压。本地构建没有签名，Windows 可能显示 Unknown publisher 或 SmartScreen 警告；签名后的绿色版仍属于正式发布 gate。
 
 ### macOS DMG 冒烟构建
 
@@ -262,7 +268,7 @@ corepack.cmd yarn dist:win-portable
 
 ## 已知限制与暂缓事项
 
-- 添加或删除 profile bundle 后必须重启 易宝工坊；Launcher 不监听 profile manifest。从托盘选择其他 profile 时会自动完成该重启。
+- 添加或删除 profile bundle 后必须重启 e宝工坊；Launcher 不监听 profile manifest。从托盘选择其他 profile 时会自动完成该重启。
 - 切换兼容模式、扩展窗口或增强模式，或修改材质，按设计都会重启应用；存活的 generation 不会热切换 Loader row、slot 所有权或原生材质。
 - Linux 不支持扩展窗口与增强模式。Linux 继续使用兼容呈现。
 - macOS 与 Windows 托盘终端会提供私有 `dsh`、`pnpm` 与 `node` shim。除此之外，Host runtime 会在当前 Electron 进程的 `PATH` 中公开内置 `pnpm` 命令作为 ambient compatibility，并提供受管 `desktopPnpm` service；这些命令都不会加入系统 `PATH`，Linux 目前也没有 desktop 终端命令。

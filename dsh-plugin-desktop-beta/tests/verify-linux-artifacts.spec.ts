@@ -32,8 +32,8 @@ function fixture(version = '2.0.0'): {
   const dist = join(root, 'dist')
   const unpacked = join(dist, 'linux-unpacked')
   mkdirSync(unpacked, { recursive: true })
-  const appImagePath = join(dist, `易宝工坊-Beta-${version}-x86_64.AppImage`)
-  const debPath = join(dist, `易宝工坊-Beta-${version}-amd64.deb`)
+  const appImagePath = join(dist, `e宝工坊-Beta-${version}-x86_64.AppImage`)
+  const debPath = join(dist, `e宝工坊-Beta-${version}-amd64.deb`)
   const application = join(unpacked, 'ebao-studio-beta')
   writeFileSync(appImagePath, appImage(), { mode: 0o755 })
   chmodSync(appImagePath, 0o755)
@@ -62,7 +62,7 @@ describe('Linux artifact verification', () => {
     const value = fixture('1.9.0')
 
     expect(() => verifyLinuxArtifacts({ desktopRoot: value.root, version: '2.0.0' }))
-      .toThrow('易宝工坊-Beta-2.0.0-x86_64.AppImage')
+      .toThrow('e宝工坊-Beta-2.0.0-x86_64.AppImage')
   })
 
   it('rejects an AppImage without the AppImage magic', () => {

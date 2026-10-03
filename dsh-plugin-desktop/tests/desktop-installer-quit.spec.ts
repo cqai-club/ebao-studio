@@ -11,23 +11,23 @@ describe('Desktop installer quit request', () => {
   it('accepts only the dedicated flag on Windows', () => {
     expect(DESKTOP_INSTALLER_QUIT_FLAG).toBe('--dsh-installer-quit')
     expect(isDesktopInstallerQuitRequest(
-      ['易宝工坊.exe', DESKTOP_INSTALLER_QUIT_FLAG],
+      ['e宝工坊.exe', DESKTOP_INSTALLER_QUIT_FLAG],
       'win32',
     )).toBe(true)
-    expect(isDesktopInstallerQuitRequest(['易宝工坊.exe', '--quit'], 'win32')).toBe(false)
+    expect(isDesktopInstallerQuitRequest(['e宝工坊.exe', '--quit'], 'win32')).toBe(false)
     expect(isDesktopInstallerQuitRequest(
-      ['易宝工坊', DESKTOP_INSTALLER_QUIT_FLAG],
+      ['e宝工坊', DESKTOP_INSTALLER_QUIT_FLAG],
       'darwin',
     )).toBe(false)
   })
 
   it('distinguishes background Node re-entry from an explicit application launch', () => {
-    expect(isDesktopBackgroundNodeRequest(['易宝工坊.exe'])).toBe(false)
-    expect(isDesktopBackgroundNodeRequest(['易宝工坊.exe', '--profile', 'desktop'])).toBe(false)
-    expect(isDesktopBackgroundNodeRequest(['易宝工坊.exe', 'C:\\app\\pnpm\\bin\\pnpm.mjs', 'install'])).toBe(true)
-    expect(isDesktopBackgroundNodeRequest(['易宝工坊.exe', '--require', 'C:\\runtime\\clear-env.cjs'])).toBe(true)
-    expect(isDesktopBackgroundNodeRequest(['易宝工坊.exe', '--import=file:///runtime/clear-env.mjs'])).toBe(true)
-    expect(isDesktopBackgroundNodeRequest(['易宝工坊.exe', '--expose-internals', 'desktop-cli.js'])).toBe(true)
+    expect(isDesktopBackgroundNodeRequest(['e宝工坊.exe'])).toBe(false)
+    expect(isDesktopBackgroundNodeRequest(['e宝工坊.exe', '--profile', 'desktop'])).toBe(false)
+    expect(isDesktopBackgroundNodeRequest(['e宝工坊.exe', 'C:\\app\\pnpm\\bin\\pnpm.mjs', 'install'])).toBe(true)
+    expect(isDesktopBackgroundNodeRequest(['e宝工坊.exe', '--require', 'C:\\runtime\\clear-env.cjs'])).toBe(true)
+    expect(isDesktopBackgroundNodeRequest(['e宝工坊.exe', '--import=file:///runtime/clear-env.mjs'])).toBe(true)
+    expect(isDesktopBackgroundNodeRequest(['e宝工坊.exe', '--expose-internals', 'desktop-cli.js'])).toBe(true)
   })
 
   it('handles first- and second-instance requests without showing a window', () => {

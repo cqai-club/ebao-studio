@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { nodeEnvironment } from 'cqai-dsh-plugin-media-runtime'
+import { nodeEnvironment, sharedMediaTool } from 'cqai-dsh-plugin-media-runtime'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 
 export async function command(bin: string, args: string[], options: {cwd?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal; timeout?: number; maxOutput?: number} = {}): Promise<{code: number; output: string}> {
   return await new Promise((resolve, reject) => {
@@ -19,11 +20,18 @@ export function pythonExecutable(upstream: string): string {
   return process.platform === 'win32' ? join(upstream, 'runtime', '.venv', 'Scripts', 'python.exe') : join(upstream, 'runtime', '.venv', 'bin', 'python')
 }
 
-export function ffmpegExecutable(upstream: string, name: 'ffmpeg' | 'ffprobe'): string {
+/** Ordinary media commands may use shared tools; Remotion's native renderer stays private. */
+export function ffmpegExecutable(upstream: string, name: 'ffmpeg' | 'ffprobe', dshHome = resolveDshHome(), env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = env[`CQAI_${name.toUpperCase()}`]
+  if (explicit) {try {const file=statSync(explicit);if(file.isFile()&&file.size>0)return explicit}catch {/* retain legacy fallback */}}
+  return sharedMediaTool(dshHome, name) ?? remotionCompositorExecutable(upstream, name)
+}
+
+export function remotionCompositorExecutable(upstream: string, name: 'ffmpeg' | 'ffprobe' | 'remotion'): string {
   const directory = join(upstream, 'runtime', 'node_modules', '@remotion')
   const suffix = process.platform === 'win32' ? '.exe' : ''
   const packages = existsSync(directory) ? readdirSync(directory).filter(item => matchesCompositorPackage(item, process.platform, process.arch)) : []
-  const binary = packages.map(item => join(directory, item, `${name}${suffix}`)).find(existsSync)
+  const binary = packages.map(item => join(directory, item, `${name}${suffix}`)).find(path => {try{return statSync(path).isFile() && statSync(path).size > 0}catch{return false}})
   if (!binary) throw new Error(`锁定的 Remotion 依赖没有适用于 ${process.platform}/${process.arch} 的 ${name}`)
   return binary
 }
@@ -51,23 +59,29 @@ export function modelReady(directory: string): boolean {
   try {return statSync(join(directory, 'model.int8.onnx')).size === 775_861_420 && statSync(join(directory, 'tokens.txt')).size === 79_172}catch{return false}
 }
 
-export async function health(upstream: string, modelDir = join(upstream, 'runtime', 'models', 'firered')): Promise<Record<string, boolean | string>> {
+export async function health(upstream: string, modelDir = join(upstream, 'runtime', 'models', 'firered'), dshHome = resolveDshHome()): Promise<Record<string, boolean | string>> {
   const runtime = join(upstream, 'runtime')
   const pythonBin = pythonExecutable(upstream)
-  const ffmpegBin = (() => {try{return ffmpegExecutable(upstream,'ffmpeg')}catch{return undefined}})()
-  const ffprobeBin = (() => {try{return ffmpegExecutable(upstream,'ffprobe')}catch{return undefined}})()
+  const locate = (name: 'ffmpeg' | 'ffprobe') => {try{return ffmpegExecutable(upstream, name, dshHome)}catch{return undefined}}
+  const native = (name: 'ffmpeg' | 'ffprobe' | 'remotion') => {try{return remotionCompositorExecutable(upstream, name)}catch{return undefined}}
+  const ffmpegBin = locate('ffmpeg')
+  const ffprobeBin = locate('ffprobe')
+  const nativeCompositor = native('remotion')
   const browserBin = remotionBrowserExecutable(upstream)
   const check = (bin: string | undefined, args: string[], env?: NodeJS.ProcessEnv) => bin ? command(bin,args,{env,timeout:15000}).then(value=>value.code===0).catch(()=>false) : Promise.resolve(false)
-  const [node, python, edgeTts, ffmpeg, ffprobe, browser] = await Promise.all([
+  const [node, pythonPackages, edgeTts, ffmpeg, ffprobe, browser, nativeFfmpeg, nativeFfprobe] = await Promise.all([
     check(process.execPath,['--version'],nodeEnvironment()),
     check(existsSync(pythonBin)?pythonBin:undefined,['-c','import numpy, soundfile, sherpa_onnx, pypinyin, zhconv, requests']),
     check(existsSync(pythonBin)?pythonBin:undefined,['-c','import edge_tts']),
     check(ffmpegBin,['-version']),
     check(ffprobeBin,['-version']),
     check(browserBin,['--version']),
+    check(native('ffmpeg'),['-version']),
+    check(native('ffprobe'),['-version']),
   ])
   const deps = existsSync(join(runtime, 'node_modules', 'remotion', 'package.json')) && existsSync(join(runtime, 'node_modules', 'vite', 'package.json'))
-  return {node, python, edgeTts, ffmpeg, ffprobe, remotion: deps, browser, asrModel: modelReady(modelDir), prepare: '请在设置中点击一键安装所有缺失依赖'}
+  const remotionCompositor = (() => {try{return Boolean(nativeCompositor && statSync(nativeCompositor).size > 0 && nativeFfmpeg && nativeFfprobe)}catch{return false}})()
+  return {node, python: pythonPackages, pythonPackages, edgeTts, ffmpeg, ffprobe, remotion: deps && remotionCompositor, remotionCompositor, browser, asrModel: modelReady(modelDir), prepare: '请在设置中点击一键安装所有缺失依赖'}
 }
 
 export function linkJobRuntime(jobDir: string, upstream: string): void {

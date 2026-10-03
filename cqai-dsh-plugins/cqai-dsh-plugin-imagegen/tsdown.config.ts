@@ -84,6 +84,7 @@ const clientConfig: UserConfig = {
   dts: false,
   sourcemap: true,
   clean: false,
+  loader: { '.svg': 'dataurl' },
   deps: {
     // Platform modules resolve from the injected require (loader module
     // table); everything else is inlined by the bundle. lucide-react must be

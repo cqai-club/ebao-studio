@@ -97,7 +97,7 @@ export function verifyWindowsInstaller(
     distDir,
     `eBao-Studio-${options.version}-x64-Setup.exe`,
   )
-  const applicationPath = join(distDir, 'win-unpacked', '易宝工坊.exe')
+  const applicationPath = join(distDir, 'win-unpacked', 'e宝工坊.exe')
 
   assertPortableExecutable(installerPath, 'Windows NSIS installer')
   assertPortableExecutable(applicationPath, 'unpacked Windows application')

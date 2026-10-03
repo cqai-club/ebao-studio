@@ -50,6 +50,7 @@ import {
   DESKTOP_PACKAGE_NAME,
   DESKTOP_PACKAGE_NAMES,
   DESKTOP_RELEASE_CHANNEL,
+  isStableDesktopRelease,
 } from './product-identity.ts'
 import {
   DEFAULT_MACOS_WINDOW_MATERIAL,
@@ -90,22 +91,34 @@ const BIN_NAME = DESKTOP_PACKAGE_NAME
 const REQUIRED_BUNDLES = requiredWebBundles()
 const REQUIRED_BUNDLE_SET = new Set(REQUIRED_BUNDLES)
 const CQAI_ACCOUNT_PACKAGE = '@cqaiclub/dsn-account'
+const CQAI_ACTIVITIES_PACKAGE = '@cqaiclub/dsh-plugin-activities'
 const CQAI_IMAGEGEN_PACKAGE = 'cqai-dsh-plugin-imagegen'
 const CQAI_PUBLISHER_PACKAGE = 'cqai-dsh-plugin-publisher'
+const DSH_IM_PACKAGE = '@xmanrui/dsh-im'
 const CQAI_MARKET_PACKAGE = 'cqai-dsh-plugin-market'
+const SKILL_MCP_PANEL_PACKAGE = 'dsh-skill-mcp-panel'
+const CQAI_PRESENTATION_PACKAGE = 'cqai-dsh-plugin-desktop-presentation'
+const CQAI_CLUB_THEME_PACKAGE = 'cqai-dsh-plugin-cqai-club-theme'
 const PPT_CORE_PACKAGE = 'dsh-ppt'
 const PPT_COMPOSER_PACKAGE = 'dsh-ppt-composer'
 const DEFAULT_PRODUCT_BUNDLES = [
   CQAI_ACCOUNT_PACKAGE,
   CQAI_IMAGEGEN_PACKAGE,
   'cqai-dsh-plugin-video',
+  'cqai-dsh-plugin-ejianbao',
   'cqai-dsh-plugin-short-video',
   'cqai-dsh-plugin-talkcraft',
   CQAI_PUBLISHER_PACKAGE,
+  DSH_IM_PACKAGE,
   CQAI_MARKET_PACKAGE,
+  SKILL_MCP_PANEL_PACKAGE,
   PPT_COMPOSER_PACKAGE,
+  CQAI_PRESENTATION_PACKAGE,
+  CQAI_CLUB_THEME_PACKAGE,
 ] as const
 const DEFAULT_PRODUCT_BUNDLE_SET = new Set<string>(DEFAULT_PRODUCT_BUNDLES)
+/** Former defaults remain only when the user explicitly installed them into the Profile. */
+const FORMER_DEFAULT_BUNDLE_SET = new Set([CQAI_ACTIVITIES_PACKAGE])
 const OFFICIAL_DEEPSEEK_LLM_ROW_ID = 'llm-deepseek'
 const OFFICIAL_DEEPSEEK_LLM_PACKAGE = '@deepseek-ai/dsh-llm-deepseek-api-key'
 const OFFICIAL_DEEPSEEK_ACCOUNT_LLM_ROW_ID = 'llm-deepseek-account'
@@ -611,6 +624,22 @@ function replaceDocument(path: string, text: string): void {
   }
 }
 
+/** Seed only an untouched, unused Stable Profile before its first composition. */
+export function seedStableDesktopProfileModeForFirstUse(
+  profileDir: string,
+  platform: NodeJS.Platform,
+): boolean {
+  if (!isStableDesktopRelease() || (platform !== 'win32' && platform !== 'darwin')) return false
+  const patchPath = join(profileDir, PROFILE_PATCH_FILENAME)
+  if (lstatSync(patchPath, { throwIfNoEntry: false })?.isSymbolicLink()) return false
+  const document = parseDocument(readFileSync(patchPath, 'utf8'))
+  if (document.errors.length > 0 || !isSeq(document.contents) || document.contents.items.length > 0) return false
+  document.contents.flow = false
+  document.addIn([], { id: DESKTOP_SHELL_ENTRY_ID, config: { mode: 'advanced' } })
+  replaceDocument(patchPath, String(document))
+  return true
+}
+
 /** Resolve the public Web template once and reject an incompatible DSH release. */
 function requiredWebBundles(): string[] {
   const template = PROFILE_TEMPLATES.web
@@ -724,12 +753,14 @@ export interface SkippedOptionalEntry {
 /**
  * Normalize the installation-owned prefix while preserving third-party order.
  * @param current - current persistent bundle list.
+ * @param directDependencies - Profile dependencies explicitly installed by the user.
  * @returns base, Web carrier, then every third-party bundle in prior order.
  */
-export function desktopBundleList(current: readonly string[]): string[] {
+export function desktopBundleList(current: readonly string[], directDependencies: ReadonlySet<string> = new Set()): string[] {
   // Composer mounts the core itself; old direct core bundle rows would register it twice.
   const thirdParty = current.filter(name => !REQUIRED_BUNDLE_SET.has(name)
     && !DEFAULT_PRODUCT_BUNDLE_SET.has(name)
+    && (!FORMER_DEFAULT_BUNDLE_SET.has(name) || directDependencies.has(name))
     && name !== PPT_CORE_PACKAGE
     && !DESKTOP_PACKAGE_NAMES.has(name)
     && !OBSOLETE_DESKTOP_BUNDLE_SET.has(name))
@@ -758,7 +789,7 @@ export function ensureDesktopProfile(home: string = resolveDshHome()): string {
     throw new Error(`${BIN_NAME}: dsh.profile.bundles must be an array of package names`)
   }
   const current = rawBundles === undefined ? [] : rawBundles as string[]
-  const bundles = desktopBundleList(current)
+  const bundles = desktopBundleList(current, new Set(Object.keys(manifest.dependencies ?? {})))
   if (!sameList(current, bundles)) {
     writeProfileManifest(dir, {
       ...manifest,
@@ -1266,15 +1297,11 @@ export function prepareDesktopProfile(
     : resolveProfileDir(profileName, home)
   const workspaceChanged = reconcileProfilePnpmWorkspace(profileDir)
   const requiresDependencyMigration = profileDependencyMigrationRequired(profileDir, workspaceChanged, platform)
-  // `plugin-management` remains the community market's user-facing scope.
-  // Recovery mode no longer reads or writes an independent disable policy:
-  // package removal goes through the provider-neutral `dsh plugin remove`.
-  const managedDisabledBundles = pluginStatePath === undefined
+  // Desktop-owned disables follow the active Profile across Market provider
+  // changes; recovery mode has no separate disable policy.
+  const disabledBundles = pluginStatePath === undefined
     ? new Set<string>()
     : readDesktopDisabledBundles(pluginStatePath, profileName)
-  const disabledBundles = marketSelection.requested === DESKTOP_MARKET_IDENTITIES.community.provider
-    ? new Set(managedDisabledBundles)
-    : new Set<string>()
   const loadedProfile = loadRecoveryFilteredProfile(
     profileName,
     profileDir,

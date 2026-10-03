@@ -1,5 +1,6 @@
 {
   "name": "cqai-dsh-plugin-publisher",
+  "icon": "assets/plugin-icon.svg",
   "version": "0.1.0",
   "description": "e宝工坊内置的统一多平台内容发布页面",
   "license": "MIT",
@@ -13,10 +14,12 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "assets/plugin-icon.svg",
     "cordis.patch.yml",
     "README.md",
     "UPSTREAM.md",
-    "LICENSE"
+    "LICENSE",
+    "LUCIDE_LICENSE"
   ],
   "dsh": {
     "bundle": {

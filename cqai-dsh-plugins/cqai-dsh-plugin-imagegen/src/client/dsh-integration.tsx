@@ -22,6 +22,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
+import pluginIcon from '../../assets/plugin-icon.svg'
 
 // Pull the declaration merges that own the official slots and standard
 // Session props.  These imports are intentionally type-only: the profile owns
@@ -171,20 +172,16 @@ function ImageGenPanelRoot({ renderSlot }: PropsRuntime<'main'> & PropsRenderSlo
 
 function ImageGenPanelIcon({ size, active }: PropsRuntime<'sidebar.panellist'>) {
   return (
-    <svg
+    <img
+      className="cqai-plugin-panel-icon"
       data-cqai-imagegen-panel-icon=""
       data-active={active ? '' : undefined}
+      src={pluginIcon}
       width={size}
       height={size}
-      viewBox="0 0 18 18"
-      fill="none"
-      aria-hidden="true"
-    >
-      <rect x="2" y="2.5" width="14" height="13" rx="2.2" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="6.1" cy="6.4" r="1.25" fill="currentColor" />
-      <path d="m3.8 13 3.5-3.45 2.45 2.35 1.55-1.55 2.9 2.65" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M13.4 1v3.2M11.8 2.6H15" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
+      alt=""
+      draggable={false}
+    />
   )
 }
 

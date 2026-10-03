@@ -17,17 +17,21 @@ export class ManagedJobs {
   async quote(id: string): Promise<Job> {
     const job = this.store.get(id)
     if (job.options.mode !== 'digitalhuman') throw new Error('此报价仅用于数字人口播')
+    if (job.cloud?.provider === 'inferflow') throw new Error('旧版个人 InferFlow 任务不能切换到产品账户，请使用原版本继续或新建任务')
     if (job.cloud?.submissionStarted) throw new Error('任务已提交，请继续查询原任务')
     if (job.options.optimize || job.options.covers) throw new Error('产品账户数字人流程暂不支持附加文案优化或封面生成，请关闭这两项')
     const account = await this.account.getAccount()
     await this.store.prepare(id)
     const script = readFileSync(join(this.store.dir(id), 'script.txt'), 'utf8')
+    if (!script.trim() || script.length > 5000) throw new Error('数字人口播文案需为 1–5000 个字符')
     const quote = await this.provider.quote(script)
     job.cloud = {quote, accountId: account.userId}; this.store.save(job)
     return job
   }
   async generate(job: Job, signal: AbortSignal): Promise<void> {
+    if (job.cloud?.provider === 'inferflow') throw new Error('旧版个人 InferFlow 任务不能切换到产品账户，请使用原版本继续或新建任务')
     if (!job.cloud) throw new Error('请先获取并确认报价')
+    if (!job.cloud.submissionStarted && !job.cloud.runId && job.cloud.quote.pricingSource !== 'relay') throw new Error('请重新获取并确认账户实时报价')
     const assertAccount = async () => {
       if ((await this.account.getAccount()).userId !== job.cloud!.accountId) throw new Error('当前登录账户与制作任务不一致，请切回原账户')
     }
@@ -39,7 +43,8 @@ export class ManagedJobs {
       const script = readFileSync(join(dir, 'script.txt'), 'utf8')
       job.cloud.submissionStarted = true; this.store.save(job)
       try {
-        const created = await this.provider.create({requestId: job.id, quoteId: job.cloud.quote.id, script,
+        // Requotes get a new key; retries of one quote keep the same key.
+        const created = await this.provider.create({requestId: `${job.id}_${job.cloud.quote.id}`, quoteId: job.cloud.quote.id, script,
           avatar: await openAsBlob(join(dir, avatar.file)), voice: await openAsBlob(join(dir, voice.file)), avatarName: avatar.name, voiceName: voice.name}, signal)
         job.cloud.runId = created.id; this.store.save(job)
       } catch (error) {

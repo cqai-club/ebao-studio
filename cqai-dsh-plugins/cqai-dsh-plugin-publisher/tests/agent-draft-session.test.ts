@@ -13,7 +13,7 @@ function fixture() {
 }
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }) })
 
-describe('durable article Agent conversation association', () => {
+describe('durable draft Agent conversation association', () => {
   it('keeps a separate session ID without changing the draft revision or copying the association', () => {
     const env = fixture()
     const draft = createContent('article', env)
@@ -29,10 +29,13 @@ describe('durable article Agent conversation association', () => {
     expect(() => readAgentDraftSession(draft.id, env)).toThrow('草稿不存在')
   })
 
-  it('rejects other content types and malformed or symlinked association files', () => {
+  it('supports image-note and video while rejecting malformed or symlinked association files', () => {
     const env = fixture()
-    const imageNote = createContent('image-note', env)
-    expect(() => writeAgentDraftSession(imageNote.id, 'conversation', env)).toThrow('只支持编辑文章草稿')
+    for (const type of ['image-note', 'video'] as const) {
+      const draft = createContent(type, env)
+      writeAgentDraftSession(draft.id, `${type}-conversation`, env)
+      expect(readAgentDraftSession(draft.id, env)).toBe(`${type}-conversation`)
+    }
     const draft = createContent('article', env)
     const file = join(contentsRoot(env), draft.id, 'agent-session.json')
     writeFileSync(file, '{broken')

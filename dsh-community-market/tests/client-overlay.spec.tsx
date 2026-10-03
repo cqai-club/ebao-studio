@@ -74,7 +74,7 @@ afterEach(() => {
 
 const t = ((key: string) => key) as PropsLocale<'community-market'>['t']
 
-function renderOpenOverlay() {
+function renderClosedOverlay() {
   const instance = createMarketViewStore().create()
   const useStore = <T,>(selector: (state: { open: boolean }) => T): T => useSyncExternalStore(
     instance.subscribe,
@@ -88,8 +88,13 @@ function renderOpenOverlay() {
     t,
   } as unknown as MarketOverlayProps
   const rendered = render(<MarketOverlay {...props} />)
-  act(() => { instance.actions.open() })
   return { ...rendered, instance }
+}
+
+function renderOpenOverlay() {
+  const view = renderClosedOverlay()
+  act(() => { view.instance.actions.open() })
+  return view
 }
 
 function response(value: unknown, status = 200): Response {
@@ -154,6 +159,20 @@ const catalogWithItem: MarketCatalogResponse = {
 }
 
 describe('community market overlay', () => {
+  it('opens when the Desktop home requests the market', async () => {
+    const request = vi.fn<typeof fetch>(async () => response({
+      sources: [], builtIns: [], desktopActions: { openTerminal: true, requestRestart: true },
+    }))
+    vi.stubGlobal('fetch', request)
+    const view = renderClosedOverlay()
+    expect(view.instance.getSnapshot().open).toBe(false)
+
+    act(() => { window.dispatchEvent(new Event('cqai-desktop-presentation:open-market')) })
+
+    expect(view.instance.getSnapshot().open).toBe(true)
+    expect(await screen.findByRole('heading', { name: 'emptyTitle' })).toBeTruthy()
+  })
+
   it('shows the empty source state without requesting a catalog', async () => {
     const state: MarketStateResponse = {
       sources: [],

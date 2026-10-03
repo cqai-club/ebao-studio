@@ -9,9 +9,12 @@
         clientId: '8hm6gea0xg6gb2syles6v'
         resource: 'https://account.cqaiclub.asia'
         accountServiceUrl: 'https://account.cqaiclub.asia'
+        clubPortalResource: 'https://cqaiclub.asia/'
+        clubPortalUrl: 'https://cqaiclub.asia'
         scopes:
           - openid
           - offline_access
           - profile
           - email
           - ai:invoke
+          - activity:publish

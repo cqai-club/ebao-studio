@@ -1,6 +1,6 @@
 /** Headless smoke for the complete published DSH Web profile and renderer manifest. */
 
-import { createRequire } from 'node:module'
+import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -66,6 +66,7 @@ process.env.DSH_HOME = home
 let ctx
 let releasePackageResolver
 let pnpmRuntime
+let restoreUserInfo
 let mountedSpec
 let nativeThemeSource = 'system'
 const trayItems = []
@@ -94,6 +95,21 @@ try {
   )
   const aaRequested = process.env.DSH_VERIFY_AA === '1'
   const brokenAa = process.env.DSH_VERIFY_AA_BROKEN === '1'
+  if (aaRequested) {
+    // AA's rendezvous is fixed under userInfo().homedir, independent of its
+    // dshHome and stateRoot settings. Keep the real user's bridge untouched.
+    const os = createRequire(import.meta.url)('node:os')
+    const originalUserInfo = os.userInfo
+    os.userInfo = (...args) => {
+      const info = originalUserInfo(...args)
+      return { ...info, homedir: Buffer.isBuffer(info.homedir) ? Buffer.from(home) : home }
+    }
+    syncBuiltinESMExports()
+    restoreUserInfo = () => {
+      os.userInfo = originalUserInfo
+      syncBuiltinESMExports()
+    }
+  }
   // A shared AA directory may already contain settings written by a newer channel.
   const aaSettings = {
     uvPath: '', uvPypiIndexUrl: '', uvPythonInstallMirror: '', syncIntervalSeconds: 37,
@@ -129,8 +145,9 @@ try {
   const productLayers = prepared.profile.layers.map(layer => layer.packageName)
   const accountLayerIndex = productLayers.indexOf('@cqaiclub/dsn-account')
   const imagegenLayerIndex = productLayers.indexOf('cqai-dsh-plugin-imagegen')
-  if (accountLayerIndex < 0 || imagegenLayerIndex !== accountLayerIndex + 1) {
-    throw new Error(`desktop profile did not mount ImageGen immediately after CQAI account: ${productLayers.join(', ')}`)
+  if (accountLayerIndex < 0 || imagegenLayerIndex !== accountLayerIndex + 1
+    || productLayers.includes('@cqaiclub/dsh-plugin-activities')) {
+    throw new Error(`desktop profile did not mount ImageGen after CQAI account without activities: ${productLayers.join(', ')}`)
   }
   if (brokenAa && (!prepared.aaFailure || prepared.aaEnabled)) throw new Error('Broken AA bundle did not fail closed')
   const hostServicePluginDir = join(
@@ -265,6 +282,16 @@ try {
     const entries = [...ctx.loader.entries()].map(entry => `${entry.id}=${String(entry.options.name)}`)
     throw new Error(`assembled desktop profile is missing the default CQAI ImageGen plugin: ${entries.join(', ')}`)
   }
+  const imEntry = [...ctx.loader.entries()]
+    .find(entry => entry.options.name === '@xmanrui/dsh-im')
+  if (imEntry === undefined || imEntry.options.disabled === true) {
+    throw new Error('assembled desktop profile did not activate the IM plugin')
+  }
+  const skillMcpEntry = [...ctx.loader.entries()]
+    .find(entry => entry.options.name === 'dsh-skill-mcp-panel')
+  if (skillMcpEntry === undefined || skillMcpEntry.options.disabled === true) {
+    throw new Error('assembled desktop profile did not activate the Skills and MCP manager')
+  }
   const pptEntries = [...ctx.loader.entries()]
     .filter(entry => entry.options.name === 'dsh-ppt-composer')
   if (pptEntries.length !== 1) {
@@ -275,6 +302,12 @@ try {
     .find(entry => entry.options.name === 'cqai-dsh-plugin-short-video')
   if (shortVideoEntry === undefined) {
     throw new Error('assembled desktop profile is missing the Short Video plugin')
+  }
+
+  const themeEntry = [...ctx.loader.entries()]
+    .find(entry => entry.options.name === 'cqai-dsh-plugin-cqai-club-theme')
+  if (themeEntry === undefined || themeEntry.options.disabled === true) {
+    throw new Error('assembled desktop profile did not activate the CQAI Club theme')
   }
 
   if (ctx.get('desktopPnpm') === undefined) {
@@ -475,14 +508,40 @@ try {
   if (!ids.has('cqai-dsh-plugin-short-video')) {
     throw new Error('assembled Web graph is missing the Short Video client')
   }
+  if (!ids.has('@xmanrui/dsh-im')) {
+    throw new Error('assembled Web graph is missing the IM client')
+  }
+  if (!ids.has('dsh-skill-mcp-panel')) {
+    throw new Error('assembled Web graph is missing the Skills and MCP manager client')
+  }
+  if (process.argv.includes('--plugin-management-browser')) {
+    const { verifySkillMcpBrowser } = await import('../../scripts/verify-skill-mcp-browser.mjs')
+    await verifySkillMcpBrowser({
+      url: expectedUrl, cookie,
+      headers: { [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value },
+    })
+  }
+  if (process.argv.includes('--ejianbao-browser')) {
+    const { verifyEjianbaoBrowser } = await import('../../scripts/verify-ejianbao-browser.mjs')
+    await verifyEjianbaoBrowser({url: expectedUrl, cookie, headers: {[BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value}})
+  }
   const aaEnabled = aaRequested && !brokenAa
   if (ids.has('@agents-anywhere/dsh-bridge-next') !== aaEnabled) throw new Error('AA client graph does not match explicit selection')
   if (aaEnabled && (!ctx.get('agentsAnywhereRuntime') || !ctx.get('agentsAnywhereOnboarding'))) {
     throw new Error('AA Host services did not activate in the actual Desktop profile')
   }
   if (aaEnabled) {
-    const endpoint = join(home, 'agents-anywhere', 'bridge', 'endpoint.json')
-    if (!existsSync(endpoint)) throw new Error('AA did not publish its native DSH home endpoint')
+    const runtime = ctx.get('agentsAnywhereRuntime').status()
+    if (runtime.state !== 'ready') {
+      throw new Error(`AA native runtime is not ready: ${String(runtime.state)} (${String(runtime.code ?? 'unknown')})`)
+    }
+    const endpointPath = join(home, '.agents-anywhere', 'dsh-bridge', 'endpoint.json')
+    if (!existsSync(endpointPath)) throw new Error('AA did not publish its isolated native endpoint')
+    const endpoint = JSON.parse(readFileSync(endpointPath, 'utf8'))
+    if (endpoint.version !== 1 || endpoint.pid !== process.pid || endpoint.host !== '127.0.0.1'
+      || !Number.isInteger(endpoint.port) || endpoint.port < 1 || endpoint.port > 65535) {
+      throw new Error('AA native endpoint does not belong to this smoke process')
+    }
     const snapshot = await ctx.get('agentsAnywhereOnboarding').inspect()
     if (snapshot.account) throw new Error('A fresh Profile inherited an AA account')
     for (const [key, value] of Object.entries(aaSettings)) {
@@ -521,10 +580,14 @@ try {
   }
   process.stdout.write('verify-profile-boot: Creator, plugin manager and two Profile HMR generations passed\n')
 } finally {
-  await ctx?.fiber.dispose()
-  releasePackageResolver?.()
-  pnpmRuntime?.dispose()
-  if (previousDshHome === undefined) delete process.env.DSH_HOME
-  else process.env.DSH_HOME = previousDshHome
-  rmSync(home, { recursive: true, force: true })
+  try {
+    await ctx?.fiber.dispose()
+  } finally {
+    restoreUserInfo?.()
+    releasePackageResolver?.()
+    pnpmRuntime?.dispose()
+    if (previousDshHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousDshHome
+    rmSync(home, { recursive: true, force: true })
+  }
 }

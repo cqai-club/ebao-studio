@@ -5,6 +5,7 @@
 
 import { CANVAS_API, CANVAS_SKILL_API, CQAI_IMAGE_PROVIDER_API, DATA_FOLDER_API, GALLERY_API, GENERATE_API, HISTORY_API, PROMPT_ENHANCE_API, STORAGE_API, TASK_API, TEMPLATE_FAVORITES_API, TEMPLATES_API, type CanvasAssetRef, type CanvasDocument, type CanvasFilePreview, type CanvasLayerPlan, type CanvasSkillCatalog, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigPreviewRequest, type CanvasSkillConfigPreviewResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type CanvasSkillRunRequest, type CanvasSkillTask, type CanvasSummary, type CqaiImageProviderView, type GenerateRequest, type GenerateResult, type GenerationTask, type HistoryEntry, type HistoryEntryInput, type TemplateCase, type TemplateFavorite, type TemplateListResult, type TemplateRefreshResult, type TemplateSample } from '../protocol.ts'
 import { activeImageGenLanguage } from './helpers.ts'
+import type { GenerationTaskSummary } from '../protocol.ts'
 
 /** Error carrying the route's JSON error message. */
 export class ImageGenApiError extends Error {
@@ -77,14 +78,27 @@ export class ImageGenApi {
     return body.prompt
   }
 
+  /** Refine one ecommerce prompt while preserving its product constraints. */
+  async polishPrompt(prompt: string): Promise<string> {
+    const response = await fetch(PROMPT_ENHANCE_API.polish, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt }),
+    })
+    return (await readEnvelope<{ ok: true; prompt: string }>(response)).prompt
+  }
+
   async taskSubmit(request: GenerateRequest): Promise<GenerationTask> {
     const response = await fetch(TASK_API.submit, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) })
     return (await readEnvelope<{ ok: true; task: GenerationTask }>(response)).task
   }
 
-  async taskList(): Promise<GenerationTask[]> {
+  async taskList(): Promise<GenerationTaskSummary[]> {
     const response = await fetch(TASK_API.list, { method: 'POST' })
-    return (await readEnvelope<{ ok: true; tasks: GenerationTask[] }>(response)).tasks
+    return (await readEnvelope<{ ok: true; tasks: GenerationTaskSummary[] }>(response)).tasks
+  }
+
+  async taskGet(id: string): Promise<GenerationTask> {
+    const response = await fetch(TASK_API.get, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) })
+    return (await readEnvelope<{ ok: true; task: GenerationTask }>(response)).task
   }
 
   async taskCancel(id: string): Promise<GenerationTask> {
@@ -166,6 +180,11 @@ export class ImageGenApi {
 
   async canvasList(): Promise<CanvasSummary[]> {
     const response = await fetch(CANVAS_API.list, { method: 'POST' })
+    return (await readEnvelope<{ ok: true; projects: CanvasSummary[] }>(response)).projects
+  }
+
+  async canvasFavorite(id: string, favorite: boolean): Promise<CanvasSummary[]> {
+    const response = await fetch(CANVAS_API.favorite, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, favorite }) })
     return (await readEnvelope<{ ok: true; projects: CanvasSummary[] }>(response)).projects
   }
 

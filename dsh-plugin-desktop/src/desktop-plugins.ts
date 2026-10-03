@@ -45,16 +45,29 @@ const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$
  * derives what loads from `dsh.profile.bundles` alone and must never read this.
  */
 const DESELECTED_BUNDLES_KEY = 'desktopDeselectedBundles'
+/** Desktop-shipped features may be disabled, but are never direct removable installs. */
+export const DESKTOP_FEATURE_BUNDLES = new Set([
+  'cqai-dsh-plugin-cqai-club-theme',
+  'cqai-dsh-plugin-imagegen',
+  'cqai-dsh-plugin-video',
+  'cqai-dsh-plugin-ejianbao',
+  'cqai-dsh-plugin-publisher',
+  '@xmanrui/dsh-im',
+  'cqai-dsh-plugin-talkcraft',
+  'cqai-dsh-plugin-short-video',
+  'dsh-ppt-composer',
+])
 const IMMUTABLE_BUNDLES = new Set([
   ...(PROFILE_TEMPLATES.web?.bundles ?? []),
   '@deepseek-ai/dsh-desktop-app',
   ...DESKTOP_PACKAGE_NAMES,
   '@cqaiclub/dsn-account',
-  'cqai-dsh-plugin-imagegen',
-  'cqai-dsh-plugin-video',
-  'cqai-dsh-plugin-publisher',
   'cqai-dsh-plugin-market',
+  'dsh-skill-mcp-panel',
+  'cqai-dsh-plugin-desktop-presentation',
   'dsh-community-market',
+  'dshmarket',
+  '@agents-anywhere/dsh-bridge-next',
 ])
 
 /** One direct bundle declared by the active profile. */
@@ -111,6 +124,8 @@ export interface DesktopPluginEnableResult {
 export interface DesktopPlugins {
   /** Re-scan direct bundle layers and return generation-local opaque identities. */
   list(): readonly DesktopPluginBundle[]
+  /** Bundle packages selected into this running Loader generation. */
+  loadedPackageNames(): readonly string[]
   /** Read all persisted package names once, including stale disables. */
   disabledPackageNames(): readonly string[]
   /** Read persisted state, including a stale disable for a package not currently installed. */
@@ -178,6 +193,8 @@ export interface DesktopPluginsBootstrap {
   readonly statePath: string
   /** Package manifest inside this exact Desktop installation. */
   readonly installAnchor: string
+  /** Bundle packages selected into this generation's Loader composition. */
+  readonly loadedPackageNames?: readonly string[]
   /** Injectable clock used only by focused tests. */
   readonly now?: () => number
 }
@@ -351,7 +368,7 @@ function reconcileDeselectedBundles(
   return [...new Set(inventory.deselectedNames)]
     .filter(name => !selected.has(name)
       && inventory.dependencyNames.has(name)
-      && desktopPluginBundleMutable(name))
+      && desktopPluginDirectDependencySelectable(name))
     .sort(stableCompare)
 }
 
@@ -492,7 +509,8 @@ export function readDesktopProfileBundleInventory(
       packageName,
       status: mutable && disabled.has(packageName) ? 'disabled' : 'active',
       mutable,
-      uninstallable: mutable && manifest.dependencyNames.has(packageName),
+      uninstallable: desktopPluginDirectDependencySelectable(packageName)
+        && manifest.dependencyNames.has(packageName),
     })
   }
   return bundles
@@ -518,11 +536,12 @@ export function readDesktopRecoveryBundleInventory(
     if (seen.has(packageName)) continue
     seen.add(packageName)
     const mutable = desktopPluginBundleMutable(packageName)
+    const selectable = desktopPluginDirectDependencySelectable(packageName)
     bundles.push({
       packageName,
       status: mutable && disabled.has(packageName) ? 'disabled' : 'active',
-      mutable,
-      uninstallable: mutable && manifest.dependencyNames.has(packageName),
+      mutable: selectable,
+      uninstallable: selectable && manifest.dependencyNames.has(packageName),
       deselected: false,
     })
   }
@@ -596,7 +615,7 @@ export async function setDesktopProfileBundleSelected(
   if (!safePackageName(packageName)) {
     throw new DesktopProfileSelectionError('invalid-target', `${BIN_NAME}: bundle package name is invalid`)
   }
-  if (!desktopPluginBundleMutable(packageName)) {
+  if (!desktopPluginDirectDependencySelectable(packageName)) {
     throw new DesktopProfileSelectionError(
       'immutable-target',
       `${BIN_NAME}: bundle ${JSON.stringify(packageName)} belongs to DSH Desktop and cannot be changed`,
@@ -653,9 +672,14 @@ export async function setDesktopProfileBundleSelected(
   return { packageName, status: selected ? 'active' : 'disabled' }
 }
 
-/** Only explicit product bundles are immutable; every other resolved direct layer is user-disableable. */
+/** Protected foundations are immutable; Desktop features are disableable. */
 export function desktopPluginBundleMutable(packageName: string): boolean {
   return safePackageName(packageName) && !IMMUTABLE_BUNDLES.has(packageName)
+}
+
+/** Profile selection/removal is separate from the Desktop feature toggle. */
+function desktopPluginDirectDependencySelectable(packageName: string): boolean {
+  return desktopPluginBundleMutable(packageName) && !DESKTOP_FEATURE_BUNDLES.has(packageName)
 }
 
 /** Filter only mutable layers named in Desktop-private disable state. */
@@ -847,6 +871,7 @@ function assertBootstrap(bootstrap: DesktopPluginsBootstrap): void {
 /** Generation-scoped direct bundle inventory with two-phase persistent state changes. */
 export class DesktopPluginsService extends Service implements DesktopPlugins {
   private readonly now: () => number
+  private readonly loadedBundles: readonly string[]
   private readonly bundleIds = new Map<string, string>()
   private readonly previews = new Map<string, DesktopPluginPreviewRecord>()
   private disposed = false
@@ -856,6 +881,7 @@ export class DesktopPluginsService extends Service implements DesktopPlugins {
     assertBootstrap(bootstrap)
     super(ctx, 'desktopPlugins')
     this.now = bootstrap.now ?? Date.now
+    this.loadedBundles = Object.freeze([...new Set(bootstrap.loadedPackageNames ?? [])])
     ctx.effect(
       () => () => {
         this.disposed = true
@@ -872,6 +898,11 @@ export class DesktopPluginsService extends Service implements DesktopPlugins {
       ...item,
       bundleId: this.bundleId(item.packageName),
     }))
+  }
+
+  loadedPackageNames(): readonly string[] {
+    this.assertActive()
+    return [...this.loadedBundles]
   }
 
   isDisabled(packageName: string): boolean {

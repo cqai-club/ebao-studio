@@ -14,6 +14,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ILayout, MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import pluginIcon from '../../assets/plugin-icon.svg'
 import type { Platform, PublisherContent, PublisherContentType } from '../protocol.ts'
 import { AccountsPage } from './accounts.tsx'
 import { ContentEditor } from './content.tsx'
@@ -30,11 +31,13 @@ export const inject = ['slots', 'layout', 'sidebarRight', 'sidebarRightTabs', 's
 const PUBLISHER_PANEL = 'cqai-publisher' as MainPanelId
 const AGENT_DRAWER_EVENT = 'cqai-publisher-agent-drawer'
 type PublisherTab = 'publish' | 'history' | 'accounts' | 'settings'
-type AgentDrawerBinding = { contentId: string; sessionId: string; bindingToken: string; workspaceId: WorkspaceId }
+type AgentDrawerBinding = { contentId: string; contentType: PublisherContentType; sessionId: string; bindingToken: string; workspaceId: WorkspaceId }
 type AgentDraftSession = { contentId: string; sessionId: string | null }
 
-function requestAgentDrawer(open: boolean, contentId?: string) {
-  window.dispatchEvent(new CustomEvent(AGENT_DRAWER_EVENT, { detail: { open, ...(contentId ? { contentId } : {}) } }))
+function requestAgentDrawer(open: boolean, contentId?: string, mode: 'full' | 'simple' = 'full', contentType?: PublisherContentType) {
+  window.dispatchEvent(new CustomEvent(AGENT_DRAWER_EVENT, { detail: {
+    open, ...(contentId ? { contentId } : {}), ...(open ? { mode } : {}), ...(contentType ? { contentType } : {}),
+  } }))
 }
 
 function waitForArchiveSnapshot(workspaces: IWorkspaces): Promise<void> {
@@ -85,7 +88,7 @@ function waitForWorkspaceSession(workspaces: IWorkspaces, workspaceId: Workspace
 }
 
 function PublishIcon({ size = 20 }: { size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 3 10 14"/><path d="m21 3-7 18-4-7-7-4z"/></svg>
+  return <img className="cqai-plugin-panel-icon" src={pluginIcon} width={size} height={size} alt="" draggable={false} />
 }
 
 function handleTabKeyDown(event: KeyboardEvent<HTMLElement>) {
@@ -119,7 +122,7 @@ function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions
   const [agentDrawer, setAgentDrawer] = useState<AgentDrawerBinding>()
   const agentDrawerRef = useRef<AgentDrawerBinding>()
   const agentRequestGenerationRef = useRef(0)
-  const activeArticleIdRef = useRef<string>()
+  const activeContentRef = useRef<{ id: string; type: PublisherContentType }>()
   const [agentAvailable, setAgentAvailable] = useState(false)
   const [agentError, setAgentError] = useState('')
   useEffect(() => {
@@ -183,21 +186,23 @@ function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions
   const contentTypeRef = useRef(contentType)
   const handoffGenerationRef = useRef(0)
   contentTypeRef.current = contentType
-  activeArticleIdRef.current = tab === 'publish' && contentType === 'article' ? editingIds.article : undefined
+  activeContentRef.current = tab === 'publish' && editingIds[contentType]
+    ? { id: editingIds[contentType], type: contentType } : undefined
   useEffect(() => {
     const open = agentDrawerRef.current
-    if (open && (tab !== 'publish' || contentType !== 'article' || editingIds.article !== open.contentId)) void closeAgent()
-  }, [tab, contentType, editingIds.article, closeAgent])
+    if (open && (tab !== 'publish' || contentType !== open.contentType || editingIds[contentType] !== open.contentId)) void closeAgent()
+  }, [tab, contentType, editingIds, closeAgent])
   const toggleAgent = async (content: PublisherContent) => {
-    if (content.contentType !== 'article') throw new Error('Agent 对话仅支持文章草稿')
+    if (content.contentType !== contentType) throw new Error('当前草稿内容类型不匹配')
     if (!agentAvailable) throw new Error('Agent 抽屉需要 Desktop 扩展布局')
-    if (agentDrawerRef.current?.contentId === content.id) {
+    if (agentDrawerRef.current?.contentId === content.id && agentDrawerRef.current.contentType === content.contentType) {
       await closeAgent()
       return
     }
     if (agentDrawerRef.current) await closeAgent()
     const generation = ++agentRequestGenerationRef.current
-    const stillCurrent = () => generation === agentRequestGenerationRef.current && activeArticleIdRef.current === content.id
+    const stillCurrent = () => generation === agentRequestGenerationRef.current
+      && activeContentRef.current?.id === content.id && activeContentRef.current.type === content.contentType
     setAgentError('')
     const { path } = await api<{ path: string }>('agent-workspace', { contentId: content.id })
     if (!stillCurrent()) return
@@ -229,14 +234,14 @@ function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions
     // The conversation in the Agent drawer reads the selected Session, but
     // openSession also reveals the ordinary Conversation as the main panel.
     layout.selectPanel(PUBLISHER_PANEL)
-    const binding = await api<Omit<AgentDrawerBinding, 'workspaceId'>>('agent-draft-bind', { sessionId, contentId: content.id })
+    const binding = await api<Pick<AgentDrawerBinding, 'contentId' | 'sessionId' | 'bindingToken'>>('agent-draft-bind', { sessionId, contentId: content.id })
     if (!stillCurrent() || !isMainSession(sessions, sessionId)) {
       await api('agent-draft-bind', { sessionId, contentId: null, bindingToken: binding.bindingToken })
       return
     }
-    agentDrawerRef.current = { ...binding, workspaceId: workspace.workspaceId }
+    agentDrawerRef.current = { ...binding, contentType: content.contentType, workspaceId: workspace.workspaceId }
     setAgentDrawer(agentDrawerRef.current)
-    requestAgentDrawer(true, content.id)
+    requestAgentDrawer(true, content.id, 'simple', content.contentType)
   }
   useEffect(() => subscribePublisherHandoff(handoff => {
     agentRequestGenerationRef.current += 1
@@ -259,7 +264,7 @@ function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions
     try { localStorage.setItem('cqai-publisher-content-type', value) } catch { /* optional preference */ }
   }
   const renderGeneration = handoffGenerationRef.current
-  const selected = (type: 'article' | 'image-note', id?: string) => {
+  const selected = (type: PublisherContentType, id?: string) => {
     if (renderGeneration !== handoffGenerationRef.current) return
     agentRequestGenerationRef.current += 1
     setEditingIds(current => ({ ...current, [type]: id }))
@@ -315,16 +320,18 @@ function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions
           onCreate={() => createDraft(type)} onCopy={id => copyDraft(type, id)}
           onDelete={id => { setGalleryError(undefined); setDeleteError(''); setDeleteTarget({ contentType: type, id }) }}/>
       </div>
-      {type === 'article' && agentError && <div className="pub-error" role="alert">{agentError}</div>}
+      {type === contentType && agentError && <div className="pub-error" role="alert">{agentError}</div>}
       {editingId && (type === 'video'
         ? <VideoPage active={active} selectedContentId={editingId}
-            onSelectedContentChange={id => setEditingIds(current => ({ ...current, video: id }))}
+            agentOpen={agentDrawer?.contentId === editingId && agentDrawer.contentType === type}
+            onToggleAgent={agentAvailable ? toggleAgent : undefined}
+            onSelectedContentChange={id => selected(type, id)}
             onBack={() => returnToGallery(type)}/>
         : <ContentEditor contentType={type} active={active} selectedContentId={editingId}
             intendedPlatforms={intendedPlatforms?.contentId === editingId ? intendedPlatforms.platforms : undefined}
             handoffGeneration={handoffGenerationRef.current}
-            agentOpen={type === 'article' && agentDrawer?.contentId === editingId}
-            onToggleAgent={type === 'article' && agentAvailable ? toggleAgent : undefined}
+            agentOpen={agentDrawer?.contentId === editingId && agentDrawer.contentType === type}
+            onToggleAgent={agentAvailable ? toggleAgent : undefined}
             onSelectedContentChange={id => selected(type, id)} onBack={() => returnToGallery(type)}/>)}
     </>
   }

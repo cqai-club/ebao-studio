@@ -2,6 +2,8 @@ import z from '@deepseek-ai/schemastery'
 
 import {
   DEFAULT_ACCOUNT_SERVICE_URL,
+  DEFAULT_CLUB_PORTAL_RESOURCE,
+  DEFAULT_CLUB_PORTAL_URL,
   DEFAULT_ISSUER,
   DEFAULT_RESOURCE,
   DEFAULT_SCOPES,
@@ -20,6 +22,8 @@ export const Config = z.object({
   clientId: z.string().default(''),
   resource: z.string().default(DEFAULT_RESOURCE),
   accountServiceUrl: z.string().default(DEFAULT_ACCOUNT_SERVICE_URL),
+  clubPortalResource: z.string().default(DEFAULT_CLUB_PORTAL_RESOURCE),
+  clubPortalUrl: z.string().default(DEFAULT_CLUB_PORTAL_URL),
   scopes: z.array(String).role('table').default([...DEFAULT_SCOPES]),
   requestTimeoutMs: z.natural().min(1000).default(15_000),
   modelCatalogCacheTtlMs: z.natural().min(1000).default(MODEL_CATALOG_CACHE_TTL_MS),
@@ -38,6 +42,8 @@ export function normalizeConfig(config: Partial<DsnAccountConfig> | undefined): 
     clientId: config?.clientId ?? '',
     resource: config?.resource ?? DEFAULT_RESOURCE,
     accountServiceUrl: config?.accountServiceUrl ?? DEFAULT_ACCOUNT_SERVICE_URL,
+    clubPortalResource: config?.clubPortalResource ?? DEFAULT_CLUB_PORTAL_RESOURCE,
+    clubPortalUrl: config?.clubPortalUrl ?? DEFAULT_CLUB_PORTAL_URL,
     scopes: config?.scopes?.length ? [...config.scopes] : [...DEFAULT_SCOPES],
     requestTimeoutMs: config?.requestTimeoutMs ?? 15_000,
     modelCatalogCacheTtlMs: config?.modelCatalogCacheTtlMs ?? MODEL_CATALOG_CACHE_TTL_MS,
@@ -46,6 +52,10 @@ export function normalizeConfig(config: Partial<DsnAccountConfig> | undefined): 
   assertHttpUrl(value.issuer, 'issuer')
   assertHttpUrl(value.resource, 'resource')
   assertHttpUrl(value.accountServiceUrl, 'accountServiceUrl')
+  assertHttpUrl(value.clubPortalResource, 'clubPortalResource')
+  if (assertHttpUrl(value.clubPortalUrl, 'clubPortalUrl').pathname !== '/') {
+    throw new Error('clubPortalUrl must use the origin root')
+  }
   if (!value.scopes.includes('openid')) throw new Error('CQAI Club scopes must include openid')
   if (!value.scopes.includes('offline_access')) throw new Error('CQAI Club scopes must include offline_access')
   if (!value.scopes.includes('ai:invoke')) throw new Error('CQAI Club scopes must include ai:invoke')

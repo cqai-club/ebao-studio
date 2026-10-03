@@ -33,6 +33,7 @@ import {
   parseDesktopActionAcceptance,
   parseDesktopRestartAcceptance,
   parseDesktopSettingsView,
+  parseDesktopUpdateStatus,
   type DesktopSettingsView,
 } from '../src/client/desktop-settings-api.ts'
 import { DESKTOP_RENDERER_ACTIONS_BRIDGE } from '../src/renderer-actions-contract.ts'
@@ -93,6 +94,66 @@ describe('Desktop settings API', () => {
     expect(parseDesktopActionAcceptance({ accepted: true })).toBeUndefined()
     expect(() => parseDesktopActionAcceptance({ accepted: true, detail: 'extra' }))
       .toThrow('invalid Desktop action response')
+  })
+
+  it('validates local update snapshots without coupling downloads to available releases', () => {
+    const snapshot = {
+      supported: true,
+      currentVersion: '2.0.5-beta.2+desktop.01',
+      availableVersion: '2.0.6-beta.1',
+      checking: false,
+      downloading: false,
+    }
+    const parsed = parseDesktopUpdateStatus(snapshot)
+    expect(parsed).toEqual(snapshot)
+    expect(Object.isFrozen(parsed)).toBe(true)
+    expect(parseDesktopUpdateStatus({ ...snapshot, availableVersion: null, downloading: true }))
+      .toEqual({ ...snapshot, availableVersion: null, downloading: true })
+    expect(parseDesktopUpdateStatus({ ...snapshot, supported: false, availableVersion: null }))
+      .toMatchObject({ supported: false, availableVersion: null })
+  })
+
+  it('rejects malformed or unbounded update versions and non-boolean status fields', () => {
+    const snapshot = {
+      supported: true, currentVersion: '2.0.5', availableVersion: null,
+      checking: false, downloading: false,
+    }
+    for (const value of [null, [], {}, { ...snapshot, supported: 'true' },
+      { ...snapshot, checking: 1 }, { ...snapshot, downloading: null },
+      { ...snapshot, availableVersion: undefined }, { ...snapshot, privatePath: '/private/update' }]) {
+      expect(() => parseDesktopUpdateStatus(value)).toThrow('invalid Desktop update status response')
+    }
+    for (const version of ['', 'v2.0.5', '02.0.5', '2.0', '2.0.5\n', '2.0.5-beta.01',
+      '2.0.5+build\u0000', '2.0.5-' + 'a'.repeat(128)]) {
+      expect(() => parseDesktopUpdateStatus({ ...snapshot, currentVersion: version }))
+        .toThrow('invalid Desktop update status response')
+      expect(() => parseDesktopUpdateStatus({ ...snapshot, availableVersion: version }))
+        .toThrow('invalid Desktop update status response')
+    }
+  })
+
+  it('reads local update state with a fresh same-origin GET and never invokes the update action', async () => {
+    const snapshot = {
+      supported: true, currentVersion: '2.0.5', availableVersion: '2.0.6',
+      checking: false, downloading: false,
+    }
+    const fetcher = vi.fn(async () => json(snapshot))
+    const invoke = vi.fn(async () => {})
+    const api = createDesktopSettingsApi(fetcher, { invoke })
+    expect(fetcher).not.toHaveBeenCalled()
+    await expect(api.readUpdateStatus()).resolves.toEqual(snapshot)
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith('/api/desktop/updates/status', {
+      method: 'GET', credentials: 'same-origin', redirect: 'error', cache: 'no-store',
+      headers: { 'Accept': 'application/json' },
+    })
+    expect(desktopSettingsPaths.updateStatus).toBe('/api/desktop/updates/status')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('does not expose native error bodies when update state is unavailable', async () => {
+    const api = createDesktopSettingsApi(async () => json({ error: '/private/update-state' }, 503))
+    await expect(api.readUpdateStatus()).rejects.toThrow('Desktop settings request failed (503)')
+    await expect(api.readUpdateStatus()).rejects.not.toThrow('/private')
   })
 
   it('accepts only authenticated root browser URLs with a canonical token query', () => {

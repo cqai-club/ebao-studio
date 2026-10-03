@@ -21,3 +21,5 @@ corepack yarn workspace cqai-dsh-plugin-imagegen build
 ## 上游来源
 
 完整功能迁移自 `@dickpy/dsh-imagegen` v1.5.12。具体版本、修改边界和许可证信息见 [UPSTREAM.md](./UPSTREAM.md) 与 [LICENSE](./LICENSE)。
+
+已选择性集成上游至 2026-10-01 的 PNG、轻量任务队列、Dock、模型检测、画布收藏与图片缩放、电商提示词更新，并加入 Handraw、Prompt Signal、EvoLink 共 1,480 个社区模板。三个社区来源随插件版本更新，参考图片按需下载并缓存；原有模板刷新、收藏和数据目录继续兼容。社区数据来源与许可证见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。

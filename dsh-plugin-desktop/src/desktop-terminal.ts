@@ -1,4 +1,4 @@
-/** Isolated command-line environment launched from the 易宝工坊 tray. */
+/** Isolated command-line environment launched from the e宝工坊 tray. */
 
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import {
@@ -51,7 +51,7 @@ const PRIVATE_FILE_MODE = 0o600
 const WINDOWS_SHELL_COMMANDS = ['pwsh.exe', 'powershell.exe', 'cmd.exe'] as const
 const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
 
-/** Platforms with a native terminal launch contract owned by 易宝工坊. */
+/** Platforms with a native terminal launch contract owned by e宝工坊. */
 export type DesktopTerminalPlatform = 'darwin' | 'win32'
 
 /** Process launcher injected by the Electron adapter. */

@@ -68,7 +68,7 @@ export function buildNormalGenerationStream(
 
   const taskItems: NormalGenerationStreamItem[] = tasks
     .filter(task => isNormalGeneration(task.request))
-    .filter(task => task.status !== 'completed' || task.result?.history === undefined)
+    .filter(task => task.status !== 'completed' || task.result !== undefined && task.result.history === undefined)
     .filter(task => matchesFilters(task.request, filters))
     .map(task => ({ kind: 'task', key: `task:${task.id}`, createdAt: task.createdAt, task }))
 

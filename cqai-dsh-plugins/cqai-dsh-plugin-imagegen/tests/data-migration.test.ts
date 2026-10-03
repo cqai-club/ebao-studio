@@ -41,7 +41,7 @@ describe('migrateImageData', () => {
     const result = await migrateImageData(root, { now: new Date('2026-09-13T00:00:00.000Z') })
     expect(result.migrated).toBe(true)
     expect(result.version).toBe(IMAGE_DATA_SCHEMA_VERSION)
-    expect(result.metadataFiles).toEqual([...originals.keys()].sort())
+    expect(result.metadataFiles).toEqual([...originals.keys()].map(relative => path.normalize(relative)).sort())
     expect(result.backupDir).toBeDefined()
     for (const [relative, contents] of originals) {
       expect(await fs.readFile(path.join(root, relative), 'utf8')).toBe(contents)

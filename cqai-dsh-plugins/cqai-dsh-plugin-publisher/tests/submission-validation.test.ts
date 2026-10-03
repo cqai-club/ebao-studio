@@ -23,6 +23,10 @@ describe('article and image-note preflight', () => {
     draft.assets = [{ id: '33333333-3333-4333-8333-333333333333', name: '封面.png', mime: 'image/png', bytes: 12 }]
     draft.coverAssetId = draft.assets[0]!.id
     expect(contentSubmissionError(draft, targets, capabilities, 'draft')).toBeUndefined()
+    const oversized = { ...draft, body: `正文 ![图](ebao-asset://${draft.assets[0]!.id})`,
+      assets: [{ ...draft.assets[0]!, bytes: 11 * 1024 * 1024 }] }
+    expect(contentSubmissionError(oversized, targets, capabilities, 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(oversized, targets, capabilities)).toContain('微信公众号：超限图片上传前将尝试压缩，草稿需核对画质')
     expect(contentSubmissionError({ ...draft, tags: ['标签'] }, targets, capabilities, 'draft')).toBeUndefined()
     const longSummary = { ...draft, summary: '摘要'.repeat(61) }
     expect(contentSubmissionError(longSummary, targets, capabilities, 'draft')).toBeUndefined()
@@ -150,7 +154,7 @@ describe('article and image-note preflight', () => {
     draft.platformVariants.juejin!.coverAssetId = null
     draft.platformVariants.tt!.body = `头条正文 ![被排除的图](ebao-asset://${draft.assets[0]!.id})`
     expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toBeUndefined()
-    expect(articleSubmissionWarnings(draft, [account('tt')], capabilities)).toContain('头条：不符合该平台要求的正文图片将从平台版本移除')
+    expect(articleSubmissionWarnings(draft, [account('tt')], capabilities)).toContain('头条：正文图片会在原位置保留占位，请在头条草稿中手动上传')
     draft.platformVariants.tt!.body = '头条正文'
     draft.platformVariants.wxmp!.body = '微信正文 ![缺图](ebao-asset://33333333-3333-4333-8333-333333333333)'
     expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()
