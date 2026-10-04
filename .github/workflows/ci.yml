@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [master]
+    branches: [dev, master]
   push:
-    branches: [master]
+    branches: [dev, master]
   workflow_dispatch:
 
 permissions:
@@ -45,6 +45,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+          node --test scripts/release-flow.test.mjs
+          node scripts/release-flow.mjs integration
           node --test scripts/bilingual-docs.test.mjs
           node scripts/verify-bilingual-docs.mjs
           node --test scripts/market-dependency-direction.test.mjs
