@@ -24,6 +24,8 @@ e宝工坊的一个 React 主面板，默认直接展示发布内容，右上角
 
 页面通过 DSH Web Route 调用 Electron 主进程的 `PublisherSupervisor`，再由 Supervisor 使用 stdin/stdout NDJSON 驱动独立的 MatrixMedia Publisher Worker。浏览器不能直连 Worker，不接收 Cookie、session partition 或任意本地文件路径。视频草稿与文章、图文草稿均保存在 `<DSH home>/publisher/contents/<id>/`，支持约 800ms 防抖自动保存。选择 e剪宝成片时，草稿只保存 `workId`，Host 固定解析 `<DSH home>/ejianbao/jobs/<workId>/final_video.mp4`；选择本地 MP4 时，由 Electron 原生文件对话框选取，草稿只保存不含路径的 `localVideoId`、文件名和大小，真实路径由 Electron main 私有目录 `<userData>/publisher/local-videos/` 保存，重启后仍可解析。发布页通过同源字节范围路由播放所选视频；本地文件由 Electron main 按选取 ID 分块读取，每次核对设备号、文件身份、大小和修改时间，移动或变化后须重新选择。播放器不自动播放或转码。视频提交只传内容 ID 与修订号，Host 解析草稿并转成现有 Worker 视频请求；Supervisor 在提交时重新校验本地视频并将真实路径交给 Worker。文章和图文由 Worker 接受前复制不可变内容快照。本地视频本体不复制到草稿库；编辑及提交后需保留原文件，移动、删除或修改后需要重新选择。删除视频草稿不会自动删除文件，也不影响已接受的提交。
 
+新建草稿时可填写任务名称，实际项目文件夹按“文章/图文/视频-任务名称-日期-短标识”命名，例如 `文章-秋季新品发布-2026-10-05-a1b2c3d4`；未填写名称时使用中文内容类型和日期。同名任务独立创建目录，已有目录不会被复用；复制草稿和从原稿创建发布准备单也会使用其初始标题。名称会清理跨平台文件名中的非法字符并限制长度。项目目录在创建时固定，修改标题或默认根目录后仍使用原来的路径，Agent 对话与文件可以继续访问；已有 UUID 目录保持原样，草稿删除也不会删除用户工作文件。
+
 ## 产品语义
 
 - 提交前同步校验作品、参数和全部目标账号登录态，任一失败则整单拒绝且不落提交记录。

@@ -333,9 +333,10 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     ) }
   }
   if (action === 'contents') {
-    const value = exact(body, ['contentType'])
+    const value = exact(body, ['contentType', 'title'])
     if (value.contentType !== 'article' && value.contentType !== 'image-note' && value.contentType !== 'video') throw new Error('内容类型无效')
-    return { code: 201, data: createContent(value.contentType) }
+    if (value.title !== undefined && typeof value.title !== 'string') throw new Error('标题格式无效')
+    return { code: 201, data: createContent(value.contentType, process.env, value.title) }
   }
   if (action === 'contents-query') {
     const value = exact(body, ['contentType', 'query', 'cursor'])

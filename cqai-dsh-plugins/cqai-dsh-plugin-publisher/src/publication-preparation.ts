@@ -239,7 +239,7 @@ export function openPublicationFromSource(
   }
   if (orderedSources.length > 20) throw new Error('每份发布内容最多 20 张图片，请先精简内容源')
 
-  const created = createContent(contentType, env)
+  const created = createContent(contentType, env, candidate?.title ?? source.title)
   try {
     let current = created
     const assetBySource = new Map<string, string>()

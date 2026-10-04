@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { articleImageSources } from '../src/article-assets.ts'
 import { listContents, readAsset, readContent, saveContent } from '../src/contents.ts'
 import { openPublicationFromSource } from '../src/publication-preparation.ts'
+import { ensureProjectWorkspace } from '../src/project-workspace.ts'
 import { projectContentForPlatform } from '../src/protocol.ts'
 import { registerSourceDocument } from '../src/source-documents.ts'
 
@@ -35,6 +36,8 @@ describe('publication preparation from an MD source', () => {
     const first = openPublicationFromSource(source.id, source.revision, 'article', env)
     expect(first.articleTheme).toBe('classic')
     expect(first.title).toBe('六张图的文章')
+    const project = ensureProjectWorkspace(first.id, env).path
+    expect(basename(project)).toContain('六张图的文章')
     expect(first.assets.map(asset => asset.name)).toEqual(order.map(index => `${index}.png`))
     expect(first.coverAssetId).toBe(first.assets[0]?.id)
     expect(first.body).not.toContain('source-image://')
@@ -51,6 +54,7 @@ describe('publication preparation from an MD source', () => {
       summary: '', tags: [], creativeStatement: 'none', coverAssetId: first.coverAssetId,
     }, env)
     expect(openPublicationFromSource(source.id, source.revision, 'article', env)).toEqual(edited)
+    expect(ensureProjectWorkspace(first.id, env).path).toBe(project)
 
     writeFileSync(markdownPath, `${readFileSync(markdownPath, 'utf8')}\n\n后续更新`)
     const revised = registerSourceDocument('six-images', markdownPath, env)
@@ -82,6 +86,7 @@ describe('publication preparation from an MD source', () => {
     const oneAsset = prepared.assets.find(asset => asset.name === 'one.png')!
     const twoAsset = prepared.assets.find(asset => asset.name === 'two.png')!
     expect(prepared.title).toBe('确认后的标题')
+    expect(basename(ensureProjectWorkspace(prepared.id, env).path)).toContain('确认后的标题')
     expect(prepared.summary).toBe('确认摘要')
     expect(prepared.tags).toEqual(['旅行'])
     expect(prepared.body).toBe('确认正文\n\n`![示例](https://example.com/example.png)`\n\n')
@@ -178,9 +183,9 @@ describe('publication preparation from an MD source', () => {
     expect(() => openPublicationFromSource(source.id, source.revision, 'article', env, {
       id: '44444444-4444-4444-8444-444444444444', platforms: ['juejin'], title: '长'.repeat(121),
     }))
-      .toThrow('草稿内容过大')
+      .toThrow('标题过大')
     expect(listContents(env)).toEqual([])
-    expect(readdirSync(join(env.DSH_HOME, 'publisher', 'projects', 'article'))).toEqual([])
+    expect(existsSync(join(env.DSH_HOME, 'publisher', 'projects', 'article'))).toBe(false)
     const prepared = openPublicationFromSource(source.id, source.revision, 'article', env)
     expect(prepared.assets).toHaveLength(1)
     expect(listContents(env)).toHaveLength(1)

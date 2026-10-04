@@ -18,6 +18,7 @@ import pluginIcon from '../../assets/plugin-icon.svg'
 import type { Platform, PublisherContent, PublisherContentType } from '../protocol.ts'
 import { AccountsPage } from './accounts.tsx'
 import { ContentEditor } from './content.tsx'
+import { CreateDraftDialog } from './create-draft-dialog.tsx'
 import { ConversationPreview, ConversationPreviewAction, PREVIEW_ID, PREVIEW_KIND } from './conversation-preview.tsx'
 import { DraftGallery } from './draft-gallery.tsx'
 import { clearPublisherHandoff, readPublisherHandoff, requestPublisherHandoff, subscribePublisherHandoff } from './handoff.ts'
@@ -117,6 +118,7 @@ function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions
   const [galleryBusy, setGalleryBusy] = useState(false)
   const galleryBusyRef = useRef(false)
   const [galleryError, setGalleryError] = useState<{ contentType: PublisherContentType; message: string }>()
+  const [createTarget, setCreateTarget] = useState<PublisherContentType>()
   const [deleteTarget, setDeleteTarget] = useState<{ contentType: PublisherContentType; id: string }>()
   const [deleteError, setDeleteError] = useState('')
   const [agentDrawer, setAgentDrawer] = useState<AgentDrawerBinding>()
@@ -289,10 +291,11 @@ function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions
     try { await task() } catch (cause) { setGalleryError({ contentType: type, message: errorMessage(cause) }) }
     finally { galleryBusyRef.current = false; setGalleryBusy(false) }
   }
-  const createDraft = (type: PublisherContentType) => void runGalleryAction(type, async () => {
-    const created = await api<PublisherContent>('contents', { contentType: type })
-    setEditingIds(current => ({ ...current, [type]: created.id }))
-  })
+  const createDraft = (type: PublisherContentType) => {
+    if (galleryBusyRef.current) return
+    setGalleryError(undefined)
+    setCreateTarget(type)
+  }
   const copyDraft = (type: PublisherContentType, id: string) => void runGalleryAction(type, async () => {
     const copy = await api<PublisherContent>('content-copy', { id })
     if (copy.contentType !== type) throw new Error('草稿内容类型不匹配')
@@ -360,6 +363,11 @@ function PublisherPage({ sessions, workspaces, uiWorkspace, layout }: { sessions
     <div id="pub-panel-history" hidden={tab !== 'history'}><SubmissionHistory active={tab === 'history'}/></div>
     <div id="pub-panel-accounts" hidden={tab !== 'accounts'}><AccountsPage active={tab === 'accounts'}/></div>
     <div id="pub-panel-settings" hidden={tab !== 'settings'}>{tab === 'settings' && <PublisherSettings/>}</div>
+    {createTarget && <CreateDraftDialog contentType={createTarget} onCancel={() => setCreateTarget(undefined)}
+      onCreated={created => {
+        setEditingIds(current => ({ ...current, [created.contentType]: created.id }))
+        setCreateTarget(undefined)
+      }}/>}
     <PublisherModal open={deleteTarget !== undefined} title="删除本地草稿" closeLabel="关闭删除草稿确认"
       description={deleteError ? `删除失败：${deleteError}` : '删除这份本地草稿？已提交的内容快照不受影响。'} className="pub-modal"
       onClose={() => { if (!galleryBusyRef.current) { setDeleteTarget(undefined); setDeleteError('') } }}
