@@ -50,7 +50,7 @@ describe('short-video common tool environment', () => {
     [{}, 'private-fallback'],
   ])('resolves the bridge FFmpeg before importing the engine (%j)', (overrides, expected) => {
     const bridge = fileURLToPath(new URL('../runtime/bridge.py', import.meta.url))
-    const code = 'import os, pathlib, sys, types\nsys.modules["imageio_ffmpeg"] = types.SimpleNamespace(get_ffmpeg_exe=lambda: "private-fallback")\nsource = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").split("\\ndef send(", 1)[0]\nexec(compile(source, sys.argv[1], "exec"), {"__file__":sys.argv[1]})\nprint(os.environ["IMAGEIO_FFMPEG_EXE"], file=sys.__stdout__)'
+    const code = 'import os, pathlib, sys, types\nsys.path.insert(0, str(pathlib.Path(sys.argv[1]).parent))\nsys.modules["imageio_ffmpeg"] = types.SimpleNamespace(get_ffmpeg_exe=lambda: "private-fallback")\nsource = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").split("\\ndef send(", 1)[0]\nexec(compile(source, sys.argv[1], "exec"), {"__file__":sys.argv[1]})\nprint(os.environ["IMAGEIO_FFMPEG_EXE"], file=sys.__stdout__)'
     const env = {...process.env}
     delete env.CQAI_FFMPEG; delete env.FFMPEG_PATH; delete env.IMAGEIO_FFMPEG_EXE
     const child = spawnSync('python', ['-c', code, bridge], {env: {...env, ...overrides}, encoding: 'utf8', windowsHide: true, timeout: 10000})

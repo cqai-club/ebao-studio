@@ -16,7 +16,7 @@ spec = importlib.util.spec_from_file_location("private_tools", sys.argv[1])
 tools = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tools)
 with tempfile.TemporaryDirectory(prefix="talkcraft-python-tools-") as temporary:
-    home = Path(temporary)
+    home = Path(temporary).resolve()
     snapshot = home / "talkcraft" / "runtime" / "v1-test"
     script = snapshot / "upstream" / "scripts" / "private_tools.py"
     script.parent.mkdir(parents=True)
@@ -38,15 +38,19 @@ with tempfile.TemporaryDirectory(prefix="talkcraft-python-tools-") as temporary:
     common_ffmpeg = shared / ffmpeg_path
     common_ffmpeg.parent.mkdir(parents=True)
     common_ffmpeg.write_text("fixture", encoding="utf-8")
+    common_ffprobe = shared / "bin" / "ffprobe" if system == "darwin" else common / ("ffprobe" + extension)
+    common_ffprobe.parent.mkdir(parents=True, exist_ok=True)
+    common_ffprobe.write_text("fixture", encoding="utf-8")
     ready = {"version": tools.COMMON_FFMPEG_VERSION, "package": "@remotion/" + package,
-             "ffmpegProvider": tools.COMMON_FFMPEG_PROVIDER, "ffmpegPath": ffmpeg_path}
+             "ffmpegProvider": tools.COMMON_FFMPEG_PROVIDER, "ffmpegPath": ffmpeg_path,
+             "ffprobePath": "bin/ffprobe" if system == "darwin" else str(common_ffprobe.relative_to(shared))}
     (common / "package.json").write_text(json.dumps({"version": tools.COMMON_FFMPEG_VERSION}), encoding="utf-8")
     marker = shared / ".media-tools-ready.json"
     with patch.dict(os.environ, {}, clear=True):
         assert tools.media_bin("ffmpeg") == str(legacy / ("ffmpeg" + extension))
         marker.write_text(json.dumps(ready), encoding="utf-8")
         assert tools.media_bin("ffmpeg") == str(common_ffmpeg)
-        assert tools.media_bin("ffprobe") == str(common / ("ffprobe" + extension))
+        assert tools.media_bin("ffprobe") == str(common_ffprobe)
         marker.write_text("{broken", encoding="utf-8")
         assert tools.media_bin("ffmpeg") == str(legacy / ("ffmpeg" + extension))
         marker.write_text(json.dumps({**ready, "version": "wrong"}), encoding="utf-8")

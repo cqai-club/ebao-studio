@@ -5,11 +5,26 @@ import {tmpdir} from 'node:os'
 import {join, resolve, sep} from 'node:path'
 import {execFile} from 'node:child_process'
 import {promisify} from 'node:util'
-import {commonToolEnvironment, commonToolSteps, installCommonMediaTools, sharedMediaTool} from '../cqai-dsh-plugins/cqai-dsh-plugin-media-runtime/lib/index.js'
+import {fileURLToPath, pathToFileURL} from 'node:url'
+import {existsSync} from 'node:fs'
+
+const runtimeArgument = process.argv.indexOf('--runtime-root')
+const packagedRoot = runtimeArgument < 0 ? undefined : process.argv[runtimeArgument + 1]
+if (runtimeArgument >= 0 && !packagedRoot) throw new Error('--runtime-root requires the packaged app.asar path')
+const moduleUrl = name => {
+  if (!packagedRoot) return new URL(`../cqai-dsh-plugins/${name}/lib/index.js`, import.meta.url).href
+  // Deploy can keep the private media runtime nested under its engine.
+  const directories = ['node_modules', join('node_modules', 'cqai-dsh-plugin-short-video', 'node_modules')]
+  const entry = directories.map(directory => join(resolve(packagedRoot), directory, name, 'lib', 'index.js')).find(existsSync)
+  if (!entry) throw new Error(`Packaged runtime is missing ${name}`)
+  return pathToFileURL(entry).href
+}
+const {commonToolEnvironment, commonToolSteps, installCommonMediaTools, sharedMediaTool} = await import(moduleUrl('cqai-dsh-plugin-media-runtime'))
 
 const exec = promisify(execFile)
 const parent = resolve(tmpdir())
-const home = await mkdtemp(join(parent, 'cqai-common-media-smoke-'))
+// macOS's ffprobe launcher must also work in user paths with spaces and quotes.
+const home = await mkdtemp(join(parent, "cqai-common-media-smoke-quoted ' "))
 try {
   const python = commonToolSteps(home).find(step => step.id === 'python')
   if (!await python.ready()) await python.run(line => console.log(line))
@@ -35,6 +50,21 @@ try {
   await installCommonMediaTools(home, line => console.log(line))
   await exec(sharedMediaTool(home, 'ffmpeg'), ['-version'], {windowsHide: true, timeout: 15000})
   console.log('Shared FFmpeg/ffprobe: filters, H.264 + AAC encode/probe, installation reuse and damaged-tool repair passed.')
+  if (process.argv.includes('--short-video')) {
+    const {setupEngine, checkHealth} = await import(moduleUrl('cqai-dsh-plugin-short-video'))
+    const root = join(home, 'short-video')
+    const runtime = packagedRoot
+      ? join(resolve(packagedRoot).replace(/\.asar(?=$|[\\/])/, '.asar.unpacked'), 'node_modules', 'cqai-dsh-plugin-short-video', 'runtime')
+      : fileURLToPath(new URL('../cqai-dsh-plugins/cqai-dsh-plugin-short-video/runtime/', import.meta.url))
+    await setupEngine(root, runtime, commonToolEnvironment(home).CQAI_MEDIA_TOOLS_HOME, line => console.log(line))
+    const health = await checkHealth(root, runtime)
+    assert.equal(health.uv, true, 'bundled uv must run')
+    assert.equal(health.pythonPackages, true, JSON.stringify(health))
+    assert.equal(health.python, true, 'installed Python must be discovered after setup')
+    assert.equal(health.ffmpeg, true, 'short-video engine must use working FFmpeg')
+    assert(Array.isArray(health.fonts) && health.fonts.length > 0, 'subtitle system fonts must be discovered')
+    console.log('Short Video: fresh locked dependency installation, Python discovery, FFmpeg and subtitle fonts passed.')
+  }
 } finally {
   const target = resolve(home)
   assert(target.startsWith(parent + sep) && target.split(sep).at(-1).startsWith('cqai-common-media-smoke-'))
