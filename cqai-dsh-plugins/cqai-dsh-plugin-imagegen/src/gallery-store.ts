@@ -14,6 +14,7 @@ import path from 'node:path'
 import type { GenerateMode, HistoryEntry, HistoryEntryInput } from './protocol.ts'
 import { notifyImageSaved } from './storage-sync.ts'
 import { imageDataRoot } from './image-storage-path.ts'
+import { readStoredImageHash } from './stored-image-hash.ts'
 
 function historyDir(): string { return imageDataRoot() }
 function galleryDir(): string { return path.join(imageDataRoot(), 'gallery') }
@@ -308,4 +309,9 @@ export async function readGalleryImage(file: string): Promise<{ data: Buffer; mi
   } catch {
     return undefined
   }
+}
+
+/** Opt-in list metadata; the gallery's legacy index fingerprint is not used. */
+export async function readGalleryImageHash(file: string): Promise<string | undefined> {
+  return readStoredImageHash(imagesDir(), file)
 }

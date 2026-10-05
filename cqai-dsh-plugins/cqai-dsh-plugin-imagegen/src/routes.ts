@@ -8,7 +8,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { spawn } from 'node:child_process'
 import { mkdir as fsMkdir } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
@@ -19,14 +19,17 @@ import { enhancePrompt, polishPrompt, listImageModels, listPromptModels, type Pr
 import { analyzeLayers, analyzeLayersWithChat, MAX_LAYER_IMAGE_BYTES } from './layer-analyzer.ts'
 import { normalizeImageModels } from './image-models.ts'
 import { ImageGenerationRuntime, type ChannelsView } from './generation-runtime.ts'
-import { appendHistory, clearHistory, listHistory, readHistoryImage, removeHistory } from './history-store.ts'
-import { appendGallery, clearGallery, listGallery, readGalleryImage, removeGallery, updateGalleryTags } from './gallery-store.ts'
+import { appendHistory, clearHistory, listHistory, readHistoryImage, readHistoryImageHash, removeHistory } from './history-store.ts'
+import { appendGallery, clearGallery, listGallery, readGalleryImage, readGalleryImageHash, removeGallery, updateGalleryTags } from './gallery-store.ts'
+import { isStoredImageFile } from './stored-image-hash.ts'
 import { baseMime, canvasStore, CanvasConflictError, MAX_CANVAS_FILE_BYTES, mimeFromFileName, safeFileName, type CanvasFileInput, type CanvasImageInput, type CanvasStore } from './canvas-store.ts'
 import { buildFilePreview } from './file-preview.ts'
 import { listTemplates, readTemplateImage, refreshTemplates, sampleTemplates } from './templates-store.ts'
 import { addTemplateFavorite, listTemplateFavorites, removeTemplateFavorite } from './template-favorites.ts'
 import { testStorage, type StorageSyncConfig } from './storage-sync.ts'
 import { imageDataRoot } from './image-storage-path.ts'
+import { generationOrigin, HistoryScopeMismatchError, isHistoryScope, type HistoryScope } from './history-origin.ts'
+import { makeEcommerceRoutes } from './ecommerce-routes.ts'
 import { IMAGE_PRESETS } from './presets.ts'
 import { AGENT_IMAGE_API, CANVAS_API, CANVAS_SKILL_API, CQAI_IMAGE_PROVIDER_API, DATA_FOLDER_API, DEFAULT_TEMPLATE_SOURCE_ID, GALLERY_API, GENERATE_API, HISTORY_API, IMAGEGEN_SETTINGS_NAMESPACE, IMAGE_MODEL_API, PRESETS_API, PROMPT_ENHANCE_API, SETTINGS_API, STORAGE_API, TASK_API, TEMPLATE_FAVORITES_API, TEMPLATES_API, USAGE_API, isTemplateSourceId, type CanvasAssetRef, type CanvasDocument, type CanvasSkillCatalog, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigPreviewRequest, type CanvasSkillConfigPreviewResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type CanvasSkillRunRequest, type CanvasSkillTask, type CqaiImageProviderView, type GeneratedImage, type GenerateRequest, type HistoryEntry, type HistoryEntryInput, type ModelMapping, type PresetProviderView, type TemplateFavorite, type TemplateListResult, type TemplateRefreshResult, type TemplateSample } from './protocol.ts'
 
@@ -106,11 +109,12 @@ export interface ImageGenRoutesDeps {
   }
   /** Overrideable history backend, primarily for host integration tests. */
   history?: {
-    list: () => Promise<HistoryEntry[]>
+    list: (scope?: HistoryScope) => Promise<HistoryEntry[]>
     append: (entry: HistoryEntryInput) => Promise<HistoryEntry[]>
-    remove: (id: string) => Promise<HistoryEntry[]>
-    clear: () => Promise<HistoryEntry[]>
+    remove: (id: string, scope?: HistoryScope) => Promise<HistoryEntry[]>
+    clear: (scope?: HistoryScope) => Promise<HistoryEntry[]>
     readImage: (file: string) => Promise<{ data: Buffer; mime: string } | undefined>
+    readImageHash?: (file: string) => Promise<string | undefined>
   }
   /** Overrideable gallery backend, primarily for host integration tests. */
   gallery?: {
@@ -120,6 +124,7 @@ export interface ImageGenRoutesDeps {
     clear: () => Promise<HistoryEntry[]>
     updateTags?: (id: string, tags: string[]) => Promise<HistoryEntry[]>
     readImage: (file: string) => Promise<{ data: Buffer; mime: string } | undefined>
+    readImageHash?: (file: string) => Promise<string | undefined>
   }
   /** Overrideable canvas backend, primarily for host integration tests. */
   canvas?: CanvasBackend
@@ -251,6 +256,22 @@ async function readRawBody(req: IncomingMessage, maxBytes: number): Promise<Buff
 /** Human-readable text from an unknown thrown value. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** Empty bodies keep the old history API compatible; invalid bodies must
+ * never be interpreted as permission to perform an unscoped clear. */
+async function readHistoryScopeBody(req: IncomingMessage, res: ServerResponse): Promise<Record<string, unknown> | undefined> {
+  try {
+    const raw = await readRawBody(req, 4096)
+    if (raw === undefined) throw new Error('body too large')
+    if (raw.length === 0) return {}
+    const parsed: unknown = JSON.parse(raw.toString('utf8'))
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('shape')
+    return parsed as Record<string, unknown>
+  } catch {
+    writeJson(res, 200, { ok: false, code: 'bad-request', message: 'invalid history request body' })
+    return undefined
+  }
 }
 
 /** Validate the { source } body of a template-library request. */
@@ -427,6 +448,39 @@ function imageFileFrom(rawUrl: string | undefined, basePath: string): string | u
   return decodeURIComponent(pathname.slice(basePath.length + 1))
 }
 
+/** Hash only this store's exact relative URLs. Keep injected legacy backends
+ * usable without trusting any hash already carried in their metadata. */
+async function withImageHashes(entries: HistoryEntry[], basePath: string, backend: {
+  readImage(file: string): Promise<{ data: Buffer; mime: string } | undefined>
+  readImageHash?: (file: string) => Promise<string | undefined>
+}): Promise<HistoryEntry[]> {
+  const result = entries.map(entry => ({ ...entry, images: entry.images.map(image => {
+    const { sha256: _ignored, ...rest } = image
+    return rest as HistoryEntry['images'][number]
+  }) }))
+  const images = result.flatMap(entry => entry.images)
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(3, images.length) }, async () => {
+    for (;;) {
+      const image = images[next++]
+      if (image === undefined) return
+      if (!image.url.startsWith(`${basePath}/`)) continue
+      const file = image.url.slice(basePath.length + 1)
+      if (!isStoredImageFile(file)) continue
+      try {
+        let sha256: string | undefined
+        if (backend.readImageHash !== undefined) sha256 = await backend.readImageHash(file)
+        else {
+          const stored = await backend.readImage(file)
+          if (stored !== undefined) sha256 = createHash('sha256').update(stored.data).digest('hex')
+        }
+        if (sha256 !== undefined && /^[a-f0-9]{64}$/i.test(sha256)) image.sha256 = sha256.toLowerCase()
+      } catch { /* A missing image must not hide the remaining list. */ }
+    }
+  }))
+  return result
+}
+
 /** Parse the durable image reference carried by an Agent tool-result view. */
 function agentImageRefFrom(rawUrl: string | undefined): ImageAttachmentRef | undefined {
   if (rawUrl === undefined) return undefined
@@ -497,12 +551,13 @@ function failureOf(error: unknown): { ok: false; code: string; message: string }
  */
 export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
   const settingsNamespace = deps.settingsNamespace ?? IMAGEGEN_SETTINGS_NAMESPACE
-  const history = deps.history ?? {
+  const history: NonNullable<ImageGenRoutesDeps['history']> = deps.history ?? {
     list: listHistory,
     append: appendHistory,
     remove: removeHistory,
     clear: clearHistory,
     readImage: readHistoryImage,
+    readImageHash: readHistoryImageHash,
   }
   const gallery: NonNullable<ImageGenRoutesDeps['gallery']> = deps.gallery ?? {
     list: listGallery,
@@ -511,6 +566,7 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
     clear: clearGallery,
     updateTags: updateGalleryTags,
     readImage: readGalleryImage,
+    readImageHash: readGalleryImageHash,
   }
   const canvas = deps.canvas ?? canvasStore
   const templates = deps.templates ?? {
@@ -608,6 +664,11 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
   }
 
   return [
+    ...makeEcommerceRoutes({ runtime, history: { list: () => history.list(), readImage: file => history.readImage(file), remove: (id: string) => history.remove(id, 'ecommerce') }, resolveRequest: async request => {
+      const resolved = await resolveChannelRequest(request)
+      if (!resolved.ok) throw new Error(resolved.message)
+      return resolved.request
+    } }),
     // ------------------------------------ Agent tool-result image (prefix)
     ...(deps.attachments === undefined ? [] : [{
       kind: 'prefix' as const,
@@ -942,8 +1003,18 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
       path: HISTORY_API.list,
       handler: async (req, res) => {
         if (!guard(req, res, 'POST')) return
+        const body = await readHistoryScopeBody(req, res)
+        if (body === undefined) return
+        if (body?.scope !== undefined && !isHistoryScope(body.scope)) {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: 'invalid history scope' }); return
+        }
+        if (body.includeImageHashes !== undefined && typeof body.includeImageHashes !== 'boolean') {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: 'includeImageHashes must be a boolean' }); return
+        }
+        const scope = body?.scope as HistoryScope | undefined
         try {
-          writeJson(res, 200, { ok: true, entries: await history.list() })
+          const entries = (await history.list()).filter(entry => scope === undefined || generationOrigin(entry) === scope)
+          writeJson(res, 200, { ok: true, entries: body.includeImageHashes === true ? await withImageHashes(entries, HISTORY_API.image, history) : entries })
         } catch (error) {
           writeJson(res, 200, { ok: false, code: 'history-failed', message: messageOf(error) })
         }
@@ -984,10 +1055,16 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
           writeJson(res, 200, { ok: false, code: 'bad-request', message: 'history id is required' })
           return
         }
+        if (body?.scope !== undefined && !isHistoryScope(body.scope)) {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: 'invalid history scope' }); return
+        }
+        const scope = body?.scope as HistoryScope | undefined
         try {
-          writeJson(res, 200, { ok: true, entries: await history.remove(id) })
+          const target = (await history.list()).find(entry => entry.id === id)
+          if (scope !== undefined && target !== undefined && generationOrigin(target) !== scope) throw new HistoryScopeMismatchError()
+          writeJson(res, 200, { ok: true, entries: await history.remove(id, scope) })
         } catch (error) {
-          writeJson(res, 200, { ok: false, code: 'history-failed', message: messageOf(error) })
+          writeJson(res, 200, { ok: false, code: error instanceof HistoryScopeMismatchError ? error.code : 'history-failed', message: messageOf(error) })
         }
       },
     },
@@ -997,8 +1074,22 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
       path: HISTORY_API.clear,
       handler: async (req, res) => {
         if (!guard(req, res, 'POST')) return
+        const body = await readHistoryScopeBody(req, res)
+        if (body === undefined) return
+        if (body?.scope !== undefined && !isHistoryScope(body.scope)) {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: 'invalid history scope' }); return
+        }
+        const scope = body?.scope as HistoryScope | undefined
         try {
-          writeJson(res, 200, { ok: true, entries: await history.clear() })
+          // Old injectable stores can ignore the optional scope parameter. The
+          // route enforces it too, so no backend can turn a source clear into a
+          // global clear. Production storage performs its batch atomically.
+          if (scope === undefined) await history.clear()
+          else if (deps.history === undefined) await history.clear(scope)
+          else for (const entry of await history.list()) {
+            if (generationOrigin(entry) === scope) await history.remove(entry.id, scope)
+          }
+          writeJson(res, 200, { ok: true, entries: await history.list() })
         } catch (error) {
           writeJson(res, 200, { ok: false, code: 'history-failed', message: messageOf(error) })
         }
@@ -1041,8 +1132,13 @@ export function makeRoutes(deps: ImageGenRoutesDeps): WebRoute[] {
       path: GALLERY_API.list,
       handler: async (req, res) => {
         if (!guard(req, res, 'POST')) return
+        const body = await readJsonBody(req, 4096)
+        if (body?.includeImageHashes !== undefined && typeof body.includeImageHashes !== 'boolean') {
+          writeJson(res, 200, { ok: false, code: 'bad-request', message: 'includeImageHashes must be a boolean' }); return
+        }
         try {
-          writeJson(res, 200, { ok: true, entries: await gallery.list() })
+          const entries = await gallery.list()
+          writeJson(res, 200, { ok: true, entries: body?.includeImageHashes === true ? await withImageHashes(entries, GALLERY_API.image, gallery) : entries })
         } catch (error) {
           writeJson(res, 200, { ok: false, code: 'gallery-failed', message: messageOf(error) })
         }

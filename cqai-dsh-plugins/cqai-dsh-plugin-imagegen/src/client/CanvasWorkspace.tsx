@@ -12,7 +12,7 @@ import {
   Layers, Map as MapIcon, Maximize, Maximize2, MousePointer2, Palette, Pencil, Plus, Redo2, Scissors, SendHorizonal, Sparkles, Star,
   SquareDashedMousePointer, Trash2, Type, Undo2, Upload, Wand2, Wallpaper, X,
 } from 'lucide-react'
-import type { CanvasAnnotation, CanvasAssetRef, CanvasConnection, CanvasDocument, CanvasFileKind, CanvasLayerInfo, CanvasLayerPlanItem, CanvasNode, CanvasRect, CanvasSkillConfigApplyResult, CanvasSkillConfigField, CanvasSkillConfigPreviewResult, CanvasSkillConfigSaveResult, CanvasSkillConfigStep, CanvasSkillConfigView, CanvasSkillDescriptor, CanvasSkillLibrary, CanvasSkillOutput, CanvasSkillRunRequest, CanvasSkillTask, CanvasSketchStroke, GenerateRequest, GenerationTask, HistoryEntry } from '../protocol.ts'
+import type { CanvasAnnotation, CanvasAssetRef, CanvasConnection, CanvasDocument, CanvasFileKind, CanvasLayerInfo, CanvasLayerPlanItem, CanvasNode, CanvasRect, CanvasSkillConfigApplyResult, CanvasSkillConfigField, CanvasSkillConfigPreviewResult, CanvasSkillConfigSaveResult, CanvasSkillConfigStep, CanvasSkillConfigView, CanvasSkillDescriptor, CanvasSkillInstallResult, CanvasSkillLibrary, CanvasSkillOutput, CanvasSkillRunRequest, CanvasSkillTask, CanvasSketchStroke, GenerateRequest, GenerationTask, HistoryEntry } from '../protocol.ts'
 import { ImageGenApiError, type ImageGenApi } from './api.ts'
 import { errorMessage, tt } from './helpers.ts'
 import { autoRemoveBackground, canvasToDataUrl, compositeAnnotatedResult, containRect, cropRaster, drawAnnotation, loadRaster, rectBetween, transparencyRatio } from './image-ops.ts'
@@ -20,6 +20,7 @@ import { TemplateLibrary } from './TemplateLibrary.tsx'
 import { CanvasFileBody, CanvasFileOverlay, fileKindLabel, fileKindOfAsset, fileSizeLabel } from './CanvasFilePreview.tsx'
 import { DotFieldBackground, DotGridBackground, FaultyTerminalBackground, FloatingLinesBackground, FlowBackground, GalaxyBackground, LiquidEtherBackground, ShapeGridBackground, SilkBackground, WavesBackground } from './CanvasBackgrounds.tsx'
 import { selectCanvasImageModel } from './canvas-model-selection.ts'
+import { CanvasGenerationHistory } from './CanvasGenerationHistory.tsx'
 import css from './canvas-workspace.module.css'
 
 type CanvasTool = 'select' | 'pan'
@@ -76,6 +77,7 @@ interface CanvasWorkspaceProps {
   importRequest?: { source: 'history' | 'gallery'; entryId: string; imageIndex: number }
   onImportRequestHandled?: () => void
   onOpenSettings?: () => void
+  onHistoryChange?: (entries: HistoryEntry[]) => void
 }
 
 type Point = { x: number; y: number }
@@ -779,6 +781,13 @@ export function SkillConfigForm(props: {
   </div>
 }
 
+function skillLibraryInstallFailure(result: CanvasSkillInstallResult, archive = false): string | null {
+  const failure = result.failed.map(item => item.source === '' ? item.message : `${item.source}\n${item.message}`).join('\n\n')
+  if (failure !== '') return tt(archive ? 'canvas.skills.installArchiveFailed' : 'canvas.skills.libraryFailedToast', { message: failure })
+  if (result.installed.length === 0) return result.message?.trim() ? result.message : tt(archive ? 'canvas.skills.installArchiveFailed' : 'canvas.skills.libraryFailedToast', { message: '' })
+  return null
+}
+
 /**
  * Skill library manager (dock entry 「技能库」). One dialog covers the whole
  * lifecycle: what is installed, install from URLs, install from an uploaded
@@ -789,6 +798,7 @@ export function SkillConfigForm(props: {
  */
 function SkillLibraryDialog(props: {
   library: CanvasSkillLibrary | null
+  error: string | null
   loading: boolean
   busy: boolean
   /** Prefill for the URL field, e.g. the upstream of a skill just clicked. */
@@ -815,7 +825,7 @@ function SkillLibraryDialog(props: {
   const sourceList = urls.split(/\r?\n/).map(line => line.trim()).filter(line => line !== '')
   const entries = props.library?.entries ?? []
   const pickArchive = (file: File | undefined): void => {
-    if (file !== undefined) props.onInstallArchive(file, force)
+    if (file !== undefined && !props.busy) props.onInstallArchive(file, force)
   }
   return createPortal(<>
     <div className={css.skillScrim} onPointerDown={props.onClose} />
@@ -828,6 +838,7 @@ function SkillLibraryDialog(props: {
         <button type="button" className={css.skillMenuClose} aria-label={tt('canvas.close')} onClick={props.onClose}><ToolbarIcon name="close" size={14} /></button>
       </header>
       <div className={css.libraryBody}>
+        {props.error !== null ? <p className={css.skillHint} role="alert" data-skill-library-error="" style={{ color: 'var(--dsw-alias-label-error)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{props.error}</p> : null}
         <section className={css.librarySection}>
           <span className={css.librarySectionTitle}>{tt('canvas.skills.libraryInstall')}</span>
           <p className={css.skillHint}>{tt('canvas.skills.libraryInstallHint')}</p>
@@ -856,10 +867,11 @@ function SkillLibraryDialog(props: {
             className={css.libraryDrop}
             data-active={dropActive ? '' : undefined}
             role="button"
-            tabIndex={0}
+            tabIndex={props.busy ? -1 : 0}
             aria-label={tt('canvas.skills.libraryDropzone')}
-            onClick={() => archiveRef.current?.click()}
-            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') archiveRef.current?.click() }}
+            aria-disabled={props.busy}
+            onClick={() => { if (!props.busy) archiveRef.current?.click() }}
+            onKeyDown={event => { if (!props.busy && (event.key === 'Enter' || event.key === ' ')) archiveRef.current?.click() }}
             onDragOver={event => { event.preventDefault(); setDropActive(true) }}
             onDragLeave={() => setDropActive(false)}
             onDrop={event => {
@@ -875,6 +887,7 @@ function SkillLibraryDialog(props: {
             ref={archiveRef}
             type="file"
             accept=".zip,application/zip,application/x-zip-compressed"
+            disabled={props.busy}
             hidden
             onChange={event => {
               const file = event.target.files?.[0]
@@ -1273,6 +1286,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
   const [skillLibrary, setSkillLibrary] = useState<CanvasSkillLibrary | null>(null)
   const [libraryLoading, setLibraryLoading] = useState(false)
   const [libraryBusy, setLibraryBusy] = useState(false)
+  const [libraryError, setLibraryError] = useState<string | null>(null)
   const [libraryPresetUrl, setLibraryPresetUrl] = useState('')
   /** Skill whose configuration form the library dialog should open. */
   const [libraryFocusSkill, setLibraryFocusSkill] = useState('')
@@ -1913,10 +1927,11 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
   /** Reload the skill library listing (dock dialog and post-install refresh). */
   const loadSkillLibrary = useCallback(async (): Promise<void> => {
     setLibraryLoading(true)
+    setLibraryError(null)
     try {
       setSkillLibrary(await api.canvasSkillLibrary())
     } catch (caught) {
-      setError(errorMessage(caught))
+      setLibraryError(errorMessage(caught))
     } finally {
       setLibraryLoading(false)
     }
@@ -1983,15 +1998,16 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
   /** Install one archive the user picked in the library dialog. */
   const installSkillArchive = useCallback(async (file: File, force: boolean): Promise<void> => {
     setLibraryBusy(true)
+    setLibraryError(null)
     try {
       const asset = await api.canvasFileUpload(file)
       const result = await api.canvasSkillInstall({ asset, force, name: file.name.replace(/\.zip$/i, '') })
       if (result.library !== undefined) setSkillLibrary(result.library)
       if (result.installed.length > 0) setNotice(tt('canvas.skills.libraryInstalledToast', { names: result.installed.join('、') }))
-      else setError(tt('canvas.skills.installArchiveFailed', { message: result.message ?? '' }))
+      setLibraryError(skillLibraryInstallFailure(result, true))
       await loadSkillCatalog()
     } catch (caught) {
-      setError(errorMessage(caught))
+      setLibraryError(errorMessage(caught))
     } finally {
       setLibraryBusy(false)
     }
@@ -2000,6 +2016,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
   /** Install skills from one or more URLs. */
   const installSkillUrls = useCallback(async (sources: string[], force: boolean): Promise<void> => {
     setLibraryBusy(true)
+    setLibraryError(null)
     try {
       const result = await api.canvasSkillInstall({ sources, force })
       if (result.library !== undefined) setSkillLibrary(result.library)
@@ -2007,12 +2024,10 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
         setNotice(tt('canvas.skills.libraryInstalledToast', { names: result.installed.join('、') }))
         setLibraryPresetUrl('')
       }
-      const failure = result.failed[0]
-      if (failure !== undefined) setError(tt('canvas.skills.libraryFailedToast', { message: failure.message }))
-      else if (result.installed.length === 0 && result.message !== undefined) setError(result.message)
+      setLibraryError(skillLibraryInstallFailure(result))
       await loadSkillCatalog()
     } catch (caught) {
-      setError(errorMessage(caught))
+      setLibraryError(errorMessage(caught))
     } finally {
       setLibraryBusy(false)
     }
@@ -2021,14 +2036,15 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
   /** Uninstall one skill. */
   const removeSkillEntry = useCallback(async (name: string): Promise<void> => {
     setLibraryBusy(true)
+    setLibraryError(null)
     try {
       const result = await api.canvasSkillRemove(name)
       if (result.library !== undefined) setSkillLibrary(result.library)
       if (result.ok) setNotice(tt('canvas.skills.libraryRemovedToast', { name }))
-      else setError(result.message ?? '')
+      else setLibraryError(result.message ?? '')
       await loadSkillCatalog()
     } catch (caught) {
-      setError(errorMessage(caught))
+      setLibraryError(errorMessage(caught))
     } finally {
       setLibraryBusy(false)
     }
@@ -4239,6 +4255,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
           />
         : <button type="button" className={css.titleButton} onDoubleClick={() => setRenamingTitle(true)} title={tt('canvas.renameHint')}>{document?.title ?? ''}</button>}
       <span className={css.topBarSpacer} />
+      <CanvasGenerationHistory api={api} history={history} projects={projects} currentCanvasId={document?.id} onHistoryChange={props.onHistoryChange} onOpenProject={selectProject} onAssets={assets => { addAssets(assets) }} />
       <span className={css.saveState} data-state={saveState}>{saveState === 'saving' ? tt('canvas.saving') : saveState === 'saved' ? tt('canvas.saved') : saveState === 'error' ? tt('canvas.saveFailed') : tt('canvas.loading')}</span>
     </header>
 
@@ -4543,6 +4560,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     {libraryOpen ? <TemplateLibrary api={api} onClose={() => setLibraryOpen(false)} onUse={applyTemplate} /> : null}
     {skillLibraryOpen ? <SkillLibraryDialog
       library={skillLibrary}
+      error={libraryError}
       loading={libraryLoading}
       busy={libraryBusy}
       presetUrl={libraryPresetUrl}

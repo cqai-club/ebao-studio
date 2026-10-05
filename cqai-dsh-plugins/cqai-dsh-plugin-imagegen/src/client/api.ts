@@ -6,6 +6,8 @@
 import { CANVAS_API, CANVAS_SKILL_API, CQAI_IMAGE_PROVIDER_API, DATA_FOLDER_API, GALLERY_API, GENERATE_API, HISTORY_API, PROMPT_ENHANCE_API, STORAGE_API, TASK_API, TEMPLATE_FAVORITES_API, TEMPLATES_API, type CanvasAssetRef, type CanvasDocument, type CanvasFilePreview, type CanvasLayerPlan, type CanvasSkillCatalog, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigPreviewRequest, type CanvasSkillConfigPreviewResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type CanvasSkillRunRequest, type CanvasSkillTask, type CanvasSummary, type CqaiImageProviderView, type GenerateRequest, type GenerateResult, type GenerationTask, type HistoryEntry, type HistoryEntryInput, type TemplateCase, type TemplateFavorite, type TemplateListResult, type TemplateRefreshResult, type TemplateSample } from '../protocol.ts'
 import { activeImageGenLanguage } from './helpers.ts'
 import type { GenerationTaskSummary } from '../protocol.ts'
+import type { HistoryScope } from '../history-origin.ts'
+import { ECOMMERCE_API, type EcommerceRun, type EcommerceRunSubmit, type EcommerceRunSummary } from '../ecommerce-run-protocol.ts'
 
 /** Error carrying the route's JSON error message. */
 export class ImageGenApiError extends Error {
@@ -19,25 +21,33 @@ export class ImageGenApiError extends Error {
   }
 }
 
-/** Parse the { ok, ... } envelope or throw an ImageGenApiError. */
-async function readEnvelope<T>(response: Response): Promise<T> {
+async function readResponseRecord(response: Response): Promise<Record<string, unknown>> {
   let body: unknown
   try {
     body = await response.json()
   } catch {
     throw new ImageGenApiError(`HTTP ${response.status}: invalid JSON response`)
   }
-  if (body === null || typeof body !== 'object') {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
     throw new ImageGenApiError(`HTTP ${response.status}: malformed response`)
   }
-  const record = body as { ok?: unknown; message?: unknown; code?: unknown }
+  return body as Record<string, unknown>
+}
+
+function responseError(response: Response, record: Record<string, unknown>): ImageGenApiError {
+  return new ImageGenApiError(
+    typeof record.message === 'string' ? record.message : `HTTP ${response.status}`,
+    typeof record.code === 'string' ? record.code : 'generate-failed',
+  )
+}
+
+/** Parse the { ok, ... } envelope or throw an ImageGenApiError. */
+async function readEnvelope<T>(response: Response): Promise<T> {
+  const record = await readResponseRecord(response)
   if (record.ok !== true) {
-    throw new ImageGenApiError(
-      typeof record.message === 'string' ? record.message : `HTTP ${response.status}`,
-      typeof record.code === 'string' ? record.code : 'generate-failed',
-    )
+    throw responseError(response, record)
   }
-  return body as T
+  return record as T
 }
 
 /** The browser half's data entry point. */
@@ -112,28 +122,61 @@ export class ImageGenApi {
   }
 
   /** List the host-persisted history (newest first). */
-  async historyList(): Promise<HistoryEntry[]> {
-    const response = await fetch(HISTORY_API.list, { method: 'POST' })
+  async historyList(scope?: HistoryScope): Promise<HistoryEntry[]> {
+    const response = await fetch(HISTORY_API.list, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scope }) })
     const body = await readEnvelope<{ ok: true; entries: HistoryEntry[] }>(response)
     return body.entries
   }
 
   /** Remove one history entry by id. */
-  async historyRemove(id: string): Promise<HistoryEntry[]> {
+  async historyRemove(id: string, scope?: HistoryScope): Promise<HistoryEntry[]> {
     const response = await fetch(HISTORY_API.remove, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, scope }),
     })
     const body = await readEnvelope<{ ok: true; entries: HistoryEntry[] }>(response)
     return body.entries
   }
 
-  /** Clear the entire history. */
-  async historyClear(): Promise<HistoryEntry[]> {
-    const response = await fetch(HISTORY_API.clear, { method: 'POST' })
+  /** Clear one source and return the complete remaining shared image index. */
+  async historyClear(scope?: HistoryScope): Promise<HistoryEntry[]> {
+    const response = await fetch(HISTORY_API.clear, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scope }) })
     const body = await readEnvelope<{ ok: true; entries: HistoryEntry[] }>(response)
     return body.entries
+  }
+
+  async ecommerceSubmit(input: EcommerceRunSubmit): Promise<EcommerceRun> {
+    const response = await fetch(ECOMMERCE_API.submit, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
+    return (await readEnvelope<{ ok: true; run: EcommerceRun }>(response)).run
+  }
+
+  async ecommerceList(): Promise<EcommerceRunSummary[]> {
+    return (await readEnvelope<{ ok: true; runs: EcommerceRunSummary[] }>(await fetch(ECOMMERCE_API.list))).runs
+  }
+
+  async ecommerceGet(id: string): Promise<EcommerceRun> {
+    return (await readEnvelope<{ ok: true; run: EcommerceRun }>(await fetch(`${ECOMMERCE_API.get}?id=${encodeURIComponent(id)}`))).run
+  }
+
+  async ecommerceRemove(id: string): Promise<EcommerceRunSummary[]> {
+    const response = await fetch(ECOMMERCE_API.remove, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) })
+    return (await readEnvelope<{ ok: true; runs: EcommerceRunSummary[] }>(response)).runs
+  }
+
+  async ecommerceClear(): Promise<EcommerceRunSummary[]> {
+    const response = await fetch(ECOMMERCE_API.clear, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    return (await readEnvelope<{ ok: true; runs: EcommerceRunSummary[] }>(response)).runs
+  }
+
+  async ecommerceCancel(id: string): Promise<EcommerceRun> {
+    const response = await fetch(ECOMMERCE_API.cancel, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) })
+    return (await readEnvelope<{ ok: true; run: EcommerceRun }>(response)).run
+  }
+
+  async ecommerceRetry(id: string, slotKey?: string): Promise<EcommerceRun> {
+    const response = await fetch(ECOMMERCE_API.retry, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, slotKey }) })
+    return (await readEnvelope<{ ok: true; run: EcommerceRun }>(response)).run
   }
 
   /** List the host-persisted gallery (newest first). */
@@ -286,7 +329,20 @@ export class ImageGenApi {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...request, language: activeImageGenLanguage() }),
     })
-    return await readEnvelope<CanvasSkillInstallResult>(response)
+    const result = await readResponseRecord(response)
+    if (!response.ok) throw responseError(response, result)
+    // A completed install operation may have no successful sources. Its
+    // failed[] messages and refreshed library are still a usable result.
+    const library = result.library as Partial<CanvasSkillLibrary> | null | undefined
+    if (typeof result.ok === 'boolean'
+      && Array.isArray(result.installed) && result.installed.every(name => typeof name === 'string')
+      && Array.isArray(result.failed) && result.failed.every(failure => failure !== null && typeof failure === 'object' && typeof failure.source === 'string' && typeof failure.message === 'string')
+      && library !== null && typeof library === 'object' && typeof library.root === 'string'
+      && Array.isArray(library.entries) && Array.isArray(library.catalog) && typeof library.networkAvailable === 'boolean') {
+      return result as unknown as CanvasSkillInstallResult
+    }
+    if (result.ok !== true) throw responseError(response, result)
+    throw new ImageGenApiError('技能安装接口返回的结果不完整，请刷新后重试', 'install-response-invalid')
   }
 
   /** Remove one installed skill. */
