@@ -30,6 +30,7 @@
       "inject": [
         "@deepseek-ai/dsh-api-session-controller",
         "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-client-ui-chat",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-primitives",
@@ -37,6 +38,7 @@
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-tool",
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-workspace"
       ]
@@ -54,6 +56,7 @@
     "@deepseek-ai/dsh-api-workspace-controller": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-attachment": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-brand": "^0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-chat": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
@@ -62,6 +65,7 @@
     "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-tool": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-workspace": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-home-paths": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-host-webserver": "^0.1.7-rc.2",
@@ -82,6 +86,7 @@
     "@deepseek-ai/dsh-api-workspace-controller": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-attachment": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-brand": "^0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-chat": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
@@ -90,6 +95,7 @@
     "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-tool": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-workspace": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-home-paths": "^0.1.7-rc.2",
     "@deepseek-ai/dsh-host-webserver": "^0.1.7-rc.2",

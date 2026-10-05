@@ -71,6 +71,16 @@ describe('CQAI video material', () => {
     expect(posts).toBe(1)
   })
 
+  it('explains an unavailable submission endpoint without resubmitting the rejected clip', async () => {
+    const active = job()
+    let posts = 0
+    const options = { account: { async fetchAi(): Promise<Response> { posts++; return new Response('', { status: 404 }) } }, job: active, storageRoot: tmpdir(), save: async () => {}, request: { index: 0, prompt: '城市', seconds: 5 } }
+    await expect(createVideoMaterial(options)).rejects.toThrow('视频生成接口不可用 (HTTP 404)')
+    expect(active.videoTasks?.[0].status).toBe('failed')
+    await expect(createVideoMaterial(options)).rejects.toThrow('已被服务端拒绝')
+    expect(posts).toBe(1)
+  })
+
   it('resumes an accepted task after a failed download without creating another', async () => {
     const root = await mkdtemp(join(tmpdir(), 'cqai-video-resume-'))
     const active = job()

@@ -24,14 +24,14 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync, type Dirent } from 'node:fs'
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import type {
   CanvasSkillLibrary,
   CanvasSkillLibraryEntry,
 } from './protocol.ts'
-import { readZipDirectory, readZipEntry, isZipDirectory } from './zip.ts'
+import { MAX_ZIP_ENTRIES, readZipDirectory, readZipEntry, isZipDirectory, type ZipEntry } from './zip.ts'
 
 /** Hard cap on one downloaded archive / unpacked skill folder. */
 export const MAX_SKILL_ARCHIVE_BYTES = 64 * 1024 * 1024
@@ -39,6 +39,9 @@ export const MAX_SKILL_ARCHIVE_BYTES = 64 * 1024 * 1024
 export const MAX_SKILL_MARKDOWN_BYTES = 2 * 1024 * 1024
 /** Wall-clock cap for one install source. */
 const INSTALL_TIMEOUT_MS = 180_000
+/** Refuse an incomplete search rather than guess which bundle to install. */
+const MAX_SKILL_SEARCH_DEPTH = 12
+const MAX_SKILL_SEARCH_DIRECTORIES = 2_000
 
 /** Canonical install sources this plugin knows by name (one-click affordances). */
 export const KNOWN_SKILL_SOURCES: ReadonlyArray<{ name: string; url: string }> = [
@@ -398,7 +401,7 @@ function shortSource(source: string): string {
 
 /** What a source URL means for the installer. */
 export type SourceKind =
-  | { kind: 'github'; owner: string; repo: string; ref: string; subpath: string }
+  | { kind: 'github'; owner: string; repo: string; ref: string; subpath: string; blob?: true }
   | { kind: 'raw'; url: string; name: string }
   | { kind: 'archive'; url: string }
   | { kind: 'git'; url: string; name: string }
@@ -409,11 +412,11 @@ export type SourceKind =
  */
 export function classifySource(source: string): SourceKind {
   const trimmed = source.trim()
-  const github = /^https?:\/\/(?:www\.)?github\.com\/([^/\s]+)\/([^/\s#?]+?)(?:\.git)?(?:\/(?:tree|blob)\/([^/\s]+)((?:\/[^\s#?]*)?))?\/?$/i.exec(trimmed)
+  const github = /^https?:\/\/(?:www\.)?github\.com\/([^/\s]+)\/([^/\s#?]+?)(?:\.git)?(?:\/(tree|blob)\/([^/\s]+)((?:\/[^\s#?]*)?))?\/?$/i.exec(trimmed)
   if (github !== null) {
-    const subpath = (github[4] ?? '').replace(/^\/+/, '').replace(/\/+$/, '')
+    const subpath = (github[5] ?? '').replace(/^\/+/, '').replace(/\/+$/, '')
     // A `blob` URL points at one file, but the surrounding folder is the bundle.
-    return { kind: 'github', owner: github[1]!, repo: github[2]!, ref: github[3] ?? '', subpath }
+    return { kind: 'github', owner: github[1]!, repo: github[2]!, ref: github[4] ?? '', subpath, ...github[3] === 'blob' ? { blob: true as const } : {} }
   }
   const raw = /^https?:\/\/raw\.githubusercontent\.com\/([^/\s]+)\/([^/\s]+)\/([^/\s]+)\/(.+)$/i.exec(trimmed)
   if (raw !== null) {
@@ -481,23 +484,63 @@ function run(command: string, args: string[], options: { cwd: string; timeoutMs:
   })
 }
 
+/** The shared reader is tolerant; installs require the complete directory. */
+function installArchiveEntries(data: Buffer): ZipEntry[] {
+  let end = -1
+  for (let offset = data.length - 22; offset >= Math.max(0, data.length - 66_000); offset -= 1) {
+    if (data.readUInt32LE(offset) === 0x06054b50 && offset + 22 + data.readUInt16LE(offset + 20) === data.length) {
+      end = offset
+      break
+    }
+  }
+  if (end < 0) throw new SkillStoreError('压缩包无法解析（不是有效的 ZIP）')
+  const count = data.readUInt16LE(end + 10)
+  if (count > MAX_ZIP_ENTRIES) throw new SkillStoreError(`压缩包文件数量超过上限（${MAX_ZIP_ENTRIES}）`)
+  const start = data.readUInt32LE(end + 16)
+  const size = data.readUInt32LE(end + 12)
+  if (data.readUInt16LE(end + 4) !== 0 || data.readUInt16LE(end + 6) !== 0
+    || data.readUInt16LE(end + 8) !== count || start + size !== end) {
+    throw new SkillStoreError('压缩包目录不完整或格式不受支持')
+  }
+  let cursor = start
+  for (let index = 0; index < count; index += 1) {
+    if (cursor + 46 > end || data.readUInt32LE(cursor) !== 0x02014b50) {
+      throw new SkillStoreError('压缩包目录不完整')
+    }
+    cursor += 46 + data.readUInt16LE(cursor + 28) + data.readUInt16LE(cursor + 30) + data.readUInt16LE(cursor + 32)
+    if (cursor > end) throw new SkillStoreError('压缩包目录不完整')
+  }
+  const entries = readZipDirectory(data)
+  if (cursor !== end || entries.length !== count) throw new SkillStoreError('压缩包目录不完整')
+  if (entries.length === 0) throw new SkillStoreError('压缩包内没有可安装的文件')
+  return entries
+}
+
 /** Expand a ZIP archive into `target`, refusing paths that escape it. */
 async function extractArchive(data: Buffer, target: string): Promise<number> {
-  const entries = readZipDirectory(data)
-  if (entries.length === 0) throw new SkillStoreError('压缩包无法解析（不是有效的 ZIP）')
+  const entries = installArchiveEntries(data)
   let written = 0
   let expanded = 0
   for (const entry of entries) {
-    const relative = entry.name.replace(/\\/g, '/').replace(/^\/+/, '')
-    if (relative === '' || relative.includes('..')) continue
+    if ((entry.mode & 0o170000) === 0o120000) throw new SkillStoreError('技能压缩包不能包含符号链接')
+    const relative = entry.name.replace(/\\/g, '/')
+    if (relative === '') continue
+    if (relative.includes('\0') || relative.startsWith('/') || /^[A-Za-z]:/.test(relative)
+      || relative.split('/').some(part => part === '..')) throw new SkillStoreError('压缩包包含不安全的文件路径')
     const destination = path.resolve(target, relative)
-    if (path.relative(target, destination).startsWith('..')) continue
+    const inside = path.relative(target, destination)
+    if (inside === '..' || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)) {
+      throw new SkillStoreError('压缩包包含不安全的文件路径')
+    }
     if (isZipDirectory(entry)) {
       await mkdir(destination, { recursive: true })
       continue
     }
-    const bytes = readZipEntry(data, entry, MAX_SKILL_ARCHIVE_BYTES)
-    if (bytes === undefined) continue
+    const header = entry.localHeaderOffset
+    const empty = entry.method === 0 && entry.uncompressedSize === 0 && entry.compressedSize === 0
+      && header + 30 <= data.length && data.readUInt32LE(header) === 0x04034b50
+    const bytes = empty ? Buffer.alloc(0) : readZipEntry(data, entry, MAX_SKILL_ARCHIVE_BYTES)
+    if (bytes === undefined) throw new SkillStoreError('压缩包包含损坏或不支持的文件')
     expanded += bytes.length
     if (expanded > MAX_SKILL_ARCHIVE_BYTES) throw new SkillStoreError('压缩包解压后超过大小上限')
     await mkdir(path.dirname(destination), { recursive: true })
@@ -508,19 +551,72 @@ async function extractArchive(data: Buffer, target: string): Promise<number> {
   return written
 }
 
-/** Find the folder that actually holds `SKILL.md` inside an extracted tree. */
+/** Find one bundle in a bounded tree, without following links or guessing. */
 async function findSkillRoot(root: string): Promise<string | undefined> {
-  if (existsSync(path.join(root, 'SKILL.md'))) return root
-  let children: Dirent[]
-  try { children = await readdir(root, { withFileTypes: true }) } catch { return undefined }
-  const dirs = children.filter(child => child.isDirectory())
-  for (const dir of dirs) {
-    const candidate = path.join(root, dir.name)
-    if (existsSync(path.join(candidate, 'SKILL.md'))) return candidate
+  const candidates: string[] = []
+  let visited = 0
+  async function visit(directory: string, depth: number): Promise<void> {
+    if (depth > MAX_SKILL_SEARCH_DEPTH || ++visited > MAX_SKILL_SEARCH_DIRECTORIES) {
+      throw new SkillStoreError('技能目录搜索超过上限，请使用具体技能目录链接或单技能压缩包')
+    }
+    const info = await lstat(directory)
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new SkillStoreError('技能来源必须是普通目录，不能是符号链接')
+    const children = await readdir(directory, { withFileTypes: true })
+    const markdown = children.find(child => child.name === 'SKILL.md')
+    if (markdown !== undefined) {
+      if (!markdown.isFile()) throw new SkillStoreError('SKILL.md 必须是普通文件，不能是目录或符号链接')
+      candidates.push(directory)
+      if (candidates.length > 1) throw new SkillStoreError('该来源包含多个技能，请使用具体技能目录的 GitHub 链接或单技能压缩包')
+      // A bundle can contain examples and supporting skills of its own.
+      return
+    }
+    for (const child of children) {
+      if (child.isDirectory()) await visit(path.join(directory, child.name), depth + 1)
+    }
   }
-  // One wrapper folder (GitHub archives) with the bundle a level deeper.
-  if (dirs.length === 1) return await findSkillRoot(path.join(root, dirs[0]!.name))
-  return undefined
+  await visit(root, 0)
+  return candidates[0]
+}
+
+/** Supporting files are copied too: reject links anywhere in the bundle. */
+async function validateSkillTree(root: string): Promise<void> {
+  let visited = 0
+  async function visit(directory: string, depth: number): Promise<void> {
+    if (depth > MAX_SKILL_SEARCH_DEPTH || ++visited > MAX_SKILL_SEARCH_DIRECTORIES) {
+      throw new SkillStoreError('技能内容超过目录搜索上限，请使用单技能压缩包')
+    }
+    const info = await lstat(directory)
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new SkillStoreError('技能不能包含符号链接')
+    for (const child of await readdir(directory, { withFileTypes: true })) {
+      if (child.isSymbolicLink()) throw new SkillStoreError('技能不能包含符号链接')
+      if (child.isDirectory()) await visit(path.join(directory, child.name), depth + 1)
+    }
+  }
+  await visit(root, 0)
+}
+
+/** Resolve a GitHub path within the archive's single repository wrapper. */
+async function githubSkillSourceRoot(staging: string, subpath: string, blob = false): Promise<string> {
+  const children = await readdir(staging, { withFileTypes: true })
+  if (children.length !== 1 || !children[0]!.isDirectory()) throw new SkillStoreError('GitHub 压缩包缺少唯一仓库目录')
+  const repository = path.join(staging, children[0]!.name)
+  if (subpath === '' && !blob) return repository
+  let decoded: string
+  try { decoded = decodeURIComponent(subpath) } catch { throw new SkillStoreError('GitHub 技能目录路径无效') }
+  if (decoded.includes('\0') || decoded.includes('\\') || path.isAbsolute(decoded) || /^[A-Za-z]:/.test(decoded)
+    || decoded.split('/').some(part => part === '..')) throw new SkillStoreError('GitHub 技能目录路径不合法')
+  const selected = path.resolve(repository, decoded)
+  const relative = path.relative(repository, selected)
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new SkillStoreError('GitHub 技能目录路径不合法')
+  }
+  const info = await lstat(selected).catch(() => undefined)
+  if (info === undefined) throw new SkillStoreError('GitHub 链接指定的技能目录不存在，请检查目录和分支')
+  if (info.isSymbolicLink()) throw new SkillStoreError('GitHub 技能目录不能是符号链接')
+  if (blob && info.isFile() && path.basename(selected) === 'SKILL.md') return path.dirname(selected)
+  if (blob) throw new SkillStoreError('请使用 GitHub 技能目录或 SKILL.md 链接')
+  if (!info.isDirectory()) throw new SkillStoreError('请使用 GitHub 技能目录或 SKILL.md 链接')
+  return selected
 }
 
 /** `fs.rename` can fail across volumes; fall back to a recursive copy. */
@@ -563,6 +659,7 @@ export function installableSkillName(markdown: string): string {
 async function promote(staged: string, root: string, force: boolean): Promise<string> {
   const skillRoot = await findSkillRoot(staged)
   if (skillRoot === undefined) throw new SkillStoreError('该来源里没有找到 SKILL.md')
+  await validateSkillTree(skillRoot)
   const markdown = await readFile(path.join(skillRoot, 'SKILL.md'), 'utf8').catch(() => '')
   if (markdown.trim() === '') throw new SkillStoreError('SKILL.md 是空文件')
   // A user-only skill (`disable-model-invocation: true`) still installs: the
@@ -628,14 +725,14 @@ export async function installFromUrl(
 
   if (kind.kind === 'github') {
     // GitHub source archives are one cheap download and avoid a git dependency.
-    const ref = kind.ref === '' ? 'HEAD' : kind.ref
+    let ref = 'HEAD'
+    try { if (kind.ref !== '') ref = decodeURIComponent(kind.ref) } catch { throw new SkillStoreError('GitHub 分支路径无效') }
     const url = `https://codeload.github.com/${kind.owner}/${kind.repo}/zip/${encodeURIComponent(ref)}`
     const data = await download(url, MAX_SKILL_ARCHIVE_BYTES, options.signal)
     const staging = await mkdtemp(path.join(tmpdir(), 'dsh-imagegen-skill-'))
     try {
       await extractArchive(data, staging)
-      const wanted = kind.subpath === '' ? staging : path.resolve(staging, kind.subpath)
-      const scoped = existsSync(wanted) ? wanted : staging
+      const scoped = await githubSkillSourceRoot(staging, kind.subpath, kind.blob)
       return await promote(scoped, root, options.force)
     } finally {
       await rm(staging, { recursive: true, force: true }).catch(() => { /* best effort */ })
@@ -651,7 +748,7 @@ export async function installFromUrl(
   // Generic git remote: shallow clone into staging, then promote the bundle.
   const staging = await mkdtemp(path.join(tmpdir(), 'dsh-imagegen-skill-'))
   try {
-    const result = await run('git', ['clone', '--depth', '1', '--quiet', kind.url, path.join(staging, 'repo')], {
+    const result = await run('git', ['clone', '--depth', '1', '--quiet', '--', kind.url, path.join(staging, 'repo')], {
       cwd: staging,
       timeoutMs: INSTALL_TIMEOUT_MS,
     })

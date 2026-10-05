@@ -1,7 +1,8 @@
 import type { GenerateRequest, GenerationTask, HistoryEntry } from '../protocol.ts'
+import { generationOrigin, type GenerationOriginMetadata } from '../history-origin.ts'
 
 /** Metadata shared by requests and persisted history for workspace routing. */
-type GenerationOrigin = Pick<GenerateRequest, 'canvas' | 'workflow' | 'projectId' | 'slotKey'>
+type GenerationOrigin = GenerationOriginMetadata
 
 export interface NormalGenerationFilters {
   query: string
@@ -34,10 +35,7 @@ export function normalizeSize(value: string): string {
  * naturally remain ordinary history.
  */
 export function isNormalGeneration(origin: GenerationOrigin): boolean {
-  return origin.canvas === undefined
-    && origin.workflow !== 'ecommerce'
-    && origin.projectId === undefined
-    && origin.slotKey === undefined
+  return generationOrigin(origin) === 'normal'
 }
 
 function matchesFilters(

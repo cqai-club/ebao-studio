@@ -1,0 +1,95 @@
+.prompt,
+.prompt * {
+  box-sizing: border-box;
+}
+
+.prompt {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.prompt summary {
+  min-height: 34px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.prompt summary:hover {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent);
+}
+
+.prompt summary:focus-visible,
+.actions button:focus-visible,
+.text:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+.content {
+  min-width: 0;
+  padding: 0 10px 10px;
+}
+
+.meta,
+.hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.text {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  max-height: 320px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.actions button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.actions button:hover:not(:disabled) {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -205,8 +205,11 @@ export function queryContents(
   return { items, nextCursor }
 }
 
-export function createContent(contentType: PublisherContentType, env: NodeJS.ProcessEnv = process.env): PublisherContent {
+export function createContent(
+  contentType: PublisherContentType, env: NodeJS.ProcessEnv = process.env, initialTitle: string = '',
+): PublisherContent {
   if (!['article', 'image-note', 'video'].includes(contentType)) throw new Error('内容类型无效')
+  if (typeof initialTitle !== 'string' || initialTitle.length > TITLE_MAX) throw new Error('标题过大或格式无效')
   const root = contentsRoot(env)
   mkdirSync(root, { recursive: true, mode: 0o700 })
   const id = randomUUID()
@@ -217,7 +220,7 @@ export function createContent(contentType: PublisherContentType, env: NodeJS.Pro
     const now = new Date().toISOString()
     const content: PublisherContent = {
       id, contentType, revision: 1, createdAt: now, updatedAt: now,
-      title: '', body: '', summary: '', tags: [], creativeStatement: 'none',
+      title: initialTitle.trim(), body: '', summary: '', tags: [], creativeStatement: 'none',
       // The source document preview uses the same classic reader layout.
       ...(contentType === 'article' ? { articleTheme: 'classic' as const } : {}),
       assets: [], platformFields: {}, platformVariants: {},
@@ -369,7 +372,8 @@ export function saveContent(id: string, input: SaveContentInput, env: NodeJS.Pro
 
 export function duplicateContent(id: string, env: NodeJS.ProcessEnv = process.env): PublisherContent {
   const source = readContent(id, env)
-  const created = createContent(source.contentType, env)
+  const copyTitle = source.title ? `${source.title.slice(0, TITLE_MAX - 4).replace(/[\uD800-\uDBFF]$/u, '')}（副本）` : ''
+  const created = createContent(source.contentType, env, copyTitle)
   const target = directoryFor(created.id, env)
   const origin = directoryFor(id, env)
   try {
@@ -377,7 +381,7 @@ export function duplicateContent(id: string, env: NodeJS.ProcessEnv = process.en
       const sourceAsset = safeAssetPath(origin, asset.id)
       copyFileSync(sourceAsset, join(target, 'assets', asset.id))
     }
-    const copy = { ...source, id: created.id, revision: 1, createdAt: created.createdAt, updatedAt: created.updatedAt, title: source.title ? `${source.title.slice(0, TITLE_MAX - 4)}（副本）` : '' }
+    const copy = { ...source, id: created.id, revision: 1, createdAt: created.createdAt, updatedAt: created.updatedAt, title: copyTitle }
     writeManifest(target, copy)
     return copy
   } catch (error) {

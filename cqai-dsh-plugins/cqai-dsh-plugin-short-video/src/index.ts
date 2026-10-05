@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { API, audioPreviewReuseIssue, defaultParams, defaultSettings, materialKeyIssue, materialPreviewReuseIssue, needsText, stageRequirements, subtitlePreviewReuseIssue, workflowIdForJob, workflowIdForNewJob, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
+import { API, audioPreviewReuseIssue, defaultParams, defaultSettings, materialKeyIssue, materialPreviewReuseIssue, needsText, stageRequirements, subtitlePreviewReuseIssue, videoModelIssue, workflowIdForJob, workflowIdForNewJob, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
 import { createVideoMaterial, validateVideoMaterialRequest } from './video-provider.ts'
 export { needsText } from './protocol.ts'
 
@@ -120,6 +120,39 @@ function safePath(root: string, relative: string): string {
   if (!target.startsWith(resolve(root) + sep)) throw new Error('非法文件路径')
   return target
 }
+export async function prepareJobFolder(root: string, job: Job, kind: string): Promise<string> {
+  if (!/^[a-f0-9-]{36}$/.test(job.id)) throw new Error('任务 ID 无效')
+  if (kind !== 'task' && kind !== 'materials') throw new Error('文件夹类型无效')
+  const relative = kind === 'task' || ['cqai_video', 'openai_image'].includes(String(job.params.video_source))
+    ? join('storage', 'tasks', job.id)
+    : join('storage', job.params.video_source === 'local' ? 'local_videos' : 'cache_videos')
+  const target = safePath(root, relative)
+  const rootReal = realpathSync(root)
+  const check = (path: string) => {
+    const real = realpathSync(path)
+    if (real !== rootReal && !real.startsWith(rootReal + sep)) throw new Error('文件夹超出短视频数据目录')
+  }
+  // Check existing ancestors before creating a missing task directory through a symlink.
+  let ancestor = target
+  while (!existsSync(ancestor)) ancestor = dirname(ancestor)
+  check(ancestor)
+  await mkdir(target, {recursive:true})
+  check(target)
+  if (!statSync(target).isDirectory()) throw new Error('任务文件夹不可用')
+  return realpathSync(target)
+}
+async function openFolder(path: string): Promise<void> {
+  const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open'
+  if (process.platform !== 'win32') {
+    await runCommand(command, [path], {timeout:10_000})
+    return
+  }
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, [path], {detached:true, stdio:'ignore'})
+    child.once('error', reject)
+    child.once('spawn', () => {child.unref();resolve()})
+  })
+}
 async function removeTaskDirectory(parent: string, id: string): Promise<void> {
   const target=safePath(parent,id)
   if(!existsSync(target))return
@@ -152,7 +185,15 @@ function pythonPath(dataRoot: string): string {
   return process.platform === 'win32' ? join(venv, 'Scripts', 'python.exe') : join(venv, 'bin', 'python')
 }
 export function shortVideoEnvironment(dataRoot: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return {...commonToolEnvironment(dirname(dataRoot), base), MPT_DSH_DATA_ROOT: dataRoot, PYTHONUTF8: '1'}
+  const env: NodeJS.ProcessEnv = {...commonToolEnvironment(dirname(dataRoot), base), MPT_DSH_DATA_ROOT: dataRoot, PYTHONUTF8: '1'}
+  // The Host includes [::1] for undici, but Whisper's HTTPX requires bare IPv6 in NO_PROXY.
+  // Normalize only the Python child environment so the Host retains its proxy bypass policy.
+  for (const key of ['no_proxy', 'NO_PROXY'] as const) {
+    if (typeof env[key] === 'string') {
+      env[key] = env[key].split(',').map(entry => entry.trim() === '[::1]' ? '::1' : entry).join(',')
+    }
+  }
+  return env
 }
 function terminate(child: ChildProcess): void {
   if (!child.pid) return
@@ -369,8 +410,10 @@ export function apply(ctx: Context): void {
     if (textNeeded && !available.text.some(m=>m.id===draft.textModel)) throw new Error('所选文本模型不在当前 CQAI Club 账号中')
     if (imageNeeded && !draft.imageModel) throw new Error('请选择 CQAI Club 图片模型')
     if (imageNeeded && !available.image.some(m=>m.id===draft.imageModel)) throw new Error('所选图片模型不在当前 CQAI Club 账号中')
-    if (videoNeeded && !draft.videoModel) throw new Error('请选择 CQAI Club 视频模型')
-    if (videoNeeded && !available.video.some(m=>m.id===draft.videoModel)) throw new Error('所选视频模型不在当前 CQAI Club 账号中')
+    if (videoNeeded) {
+      const issue = videoModelIssue(available, draft.videoModel)
+      if (issue) throw new Error(issue)
+    }
   }
   const llmCall = async (model: string, prompt: string): Promise<string> => {
     const available=await catalog()
@@ -621,6 +664,11 @@ export function apply(ctx: Context): void {
             jobs.set(id,job);await save(job);return json(res,201,job)
           }
         if(req.method==='POST' && action==='start')return json(res,200,await start(get(id)))
+        if(req.method==='POST' && action==='open-folder'){
+          const folder=await prepareJobFolder(root,get(id),url.searchParams.get('kind')||'task')
+          try{await openFolder(folder)}catch{throw new Error('无法打开文件夹，请确认系统文件管理器可用')}
+          return json(res,200,{ok:true,path:folder})
+        }
         if(req.method==='POST' && action==='cancel'){const job=get(id);if(job.status!=='running')throw new Error('任务没有运行');job.status='cancelled';job.error='用户已取消';videoAborts.get(id)?.abort();const child=children.get(id);if(child)terminate(child);await save(job);return json(res,200,job)}
          if(req.method==='POST' && action==='delete'){const job=get(id);if(job.status==='running')throw new Error('运行中的任务不可删除');if([...jobs.values()].some(other=>other.id!==id&&(other.materialPreviewJobId===id||other.subtitlePreviewJobId===id||other.audioPreviewJobId===id)))throw new Error('该任务仍被后续制作引用，请先删除后续任务');await removeTaskDirectory(jobsRoot,id);await removeTaskDirectory(join(root,'storage','tasks'),id);for(const file of job.uploads.material){const target=safePath(join(root,'storage','local_videos'),file);await rm(target,{force:true})}if(job.uploads.bgm){const target=safePath(join(root,'storage','bgm'),job.uploads.bgm);await rm(target,{force:true})}jobs.delete(id);return json(res,200,{ok:true})}
          if(req.method==='POST' && action==='subtitle'){

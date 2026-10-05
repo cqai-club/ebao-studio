@@ -53,6 +53,10 @@ def media_bin(name: str) -> str:
                 root = directory / "node_modules" / "@remotion" / package
                 manifest = json.loads((root / "package.json").read_text(encoding="utf-8"))
                 binary = directory / ffmpeg_path if name == "ffmpeg" else root / ("ffprobe.exe" if system == "win32" else "ffprobe")
+                if name == "ffprobe" and system == "darwin":
+                    if marker.get("ffprobePath") != "bin/ffprobe" or not binary.is_file() or binary.stat().st_size == 0:
+                        raise ValueError("shared ffprobe launcher is not ready")
+                    binary = directory / "bin" / "ffprobe"
                 binary.resolve().relative_to(directory.resolve())
                 if manifest.get("version") == COMMON_FFMPEG_VERSION and binary.is_file() and binary.stat().st_size > 0:
                     return str(binary)

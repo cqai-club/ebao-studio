@@ -4,6 +4,8 @@
 
 FFmpeg 使用短视频现有 `uv.lock` 中的 `imageio-ffmpeg==0.6.0` 完整构建与 SHA-256；ffprobe 使用口播现有 `remotion-lock.json` 中的 `@remotion/compositor-<platform>@4.0.519` 及 npm SRI。安装仅下载固定 wheel 和 npm 包，不运行 npm 生命周期或 Python 源码构建。Remotion 的裁剪版 FFmpeg 缺少部分普通剪辑滤镜，不能代替公共完整 FFmpeg。
 
+macOS 的公共 ffprobe 通过应用私有启动器调用，在启动器内指定同包动态库目录，供环境检查和各引擎一致使用。Python 检测复用 `UV_PYTHON_PREFERENCE=only-managed`，避免与 uv 的互斥命令参数重复配置。
+
 成功检查两个二进制后才写入安装标记。中断安装不会被引擎选中，重试只修复缺失项。任务启动时读取已验证的公共路径；显式引擎环境配置继续优先，未安装公共工具时保留各功能原有后备路径。
 
 `commonToolHealth` 的 `python` 表示基础解释器；功能健康中的 `pythonPackages` 表示该功能的包环境。公开状态没有凭据或安装命令输入。

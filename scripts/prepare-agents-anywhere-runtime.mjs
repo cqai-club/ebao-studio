@@ -6,7 +6,9 @@ import { AA_WORKSPACES } from './agents-anywhere-release-policy.mjs'
 
 export function prepareInstalledAaRuntime(root, platform = process.platform) {
   if (platform === 'win32') return
-  for (const workspace of AA_WORKSPACES) {
+  // Media runtime pins its own uv version, so Yarn can install it separately
+  // from AA. Its disabled postinstall leaves the payload at 0644 as well.
+  for (const workspace of [...AA_WORKSPACES, 'cqai-dsh-plugins/cqai-dsh-plugin-media-runtime']) {
     const scope = join(root, workspace, 'node_modules', '@dataiku')
     if (!existsSync(scope)) continue
     for (const name of readdirSync(scope)) {

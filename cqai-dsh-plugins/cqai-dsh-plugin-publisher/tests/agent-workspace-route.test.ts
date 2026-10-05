@@ -1,14 +1,17 @@
 import { Context } from '@deepseek-ai/cordis'
+import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import * as plugin from '../src/index.ts'
-import { createContent } from '../src/contents.ts'
+import { contentsRoot, createContent, saveContent } from '../src/contents.ts'
 import { ensureAgentWorkspace } from '../src/agent-workspace.ts'
-import { ensureProjectWorkspace } from '../src/project-workspace.ts'
+import { ensureProjectWorkspace, readProjectSettings, saveProjectSettings } from '../src/project-workspace.ts'
+import { readAgentDraftSession, writeAgentDraftSession } from '../src/agent-draft-session.ts'
+import { readSessionContent, sessionContentsRoot } from '../src/session-contents.ts'
 
 const homes: string[] = []
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }) })
@@ -22,14 +25,53 @@ describe('draft Agent project Workspace route', () => {
   it('uses each draft project directory for article, image-note, and video', () => {
     const root = home()
     const env = { DSH_HOME: root }
-    const article = createContent('article', env)
-    const imageNote = createContent('image-note', env)
-    const video = createContent('video', env)
+    const article = createContent('article', env, '重庆春日游')
+    const imageNote = createContent('image-note', env, '山城图集')
+    const video = createContent('video', env, '夜景视频')
     const first = ensureAgentWorkspace(article.id, env)
     expect(first).toBe(ensureProjectWorkspace(article.id, env).path)
-    expect(first).toBe(realpathSync(join(root, 'publisher', 'projects', 'article', article.id)))
-    expect(ensureAgentWorkspace(imageNote.id, env)).toBe(realpathSync(join(root, 'publisher', 'projects', 'image-note', imageNote.id)))
-    expect(ensureAgentWorkspace(video.id, env)).toBe(realpathSync(join(root, 'publisher', 'projects', 'video', video.id)))
+    const projectsRoot = readProjectSettings(env).defaultRoot
+    for (const [draft, prefix] of [[article, '文章-重庆春日游'], [imageNote, '图文-山城图集'], [video, '视频-夜景视频']] as const) {
+      const path = ensureAgentWorkspace(draft.id, env)
+      expect(path).toBe(realpathSync(path))
+      expect(dirname(path)).toBe(join(projectsRoot, draft.contentType))
+      expect(basename(path)).toMatch(new RegExp(`^${prefix}-\\d{4}-\\d{2}-\\d{2}-[0-9a-f]{8}$`, 'u'))
+      writeFileSync(join(path, 'Agent输出.md'), `# ${draft.title}`)
+      expect(readFileSync(join(path, 'Agent输出.md'), 'utf8')).toBe(`# ${draft.title}`)
+    }
+  })
+
+  it('reopens a v1 UUID workspace and keeps both historical session associations', () => {
+    const env = { DSH_HOME: realpathSync(home()) }
+    const draft = createContent('article', env, '历史文章')
+    const projectsRoot = readProjectSettings(env).defaultRoot
+    rmSync(ensureProjectWorkspace(draft.id, env).path, { recursive: true })
+    const legacy = join(projectsRoot, 'article', draft.id)
+    mkdirSync(legacy)
+    writeFileSync(join(legacy, '旧对话原稿.md'), '# 保留历史资料')
+    const binding = join(contentsRoot(env), draft.id, 'project-workspace.json')
+    writeFileSync(binding, JSON.stringify({ version: 1, root: projectsRoot }))
+    const bindingBefore = readFileSync(binding, 'utf8')
+
+    const sessionId = 'historical-session'
+    writeAgentDraftSession(draft.id, sessionId, env)
+    const associations = sessionContentsRoot(env)
+    mkdirSync(associations, { recursive: true })
+    const association = join(associations, `${createHash('sha256').update(sessionId).digest('hex')}.json`)
+    writeFileSync(association, JSON.stringify({ version: 1, sessionId, contentId: draft.id }))
+    const associationBefore = readFileSync(association, 'utf8')
+    saveProjectSettings(realpathSync(home()), env)
+    const edited = saveContent(draft.id, {
+      revision: draft.revision, title: '历史标题修改', body: '历史正文', summary: '', tags: [], creativeStatement: 'none',
+    }, env)
+
+    expect(ensureAgentWorkspace(draft.id, env)).toBe(legacy)
+    expect(ensureProjectWorkspace(draft.id, env)).toEqual({ contentId: draft.id, path: legacy })
+    expect(readFileSync(join(legacy, '旧对话原稿.md'), 'utf8')).toBe('# 保留历史资料')
+    expect(readFileSync(binding, 'utf8')).toBe(bindingBefore)
+    expect(readAgentDraftSession(draft.id, env)).toBe(sessionId)
+    expect(readSessionContent(sessionId, env)).toEqual({ sessionId, contentId: draft.id, revision: edited.revision, content: edited })
+    expect(readFileSync(association, 'utf8')).toBe(associationBefore)
   })
 
   it('requires the content ID and same-origin mutation header', async () => {

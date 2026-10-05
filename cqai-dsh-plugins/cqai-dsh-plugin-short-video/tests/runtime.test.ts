@@ -25,6 +25,26 @@ vi.mock('cqai-dsh-plugin-media-runtime', async importOriginal => ({
 const roots: string[] = []
 afterEach(async () => {mock.calls.length = 0; await Promise.all(roots.splice(0).map(root => rm(root, {recursive: true, force: true})))})
 describe('short-video common tool environment', () => {
+  it('makes the inherited loopback bypass compatible with Whisper HTTPX without changing the parent proxy policy', () => {
+    const base = {
+      no_proxy: 'localhost,127.0.0.1,::1,[::1],.local',
+      NO_PROXY: 'example.com, [::1] ,*',
+      HTTPS_PROXY: 'http://127.0.0.1:7890',
+    }
+    const env = shortVideoEnvironment(join(tmpdir(), 'short-video'), base)
+    expect(env.no_proxy).toBe('localhost,127.0.0.1,::1,::1,.local')
+    expect(env.NO_PROXY).toBe('example.com,::1,*')
+    expect(env.HTTPS_PROXY).toBe(base.HTTPS_PROXY)
+    expect(base.no_proxy).toContain('[::1]')
+    expect(base.NO_PROXY).toBe('example.com, [::1] ,*')
+  })
+  it('preserves absent or unrelated proxy bypass settings', () => {
+    const root = join(tmpdir(), 'short-video')
+    expect(shortVideoEnvironment(root, {})).not.toHaveProperty('no_proxy')
+    expect(shortVideoEnvironment(root, {})).not.toHaveProperty('NO_PROXY')
+    const base = {no_proxy: 'example.com,::1,localhost', NO_PROXY: '*'}
+    expect(shortVideoEnvironment(root, base)).toMatchObject(base)
+  })
   it('keeps transient keys and explicit overrides in the worker environment without changing their base object', () => {
     const root = join(tmpdir(), 'application-home', 'short-video')
     const base = {MPT_PEXELS_API_KEY: 'transient-test', IMAGEIO_FFMPEG_EXE: 'explicit-ffmpeg'}
@@ -50,7 +70,7 @@ describe('short-video common tool environment', () => {
     [{}, 'private-fallback'],
   ])('resolves the bridge FFmpeg before importing the engine (%j)', (overrides, expected) => {
     const bridge = fileURLToPath(new URL('../runtime/bridge.py', import.meta.url))
-    const code = 'import os, pathlib, sys, types\nsys.modules["imageio_ffmpeg"] = types.SimpleNamespace(get_ffmpeg_exe=lambda: "private-fallback")\nsource = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").split("\\ndef send(", 1)[0]\nexec(compile(source, sys.argv[1], "exec"), {"__file__":sys.argv[1]})\nprint(os.environ["IMAGEIO_FFMPEG_EXE"], file=sys.__stdout__)'
+    const code = 'import os, pathlib, sys, types\nsys.path.insert(0, str(pathlib.Path(sys.argv[1]).parent))\nsys.modules["imageio_ffmpeg"] = types.SimpleNamespace(get_ffmpeg_exe=lambda: "private-fallback")\nsource = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").split("\\ndef send(", 1)[0]\nexec(compile(source, sys.argv[1], "exec"), {"__file__":sys.argv[1]})\nprint(os.environ["IMAGEIO_FFMPEG_EXE"], file=sys.__stdout__)'
     const env = {...process.env}
     delete env.CQAI_FFMPEG; delete env.FFMPEG_PATH; delete env.IMAGEIO_FFMPEG_EXE
     const child = spawnSync('python', ['-c', code, bridge], {env: {...env, ...overrides}, encoding: 'utf8', windowsHide: true, timeout: 10000})

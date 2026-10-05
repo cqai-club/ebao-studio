@@ -2904,6 +2904,16 @@ await check('E1 client apply registers and renders the official image studio (js
   const channelSecrets = () => [{ path: ['channelSecrets', 'custom:default'], set: keyState.set }]
   const mutateCalls = []
   const ecommerceSubmissions = []
+  const ecommerceSubmitCalls = []
+  const oldEcommerceRun = {
+    id: 'project-hist', legacy: true, status: 'completed', createdAt: 4, updatedAt: 5,
+    slots: [
+      { key: 'main-1', label: '主图', status: 'completed', attempt: 1, images: [{ url: '/history/ecom1.png', mime: 'image/png' }], request: { mode: 'text', model: 'gpt-image-2', prompt: 'product main image', size: '1:1', quality: '2k', detail: '', n: 1, workflow: 'ecommerce', projectName: '历史保温杯', projectId: 'project-hist', slotKey: 'main-1', slotLabel: '主图' } },
+      { key: 'sp-1', label: '卖点图', status: 'completed', attempt: 1, images: [{ url: '/history/ecom2.png', mime: 'image/png' }], request: { mode: 'text', model: 'gpt-image-2', prompt: 'product selling point', size: '1:1', quality: '2k', detail: '', n: 1, workflow: 'ecommerce', projectName: '历史保温杯', projectId: 'project-hist', slotKey: 'sp-1', slotLabel: '卖点图' } },
+    ],
+  }
+  const ecommerceRuns = [oldEcommerceRun]
+  const runSummary = run => ({ id: run.id, name: run.config?.draft.productName ?? run.slots[0].request.projectName, createdAt: run.createdAt, updatedAt: run.updatedAt, status: run.status, done: run.slots.filter(slot => slot.status === 'completed').length, total: run.slots.length, model: run.slots[0].request.model, size: run.slots[0].request.size, thumbnail: run.slots[0].images[0], legacy: run.legacy })
   /** Canvas generation requests submitted from the workspace composer. */
   const canvasTasks = []
   /** Documents the workspace persisted through /canvas/save. */
@@ -2962,6 +2972,23 @@ await check('E1 client apply registers and renders the official image studio (js
   const fetchStub = async (input, init) => {
     const path = String(input)
     requestPaths.push(path)
+    if (path.endsWith('/ecommerce/list')) return { ok: true, json: async () => ({ ok: true, runs: ecommerceRuns.map(runSummary) }) }
+    if (path.includes('/ecommerce/get?')) {
+      const id = new URL(path, 'http://localhost').searchParams.get('id')
+      return { ok: true, json: async () => ({ ok: true, run: ecommerceRuns.find(run => run.id === id) }) }
+    }
+    if (path.endsWith('/ecommerce/submit')) {
+      const payload = JSON.parse(init.body)
+      ecommerceSubmitCalls.push(payload)
+      const id = `smoke-run-${ecommerceSubmitCalls.length}`
+      const run = {
+        id, createdAt: Date.now(), updatedAt: Date.now(), status: 'running',
+        config: { draft: payload.draft, providerId: payload.providerId, model: payload.model, quality: payload.quality, detail: payload.detail, assets: payload.assets.map(asset => ({ id: asset.id, name: asset.name, role: asset.role, url: `/api/dsh-imagegen/ecommerce/asset/${id}/${asset.id}.png` })) },
+        slots: payload.requests.map((request, index) => ({ key: request.slotKey, label: request.slotLabel, status: index === 0 ? 'completed' : 'queued', attempt: index === 0 ? 1 : 0, request: { ...request, projectId: id }, images: index === 0 ? [{ url: `/api/dsh-imagegen/ecommerce/asset/${id}/main.png`, mime: 'image/png' }] : [] })),
+      }
+      ecommerceRuns.unshift(run)
+      return { ok: true, json: async () => ({ ok: true, run }) }
+    }
     if (path.endsWith('/cqai/provider')) {
       return {
         ok: true,
@@ -3015,23 +3042,20 @@ await check('E1 client apply registers and renders the official image studio (js
         }),
       }
     }
-    if (path.endsWith('/history/list')) {
+    if (path.includes('/history/list')) {
       const comparisonHistory = {
         comparisonId: 'client-comparison',
         comparisonModels: ['gpt-image-2', 'grok-imagine-image'],
       }
-      return {
-        ok: true,
-        json: async () => ({
-          ok: true,
-          entries: [
+      const entries = [
             { id: 'history-grok', createdAt: 2, mode: 'text', model: 'grok-imagine-image', prompt: 'compare prompt', size: '1:1', quality: '4k', detail: '', n: 1, images: [{ url: '/history/grok.png', mime: 'image/png' }], ...comparisonHistory },
             { id: 'history-gpt', createdAt: 1, mode: 'text', model: 'gpt-image-2', prompt: 'compare prompt', size: '1:1', quality: '4k', detail: '', n: 1, images: [{ url: '/history/gpt.png', mime: 'image/png' }], ...comparisonHistory },
             { id: 'hist-ecom-1', createdAt: 4, mode: 'text', model: 'gpt-image-2', prompt: 'product main image', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/history/ecom1.png', mime: 'image/png' }], workflow: 'ecommerce', projectId: 'project-hist', projectName: '历史保温杯', slotKey: 'main-1', slotLabel: '主图' },
             { id: 'hist-ecom-2', createdAt: 5, mode: 'text', model: 'gpt-image-2', prompt: 'product selling point', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/history/ecom2.png', mime: 'image/png' }], workflow: 'ecommerce', projectId: 'project-hist', projectName: '历史保温杯', slotKey: 'sp-1', slotLabel: '卖点图' },
-          ],
-        }),
-      }
+            { id: 'hist-canvas', createdAt: 6, mode: 'text', model: 'gpt-image-2', prompt: 'canvas prompt', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/history/canvas.png', mime: 'image/png' }], canvas: { canvasId: canvasDocument.id } },
+      ]
+      const scope = JSON.parse(init?.body ?? '{}').scope
+      return { ok: true, json: async () => ({ ok: true, entries: entries.filter(entry => scope === undefined || (entry.canvas !== undefined ? 'canvas' : entry.workflow === 'ecommerce' ? 'ecommerce' : 'normal') === scope) }) }
     }
     if (path.endsWith('/gallery/list')) {
       return {
@@ -3203,6 +3227,7 @@ await check('E1 client apply registers and renders the official image studio (js
   const sandbox = {
     window: jsdomWindow,
     document: jsdomDocument,
+    structuredClone,
     MutationObserver: jsdomWindow.MutationObserver,
     ResizeObserver: jsdomWindow.ResizeObserver,
     CustomEvent: jsdomWindow.CustomEvent,
@@ -3415,7 +3440,7 @@ await check('E1 client apply registers and renders the official image studio (js
     assert.equal(view.querySelector('[data-connected]')?.getAttribute('data-connected'), 'true', 'choosing the CQAI model restores the account route')
 
     // Gallery and infinite canvas use the full workspace without the legacy
-    // history rail. Ecommerce temporarily keeps its project-history rail.
+    // history rail. Ecommerce exposes a scoped history menu beside New product.
     const tablistButtons = [...view.querySelectorAll('[role="tablist"] button')]
     assert.equal(tablistButtons.length, 6, 'top nav has four entries and the normal workspace shows two generation modes')
     const ecommerceSwitch = tablistButtons.find(button => button.textContent?.includes('电商模式'))
@@ -3427,7 +3452,19 @@ await check('E1 client apply registers and renders the official image studio (js
     ecommerceSwitch.click()
     await new Promise(resolve => setTimeout(resolve, 50))
     assert.ok(view.querySelector('[data-ecommerce-workspace]') !== null, 'ecommerce workspace is rendered')
-    assert.ok(view.querySelector('[data-dsh-imagegen-history]') !== null, 'ecommerce keeps the legacy project-history rail')
+    assert.equal(view.querySelector('[data-dsh-imagegen-history]'), null, 'ecommerce no longer renders the legacy history rail')
+    const historyTrigger = view.querySelector('[data-ecommerce-history-trigger]')
+    assert.ok(historyTrigger !== null, 'ecommerce exposes the history menu')
+    assert.equal(historyTrigger.nextElementSibling?.hasAttribute('data-ecommerce-new'), true, 'history button sits directly beside New product')
+    historyTrigger.click()
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const ecommerceMenu = jsdomDocument.querySelector('[data-ecommerce-history-menu]')
+    assert.ok(ecommerceMenu !== null, 'history menu expands')
+    assert.equal(ecommerceMenu.querySelectorAll('[data-ecommerce-history-row]').length, 1, 'history menu has one complete ecommerce task')
+    assert.equal(ecommerceMenu.textContent.includes('compare prompt'), false, 'ecommerce menu excludes ordinary records')
+    assert.equal(ecommerceMenu.textContent.includes('canvas'), false, 'ecommerce menu excludes canvas records')
+    historyTrigger.click()
+    await new Promise(resolve => setTimeout(resolve, 20))
     assert.equal(view.querySelectorAll('[role="tablist"] button').length, 4, 'generation sub-modes hide in the ecommerce workspace')
     assert.equal([...view.querySelectorAll('textarea')].some(textarea => (textarea.getAttribute('placeholder') ?? '').includes('描述你想要的画面')), false, 'normal prompt card is hidden in ecommerce workspace')
     const ecommerceName = view.querySelector('input[placeholder="商品名称（必填）"]')
@@ -3561,17 +3598,17 @@ await check('E1 client apply registers and renders the official image studio (js
     assert.ok(confirmSet !== undefined, 'ecommerce confirm action is rendered')
     confirmSet.click()
     await new Promise(resolve => setTimeout(resolve, 3500))
-    assert.equal(ecommerceSubmissions.length, 6, 'anchor chain submits the main image first, then the remaining slots')
-    assert.ok(ecommerceSubmissions.every(payload => payload.channelId === 'cqai'), 'omitting a third-party choice keeps every task on CQAI')
-    assert.ok(ecommerceSubmissions.every(payload => payload.workflow === 'ecommerce' && typeof payload.projectId === 'string' && payload.projectId !== ''), 'submissions carry the ecommerce workflow and project id')
-    assert.ok(ecommerceSubmissions.every(payload => typeof payload.slotLabel === 'string' && payload.slotLabel !== '' && typeof payload.slotKey === 'string' && payload.slotKey !== ''), 'submissions carry slot metadata')
-    const mainPayload = ecommerceSubmissions.find(payload => payload.slotKey === 'main-1')
-    assert.ok(mainPayload !== undefined && mainPayload.mode === 'edit' && mainPayload.refName === 'cup.png', 'main image uses the uploaded product asset')
-    const anchored = ecommerceSubmissions.filter(payload => payload.slotKey !== 'main-1')
-    assert.equal(anchored.length, 5, 'remaining slots are anchored after the main image')
-    assert.ok(anchored.every(payload => payload.mode === 'edit' && payload.refName === 'set-main-anchor' && typeof payload.image === 'string' && payload.image.startsWith('data:')), 'anchored slots reference the generated main image')
-    assert.ok(anchored.every(payload => payload.prompt.startsWith('商品套图一致性约束')), 'anchored prompts carry the consistency constraint')
-    assert.ok(ecommerceSubmissions.every(payload => payload.projectName === '测试保温杯'), 'submissions carry the product name snapshot')
+    assert.equal(ecommerceSubmitCalls.length, 1, 'one confirmation submits one complete Host-owned plan')
+    assert.equal(ecommerceSubmissions.length, 0, 'the ecommerce browser never submits individual slot tasks')
+    const submittedPlan = ecommerceSubmitCalls[0]
+    assert.equal(submittedPlan.requests.length, 6, 'the complete plan contains all six slots before the main completes')
+    assert.ok(submittedPlan.requests.every(payload => payload.channelId === 'cqai' && payload.workflow === 'ecommerce'), 'default plan uses the immutable CQAI provider')
+    assert.ok(submittedPlan.requests.every(payload => payload.slotKey && payload.slotLabel), 'all planned slots carry stable metadata')
+    const mainPayload = submittedPlan.requests.find(payload => payload.slotKey === 'main-1')
+    assert.ok(mainPayload !== undefined && mainPayload.mode === 'edit' && mainPayload.refName === 'cup.png', 'main plan preserves its original reference image')
+    assert.ok(submittedPlan.requests.filter(payload => payload.slotKey.startsWith('scene-')).every(payload => payload.mode === 'text'), 'reference-free scene choices are preserved in the original plan')
+    assert.equal(submittedPlan.draft.productName, '测试保温杯', 'plan persists the original product draft')
+    assert.equal(submittedPlan.assets[0].name, 'cup.png', 'plan persists the original reference asset')
     const ecommerceResults = view.querySelector('[data-ecommerce-results]')
     assert.ok(ecommerceResults !== null, 'product set results section is rendered')
     assert.ok(ecommerceResults.textContent?.includes('1/6'), 'results header reports task progress')
@@ -3584,18 +3621,21 @@ await check('E1 client apply registers and renders the official image studio (js
       assert.ok(draftSnapshot.includes('测试保温杯'), 'ecommerce draft persists to local storage')
     }
 
-    // Restore one persisted product set from history: the sidebar collapses
-    // its rows into one project entry, and clicking it rebuilds the grouped
-    // results canvas from the stored entries.
-    const ecommerceHistoryRow = [...jsdomDocument.querySelectorAll('[data-dsh-imagegen-history-main]')]
-      .find(button => button.textContent?.includes('历史保温杯'))
-    assert.ok(ecommerceHistoryRow !== undefined, 'ecommerce history rows collapse into one project entry')
+    // Restore a migrated old task from the scoped menu. It never makes a
+    // generation call or pretends the missing old configuration is complete.
+    view.querySelector('[data-ecommerce-history-trigger]').click()
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const ecommerceHistoryRow = jsdomDocument.querySelector('[data-run-id="project-hist"] button')
+    assert.ok(ecommerceHistoryRow !== null, 'old ecommerce rows collapse into one complete task entry')
     ecommerceHistoryRow.click()
     await new Promise(resolve => setTimeout(resolve, 100))
     const restoredResults = view.querySelector('[data-ecommerce-results]')
-    assert.ok(restoredResults !== null, 'restored project keeps the ecommerce canvas')
-    assert.ok(restoredResults.textContent?.includes('2/2'), 'restored results report history progress')
-    assert.ok(restoredResults.querySelector('[data-ecommerce-group="卖点图"] img') !== null, 'restored groups render stored images')
+    assert.ok(restoredResults !== null, 'restored task stays in ecommerce')
+    assert.ok(restoredResults.textContent.includes('旧'), 'old task explicitly reports missing configuration')
+    assert.ok(restoredResults.querySelector('[data-ecommerce-group="卖点图"] img') !== null, 'restored groups render the saved images')
+    assert.equal(ecommerceSubmitCalls.length, 1, 'opening a history task never resubmits generation')
+    assert.equal(ecommerceSubmissions.length, 0, 'restoration does not submit individual tasks')
+    assert.equal(jsdomDocument.querySelector('[data-ecommerce-history-menu]'), null, 'successful restoration closes the history list')
 
     // The clear path: resetting the key stages an explicit clear and must
     // also report success.

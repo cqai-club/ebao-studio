@@ -6,6 +6,7 @@ import {
 } from '../protocol.ts'
 import { contentPreviewCss } from './content-preview-style.ts'
 import { draftGalleryCss } from './draft-gallery-style.ts'
+import { displayArticleWarnings } from '../submission-display.ts'
 
 export const STATEMENT_LABELS: Record<CreativeStatement, string> = {
   none: '不声明',
@@ -76,6 +77,7 @@ export function ConfirmDialog({
   busy: boolean
 }) {
   const submitting = useRef(false)
+  const visibleWarnings = displayArticleWarnings(warnings ?? [])
   useEffect(() => { if (!busy) submitting.current = false }, [busy])
   const close = () => { if (!busy && !submitting.current) onCancel() }
   const submit = () => {
@@ -96,8 +98,8 @@ export function ConfirmDialog({
     </dl>
     <div className="pub-modal-target-title">目标账号</div>
     <ul className="pub-modal-accounts">{accounts.map(account => <li key={account.id}><Tag tone="neutral">{PLATFORM_LABELS[account.platform]}</Tag><span>{account.displayName}{targetTitles?.[account.id] && targetTitles[account.id] !== title ? ` · ${targetTitles[account.id]}` : ''}</span></li>)}</ul>
-    {!!warnings?.length && <><p className="pub-modal-copy">提交时会自动调整以下平台副本，并转存平台草稿供你核对；原始 MD 和本地编辑稿保留：</p>
-      <ul className="pub-modal-accounts">{warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></>}
+    {!!visibleWarnings.length && <><p className="pub-modal-copy">提交时会自动调整以下平台副本，并转存平台草稿供你核对；原始 MD 和本地编辑稿保留：</p>
+      <ul className="pub-modal-accounts">{visibleWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></>}
     <p className="pub-modal-copy">提交后请自行前往各平台后台确认结果。</p>
   </PublisherModal>
 }

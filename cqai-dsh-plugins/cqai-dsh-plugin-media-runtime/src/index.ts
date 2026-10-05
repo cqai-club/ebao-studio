@@ -101,7 +101,9 @@ export function uvEnvironment(home: string): NodeJS.ProcessEnv {
 export interface Python311 {python: string; managed: boolean}
 /** Reuse an already compatible interpreter; the venv itself remains app-private. */
 export async function python311(home: string): Promise<Python311> {
-  try {await run(uvExecutable(), ['python', 'find', '3.11', '--managed-python', '--no-python-downloads'], {env: uvEnvironment(home), timeout: 15000});return {python:'3.11',managed:true}} catch {/* try an installed interpreter */}
+  // uvEnvironment already selects only-managed; uv rejects --managed-python
+  // when UV_PYTHON_PREFERENCE is set, even to the same preference.
+  try {await run(uvExecutable(), ['python', 'find', '3.11', '--no-python-downloads'], {env: uvEnvironment(home), timeout: 15000});return {python:'3.11',managed:true}} catch {/* try an installed interpreter */}
   const candidates = [process.env.MPT_PYTHON, process.platform === 'win32' ? 'python' : 'python3.11', process.platform === 'win32' ? undefined : 'python3'].filter((value): value is string => Boolean(value))
   for (const candidate of candidates) {
     const result = spawnSync(candidate, ['-c', 'import sys; assert sys.version_info[:2] == (3, 11); print(sys._base_executable)'], {encoding:'utf8',timeout:10000,windowsHide:true})
