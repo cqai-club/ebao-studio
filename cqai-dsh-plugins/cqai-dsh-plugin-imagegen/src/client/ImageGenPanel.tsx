@@ -7,7 +7,7 @@
  * a platform module) so the studio matches the dsh shell look by construction.
  */
 
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -24,6 +24,7 @@ import { ecommerceResultPrompt, type EcommerceResultPrompt } from './ecommerce-r
 import type { EcommerceRun, EcommerceSlotStatus } from '../ecommerce-run-protocol.ts'
 import { useImageGenLanguageTick } from './use-language.ts'
 import { buildNormalGenerationStream, isNormalGeneration, normalizeSize } from './normal-generation-stream.ts'
+import { listAdditionalGenerationHistory, mergeGenerationOverview, preserveGenerationHistoryHashes, type GenerationOverviewEntry } from './generation-overview.ts'
 import { createTaskPollingState, mergeTaskSummaries } from './generation-task-poll.ts'
 import { ecommerceSlotPrompt } from './ecommerce-prompts.ts'
 import type { CqaiImageProviderView, EcommerceRefRole, GeneratedImage, GenerateMode, GenerateRequest, GenerationTask, GenerationTaskStatus, HistoryEntry, HistoryImageRef, ProductSetDraft, ProductSetSlot } from '../protocol.ts'
@@ -422,12 +423,14 @@ export function ImageGenPanel(props: {
 
   const [tab, setTab] = useState<PanelTab>('text')
   const [canvasImportRequest, setCanvasImportRequest] = useState<{ source: 'history' | 'gallery'; entryId: string; imageIndex: number } | undefined>()
+  const [canvasOpenProjectId, setCanvasOpenProjectId] = useState<string>()
   /** Switch to a normal-generation tab, leaving any task workspace. */
   const openTab = (next: PanelTab): void => {
     setWorkspace('normal')
     setTab(next)
   }
   const addEntryToCanvas = (source: 'history' | 'gallery', entryId: string, imageIndex = 0): void => {
+    setCanvasOpenProjectId(undefined)
     setCanvasImportRequest({ source, entryId, imageIndex })
     setWorkspace('canvas')
   }
@@ -453,7 +456,14 @@ export function ImageGenPanel(props: {
   const [submitting, setSubmitting] = useState(false)
   const [enhancing, setEnhancing] = useState(false)
   const [configGuide, setConfigGuide] = useState<'generation' | 'enhancement' | 'disabled' | null>(null)
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [history, setHistoryState] = useState<HistoryEntry[]>([])
+  const setHistory = useCallback((entries: HistoryEntry[]): void => {
+    setHistoryState(previous => preserveGenerationHistoryHashes(entries, previous))
+  }, [])
+  const [additionalHistory, setAdditionalHistory] = useState<GenerationOverviewEntry[]>([])
+  const [historyReadError, setHistoryReadError] = useState<string | null>(null)
+  const [overviewReadError, setOverviewReadError] = useState<string | null>(null)
+  const [overviewRefresh, setOverviewRefresh] = useState(0)
   const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null)
   const [gallery, setGallery] = useState<HistoryEntry[]>([])
   const [galleryViewingId, setGalleryViewingId] = useState<string | null>(null)
@@ -597,28 +607,71 @@ export function ImageGenPanel(props: {
   const galleryTagOptions = [...new Set(gallery.flatMap(entry => entry.tags ?? []))].sort((a, b) => a.localeCompare(b))
   const galleryModels = [...new Set([...imageModels, ...gallery.map(entry => entry.model)])]
 
-  const normalStreamItems = buildNormalGenerationStream(history, tasks, {
+  const overviewHistory = mergeGenerationOverview(history, additionalHistory)
+  const normalStreamItems = buildNormalGenerationStream(overviewHistory, tasks, {
     query: historyQuery,
     model: historyModelFilter,
     ratio: historyRatioFilter,
   })
   const normalStreamModels = [...new Set([
-    ...normalHistory.map(entry => entry.model),
+    ...overviewHistory.map(entry => entry.model),
     ...normalTasks.map(task => task.request.model),
   ])]
   const normalStreamRatios = [...new Set([
-    ...normalHistory.map(entry => normalizeSize(entry.size)),
+    ...overviewHistory.map(entry => normalizeSize(entry.size)),
     ...normalTasks.map(task => normalizeSize(task.request.size)),
   ])]
+
+  const normalStreamScrollRef = useRef<HTMLDivElement>(null)
+  const [normalColumnCount, setNormalColumnCount] = useState(1)
+  const normalStreamVisible = workspace === 'normal' && tab !== 'gallery'
+  const normalStreamHasItems = normalStreamItems.length > 0
+  useEffect(() => {
+    const scroll = normalStreamScrollRef.current
+    if (!normalStreamVisible || scroll === null) return
+    // Keep cards at least 220px wide, with a 12px gap. Measuring this surface
+    // also handles sidebar changes and lets wider windows fit more columns.
+    const updateColumns = (width: number): void => {
+      setNormalColumnCount(Math.max(1, Math.floor((width + 12) / 232)))
+    }
+    const measure = (): void => {
+      const style = window.getComputedStyle(scroll)
+      updateColumns(scroll.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure)
+      return () => { window.removeEventListener('resize', measure) }
+    }
+    const observer = new ResizeObserver(entries => {
+      const entry = entries.find(entry => entry.target === scroll)
+      if (entry !== undefined) updateColumns(entry.contentRect.width)
+    })
+    observer.observe(scroll)
+    return () => { observer.disconnect() }
+  }, [normalStreamVisible, normalStreamHasItems])
 
   // History feeds the default result stream; gallery is requested when opened.
   useEffect(() => {
     let disposed = false
-    api.historyList()
-      .then(entries => { if (!disposed) setHistory(entries) })
-      .catch(() => { /* history unavailable — leave the list empty */ })
+    api.historyList(undefined, true)
+      .then(entries => { if (!disposed) { setHistory(entries); setHistoryReadError(null) } })
+      .catch(caught => { if (!disposed) setHistoryReadError(errorMessage(caught)) })
     return () => { disposed = true }
-  }, [api])
+  }, [api, workspace, overviewRefresh])
+
+  // Durable task and canvas outputs can outlive the bounded shared history.
+  // Read metadata when returning to the overview or when a task changes;
+  // inspecting this list never submits generation or downloads the image bank.
+  const ecommerceOverviewVersion = ecommerceHistory.runs.map(run => `${run.id}:${run.updatedAt}`).join('|')
+  useEffect(() => {
+    if (workspace !== 'normal' || tab === 'gallery') return
+    let disposed = false
+    void listAdditionalGenerationHistory(api)
+      .then(entries => { if (!disposed) { setAdditionalHistory(entries); setOverviewReadError(null) } })
+      .catch(caught => { if (!disposed) setOverviewReadError(errorMessage(caught)) })
+    return () => { disposed = true }
+  }, [api, workspace, tab, ecommerceOverviewVersion, overviewRefresh])
 
   useEffect(() => {
     if (tab !== 'gallery' && workspace !== 'canvas' || galleryLoaded.current) return
@@ -675,7 +728,7 @@ export function ImageGenPanel(props: {
           if (workspaceRef.current === 'normal') setError(completed.result.historyError ?? null)
         }
         if (newlyCompleted.length > 0) {
-          void api.historyList().then(entries => {
+          void api.historyList(undefined, true).then(entries => {
             if (!disposed) setHistory(entries)
           }).catch(() => {})
         }
@@ -1606,7 +1659,7 @@ export function ImageGenPanel(props: {
     </section>
   )
   const conversationBusy = addingToConversation !== null || galleryConversationAddingId !== null || historyConversationAddingId !== null
-  const viewingEntry = viewingHistoryId === null ? null : history.find(entry => entry.id === viewingHistoryId) ?? null
+  const viewingEntry = viewingHistoryId === null ? null : overviewHistory.find(entry => entry.id === viewingHistoryId) ?? null
   const previewImage = preview === null ? null : preview.images[preview.index] ?? null
   const comparisonTasks = comparison === null ? [] : comparison.taskIds.map(id => tasks.find(task => task.id === id)).filter((task): task is GenerationTask => task !== undefined)
   const comparisonResults = comparisonTasks.filter(task => task.status === 'completed' && task.result !== undefined)
@@ -1675,10 +1728,11 @@ export function ImageGenPanel(props: {
     <div className={css.normalStream} data-dsh-imagegen-normal-feed="" data-layout="masonry">
       <header className={css.normalStreamHeader}>
         <span className={css.normalStreamHeading}>
-          <strong>{tt('tasks.title')}</strong>
+          <strong>{tt('history.allGenerations')}</strong>
           <span>{tt('tasks.count', { count: normalStreamItems.length })}</span>
         </span>
         <span className={css.normalStreamHeaderActions}>
+          <button type="button" onClick={() => { setOverviewRefresh(value => value + 1) }}>{tt('history.refresh')}</button>
           {comparison !== null && comparisonResults.length > 0 ? (
             <button type="button" onClick={() => { setComparisonFullscreen(true) }}>{tt('compare.fullscreen')}</button>
           ) : null}
@@ -1689,7 +1743,7 @@ export function ImageGenPanel(props: {
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1.5 4.2A1.2 1.2 0 0 1 2.7 3h2.9l1.6 1.9h6.1A1.2 1.2 0 0 1 14.5 6.1v6.2a1.2 1.2 0 0 1-1.2 1.2H2.7a1.2 1.2 0 0 1-1.2-1.2z" /></svg>
           </button>
           {normalHistory.length > 0 ? (
-            <button type="button" data-normal-feed-clear="" onClick={() => { void clearNormalHistory() }}>{tt('history.clear')}</button>
+            <button type="button" data-normal-feed-clear="" onClick={() => { void clearNormalHistory() }}>{tt('history.clearNormal')}</button>
           ) : null}
         </span>
       </header>
@@ -1707,6 +1761,8 @@ export function ImageGenPanel(props: {
       </div>
 
       {error !== null ? <div className={css.normalStreamError} role="alert">{tt('canvas.error', { error })}</div> : null}
+      {historyReadError !== null ? <div className={css.normalStreamError} role="alert">{tt('history.loadError', { error: historyReadError })}</div> : null}
+      {overviewReadError !== null ? <div className={css.normalStreamError} role="alert">{tt('history.loadError', { error: overviewReadError })}</div> : null}
 
       {normalStreamItems.length === 0 ? (
         <div className={css.normalStreamEmpty}>
@@ -1716,13 +1772,16 @@ export function ImageGenPanel(props: {
           <strong>{tt('history.empty')}</strong>
         </div>
       ) : (
-        <div className={css.normalStreamScroll}>
-          <div className={css.normalStreamMasonry}>
-            {[0, 1].map(columnIndex => (
+        <div ref={normalStreamScrollRef} className={css.normalStreamScroll} data-normal-feed-scroll="">
+          <div className={css.normalStreamMasonry} data-columns={normalColumnCount} style={{ '--dsh-normal-feed-columns': normalColumnCount } as CSSProperties}>
+            {Array.from({ length: normalColumnCount }, (_, columnIndex) => (
               <div key={columnIndex} className={css.normalStreamColumn} data-normal-feed-column={columnIndex}>
-                {normalStreamItems.filter((_, itemIndex) => itemIndex % 2 === columnIndex).map((item, rowIndex) => {
+                {normalStreamItems.filter((_, itemIndex) => itemIndex % normalColumnCount === columnIndex).map(item => {
                   const task = item.kind === 'task' ? item.task : undefined
-                  const entry = item.kind === 'history' ? item.entry : undefined
+                  const entry = item.kind === 'history' ? item.entry as GenerationOverviewEntry : undefined
+                  const ecommerceRunId = entry?.overview?.kind === 'ecommerce' ? entry.overview.runId
+                    : entry?.projectId !== undefined && ecommerceHistory.runs.some(run => run.id === entry.projectId) ? entry.projectId : undefined
+                  const originalCanvasId = entry?.overview?.kind === 'canvas' ? entry.overview.canvasId : entry?.canvas?.canvasId
                   const request = task?.request ?? entry!
                   const taskImages = task?.result?.images ?? []
                   const taskPreviewImages = taskImages.map(image => image.revisedPrompt === undefined
@@ -1739,7 +1798,6 @@ export function ImageGenPanel(props: {
                       data-normal-feed-card=""
                       data-source={item.kind}
                       data-status={status}
-                      style={{ '--dsh-normal-feed-order': rowIndex * 2 + columnIndex } as CSSProperties}
                     >
                       {imageSrc !== undefined ? (
                         <button
@@ -1783,9 +1841,11 @@ export function ImageGenPanel(props: {
                             <>
                               <button type="button" disabled={conversationBusy} onClick={() => { void addHistoryEntryToConversation(entry) }}>{historyConversationAddingId === entry.id ? tt('conversation.adding') : tt('conversation.add')}</button>
                               <button type="button" disabled={galleryAdding} onClick={() => { void addHistoryEntryToGallery(entry) }}>{tt('gallery.add')}</button>
-                              <button type="button" onClick={() => { addEntryToCanvas('history', entry.id, 0) }}>{tt('canvas.addToCanvas')}</button>
+                              {entry.overview === undefined ? <button type="button" onClick={() => { addEntryToCanvas('history', entry.id, 0) }}>{tt('canvas.addToCanvas')}</button> : null}
+                              {ecommerceRunId !== undefined ? <button type="button" onClick={() => { void openEcommerceRun(ecommerceRunId).catch(caught => setError(errorMessage(caught))) }}>{tt('history.openEcommerce')}</button> : null}
+                              {originalCanvasId !== undefined ? <button type="button" onClick={() => { setCanvasImportRequest(undefined); setCanvasOpenProjectId(originalCanvasId); setWorkspace('canvas') }}>{tt('history.openCanvas')}</button> : null}
                               <a href={entry.images[0]!.url} download={`dsh-history-${entry.id}.${extensionOf(entry.images[0]!.mime)}`}>{tt('download')}</a>
-                              <button type="button" data-danger="" onClick={() => { void deleteNormalHistoryEntry(entry) }}>{tt('history.delete')}</button>
+                              {entry.overview === undefined && isNormalGeneration(entry) ? <button type="button" data-danger="" onClick={() => { void deleteNormalHistoryEntry(entry) }}>{tt('history.delete')}</button> : null}
                             </>
                           ) : null}
                           {task !== undefined && (status === 'queued' || status === 'running') ? <button type="button" onClick={() => { void api.taskCancel(task.id) }}>{tt('tasks.cancel')}</button> : null}
@@ -1831,7 +1891,7 @@ export function ImageGenPanel(props: {
           onSelect={index => {
             if (index === 0) openTab('text')
             else if (index === 1) openTab('gallery')
-            else if (index === 2) setWorkspace('canvas')
+            else if (index === 2) { setCanvasImportRequest(undefined); setCanvasOpenProjectId(undefined); setWorkspace('canvas') }
             else {
               if (ecommerceHistory.run !== null) applyEcommerceConfiguration(ecommerceHistory.run)
               setWorkspace('ecommerce')
@@ -2456,6 +2516,7 @@ export function ImageGenPanel(props: {
               gallery={gallery}
               tasks={tasks}
               importRequest={canvasImportRequest}
+              openProjectId={canvasOpenProjectId}
               onImportRequestHandled={() => { setCanvasImportRequest(undefined) }}
               onOpenSettings={() => { openSettingsGuide('generation') }}
             />

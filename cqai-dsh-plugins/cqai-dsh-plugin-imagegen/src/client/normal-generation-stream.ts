@@ -49,7 +49,8 @@ function matchesFilters(
 }
 
 /**
- * Merge live ordinary tasks with persisted ordinary history. A completed task
+ * Merge live ordinary tasks with all supplied persisted history. Origin metadata
+ * routes live progress but does not hide completed results. A completed task
  * whose result already contains the updated history is represented by that
  * durable row only; completed results without history stay visible as a
  * session fallback so a persistence failure never hides a generated image.
@@ -60,7 +61,6 @@ export function buildNormalGenerationStream(
   filters: NormalGenerationFilters,
 ): NormalGenerationStreamItem[] {
   const historyItems: NormalGenerationStreamItem[] = history
-    .filter(isNormalGeneration)
     .filter(entry => matchesFilters(entry, filters))
     .map(entry => ({ kind: 'history', key: `history:${entry.id}`, createdAt: entry.createdAt, entry }))
 

@@ -75,6 +75,8 @@ interface CanvasWorkspaceProps {
   gallery: HistoryEntry[]
   tasks: GenerationTask[]
   importRequest?: { source: 'history' | 'gallery'; entryId: string; imageIndex: number }
+  /** Open the original canvas from the all-generation overview. */
+  openProjectId?: string
   onImportRequestHandled?: () => void
   onOpenSettings?: () => void
   onHistoryChange?: (entries: HistoryEntry[]) => void
@@ -3003,8 +3005,9 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
     let disposed = false
     void api.canvasList().then(async list => {
       if (disposed) return
-      const created = list[0] === undefined ? await api.canvasCreate(tt('canvas.untitled')) : null
-      const first = created === null ? await api.canvasRead(list[0]!.id) : seedDocument(created)
+      const initialId = props.openProjectId ?? list[0]?.id
+      const created = initialId === undefined ? await api.canvasCreate(tt('canvas.untitled')) : null
+      const first = created === null ? await api.canvasRead(initialId!) : seedDocument(created)
       if (disposed) return
       setProjects(created === null ? list : [summaryOf(first)])
       setDocument(normalizeConfigNodeSizes(first))
@@ -3012,7 +3015,7 @@ export function CanvasWorkspace(props: CanvasWorkspaceProps): React.JSX.Element 
       setSaveState('saved')
     }).catch(caught => { if (!disposed) { setError(caught instanceof Error ? caught.message : String(caught)); setSaveState('error') } })
     return () => { disposed = true }
-  }, [api, seedDocument])
+  }, [api, seedDocument, props.openProjectId])
 
   useEffect(() => {
     if (document === null || saveState === 'loading') return

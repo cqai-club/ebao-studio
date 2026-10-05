@@ -122,8 +122,8 @@ export class ImageGenApi {
   }
 
   /** List the host-persisted history (newest first). */
-  async historyList(scope?: HistoryScope): Promise<HistoryEntry[]> {
-    const response = await fetch(HISTORY_API.list, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scope }) })
+  async historyList(scope?: HistoryScope, includeImageHashes = false): Promise<HistoryEntry[]> {
+    const response = await fetch(HISTORY_API.list, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scope, ...includeImageHashes ? { includeImageHashes: true } : {} }) })
     const body = await readEnvelope<{ ok: true; entries: HistoryEntry[] }>(response)
     return body.entries
   }
@@ -180,8 +180,8 @@ export class ImageGenApi {
   }
 
   /** List the host-persisted gallery (newest first). */
-  async galleryList(): Promise<HistoryEntry[]> {
-    const response = await fetch(GALLERY_API.list, { method: 'POST' })
+  async galleryList(includeImageHashes = false): Promise<HistoryEntry[]> {
+    const response = await fetch(GALLERY_API.list, { method: 'POST', ...includeImageHashes ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ includeImageHashes: true }) } : {} })
     const body = await readEnvelope<{ ok: true; entries: HistoryEntry[] }>(response)
     return body.entries
   }
