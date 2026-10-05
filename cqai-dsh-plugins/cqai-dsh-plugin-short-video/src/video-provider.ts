@@ -30,6 +30,9 @@ export function validateVideoMaterialRequest(value: Record<string, unknown>): Vi
 function fail(status: number, action: string): Error {
   if (status === 401) return new Error('CQAI Club 登录已失效，请重新登录后继续原任务')
   if (status === 402) return new Error('CQAI Club 账户额度不足')
+  if (status === 404) return new Error(action === '视频提交'
+    ? 'CQAI Club 视频生成接口不可用 (HTTP 404)，请联系管理员确认服务配置，或改用本地视频 / 图片素材'
+    : `CQAI Club ${action}失败 (HTTP 404)，请联系管理员核对远端任务；勿重复提交生成`)
   return new Error(`CQAI Club ${action}失败 (HTTP ${status})`)
 }
 

@@ -245,6 +245,19 @@ describe('short-video local job boundary', () => {
     expect(subtitlePreviewReuseIssue(subtitles,matching,source.id)).toBeUndefined()
     expect(subtitlePreviewReuseIssue(subtitles,{...matching,params:{...matching.params,video_clip_speed:2}},source.id)).toMatch('剪辑设置已改变')
   })
+  it('explains failed materials and protects accepted or uncertain clips from duplicate billing', () => {
+    const params = {video_script:'城市故事',video_terms:'城市',video_source:'cqai_video',target_duration_seconds:5}
+    const target = {...draft(params),videoModel:'video-model'}
+    const source: Job = {...completedPreview(params),stopAt:'materials',status:'failed',videoModel:'video-model',error:'HTTP 404'}
+    expect(materialPreviewReuseIssue(source,target)).toContain('生成失败')
+    expect(materialPreviewReuseIssue(source,target)).not.toContain('请先完成')
+    expect(materialPreviewReuseIssue({...source,status:'running'},target)).toContain('正在生成')
+    expect(materialPreviewReuseIssue({...source,status:'interrupted'},target)).toContain('原任务')
+    for (const status of ['submitting','queued','in_progress'] as const) {
+      const pending = {...source,videoTasks:[{key:'0',model:'video-model',prompt:'城市',seconds:5,status}]}
+      expect(materialPreviewReuseIssue(pending,target)).toContain('避免重复计费')
+    }
+  })
   it('keeps uploaded narration tied to its preview and restores it from history', () => {
     const uploaded={...completedPreview({audio_source:'upload'},false),uploads:{material:[],audio:'narration.wav'}}
     const final=draft({video_script:'城市故事',video_source:'local',audio_source:'upload'})
