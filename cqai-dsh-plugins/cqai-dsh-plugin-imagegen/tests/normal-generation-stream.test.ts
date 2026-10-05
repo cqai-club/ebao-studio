@@ -53,7 +53,7 @@ function historyEntry(id: string, createdAt: number, overrides: Partial<HistoryE
 }
 
 describe('normal generation stream', () => {
-  it('keeps legacy unmarked history ordinary and excludes canvas, ecommerce, and defensive project metadata', () => {
+  it('shows history from every source without changing normal progress classification', () => {
     const entries = [
       historyEntry('legacy-normal', 50),
       historyEntry('canvas', 40, { canvas: { canvasId: 'canvas-1' } }),
@@ -63,8 +63,16 @@ describe('normal generation stream', () => {
     ]
 
     expect(isNormalGeneration({})).toBe(true)
+    expect(isNormalGeneration({ canvas: { canvasId: 'canvas-1' } })).toBe(false)
+    expect(isNormalGeneration({ workflow: 'ecommerce', projectId: 'product-1' })).toBe(false)
+    expect(isNormalGeneration({ projectId: 'legacy-product' })).toBe(false)
+    expect(isNormalGeneration({ slotKey: 'main-1' })).toBe(false)
     expect(buildNormalGenerationStream(entries, [], ALL_FILTERS).map(item => item.key)).toEqual([
       'history:legacy-normal',
+      'history:canvas',
+      'history:ecommerce',
+      'history:orphan-project',
+      'history:orphan-slot',
     ])
   })
 
@@ -84,7 +92,7 @@ describe('normal generation stream', () => {
       task('completed-summary', 'completed', 9),
     ]
 
-    const stream = buildNormalGenerationStream([], tasks, ALL_FILTERS)
+    const stream = buildNormalGenerationStream([persisted], tasks, ALL_FILTERS)
 
     expect(stream.map(item => item.key)).toEqual([
       'task:queued',
@@ -92,8 +100,39 @@ describe('normal generation stream', () => {
       'task:failed',
       'task:cancelled',
       'task:completed-fallback',
+      'history:persisted-result',
     ])
-    expect(stream.every(item => item.kind === 'task')).toBe(true)
+    expect(stream.filter(item => item.kind === 'history')).toEqual([
+      { kind: 'history', key: 'history:persisted-result', createdAt: 5, entry: persisted },
+    ])
+  })
+
+  it('leaves canvas and ecommerce live progress in their own flows while showing their durable results', () => {
+    const canvas = historyEntry('canvas-result', 40, { canvas: { canvasId: 'canvas-1' } })
+    const ecommerce = historyEntry('ecommerce-result', 30, { workflow: 'ecommerce', projectId: 'product-1' })
+    const tasks = [
+      task('normal-running', 'running', 60),
+      task('canvas-running', 'running', 100, {
+        request: request({ canvas: { canvasId: 'canvas-1' } }),
+      }),
+      task('ecommerce-running', 'running', 90, {
+        request: request({ workflow: 'ecommerce', projectId: 'product-1' }),
+      }),
+      task('canvas-persisted', 'completed', 40, {
+        request: request({ canvas: { canvasId: 'canvas-1' } }),
+        result: { images: [{ b64: 'canvas', mime: 'image/png' }], history: [canvas] },
+      }),
+      task('ecommerce-persisted', 'completed', 30, {
+        request: request({ workflow: 'ecommerce', projectId: 'product-1' }),
+        result: { images: [{ b64: 'product', mime: 'image/png' }], history: [ecommerce] },
+      }),
+    ]
+
+    expect(buildNormalGenerationStream([canvas, ecommerce], tasks, ALL_FILTERS).map(item => item.key)).toEqual([
+      'task:normal-running',
+      'history:canvas-result',
+      'history:ecommerce-result',
+    ])
   })
 
   it('applies query, model, and normalized legacy-ratio filters before sorting newest first', () => {
@@ -103,13 +142,33 @@ describe('normal generation stream', () => {
         size: '1536x1024',
       }),
       historyEntry('wrong-query', 500, {
+        canvas: { canvasId: 'canvas-1' },
         prompt: 'Quiet landscape',
         size: '3:2',
       }),
       historyEntry('wrong-model', 400, {
+        workflow: 'ecommerce',
+        projectId: 'product-1',
         model: 'seedream',
         prompt: 'Hero poster in another model',
         size: '3:2',
+      }),
+      historyEntry('canvas-match', 250, {
+        canvas: { canvasId: 'canvas-1' },
+        prompt: 'Hero canvas',
+        size: '3:2',
+      }),
+      historyEntry('ecommerce-match', 200, {
+        workflow: 'ecommerce',
+        projectId: 'product-1',
+        prompt: 'Hero product image',
+        size: '1536x1024',
+      }),
+      historyEntry('ecommerce-wrong-ratio', 700, {
+        workflow: 'ecommerce',
+        projectId: 'product-2',
+        prompt: 'Hero product square',
+        size: '1:1',
       }),
     ]
     const tasks = [
@@ -129,8 +188,10 @@ describe('normal generation stream', () => {
 
     expect(stream.map(item => item.key)).toEqual([
       'task:current-ratio-match',
+      'history:canvas-match',
+      'history:ecommerce-match',
       'history:legacy-ratio-match',
     ])
-    expect(stream.map(item => item.createdAt)).toEqual([300, 100])
+    expect(stream.map(item => item.createdAt)).toEqual([300, 250, 200, 100])
   })
 })

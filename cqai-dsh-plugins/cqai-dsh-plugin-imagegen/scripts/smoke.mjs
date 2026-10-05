@@ -48,6 +48,13 @@ async function waitForSelectorCount(root, selector, count, timeout = 1200) {
   assert.ok(root.querySelectorAll(selector).length >= count, `expected ${count} matches: ${selector}`)
 }
 
+/** Wait for the complete async overview, including its durable-store readers. */
+async function waitForCondition(predicate, description, timeout = 2500) {
+  const deadline = Date.now() + timeout
+  while (!predicate() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25))
+  assert.ok(predicate(), description)
+}
+
 // ---------------------------------------------------------------- A. host half
 const host = await import(new URL('lib/index.js', root).href)
 // Exercise the built store in an isolated directory, never the user's canvas.
@@ -2781,11 +2788,26 @@ await check('E1 client apply registers and renders the official image studio (js
     confirmationCalls += 1
     return false
   }
-  // jsdom has no ResizeObserver; the canvas measures its viewport with one.
+  // jsdom has no ResizeObserver. Keep its observed targets so the ordinary
+  // feed can exercise its real width-driven layout without resizing a GUI.
+  const resizeObservers = new Set()
   jsdomWindow.ResizeObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
+    constructor(callback) {
+      this.callback = callback
+      this.targets = new Set()
+      resizeObservers.add(this)
+    }
+    observe(target) { this.targets.add(target) }
+    unobserve(target) { this.targets.delete(target) }
+    disconnect() {
+      this.targets.clear()
+      resizeObservers.delete(this)
+    }
+  }
+  const resizeObservedTarget = (target, width) => {
+    const observers = [...resizeObservers].filter(observer => observer.targets.has(target))
+    assert.ok(observers.length > 0, 'responsive feed observes its own scrollport')
+    for (const observer of observers) observer.callback([{ target, contentRect: { width, height: 800 } }], observer)
   }
   // Pointer capture is a no-op here; the annotation drag only needs the events.
   jsdomWindow.Element.prototype.setPointerCapture = function setPointerCapture() {}
@@ -2905,11 +2927,17 @@ await check('E1 client apply registers and renders the official image studio (js
   const mutateCalls = []
   const ecommerceSubmissions = []
   const ecommerceSubmitCalls = []
+  const oldEcommerceRunId = '11111111-1111-4111-8111-111111111111'
+  const ecommerceAssetUrl = hash => `/api/dsh-imagegen/ecommerce/asset/${oldEcommerceRunId}/${hash.repeat(64)}.png`
+  const mainRequest = { mode: 'edit', model: 'gpt-image-2', prompt: 'product main image', size: '1:1', quality: '2k', detail: '', n: 1, workflow: 'ecommerce', projectName: '历史保温杯', projectId: oldEcommerceRunId, slotKey: 'main-1', slotLabel: '主图', image: ecommerceAssetUrl('9') }
   const oldEcommerceRun = {
-    id: 'project-hist', legacy: true, status: 'completed', createdAt: 4, updatedAt: 5,
+    id: oldEcommerceRunId, legacy: true, status: 'completed', createdAt: 4, updatedAt: 5,
     slots: [
-      { key: 'main-1', label: '主图', status: 'completed', attempt: 1, images: [{ url: '/history/ecom1.png', mime: 'image/png' }], request: { mode: 'text', model: 'gpt-image-2', prompt: 'product main image', size: '1:1', quality: '2k', detail: '', n: 1, workflow: 'ecommerce', projectName: '历史保温杯', projectId: 'project-hist', slotKey: 'main-1', slotLabel: '主图' } },
-      { key: 'sp-1', label: '卖点图', status: 'completed', attempt: 1, images: [{ url: '/history/ecom2.png', mime: 'image/png' }], request: { mode: 'text', model: 'gpt-image-2', prompt: 'product selling point', size: '1:1', quality: '2k', detail: '', n: 1, workflow: 'ecommerce', projectName: '历史保温杯', projectId: 'project-hist', slotKey: 'sp-1', slotLabel: '卖点图' } },
+      { key: 'main-1', label: '主图', status: 'completed', attempt: 2, images: [{ url: ecommerceAssetUrl('1'), mime: 'image/png' }], request: mainRequest, attempts: [
+        { number: 1, status: 'completed', startedAt: 2, finishedAt: 3, request: { ...mainRequest, prompt: 'product previous successful image' }, images: [{ url: ecommerceAssetUrl('4'), mime: 'image/png' }] },
+        { number: 2, status: 'completed', startedAt: 3, finishedAt: 4, request: mainRequest, images: [{ url: ecommerceAssetUrl('1'), mime: 'image/png' }] },
+      ] },
+      { key: 'sp-1', label: '卖点图', status: 'completed', attempt: 1, images: [{ url: ecommerceAssetUrl('2'), mime: 'image/png' }], request: { mode: 'text', model: 'gpt-image-2', prompt: 'product selling point', size: '1:1', quality: '2k', detail: '', n: 1, workflow: 'ecommerce', projectName: '历史保温杯', projectId: oldEcommerceRunId, slotKey: 'sp-1', slotLabel: '卖点图' }, attempts: [] },
     ],
   }
   const ecommerceRuns = [oldEcommerceRun]
@@ -2957,6 +2985,13 @@ await check('E1 client apply registers and renders the official image studio (js
   const previewRequests = []
   /** Every fetch path the client issued (debug aid for the canvas tools). */
   const requestPaths = []
+  const historyListRequests = []
+  const galleryListRequests = []
+  const canvasReadRequests = []
+  const canvasImportRequests = []
+  let useAlternateDefaultCanvas = false
+  let deferNextCanvasRead = false
+  let releasePausedCanvasRead = null
   const canvasDocument = {
     version: 2,
     id: 'canvas-smoke',
@@ -2964,11 +2999,16 @@ await check('E1 client apply registers and renders the official image studio (js
     revision: 1,
     viewport: { x: 0, y: 0, k: 1 },
     background: 'dots',
-    nodes: [],
+    nodes: [
+      { id: 'overview-canvas-shared', type: 'image', title: 'canvas prompt', x: 0, y: 0, width: 64, height: 64, metadata: { prompt: 'canvas prompt', model: 'gpt-image-2', size: '1:1', quality: '2k', status: 'success', asset: { ...canvasImageAsset, assetId: `${'3'.repeat(64)}.png`, url: `/api/dsh-imagegen/canvas/asset/${'3'.repeat(64)}.png`, origin: 'generated' } } },
+      { id: 'overview-canvas-only', type: 'image', title: 'canvas durable-only result', x: 100, y: 0, width: 64, height: 64, metadata: { prompt: 'canvas durable-only result', model: 'gpt-image-2', size: '1:1', quality: '2k', status: 'success', asset: { ...canvasImageAsset, assetId: `${'5'.repeat(64)}.png`, url: `/api/dsh-imagegen/canvas/asset/${'5'.repeat(64)}.png`, origin: 'generated' } } },
+      { id: 'overview-canvas-input', type: 'image', title: 'uploaded canvas input', x: 200, y: 0, width: 64, height: 64, metadata: { prompt: 'uploaded canvas input', status: 'success', asset: canvasImageAsset } },
+    ],
     connections: [],
     createdAt: 1,
     updatedAt: 1,
   }
+  const importTargetCanvas = { ...canvasDocument, id: 'canvas-import-target', title: 'Import target', nodes: [], connections: [] }
   const fetchStub = async (input, init) => {
     const path = String(input)
     requestPaths.push(path)
@@ -2980,11 +3020,17 @@ await check('E1 client apply registers and renders the official image studio (js
     if (path.endsWith('/ecommerce/submit')) {
       const payload = JSON.parse(init.body)
       ecommerceSubmitCalls.push(payload)
-      const id = `smoke-run-${ecommerceSubmitCalls.length}`
+      const id = `00000000-0000-4000-8000-${String(ecommerceSubmitCalls.length).padStart(12, '0')}`
+      const savedAssets = payload.assets.map((asset, index) => ({ id: asset.id, name: asset.name, role: asset.role, url: `/api/dsh-imagegen/ecommerce/asset/${id}/${String(index + 9).padStart(64, '0')}.png` }))
+      const savedReference = value => savedAssets[payload.assets.findIndex(asset => asset.dataUrl === value)]?.url ?? `/api/dsh-imagegen/ecommerce/asset/${id}/${'f'.repeat(64)}.png`
+      const savedRequests = payload.requests.map(request => ({ ...request, projectId: id,
+        ...request.image === undefined ? {} : { image: savedReference(request.image) },
+        ...request.images === undefined ? {} : { images: request.images.map(savedReference) },
+      }))
       const run = {
         id, createdAt: Date.now(), updatedAt: Date.now(), status: 'running',
-        config: { draft: payload.draft, providerId: payload.providerId, model: payload.model, quality: payload.quality, detail: payload.detail, assets: payload.assets.map(asset => ({ id: asset.id, name: asset.name, role: asset.role, url: `/api/dsh-imagegen/ecommerce/asset/${id}/${asset.id}.png` })) },
-        slots: payload.requests.map((request, index) => ({ key: request.slotKey, label: request.slotLabel, status: index === 0 ? 'completed' : 'queued', attempt: index === 0 ? 1 : 0, request: { ...request, projectId: id }, images: index === 0 ? [{ url: `/api/dsh-imagegen/ecommerce/asset/${id}/main.png`, mime: 'image/png' }] : [] })),
+        config: { draft: payload.draft, providerId: payload.providerId, model: payload.model, quality: payload.quality, detail: payload.detail, assets: savedAssets },
+        slots: savedRequests.map((request, index) => ({ key: request.slotKey, label: request.slotLabel, status: index === 0 ? 'completed' : 'queued', attempt: index === 0 ? 1 : 0, request, images: index === 0 ? [{ url: `/api/dsh-imagegen/ecommerce/asset/${id}/${'e'.repeat(64)}.png`, mime: 'image/png' }] : [], attempts: [] })),
       }
       ecommerceRuns.unshift(run)
       return { ok: true, json: async () => ({ ok: true, run }) }
@@ -3043,34 +3089,53 @@ await check('E1 client apply registers and renders the official image studio (js
       }
     }
     if (path.includes('/history/list')) {
+      const request = JSON.parse(init?.body ?? '{}')
+      historyListRequests.push(request)
       const comparisonHistory = {
         comparisonId: 'client-comparison',
         comparisonModels: ['gpt-image-2', 'grok-imagine-image'],
       }
       const entries = [
-            { id: 'history-grok', createdAt: 2, mode: 'text', model: 'grok-imagine-image', prompt: 'compare prompt', size: '1:1', quality: '4k', detail: '', n: 1, images: [{ url: '/history/grok.png', mime: 'image/png' }], ...comparisonHistory },
-            { id: 'history-gpt', createdAt: 1, mode: 'text', model: 'gpt-image-2', prompt: 'compare prompt', size: '1:1', quality: '4k', detail: '', n: 1, images: [{ url: '/history/gpt.png', mime: 'image/png' }], ...comparisonHistory },
-            { id: 'hist-ecom-1', createdAt: 4, mode: 'text', model: 'gpt-image-2', prompt: 'product main image', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/history/ecom1.png', mime: 'image/png' }], workflow: 'ecommerce', projectId: 'project-hist', projectName: '历史保温杯', slotKey: 'main-1', slotLabel: '主图' },
-            { id: 'hist-ecom-2', createdAt: 5, mode: 'text', model: 'gpt-image-2', prompt: 'product selling point', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/history/ecom2.png', mime: 'image/png' }], workflow: 'ecommerce', projectId: 'project-hist', projectName: '历史保温杯', slotKey: 'sp-1', slotLabel: '卖点图' },
-            { id: 'hist-canvas', createdAt: 6, mode: 'text', model: 'gpt-image-2', prompt: 'canvas prompt', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/history/canvas.png', mime: 'image/png' }], canvas: { canvasId: canvasDocument.id } },
+            { id: 'history-grok', createdAt: 2, mode: 'text', model: 'grok-imagine-image', prompt: 'compare prompt', size: '1:1', quality: '4k', detail: '', n: 1, images: [{ url: '/api/dsh-imagegen/history/image/history-grok-0.png', mime: 'image/png', sha256: '8'.repeat(64) }], ...comparisonHistory },
+            { id: 'history-gpt', createdAt: 1, mode: 'text', model: 'gpt-image-2', prompt: 'compare prompt', size: '1:1', quality: '4k', detail: '', n: 1, images: [{ url: '/api/dsh-imagegen/history/image/history-gpt-0.png', mime: 'image/png', sha256: '7'.repeat(64) }], ...comparisonHistory },
+            { id: 'hist-ecom-1', createdAt: 4, mode: 'text', model: 'gpt-image-2', prompt: 'product main image', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/api/dsh-imagegen/history/image/hist-ecom-1-0.png', mime: 'image/png', sha256: '1'.repeat(64) }], workflow: 'ecommerce', projectId: oldEcommerceRunId, projectName: '历史保温杯', slotKey: 'main-1', slotLabel: '主图' },
+            { id: 'hist-ecom-2', createdAt: 5, mode: 'text', model: 'gpt-image-2', prompt: 'product selling point', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/api/dsh-imagegen/history/image/hist-ecom-2-0.png', mime: 'image/png', sha256: '2'.repeat(64) }], workflow: 'ecommerce', projectId: oldEcommerceRunId, projectName: '历史保温杯', slotKey: 'sp-1', slotLabel: '卖点图' },
+            { id: 'hist-canvas', createdAt: 6, mode: 'text', model: 'gpt-image-2', prompt: 'canvas prompt', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/api/dsh-imagegen/history/image/hist-canvas-0.png', mime: 'image/png', sha256: '3'.repeat(64) }], canvas: { canvasId: canvasDocument.id } },
       ]
-      const scope = JSON.parse(init?.body ?? '{}').scope
+      const scope = request.scope
       return { ok: true, json: async () => ({ ok: true, entries: entries.filter(entry => scope === undefined || (entry.canvas !== undefined ? 'canvas' : entry.workflow === 'ecommerce' ? 'ecommerce' : 'normal') === scope) }) }
     }
     if (path.endsWith('/gallery/list')) {
+      galleryListRequests.push(JSON.parse(init?.body ?? '{}'))
       return {
         ok: true,
         json: async () => ({
           ok: true,
-          entries: [{ id: 'gallery-one', createdAt: 3, mode: 'text', model: 'gpt-image-2', prompt: 'gallery prompt', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/api/dsh-imagegen/gallery/image/gallery.png', mime: 'image/png' }] }],
+          entries: [
+            { id: 'gallery-one', createdAt: 3, mode: 'text', model: 'gpt-image-2', prompt: 'gallery prompt', size: '1:1', quality: '2k', detail: '', n: 1, images: [{ url: '/api/dsh-imagegen/gallery/image/gallery-one-0.png', mime: 'image/png', sha256: '6'.repeat(64) }] },
+            { id: 'gallery-input', createdAt: 0, mode: 'text', model: '本地上传', prompt: 'uploaded gallery input', size: '1:1', quality: 'auto', detail: '', n: 1, images: [{ url: '/api/dsh-imagegen/gallery/image/gallery-input-0.png', mime: 'image/png', sha256: '9'.repeat(64) }] },
+          ],
         }),
       }
     }
     if (path.endsWith('/canvas/list')) {
-      return { ok: true, json: async () => ({ ok: true, projects: [{ id: canvasDocument.id, title: canvasDocument.title, revision: canvasDocument.revision, nodeCount: 0, createdAt: 1, updatedAt: 1 }] }) }
+      const documents = useAlternateDefaultCanvas ? [importTargetCanvas, canvasDocument] : [canvasDocument]
+      return { ok: true, json: async () => ({ ok: true, projects: documents.map(document => ({ id: document.id, title: document.title, revision: document.revision, nodeCount: document.nodes.length, createdAt: document.createdAt, updatedAt: document.updatedAt })) }) }
     }
     if (path.endsWith('/canvas/read')) {
-      return { ok: true, json: async () => ({ ok: true, document: canvasDocument }) }
+      const payload = JSON.parse(init.body)
+      canvasReadRequests.push(payload)
+      const document = payload.id === canvasDocument.id ? canvasDocument : payload.id === importTargetCanvas.id ? importTargetCanvas : undefined
+      assert.ok(document !== undefined, 'canvas reads address a stored fixture')
+      if (deferNextCanvasRead) {
+        deferNextCanvasRead = false
+        await new Promise(resolve => { releasePausedCanvasRead = () => { releasePausedCanvasRead = null; resolve() } })
+      }
+      return { ok: true, json: async () => ({ ok: true, document }) }
+    }
+    if (path.endsWith('/canvas/asset/import')) {
+      canvasImportRequests.push(JSON.parse(init.body))
+      return { ok: true, json: async () => ({ ok: true, asset: { ...canvasImageAsset, origin: 'history', originId: 'history-gpt' } }) }
     }
     if (path.endsWith('/canvas/save')) {
       const payload = JSON.parse(init.body)
@@ -3129,7 +3194,7 @@ await check('E1 client apply registers and renders the official image studio (js
         blob: async () => new jsdomWindow.Blob([pngBytes], { type: 'image/png' }),
       }
     }
-    if (path.startsWith('/history/')) {
+    if (path.startsWith('/api/dsh-imagegen/history/image/') || path.startsWith('/api/dsh-imagegen/ecommerce/asset/')) {
       return {
         ok: true,
         blob: async () => new jsdomWindow.Blob([pngBytes], { type: 'image/png' }),
@@ -3378,15 +3443,22 @@ await check('E1 client apply registers and renders the official image studio (js
     },
   }))
   // Wait for the bridge fetch + scope settle + React render. Ordinary
-  // generation owns a config-left / unified-task-feed-right surface now;
-  // persisted rows arrive asynchronously after the feed itself mounts.
+  // generation owns a config-left / all-generation-feed-right surface now;
+  // shared history and durable source metadata settle independently.
   await waitForSelector(jsdomDocument, '[data-dsh-imagegen-normal-feed]')
-  await waitForSelectorCount(jsdomDocument, '[data-normal-feed-card]', 2)
+  const expectedInitialAllCards = 8
+  await waitForCondition(() => {
+    const feed = jsdomDocument.querySelector('[data-dsh-imagegen-normal-feed]')
+    return feed?.querySelectorAll('[data-normal-feed-card]').length === expectedInitialAllCards
+      && feed.textContent.includes('product previous successful image')
+      && feed.textContent.includes('canvas durable-only result')
+      && feed.textContent.includes('gallery prompt')
+  }, 'all-generation overview did not settle with every source')
 
   try {
     // Regression: the scope must settle and the image workspace must render
-    // under the keyed main panel. Ordinary history and live tasks share the
-    // masonry feed; ecommerce rows must stay out of that mode-specific list.
+    // under the keyed main panel. The masonry feed includes every saved
+    // generation while its ordinary creation and mutation semantics stay scoped.
     const view = jsdomDocument.querySelector('[data-cqai-imagegen-main]')
     assert.ok(view !== null, 'official studio main panel rendered')
     assert.ok(view.isConnected, 'studio view is attached to its main-panel host')
@@ -3400,23 +3472,65 @@ await check('E1 client apply registers and renders the official image studio (js
       'ordinary config precedes the task feed in the generation surface',
     )
     assert.equal(view.querySelector('[data-dsh-imagegen-history]'), null, 'ordinary generation no longer renders the legacy left history rail')
+    const initialNormalCards = [...normalFeed.querySelectorAll('[data-normal-feed-card]')]
+    assert.equal(initialNormalCards.length, expectedInitialAllCards, 'all-generation feed combines shared and durable results without redundant copies')
+    assert.equal(normalFeed.querySelector('header strong')?.textContent, '全部生图', 'feed clearly names its complete generation overview')
+    const normalScroll = normalFeed.querySelector('[data-normal-feed-scroll]')
+    const normalMasonry = normalFeed.querySelector('[data-columns]')
+    assert.ok(normalScroll !== null, 'responsive overview exposes its measured scrollport')
+    assert.ok(normalMasonry !== null, 'responsive overview reports its active column count')
+    assert.equal(normalMasonry.getAttribute('data-columns'), '1', 'unmeasured overview starts with a safe single column')
+    await waitForCondition(() => [...resizeObservers].some(observer => observer.targets.has(normalScroll)), 'responsive overview did not attach its scrollport observer')
+    const normalCardSignature = card => `${card.querySelector('strong')?.textContent}|${card.querySelector('img')?.getAttribute('src')}`
+    const normalCardOrder = initialNormalCards.map(normalCardSignature)
+    for (const [width, count] of [[400, 1], [452, 2], [684, 3], [916, 4], [1148, 5], [1380, 6], [1379, 5], [1147, 4], [915, 3], [683, 2], [451, 1], [820, 3]]) {
+      resizeObservedTarget(normalScroll, width)
+      await waitForCondition(() => normalMasonry.getAttribute('data-columns') === String(count), `overview did not render ${count} columns at ${width}px`)
+      const columns = [...normalFeed.querySelectorAll('[data-normal-feed-column]')]
+      const cards = [...normalFeed.querySelectorAll('[data-normal-feed-card]')]
+      assert.equal(columns.length, count, `overview renders ${count} independent columns at ${width}px`)
+      assert.equal(normalMasonry.style.getPropertyValue('--dsh-normal-feed-columns'), String(count), 'grid styling follows the measured column count')
+      assert.equal(cards.length, expectedInitialAllCards, 'resizing retains every source in the complete overview')
+      assert.deepEqual(cards.map(normalCardSignature).sort(), [...normalCardOrder].sort(), 'resizing neither duplicates nor loses any image card')
+      for (const [columnIndex, column] of columns.entries()) {
+        assert.equal(column.getAttribute('data-normal-feed-column'), String(columnIndex), 'responsive columns keep their indexed identity')
+        assert.deepEqual(
+          [...column.querySelectorAll('[data-normal-feed-card]')].map(normalCardSignature),
+          normalCardOrder.filter((_, itemIndex) => itemIndex % count === columnIndex),
+          `overview keeps chronological card distribution in column ${columnIndex + 1} of ${count}`,
+        )
+      }
+    }
     const normalCards = [...normalFeed.querySelectorAll('[data-normal-feed-card]')]
-    assert.equal(normalCards.length, 2, 'ordinary feed renders one card for each ordinary history row')
-    const normalColumns = [...normalFeed.querySelectorAll('[data-normal-feed-column]')]
-    assert.equal(normalColumns.length, 2, 'ordinary masonry renders two independent columns')
-    assert.ok(normalColumns.every(column => column.querySelectorAll('[data-normal-feed-card]').length === 1), 'the first two ordinary cards start in separate columns')
     assert.ok(normalCards.every(card => card.getAttribute('data-source') === 'history'), 'fixture rows render as persisted-history cards')
     assert.ok(normalCards.every(card => card.getAttribute('data-status') === 'completed'), 'persisted-history cards render as completed')
     assert.ok(normalFeed.textContent?.includes('gpt-image-2'), 'ordinary feed includes the GPT comparison result')
     assert.ok(normalFeed.textContent?.includes('grok-imagine-image'), 'ordinary feed includes the Grok comparison result')
-    assert.equal(normalFeed.textContent?.includes('product main image'), false, 'ordinary feed excludes ecommerce main-image history')
-    assert.equal(normalFeed.textContent?.includes('product selling point'), false, 'ordinary feed excludes ecommerce selling-point history')
+    assert.ok(normalFeed.textContent?.includes('product main image'), 'all-generation feed includes ecommerce main-image history')
+    assert.ok(normalFeed.textContent?.includes('product selling point'), 'all-generation feed includes ecommerce selling-point history')
+    assert.ok(normalFeed.textContent?.includes('canvas prompt'), 'all-generation feed includes canvas shared history')
+    assert.ok(normalFeed.textContent?.includes('product previous successful image'), 'durable prior ecommerce attempts remain visible without shared history')
+    assert.ok(normalFeed.textContent?.includes('canvas durable-only result'), 'generated canvas nodes remain visible without shared history')
+    assert.ok(normalFeed.textContent?.includes('gallery prompt'), 'saved gallery generations remain visible without shared history')
+    assert.equal(normalFeed.textContent?.includes('uploaded canvas input'), false, 'canvas reference uploads are not presented as generations')
+    assert.equal(normalFeed.textContent?.includes('uploaded gallery input'), false, 'gallery reference uploads are not presented as generations')
+    assert.equal(normalFeed.querySelector(`img[src="${ecommerceAssetUrl('9')}"]`), null, 'ecommerce reference assets are not presented as outputs')
+    const ordinaryCards = normalCards.filter(card => card.textContent.includes('compare prompt'))
+    assert.equal(ordinaryCards.length, 2, 'ordinary comparison results with different hashes are both retained')
+    assert.ok(ordinaryCards.every(card => card.querySelector('button[data-danger]') !== null), 'ordinary shared history retains its own delete action')
+    assert.ok(normalCards.filter(card => !ordinaryCards.includes(card)).every(card => card.querySelector('button[data-danger]') === null), 'non-ordinary sources never expose ordinary history deletion')
+    assert.ok([...normalFeed.querySelectorAll('button')].some(button => button.textContent === '打开电商任务'), 'ecommerce results expose their owning task')
+    assert.ok([...normalFeed.querySelectorAll('button')].some(button => button.textContent === '打开原画布'), 'canvas results expose their owning canvas')
+    assert.ok(historyListRequests.some(request => request.includeImageHashes === true && request.scope === undefined), 'overview requests complete shared history with content hashes')
+    assert.ok(galleryListRequests.some(request => request.includeImageHashes === true), 'overview requests gallery hashes for copy deduplication')
     assert.equal(view.querySelector('[aria-label="灵感案例"]'), null, 'ordinary generation does not render inspiration examples')
     assert.ok(normalFeed.querySelector('[data-normal-feed-clear]') !== null, 'ordinary-only history clear button rendered')
+    assert.equal(normalFeed.querySelector('[data-normal-feed-clear]')?.textContent, '清空普通记录', 'clear action explicitly states its ordinary source scope')
     normalFeed.querySelector('[data-normal-feed-clear]')?.dispatchEvent(new jsdomWindow.MouseEvent('click', { bubbles: true }))
-    await new Promise(resolve => setTimeout(resolve, 20))
+    await waitForCondition(() => confirmationCalls === 1, 'ordinary history clear did not request confirmation')
     assert.equal(confirmationCalls, 1, 'ordinary history clear asks for confirmation')
-    assert.equal(normalFeed.querySelectorAll('[data-normal-feed-card]').length, 2, 'cancelled ordinary clear keeps the feed intact')
+    assert.equal(normalFeed.querySelectorAll('[data-normal-feed-card]').length, expectedInitialAllCards, 'cancelled ordinary clear keeps every source in the overview intact')
+    assert.equal(requestPaths.some(path => path.endsWith('/history/clear')), false, 'cancelled clear does not mutate any history source')
     // The panel header rendered.
     assert.equal(view.querySelector('h2')?.textContent, 'e图宝', 'panel header uses the e图宝 product name')
     const connectionStatus = view.querySelector('[data-connected]')
@@ -3449,6 +3563,41 @@ await check('E1 client apply registers and renders the official image studio (js
     assert.ok(normalSwitch !== undefined, 'normal top-nav entry is present')
     const canvasSwitch = tablistButtons.find(button => button.textContent?.includes('无限画布'))
     assert.ok(canvasSwitch !== undefined, 'infinite canvas top-nav entry is present')
+
+    // Abandon an import before its destination loads, then open an existing
+    // result's original canvas. The pending import must not mutate that canvas.
+    const addOrdinaryResultToCanvas = [...normalCards.find(card => card.textContent.includes('compare prompt')).querySelectorAll('button')]
+      .find(button => button.textContent === '加入画布')
+    assert.ok(addOrdinaryResultToCanvas !== undefined, 'ordinary result exposes a canvas import action')
+    useAlternateDefaultCanvas = true
+    deferNextCanvasRead = true
+    addOrdinaryResultToCanvas.click()
+    await waitForCondition(() => releasePausedCanvasRead !== null, 'canvas import destination did not enter its paused read')
+    assert.equal(canvasReadRequests.at(-1)?.id, importTargetCanvas.id, 'new imports target the default canvas')
+    assert.equal(canvasImportRequests.length, 0, 'the import stays pending while its destination loads')
+    const readsBeforeOverviewReturn = canvasReadRequests.length
+    normalSwitch.click()
+    await waitForCondition(() => canvasReadRequests.length >= readsBeforeOverviewReturn + 2
+      && view.querySelector('[data-dsh-imagegen-normal-feed]')?.querySelectorAll('[data-normal-feed-card]').length === expectedInitialAllCards,
+    'ordinary overview did not finish reading both stored canvases after abandoning the import')
+    const originalCanvasCard = [...view.querySelectorAll('[data-normal-feed-card]')].find(card => card.querySelector('strong')?.textContent === 'canvas prompt')
+    assert.ok(originalCanvasCard !== undefined, 'original canvas result remains in the overview')
+    const openOriginalCanvas = [...originalCanvasCard.querySelectorAll('button')].find(button => button.textContent === '打开原画布')
+    assert.ok(openOriginalCanvas !== undefined, 'canvas result exposes its original canvas')
+    const readsBeforeOriginal = canvasReadRequests.length
+    const originalNodeIds = canvasDocument.nodes.map(node => node.id).sort()
+    openOriginalCanvas.click()
+    await waitForSelector(view, '[data-node-id="overview-canvas-shared"]')
+    // Let the canvas import effect and the image stub's next-tick onload settle.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.deepEqual(canvasReadRequests.slice(readsBeforeOriginal).map(request => request.id), [canvasDocument.id], 'original-canvas action reads its owner instead of the default import destination')
+    assert.equal(canvasImportRequests.length, 0, 'opening the original canvas discards the abandoned import')
+    assert.deepEqual([...view.querySelectorAll('[data-node-id]')].map(node => node.getAttribute('data-node-id')).sort(), originalNodeIds, 'opening the original canvas preserves its existing nodes')
+    releasePausedCanvasRead?.()
+    useAlternateDefaultCanvas = false
+    normalSwitch.click()
+    await waitForCondition(() => view.querySelector('[data-dsh-imagegen-normal-feed]')?.querySelectorAll('[data-normal-feed-card]').length === expectedInitialAllCards, 'overview did not return after original-canvas regression')
+
     ecommerceSwitch.click()
     await new Promise(resolve => setTimeout(resolve, 50))
     assert.ok(view.querySelector('[data-ecommerce-workspace]') !== null, 'ecommerce workspace is rendered')
@@ -3625,7 +3774,7 @@ await check('E1 client apply registers and renders the official image studio (js
     // generation call or pretends the missing old configuration is complete.
     view.querySelector('[data-ecommerce-history-trigger]').click()
     await new Promise(resolve => setTimeout(resolve, 30))
-    const ecommerceHistoryRow = jsdomDocument.querySelector('[data-run-id="project-hist"] button')
+    const ecommerceHistoryRow = jsdomDocument.querySelector(`[data-run-id="${oldEcommerceRunId}"] button`)
     assert.ok(ecommerceHistoryRow !== null, 'old ecommerce rows collapse into one complete task entry')
     ecommerceHistoryRow.click()
     await new Promise(resolve => setTimeout(resolve, 100))
@@ -3952,6 +4101,8 @@ await check('E1 client apply registers and renders the official image studio (js
     assert.ok(await waitUntil(() => view.querySelector('[role="dialog"]') === null), 'the close button dismisses the reader')
   } finally {
     studioRoot.unmount()
+    releasePausedCanvasRead?.()
+    resizeObservers.clear()
     if (previousWindow === undefined) delete globalThis.window
     else globalThis.window = previousWindow
     if (previousDocument === undefined) delete globalThis.document

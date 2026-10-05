@@ -232,6 +232,8 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+  container-name: imagegen-feed;
+  container-type: inline-size;
 }
 
 .normalStreamHeader {
@@ -243,6 +245,7 @@
   padding: 10px 14px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   flex: none;
+  flex-wrap: wrap;
 }
 
 .normalStreamHeading {
@@ -272,6 +275,8 @@
   align-items: center;
   gap: 6px;
   flex: none;
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .normalStreamHeaderActions button {
@@ -367,7 +372,6 @@
   padding: 12px 12px 16px;
   scrollbar-width: thin;
   scrollbar-color: var(--dsw-alias-border-l2) transparent;
-  container-type: inline-size;
 }
 
 .normalStreamScroll::-webkit-scrollbar { width: 8px; }
@@ -376,7 +380,7 @@
 .normalStreamMasonry {
   display: grid;
   width: 100%;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--dsh-normal-feed-columns, 1), minmax(0, 1fr));
   align-items: start;
   gap: 12px;
 }
@@ -425,7 +429,6 @@
   display: block;
   width: 100%;
   height: auto;
-  min-height: 180px;
   object-fit: cover;
   background: var(--dsw-alias-bg-base);
 }
@@ -571,10 +574,9 @@
 .normalCardActions button:disabled { cursor: wait; opacity: .5; }
 .normalCardActions button[data-danger]:hover { border-color: var(--dsw-alias-label-error); color: var(--dsw-alias-label-error); }
 
-@container (max-width: 620px) {
-  .normalStreamMasonry { display: flex; flex-direction: column; }
-  .normalStreamColumn { display: contents; }
-  .normalTaskCard { order: var(--dsh-normal-feed-order); }
+@container imagegen-feed (max-width: 500px) {
+  .normalStreamFilters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .normalStreamSearch { grid-column: 1 / -1; }
 }
 
 .taskTray {
