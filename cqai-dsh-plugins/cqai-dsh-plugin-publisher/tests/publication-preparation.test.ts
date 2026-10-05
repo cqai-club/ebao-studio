@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { articleImageSources } from '../src/article-assets.ts'
-import { listContents, readAsset, readContent, saveContent } from '../src/contents.ts'
+import { addAsset, insertArticleImage, listContents, readAsset, readContent, saveContent } from '../src/contents.ts'
 import { openPublicationFromSource } from '../src/publication-preparation.ts'
+import { ensureProjectWorkspace } from '../src/project-workspace.ts'
 import { projectContentForPlatform } from '../src/protocol.ts'
 import { registerSourceDocument } from '../src/source-documents.ts'
+import { articleSubmissionWarnings } from '../src/submission-validation.ts'
 
 const homes: string[] = []
 function fixture() {
@@ -35,6 +37,8 @@ describe('publication preparation from an MD source', () => {
     const first = openPublicationFromSource(source.id, source.revision, 'article', env)
     expect(first.articleTheme).toBe('classic')
     expect(first.title).toBe('六张图的文章')
+    const project = ensureProjectWorkspace(first.id, env).path
+    expect(basename(project)).toContain('六张图的文章')
     expect(first.assets.map(asset => asset.name)).toEqual(order.map(index => `${index}.png`))
     expect(first.coverAssetId).toBe(first.assets[0]?.id)
     expect(first.body).not.toContain('source-image://')
@@ -51,6 +55,7 @@ describe('publication preparation from an MD source', () => {
       summary: '', tags: [], creativeStatement: 'none', coverAssetId: first.coverAssetId,
     }, env)
     expect(openPublicationFromSource(source.id, source.revision, 'article', env)).toEqual(edited)
+    expect(ensureProjectWorkspace(first.id, env).path).toBe(project)
 
     writeFileSync(markdownPath, `${readFileSync(markdownPath, 'utf8')}\n\n后续更新`)
     const revised = registerSourceDocument('six-images', markdownPath, env)
@@ -82,6 +87,7 @@ describe('publication preparation from an MD source', () => {
     const oneAsset = prepared.assets.find(asset => asset.name === 'one.png')!
     const twoAsset = prepared.assets.find(asset => asset.name === 'two.png')!
     expect(prepared.title).toBe('确认后的标题')
+    expect(basename(ensureProjectWorkspace(prepared.id, env).path)).toContain('确认后的标题')
     expect(prepared.summary).toBe('确认摘要')
     expect(prepared.tags).toEqual(['旅行'])
     expect(prepared.body).toBe('确认正文\n\n`![示例](https://example.com/example.png)`\n\n')
@@ -107,7 +113,8 @@ describe('publication preparation from an MD source', () => {
     expect(nextCandidate.body).toBe('第二版正文 ')
     expect(nextCandidate.body).not.toContain('ebao-asset://')
     expect(nextCandidate.assets.map(asset => asset.name)).toEqual(['one.png'])
-    expect(nextCandidate.platformVariants?.xhs?.assetOrder).toEqual([nextCandidate.assets[0]!.id])
+    expect(nextCandidate.platformVariants?.xhs).toBeUndefined()
+    expect(projectContentForPlatform(nextCandidate, 'xhs').assets).toEqual(nextCandidate.assets)
     expect(readContent(prepared.id, env)).toEqual(prepared)
     expect(openPublicationFromSource(source.id, source.revision, 'image-note', env, {
       id: '11111111-1111-4111-8111-111111111111', platforms: ['xhs'], title: '又一次点击',
@@ -130,7 +137,8 @@ describe('publication preparation from an MD source', () => {
     expect(prepared.body).toContain(`\`![不要改](${ref})\``)
     expect(prepared.body).toContain(`- ![插图](<${assetRef}> "说明")`)
     expect(articleImageSources(prepared.body)).toEqual([assetRef])
-    expect(prepared.platformVariants?.juejin?.assetOrder).toEqual([prepared.assets[0]!.id])
+    expect(prepared.platformVariants?.juejin).toBeUndefined()
+    expect(projectContentForPlatform(prepared, 'juejin').assets).toEqual(prepared.assets)
   })
 
   it('imports only candidate images and gives each target its effective image order and cover', () => {
@@ -155,8 +163,9 @@ describe('publication preparation from an MD source', () => {
     const [mainAsset, wechatAsset] = prepared.assets
     expect(prepared.coverAssetId).toBe(mainAsset!.id)
     expect(prepared.body).toContain(`ebao-asset://${mainAsset!.id}`)
-    expect(prepared.platformVariants?.juejin).toMatchObject({
-      assetOrder: [mainAsset!.id], coverAssetId: mainAsset!.id,
+    expect(prepared.platformVariants?.juejin).toBeUndefined()
+    expect(projectContentForPlatform(prepared, 'juejin')).toMatchObject({
+      assets: prepared.assets, coverAssetId: mainAsset!.id,
     })
     expect(prepared.platformVariants?.wxmp).toMatchObject({
       assetOrder: [wechatAsset!.id], coverAssetId: wechatAsset!.id,
@@ -169,6 +178,69 @@ describe('publication preparation from an MD source', () => {
     expect(projectContentForPlatform(prepared, 'tt').coverAssetId).toBeUndefined()
   })
 
+  it('inherits later master images and the cover after a text-only preparation, including title-only platform edits', () => {
+    const { directory, env } = fixture()
+    const markdownPath = join(directory, 'article.md')
+    writeFileSync(markdownPath, '# 最初没有图片\n\n正文')
+    const source = registerSourceDocument('later-master-images', markdownPath, env)
+    const candidate = {
+      id: '88888888-8888-4888-8888-888888888888', platforms: ['tt', 'bjh'] as const,
+      platformVariants: { tt: { title: '头条专用标题' } },
+    }
+    const prepared = openPublicationFromSource(source.id, source.revision, 'article', env, {
+      ...candidate, platforms: [...candidate.platforms],
+    })
+    expect(prepared.assets).toEqual([])
+    expect(prepared.platformVariants).toEqual({ tt: { title: '头条专用标题' } })
+
+    const inserted = insertArticleImage(prepared.id, prepared.revision, '后加正文.png', image(1), 'image/png',
+      '前文\n\n{{PUBLISHER_IMAGE}}\n\n后文', '后加插图', env)
+    const withCover = addAsset(prepared.id, '后加封面.png', image(2), env, { setAsCover: true })
+    const current = readContent(prepared.id, env)
+    expect(current.platformVariants).toEqual(prepared.platformVariants)
+    for (const platform of candidate.platforms) {
+      const selected = projectContentForPlatform(current, platform)
+      expect(selected.body).toBe(inserted.body)
+      expect(articleImageSources(selected.body)).toEqual([`ebao-asset://${inserted.assets[0]!.id}`])
+      expect(selected.assets).toEqual(withCover.assets)
+      expect(selected.coverAssetId).toBe(withCover.assets[1]!.id)
+    }
+    expect(projectContentForPlatform(current, 'tt').title).toBe('头条专用标题')
+    expect(projectContentForPlatform(current, 'bjh').title).toBe(current.title)
+    expect(articleSubmissionWarnings(current, [{
+      id: '11111111-1111-4111-8111-111111111111', platform: 'tt', displayName: '头条号', loginState: 'logged-in',
+    }], [{ platform: 'tt', contentTypes: ['article'], modes: { article: ['draft', 'publish'] }, requiredFields: {} }])).toEqual([
+      '头条：正文图片会在原位置保留占位，请从发布历史打开头条草稿手动补图',
+      '头条：封面需手动设置，请从发布历史打开头条草稿',
+    ])
+    expect(openPublicationFromSource(source.id, source.revision, 'article', env, {
+      ...candidate, platforms: [...candidate.platforms],
+    })).toEqual(current)
+  })
+
+  it('preserves explicit platform text and image exclusions when the master receives new images', () => {
+    const { directory, env } = fixture()
+    const markdownPath = join(directory, 'article.md')
+    writeFileSync(markdownPath, '# 原稿\n\n原稿正文')
+    const source = registerSourceDocument('explicit-platform-selection', markdownPath, env)
+    const prepared = openPublicationFromSource(source.id, source.revision, 'article', env, {
+      id: '99999999-9999-4999-8999-999999999999', platforms: ['tt', 'bjh'],
+      platformVariants: { tt: { body: '头条独立纯文字版本' } },
+    })
+    const explicitlyExcluded = saveContent(prepared.id, {
+      ...prepared, revision: prepared.revision,
+      platformVariants: { ...prepared.platformVariants, bjh: { assetOrder: [], coverAssetId: null } },
+    }, env)
+    const inserted = insertArticleImage(prepared.id, explicitlyExcluded.revision, '新图片.png', image(1), 'image/png',
+      '主稿新增图片 {{PUBLISHER_IMAGE}}', '插图', env)
+    expect(inserted.assets).toHaveLength(1)
+    expect(projectContentForPlatform(inserted, 'tt')).toMatchObject({ body: '头条独立纯文字版本', assets: [] })
+    expect(projectContentForPlatform(inserted, 'tt').coverAssetId).toBeUndefined()
+    expect(projectContentForPlatform(inserted, 'bjh')).toMatchObject({ body: inserted.body, assets: [] })
+    expect(projectContentForPlatform(inserted, 'bjh').coverAssetId).toBeUndefined()
+    expect(inserted.platformVariants).toEqual(explicitlyExcluded.platformVariants)
+  })
+
   it('removes an incomplete preparation when a candidate fails validation', () => {
     const { directory, env } = fixture()
     writeFileSync(join(directory, 'images', 'one.png'), image(1))
@@ -178,9 +250,9 @@ describe('publication preparation from an MD source', () => {
     expect(() => openPublicationFromSource(source.id, source.revision, 'article', env, {
       id: '44444444-4444-4444-8444-444444444444', platforms: ['juejin'], title: '长'.repeat(121),
     }))
-      .toThrow('草稿内容过大')
+      .toThrow('标题过大')
     expect(listContents(env)).toEqual([])
-    expect(readdirSync(join(env.DSH_HOME, 'publisher', 'projects', 'article'))).toEqual([])
+    expect(existsSync(join(env.DSH_HOME, 'publisher', 'projects', 'article'))).toBe(false)
     const prepared = openPublicationFromSource(source.id, source.revision, 'article', env)
     expect(prepared.assets).toHaveLength(1)
     expect(listContents(env)).toHaveLength(1)

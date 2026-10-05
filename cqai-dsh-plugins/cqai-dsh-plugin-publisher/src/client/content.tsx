@@ -17,6 +17,8 @@ import { usePublisherTips } from './tips.tsx'
 import { articleUploadFile } from './article-image.ts'
 import { AssetPreviewImage, PublisherContentPreview, contentAssetUrl } from './content-preview.tsx'
 import { ProjectDirectoryInfo } from './project-directory-info.tsx'
+import { ImagegenPicker, type ImagegenImportResult } from './imagegen-picker.tsx'
+import { readImagegenFile, type ImagegenImage } from './imagegen-library.ts'
 
 type EditorType = 'article' | 'image-note'
 type Mode = 'publish' | 'draft'
@@ -66,6 +68,14 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
   const [handoffRetry, setHandoffRetry] = useState(0)
   const [draggedAssetId, setDraggedAssetId] = useState<string>()
   const [runtimeCapability, setRuntimeCapability] = useState<PublisherCapability>()
+  const [imagegenPickerDraftId, setImagegenPickerDraftId] = useState<string>()
+  const editorAlive = useRef(false)
+  const selectedIdRef = useRef(selectedContentId)
+  const activeRef = useRef(active)
+  selectedIdRef.current = selectedContentId
+  activeRef.current = active
+  useEffect(() => { editorAlive.current = true; return () => { editorAlive.current = false } }, [])
+  useEffect(() => { setImagegenPickerDraftId(undefined) }, [selectedContentId, active])
 
   useEffect(() => { setConfirm(undefined); setPublishOpen(false) }, [selectedContentId, active])
   const intendedPlatformsKey = intendedPlatforms?.join(',')
@@ -354,6 +364,48 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     if (!current) return
     setServerDraft(await api<PublisherContent>('content-asset-delete', { id: current.id, assetId }))
   })
+  const openImagegenPicker = () => void act(async () => {
+    const current = await flush()
+    if (!current || current.contentType !== 'image-note') throw new Error('请先打开图文草稿')
+    if (selectedIdRef.current && selectedIdRef.current !== current.id) throw new Error('请等待指定草稿打开后再选择图片')
+    setImagegenPickerDraftId(current.id)
+  })
+  const importImagegenImages = async (images: ImagegenImage[], signal: AbortSignal): Promise<ImagegenImportResult> => {
+    if (busyRef.current) throw new Error('正在保存图片，请稍候')
+    busyRef.current = true
+    setBusy(true); clearTip()
+    const importedIds: string[] = []
+    try {
+      const current = await flush()
+      const lockedId = imagegenPickerDraftId
+      const assertDraft = () => {
+        signal.throwIfAborted()
+        if (!editorAlive.current || !activeRef.current || !lockedId || draftRef.current?.id !== lockedId
+          || selectedIdRef.current && selectedIdRef.current !== lockedId) throw new Error('草稿已切换，请重新选择图片；已导入的图片仍保留在原草稿')
+      }
+      assertDraft()
+      if (!current || current.contentType !== 'image-note') throw new Error('请先打开图文草稿')
+      if (current.assets.length + images.length > 20) throw new Error(`当前草稿还能添加 ${Math.max(0, 20 - current.assets.length)} 张图片`)
+      for (const image of images) {
+        assertDraft()
+        const file = await readImagegenFile(image, signal)
+        assertDraft()
+        const saved = await uploadAsset(lockedId!, file)
+        if (saved.id !== lockedId || saved.contentType !== 'image-note') throw new Error('图片保存结果与当前草稿不匹配，请重新加载后核对')
+        importedIds.push(image.id)
+        assertDraft()
+        // Every upload returns a fresh manifest. Never save an earlier local snapshot over it.
+        setServerDraft(saved)
+      }
+      showSuccess(`已从 e图宝导入 ${importedIds.length} 张图片，图文草稿已保存。`)
+      return { importedIds }
+    } catch (cause) {
+      return { importedIds, error: errorMessage(cause) }
+    } finally {
+      busyRef.current = false
+      if (editorAlive.current) setBusy(false)
+    }
+  }
   const insertImage = (assetId: string, name: string) => {
     const current = draftRef.current
     if (!current || contentType !== 'article') return
@@ -433,11 +485,13 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     && unavailableTargets.length === 0 && !exactMismatch && !handoffError
   const titleLimit = contentView === 'master' ? TITLE_MAX
     : capabilities.find(item => item.platform === contentView)?.maxTitleLength?.[contentType] ?? TITLE_MAX
+  const titleLength = contentType === 'image-note' && contentView === 'wxmp'
+    ? Array.from(visibleDraft?.title ?? '').length : visibleDraft?.title.length ?? 0
   const assetLimit = contentView === 'master' ? 20
     : capabilities.find(item => item.platform === contentView)?.maxAssets?.[contentType] ?? 20
   const enteredTags = [...new Set(tagsInput.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))]
   const skippedArticleTagTargets = contentType === 'article' && visibleDraft?.tags.length
-    ? selectedAccounts.filter(account => account.platform === 'wxmp' || account.platform === 'tt' || account.platform === 'bjh') : []
+    ? selectedAccounts.filter(account => account.platform === 'wxmp' || account.platform === 'bjh') : []
   const validationError = draft && selectedAccounts.length > 0 && !capabilitiesPending && !capabilitiesError
     ? contentSubmissionError(draft, selectedAccounts, capabilities, submissionMode) : undefined
   const requestConfirm = () => void act(async () => {
@@ -485,11 +539,14 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
 
   const mediaCard = draft && visibleDraft ? (
     <div className="pub-card"><h2>{contentView === 'master' ? contentType === 'article' ? '封面图片' : '图片素材与排序' : `${PLATFORM_LABELS[contentView]} · 封面和图片顺序`}</h2>
-      <Button size="sm" variant={contentType === 'image-note' && draft.assets.length === 0 ? 'primary' : 'outline'} disabled={busy} onClick={() => imageInputRef.current?.click()}>添加图片</Button>
+      <div className="pub-actions">
+        <Button size="sm" variant={contentType === 'image-note' && draft.assets.length === 0 ? 'primary' : 'outline'} disabled={busy} onClick={() => imageInputRef.current?.click()}>添加图片</Button>
+        {contentType === 'image-note' && <Button size="sm" variant="outline" disabled={busy || draft.assets.length >= 20} onClick={openImagegenPicker}>从 e图宝选择</Button>}
+      </div>
       <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple style={{ display: 'none' }} onChange={event => { addImages(event.target.files); event.target.value = '' }}/>
       <p className={visibleDraft!.assets.length > assetLimit ? 'pub-warn' : 'pub-muted'}>{visibleDraft!.assets.length}/{assetLimit} 张 · 仅支持 JPEG / PNG / WebP，每张不超过 20MB。{contentType === 'image-note' ? '可拖动排序，也可使用 ↑ ↓ 按钮。' : ''}</p>
       {contentView !== 'master' && <p className="pub-muted">图片素材由主稿统一管理。勾选此平台要使用的图片，再调整顺序和封面；新上传的素材不会自动加入已单独选图的平台版本。</p>}
-      {contentType === 'article' && <p className="pub-muted">WebP 文章图片上传时自动转为 JPEG，可作为微信公众号封面；透明区域会变成白色。公众号正文图片提交前会尝试处理到小于 1MB，封面尝试处理到小于 10MB；处理失败会提示更换图片。头条正文插图会保留文字占位，需在头条草稿窗口手动补图和设置封面；百家号素材可自动插入正文或设为封面。掘金、B站专栏暂只支持单张封面。导入 Markdown 时不会读取相对路径图片，请先上传素材再插入。</p>}
+      {contentType === 'article' && <p className="pub-muted">WebP 文章图片上传时自动转为 JPEG，可作为微信公众号封面；透明区域会变成白色。公众号正文图片提交前会尝试处理到小于 1MB，封面尝试处理到小于 10MB；处理失败会提示更换图片。头条正文插图会保留文字占位，需从发布历史打开草稿手动补图和设置封面；百家号素材可自动插入正文或设为封面。掘金、B站专栏暂只支持单张封面。导入 Markdown 时不会读取相对路径图片，请先上传素材再插入。</p>}
       {contentType === 'article' && contentView !== 'master' && <label className="pub-no-cover"><input type="radio" name={`cover-${draft.id}-${contentView}`} checked={!visibleDraft!.coverAssetId} onChange={() => updateVariant({ coverAssetId: null })}/>此平台不使用封面</label>}
       <div className="pub-assets">{assetsForEditor.map((asset, index) => <div className={`pub-asset${draggedAssetId === asset.id ? ' pub-asset-dragging' : ''}`} key={asset.id}
         draggable={contentType === 'image-note' && selectedAssetIds.has(asset.id) && !editorLocked}
@@ -544,14 +601,16 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
       <div>
         {preview ? <div className="pub-card"><PublisherContentPreview content={visibleDraft!} platform={contentView === 'master' ? undefined : contentView}/>
           {contentType === 'article' && visibleDraft!.summary && contentView !== 'blbl' && contentView !== 'wxmp' && contentView !== 'tt' && <p className="pub-preview-summary"><strong>独立摘要字段：</strong>{visibleDraft!.summary}</p>}
-          <p className="pub-muted">{contentView === 'wxmp' ? '公众号正文按所选主题预览；封面和摘要是独立字段。平台后台的最终呈现请以实际草稿为准。'
+          <p className="pub-muted">{contentView === 'wxmp' && contentType === 'image-note' ? '公众号图片消息按当前图片顺序展示，第一张为封面；正文和标签以纯文本发布。'
+            : contentView === 'wxmp' ? '公众号正文按所选主题预览；封面和摘要是独立字段。平台后台的最终呈现请以实际草稿为准。'
             : contentView === 'master' ? '主稿展示阅读排版；公众号会采用所选主题，其他平台的实际样式仍需在后台草稿核对。'
-              : contentView === 'tt' && contentType === 'article' ? '头条文章不录入独立摘要；这里展示本地原图，提交到头条时正文改为图片占位，请在草稿窗口手动上传并核对。'
+              : contentView === 'tt' && contentType === 'article' ? '这里展示本地原图，提交到头条时正文改为图片占位，请从发布历史打开草稿手动补图并核对。'
               : contentView === 'ks' && contentType === 'image-note' ? '快手图文没有独立标题字段，适配器会把标题放在作品描述首段；草稿状态仍需在快手后台核对。'
               : '这里展示当前平台版本的内容结构和图片顺序；实际样式由平台编辑器决定，请在后台草稿核对。'}</p></div> : <>
         <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>
-          <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={visibleDraft!.title.length > titleLimit ? 'pub-warn' : 'pub-muted'}>（{visibleDraft!.title.length}/{titleLimit} 字）</span>{hasOverride('title') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={visibleDraft!.title} onChange={event => updateTextField('title', event.target.value)}/>{hasOverride('title') && <Button variant="outline" size="sm" onClick={() => resetVariantField('title')}>标题恢复主稿</Button>}</div>
+          <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={titleLength > titleLimit ? 'pub-warn' : 'pub-muted'}>（{titleLength}/{titleLimit} 字）</span>{hasOverride('title') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={visibleDraft!.title} onChange={event => updateTextField('title', event.target.value)}/>{hasOverride('title') && <Button variant="outline" size="sm" onClick={() => resetVariantField('title')}>标题恢复主稿</Button>}</div>
           {contentType === 'image-note' && contentView === 'ks' && <p className="pub-muted">快手图文没有独立标题框，标题将放入正文第一段。</p>}
+          {contentType === 'image-note' && contentView === 'wxmp' && <p className="pub-muted">公众号图片消息最多 20 张，第一张为封面。WebP 图片上传前自动转为 JPEG；正文使用纯文本。直接发布需要公众号具备发布接口权限。</p>}
           {contentType === 'article' && <div className="pub-actions" style={{ marginBottom: 12 }}>
             <Button variant="outline" size="sm" disabled={busy} onClick={() => importInputRef.current?.click()}>导入 .md/.txt 到主稿</Button>
             <input ref={importInputRef} type="file" accept=".md,.txt,text/markdown,text/plain" style={{ display: 'none' }} onChange={event => { importText(event.target.files?.[0]); event.target.value = '' }}/>
@@ -560,7 +619,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
             <textarea ref={bodyInputRef} className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={visibleDraft!.body} onChange={event => updateTextField('body', event.target.value)}/>
             {hasOverride('body') && <Button variant="outline" size="sm" onClick={() => resetVariantField('body')}>正文恢复主稿</Button>}
           </div>
-          {contentType === 'article' && contentView === 'tt' && <p className="pub-muted">头条文章不录入独立摘要，提交时会自动跳过；主稿摘要仍可供其他平台使用。正文图片和封面默认不自动上传，有图片的文章会转存草稿供手动补齐。</p>}
+          {contentType === 'article' && contentView === 'tt' && <p className="pub-muted">正文图片和封面不自动上传，有图片的文章会转存草稿；请从发布历史打开草稿手动补图和设置封面。</p>}
           {contentType === 'article' && contentView !== 'tt' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要{hasOverride('summary') && ' · 此平台已单独修改'}</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={visibleDraft!.summary} onChange={event => updateTextField('summary', event.target.value)}/>{hasOverride('summary') && <Button variant="outline" size="sm" onClick={() => resetVariantField('summary')}>摘要恢复主稿</Button>}</div>}
           <div className="pub-field"><label htmlFor={`pub-${contentType}-tags`}>标签（{visibleDraft!.tags.length}/{MAX_TAGS} 个，用空格或逗号分隔）{hasOverride('tags') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-tags`} value={tagsInput} onChange={event => { setTagsInput(event.target.value); const tags = [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS); if (contentView === 'master') update({ tags }); else updateVariant({ tags }) }}/>{hasOverride('tags') && <Button variant="outline" size="sm" onClick={() => resetVariantField('tags')}>标签恢复主稿</Button>}</div>
           {visibleDraft!.tags.length > 0 && skippedArticleTagTargets.length > 0 && <p className="pub-muted">{skippedArticleTagTargets.map(account => PLATFORM_LABELS[account.platform]).join('、')}文章暂不写入标签；草稿标签仍保留供其他平台使用。</p>}
@@ -639,6 +698,8 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </fieldset>
     </PublisherModal>}
+    {imagegenPickerDraftId && draft?.id === imagegenPickerDraftId && <ImagegenPicker remaining={20 - draft.assets.length}
+      onCancel={() => { if (!busyRef.current) setImagegenPickerDraftId(undefined) }} onImport={importImagegenImages}/>}
     {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} targetTitles={confirm.targetTitles} warnings={confirm.warnings} busy={busy} onCancel={() => { setConfirm(undefined); setPublishOpen(true) }} onConfirm={submit}/>}
     <PublisherModal open={deleteDraftId !== undefined} title="删除本地草稿" closeLabel="关闭删除草稿确认" description="删除这份本地草稿？已经提交的内容快照不受影响。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button size="sm" variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button size="sm" variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/>
   </div>

@@ -12,6 +12,28 @@ const content = (contentType: PublisherContent['contentType']): PublisherContent
 })
 
 describe('article and image-note preflight', () => {
+  it('validates WeChat image messages independently from article covers and theme support', () => {
+    const draft = content('image-note')
+    draft.assets = [{ id: '33333333-3333-4333-8333-333333333333', name: '图片.webp', mime: 'image/webp', bytes: 12 }]
+    draft.coverAssetId = '44444444-4444-4444-8444-444444444444'
+    draft.articleTheme = 'purple'
+    const capabilities: PublisherPlatformCapability[] = [{
+      platform: 'wxmp', contentTypes: ['article', 'image-note'],
+      modes: { 'image-note': ['draft', 'publish'] }, requiredFields: {},
+      maxAssets: { 'image-note': 20 }, maxTitleLength: { 'image-note': 32 },
+    }]
+    for (const mode of ['draft', 'publish'] as const) {
+      expect(contentSubmissionError(draft, [account('wxmp')], capabilities, mode)).toBeUndefined()
+      expect(contentSubmissionError({ ...draft, title: '字'.repeat(33) }, [account('wxmp')], capabilities, mode)).toContain('32 字')
+      expect(contentSubmissionError({ ...draft, title: '🙂'.repeat(32) }, [account('wxmp')], capabilities, mode)).toBeUndefined()
+      expect(contentSubmissionError({ ...draft, assets: [] }, [account('wxmp')], capabilities, mode)).toContain('至少添加一张图片')
+      expect(contentSubmissionError({ ...draft, assets: Array.from({ length: 21 }, (_, index) => ({ ...draft.assets[0]!, id: String(index) })) },
+        [account('wxmp')], capabilities, mode)).toContain('20 张图片')
+    }
+    expect(contentSubmissionError(draft, [account('wxmp')], [], 'publish')).toContain('暂不支持')
+    expect(draft.coverAssetId).toBe('44444444-4444-4444-8444-444444444444')
+  })
+
   it('requires a WeChat cover and accepts only supported article assets', () => {
     const draft = content('article')
     const targets = [account('wxmp')]
@@ -61,16 +83,48 @@ describe('article and image-note preflight', () => {
     expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()
   })
 
-  it('accepts Toutiao articles with a summary that the platform editor will skip', () => {
-    const draft = { ...content('article'), summary: '摘要内容' }
+  it('silently skips Toutiao summary and tags without requiring a draft adjustment', () => {
+    const draft = { ...content('article'), summary: '摘要内容', tags: ['旅行'] }
     const capabilities: PublisherPlatformCapability[] = [{
       platform: 'tt', contentTypes: ['article'], modes: { article: ['draft', 'publish'] }, requiredFields: {},
     }, {
       platform: 'juejin', contentTypes: ['article'], modes: { article: ['draft', 'publish'] }, requiredFields: {},
     }]
     expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toBeUndefined()
+    expect(contentSubmissionError(draft, [account('tt')], capabilities, 'publish')).toBeUndefined()
+    expect(articleSubmissionWarnings(draft, [account('tt')], capabilities)).toEqual([])
     expect(contentSubmissionError(draft, [account('juejin')], capabilities, 'draft')).toBeUndefined()
     expect(draft.summary).toBe('摘要内容')
+    expect(draft.tags).toEqual(['旅行'])
+  })
+
+  it('requires manual Toutiao body images and cover even for selected local assets without changing the draft', () => {
+    const draft = content('article')
+    draft.assets = [
+      { id: '33333333-3333-4333-8333-333333333333', name: '正文.png', mime: 'image/png', bytes: 12 },
+      { id: '44444444-4444-4444-8444-444444444444', name: '正文.webp', mime: 'image/webp', bytes: 12 },
+      { id: '55555555-5555-4555-8555-555555555555', name: '封面.jpg', mime: 'image/jpeg', bytes: 12 },
+    ]
+    draft.body = `开头 ![正文](ebao-asset://${draft.assets[0]!.id})\n\n后文 ![另一张](ebao-asset://${draft.assets[1]!.id})`
+    draft.coverAssetId = draft.assets[2]!.id
+    const capabilities: PublisherPlatformCapability[] = [{
+      platform: 'tt', contentTypes: ['article'], modes: { article: ['draft', 'publish'] }, requiredFields: {},
+    }]
+    const original = JSON.stringify(draft)
+    expect(contentSubmissionError(draft, [account('tt')], capabilities, 'publish')).toBeUndefined()
+    expect(articleSubmissionWarnings(draft, [account('tt')], capabilities)).toEqual([
+      '头条：正文图片会在原位置保留占位，请从发布历史打开头条草稿手动补图',
+      '头条：封面需手动设置，请从发布历史打开头条草稿',
+    ])
+    expect(JSON.stringify(draft)).toBe(original)
+
+    draft.platformVariants = { tt: { assetOrder: [draft.assets[0]!.id, draft.assets[2]!.id] } }
+    const withSelection = JSON.stringify(draft)
+    expect(articleSubmissionWarnings(draft, [account('tt')], capabilities)).toEqual([
+      '头条：正文图片会在原位置保留占位，请从发布历史打开头条草稿手动补图',
+      '头条：封面需手动设置，请从发布历史打开头条草稿',
+    ])
+    expect(JSON.stringify(draft)).toBe(withSelection)
   })
 
   it('keeps draft tags while allowing article targets that skip tag upload', () => {
@@ -154,7 +208,7 @@ describe('article and image-note preflight', () => {
     draft.platformVariants.juejin!.coverAssetId = null
     draft.platformVariants.tt!.body = `头条正文 ![被排除的图](ebao-asset://${draft.assets[0]!.id})`
     expect(contentSubmissionError(draft, [account('tt')], capabilities, 'draft')).toBeUndefined()
-    expect(articleSubmissionWarnings(draft, [account('tt')], capabilities)).toContain('头条：正文图片会在原位置保留占位，请在头条草稿中手动上传')
+    expect(articleSubmissionWarnings(draft, [account('tt')], capabilities)).toContain('头条：正文图片会在原位置保留占位，请从发布历史打开头条草稿手动补图')
     draft.platformVariants.tt!.body = '头条正文'
     draft.platformVariants.wxmp!.body = '微信正文 ![缺图](ebao-asset://33333333-3333-4333-8333-333333333333)'
     expect(contentSubmissionError(draft, [account('wxmp')], capabilities, 'draft')).toBeUndefined()

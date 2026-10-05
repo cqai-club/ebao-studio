@@ -6,12 +6,9 @@ import {
 import { api, CONTENT_LABELS, errorMessage, PublisherModal } from './shared.tsx'
 import { canOpenTarget, openTargetNotice } from './history-target.ts'
 import { usePublisherTips } from './tips.tsx'
+import { isToutiaoOnly, projectSubmissionForDisplay, submissionStateLabel } from '../submission-display.ts'
 
 const PAGE_SIZE = 10
-const STATE_LABELS = {
-  queued: '等待执行', running: '执行中', unknown: '结果待确认',
-  completed: '已完成', failed: '执行失败',
-} as const
 const STATE_TONES = {
   queued: 'neutral', running: 'info', unknown: 'warning',
   completed: 'success', failed: 'danger',
@@ -38,7 +35,7 @@ export function SubmissionHistory({ active }: { active: boolean }) {
     setRefreshing(true)
     try {
       const submissions = await api<PublisherSubmission[]>('submissions')
-      if (sequence === requestSequence.current) setRows(submissions)
+      if (sequence === requestSequence.current) setRows(submissions.map(projectSubmissionForDisplay))
     } catch (cause) {
       if (sequence === requestSequence.current) showError(errorMessage(cause))
     } finally {
@@ -60,7 +57,7 @@ export function SubmissionHistory({ active }: { active: boolean }) {
     if (!search) return true
     const terms = [item.title, CONTENT_LABELS[item.contentType ?? 'video'],
       item.mode === 'publish' ? '立即发布' : '转存草稿',
-      item.state ? STATE_LABELS[item.state] : '',
+      submissionStateLabel(item),
       ...item.targets.flatMap(target => [PLATFORM_LABELS[target.platform], target.accountName])]
     return terms.some(term => term.toLocaleLowerCase().includes(search))
   })
@@ -108,7 +105,8 @@ export function SubmissionHistory({ active }: { active: boolean }) {
       const result = await api<PublisherOpenTargetResult>('submission-open-target', {
         submissionId, accountId, ...(listOnly ? { listOnly: true } : {}),
       })
-      showSuccess(openTargetNotice(result.kind, state))
+      const platform = rows.find(item => item.id === submissionId)?.targets.find(target => target.accountId === accountId)?.platform
+      showSuccess(openTargetNotice(result.kind, state, platform))
     } catch (cause) {
       showError(errorMessage(cause))
     } finally {
@@ -143,10 +141,10 @@ export function SubmissionHistory({ active }: { active: boolean }) {
             onClick={() => { setAcknowledgedUnknown(false); setDeleteTarget(item) }}>删除</Button></div>
           <div className="pub-tags">
             <Tag tone={item.mode === 'publish' ? 'info' : 'neutral'}>{item.mode === 'publish' ? '立即发布' : '转存草稿'}</Tag>
-            {item.state && <Tag tone={STATE_TONES[item.state]}>{STATE_LABELS[item.state]}</Tag>}
+            {item.state && <Tag tone={STATE_TONES[item.state]}>{submissionStateLabel(item)}</Tag>}
           </div>
           {item.message && <p className="pub-history-result pub-muted">{item.message}</p>}
-          {item.requestedMode === 'publish' && item.mode === 'draft' && <p className="pub-history-result pub-warn">文章已按平台要求调整，本次转存草稿供核对。</p>}
+          {item.requestedMode === 'publish' && item.mode === 'draft' && (!isToutiaoOnly(item.targets.map(target => target.platform)) || !!item.adjustments?.length) && <p className="pub-history-result pub-warn">文章已按平台要求调整，本次转存草稿供核对。</p>}
           {!!item.adjustments?.length && <ul className="pub-history-result pub-muted">{item.adjustments.flatMap(adjustment => {
             const target = item.targets.find(row => row.accountId === adjustment.accountId)
             return adjustment.messages.map(message => <li key={`${adjustment.accountId}:${message}`}>
@@ -184,10 +182,10 @@ export function SubmissionHistory({ active }: { active: boolean }) {
         <Button size="sm" variant="outline" className="pub-danger-action" disabled={deleting || (deleteTarget?.state === 'unknown' && !acknowledgedUnknown)} onClick={() => void confirmDelete()}>{deleting ? '正在删除…' : '确认删除'}</Button>
       </>}>
       {deleteTarget?.state === 'unknown' && <>
-        <p className="pub-modal-copy">这条提交的结果尚未确认。{deleteTarget.message && <>原因：{deleteTarget.message}<br /></>}删除前请到对应平台后台核对。</p>
+        <p className="pub-modal-copy">{submissionStateLabel(deleteTarget) === '未完成' ? '这条任务未完成。' : '这条提交的结果尚未确认。'}{deleteTarget.message && <>原因：{deleteTarget.message}<br /></>}删除前请到对应平台后台核对。</p>
         <label className="pub-history-acknowledge"><input type="checkbox" checked={acknowledgedUnknown} onChange={event => setAcknowledgedUnknown(event.target.checked)} />我已核对平台状态，了解删除不会撤回平台内容</label>
       </>}
-      <p className="pub-modal-copy">删除仅移除本机记录{deleteTarget?.state === 'unknown' ? '；这条待确认记录的内容快照会暂时保留' : '，并尝试清理对应快照'}；不会撤回平台内容，也不会删除原草稿或成片。待执行或执行中的任务不能删除。</p>
+      <p className="pub-modal-copy">删除仅移除本机记录{deleteTarget?.state === 'unknown' ? submissionStateLabel(deleteTarget) === '未完成' ? '；这条未完成记录的内容快照会暂时保留' : '；这条待确认记录的内容快照会暂时保留' : '，并尝试清理对应快照'}；不会撤回平台内容，也不会删除原草稿或成片。待执行或执行中的任务不能删除。</p>
     </PublisherModal>
   </div>
 }

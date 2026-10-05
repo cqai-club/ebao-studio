@@ -14,20 +14,20 @@ import {
   type CreateSubmissionRequest,
   type CreateVideoSubmissionRequest,
   type Platform,
-  type PublisherAccount,
   type PublisherCapability,
   type PublisherContent,
   type PublisherLocalVideo,
   type PublisherOpenTargetResult,
-  type PublisherPlatformCapability,
   type PublisherVideoSource,
 } from './protocol.ts'
 import {
   MAX_ASSET_BYTES, MAX_BODY_BYTES as MAX_CONTENT_BODY_BYTES, addAsset, createContent, deleteContent, duplicateContent,
-  listContents, queryContents, readAsset, readContent, removeAsset, resolveContent, saveContent,
+  listContents, queryContents, readAsset, readContent, removeAsset, saveContent,
   type SaveContentInput,
 } from './contents.ts'
-import { contentSubmissionError } from './submission-validation.ts'
+import { createPublisherSubmission } from './submission-service.ts'
+import { AgentPublications } from './agent-publication.ts'
+import { registerAgentPublicationTools } from './agent-publication-tools.ts'
 import { registerAgentSourceTools } from './agent-source-tools.ts'
 import { AgentDraftBindings, validAgentSessionId } from './agent-draft-binding.ts'
 import { readAgentDraftSession, writeAgentDraftSession } from './agent-draft-session.ts'
@@ -38,7 +38,7 @@ import { readSessionContent } from './session-contents.ts'
 import { readSessionSourceDocument, readSourceImage } from './source-documents.ts'
 import { readPublicationCandidate, validPublicationCandidate } from './publication-candidates.ts'
 import { openPublicationFromSource } from './publication-preparation.ts'
-import { listWorks, resolveWork } from './works.ts'
+import { listWorks } from './works.ts'
 import { serveVideoPreview, VideoPreviewError, type LocalVideoReader } from './video-preview.ts'
 
 export const name = 'cqai-publisher'
@@ -333,9 +333,10 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     ) }
   }
   if (action === 'contents') {
-    const value = exact(body, ['contentType'])
+    const value = exact(body, ['contentType', 'title'])
     if (value.contentType !== 'article' && value.contentType !== 'image-note' && value.contentType !== 'video') throw new Error('内容类型无效')
-    return { code: 201, data: createContent(value.contentType) }
+    if (value.title !== undefined && typeof value.title !== 'string') throw new Error('标题格式无效')
+    return { code: 201, data: createContent(value.contentType, process.env, value.title) }
   }
   if (action === 'contents-query') {
     const value = exact(body, ['contentType', 'query', 'cursor'])
@@ -408,48 +409,7 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     return { code: 200, data: { kind } satisfies PublisherOpenTargetResult }
   }
   if (action === 'submissions') {
-    const input = submissionBody(body)
-    const accounts = await runtime.request<PublisherAccount[]>('accounts.list')
-    const selected = input.accountIds.map(id => accounts.find(account => account.id === id))
-    if (selected.some(account => account === undefined)) throw new Error('所选账号不存在，请刷新后重试')
-    const platforms = selected.map(account => account!.platform)
-    if (new Set(platforms).size !== platforms.length) throw new Error('同一平台一次只能选择一个账号')
-    const capabilities = await runtime.request<PublisherPlatformCapability[]>('system.capabilities')
-    for (const account of selected) {
-      const platformCapability = capabilities.find(item => item.platform === account!.platform)
-      if (!platformCapability?.modes[input.contentType ?? 'video']?.includes(input.mode)) {
-        throw new Error(`${account!.displayName}暂不支持此内容类型和提交方式`)
-      }
-    }
-    if ('contentId' in input) {
-      const { content, directory } = resolveContent(input.contentId, input.revision)
-      if (content.contentType !== input.contentType) throw new Error('草稿内容类型不匹配')
-      if (content.contentType === 'video') {
-        if (!content.videoSource || !content.title.trim()) throw new Error('请先选择视频素材并填写标题')
-        const video = {
-          contentType: 'video' as const, title: content.title, description: content.description ?? '',
-          shortTitle: content.shortTitle ?? '', tags: content.tags,
-          creativeStatement: content.creativeStatement, mode: input.mode, accountIds: input.accountIds,
-        }
-        if (content.videoSource.kind === 'local') return { code: 202, data: await runtime.request('submissions.create', {
-          ...video, localVideoId: content.videoSource.localVideoId,
-        }) }
-        const work = resolveWork(content.videoSource.workId)
-        return { code: 202, data: await runtime.request('submissions.create', {
-          ...video, workId: content.videoSource.workId, file: work.file,
-        }) }
-      }
-      const error = contentSubmissionError(content, selected as PublisherAccount[], capabilities, input.mode)
-      if (error) throw new Error(error)
-      return { code: 202, data: await runtime.request('submissions.create', {
-        ...input, contentDirectory: directory,
-      }) }
-    }
-    const video = input as CreateVideoSubmissionRequest
-    if (video.localVideoId !== undefined) return { code: 202, data: await runtime.request('submissions.create', video) }
-    if (video.workId === undefined) throw new Error('视频来源无效')
-    const work = resolveWork(video.workId)
-    return { code: 202, data: await runtime.request('submissions.create', { ...video, file: work.file }) }
+    return { code: 202, data: await createPublisherSubmission(runtime, submissionBody(body)) }
   }
   return { code: 404, data: { error: '接口不存在' } }
 }
@@ -457,6 +417,7 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
 export function apply(ctx: Context): void {
   const runtime = (ctx as PublisherContext).desktopRuntime.publisher
   const draftBindings = new AgentDraftBindings()
+  const publications = new AgentPublications(runtime, draftBindings)
   let liveSession: (id: string) => boolean = () => false
   const listedSession = async (id: string): Promise<boolean> => {
     // The Session Store only contains activated conversations. The Session
@@ -490,7 +451,9 @@ export function apply(ctx: Context): void {
   ctx.inject(['tools', 'attachments', 'systemPrompt'], (agentCtx) => {
     const disposeSource = registerAgentSourceTools(agentCtx)
     const disposeDraft = registerAgentDraftTools(agentCtx, draftBindings)
-    return () => { disposeDraft(); disposeSource() }
+    const disposePublication = registerAgentPublicationTools(agentCtx, publications,
+      async id => await listedSession(id) && !archivedSession(id))
+    return () => { disposePublication(); disposeDraft(); disposeSource() }
   })
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
@@ -502,6 +465,32 @@ export function apply(ctx: Context): void {
         const prefix = `${API}/`
         if (!url.pathname.startsWith(prefix) || url.search !== '') { json(res, 404, { error: '接口不存在' }); return }
         const action = url.pathname.slice(prefix.length)
+        if (req.method === 'GET' && action.startsWith('agent-publication/')) {
+          const segments = action.split('/')
+          if (segments.length !== 3) throw new Error('发布确认请求地址无效')
+          let decoded: string
+          try { decoded = decodeURIComponent(segments[1]!) } catch { throw new Error('会话 ID 无效') }
+          const sessionId = validAgentSessionId(decoded)
+          if (!await listedSession(sessionId) || archivedSession(sessionId)) throw new Error('当前 Agent 对话不可用于发布确认')
+          json(res, 200, await publications.getStatus(sessionId, uuid(segments[2], '发布确认请求 ID')))
+          return
+        }
+        if (req.method === 'POST' && (action === 'agent-publication-confirm' || action === 'agent-publication-cancel')) {
+          const value = exact(await readJson(req), action === 'agent-publication-confirm'
+            ? ['sessionId', 'requestId', 'accountIds', 'mode'] : ['sessionId', 'requestId'])
+          const sessionId = validAgentSessionId(value.sessionId)
+          const requestId = uuid(value.requestId, '发布确认请求 ID')
+          if (!await listedSession(sessionId) || archivedSession(sessionId)) throw new Error('当前 Agent 对话不可用于发布确认')
+          if (action === 'agent-publication-cancel') {
+            json(res, 200, await publications.cancel(sessionId, requestId))
+          } else {
+            if (value.mode !== 'publish' && value.mode !== 'draft') throw new Error('发布方式无效')
+            json(res, 200, await publications.confirm(sessionId, requestId, {
+              accountIds: accountIds(value.accountIds), mode: value.mode,
+            }))
+          }
+          return
+        }
         if (req.method === 'POST' && action === 'agent-workspace') {
           const value = exact(await readJson(req), ['contentId'])
           json(res, 200, { path: ensureAgentWorkspace(uuid(value.contentId, '草稿 ID')) })

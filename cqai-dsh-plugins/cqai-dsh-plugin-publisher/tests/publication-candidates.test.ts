@@ -39,9 +39,11 @@ describe('transient publication preview candidates', () => {
       sourceId: source.id, sourceRevision: source.revision, contentType: 'article', platforms: ['wxmp'],
       body: '![其它](https://example.com/a.png)',
     }, env)).toThrow('只能引用原始 MD')
-    expect(() => preparePublicationCandidate('session-1', {
+    const wechatImageNote = preparePublicationCandidate('session-1', {
       sourceId: source.id, sourceRevision: source.revision, contentType: 'image-note', platforms: ['wxmp'],
-    }, env)).toThrow('不支持此内容类型')
+    }, env)
+    expect(wechatImageNote.contentType).toBe('image-note')
+    expect(wechatImageNote.body).toContain('source-image://')
     expect(() => preparePublicationCandidate('session-1', {
       sourceId: source.id, sourceRevision: source.revision, contentType: 'image-note', platforms: ['tt'],
     }, env)).toThrow('不支持此内容类型')

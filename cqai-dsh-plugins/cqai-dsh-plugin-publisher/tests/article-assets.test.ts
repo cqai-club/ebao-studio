@@ -21,10 +21,10 @@ const capability: PublisherPlatformCapability = {
 describe('article managed image preflight', () => {
   it('keeps the cover independent of platform image adjustments', () => {
     expect(contentSubmissionError(content, [tt], [capability], 'draft')).toBeUndefined()
-    expect(articleSubmissionWarnings(content, [tt], [capability])).toContain('头条：封面需在头条草稿中手动设置')
+    expect(articleSubmissionWarnings(content, [tt], [capability])).toContain('头条：封面需手动设置，请从发布历史打开头条草稿')
     expect(contentSubmissionError({ ...content, tags: ['AI'] }, [tt], [capability], 'draft')).toBeUndefined()
     expect(contentSubmissionError({ ...content, coverAssetId: undefined }, [tt], [capability], 'draft')).toBeUndefined()
-    expect(articleSubmissionWarnings({ ...content, coverAssetId: undefined }, [tt], [capability])).toContain('头条：封面需在头条草稿中手动设置')
+    expect(articleSubmissionWarnings({ ...content, coverAssetId: undefined }, [tt], [capability])).toContain('头条：封面需手动设置，请从发布历史打开头条草稿')
     const emptyPlatformImages = { ...content, platformVariants: { tt: { assetOrder: [] } } }
     expect(contentSubmissionError(emptyPlatformImages, [tt], [capability], 'draft')).toBeUndefined()
     expect(articleSubmissionWarnings(emptyPlatformImages, [tt], [capability])).toContain('头条：封面不在该平台所选图片中，提交时将忽略')
@@ -35,7 +35,7 @@ describe('article managed image preflight', () => {
     for (const body of ['![本地](../a.png)', '![网络](https://example.com/a.png)',
       '![未知](ebao-asset://44444444-4444-4444-8444-444444444444)', '<img src="file:///tmp/a.png">']) {
       expect(contentSubmissionError({ ...content, body }, [tt], [capability], 'draft')).toBeUndefined()
-      expect(articleSubmissionWarnings({ ...content, body }, [tt], [capability])).toContain('头条：正文图片会在原位置保留占位，请在头条草稿中手动上传')
+      expect(articleSubmissionWarnings({ ...content, body }, [tt], [capability])).toContain('头条：正文图片会在原位置保留占位，请从发布历史打开头条草稿手动补图')
     }
     expect(contentSubmissionError(content, [blbl], [{ ...capability, platform: 'blbl' }], 'draft')).toBeUndefined()
     expect(articleSubmissionWarnings(content, [blbl], [{ ...capability, platform: 'blbl' }])).toContain('哔哩哔哩：正文插图将从该平台版本移除')
@@ -43,6 +43,6 @@ describe('article managed image preflight', () => {
     expect(hasRawArticleImage('```html\n<img src="example.png">\n```\n`<img src="inline.png">`')).toBe(false)
     expect(hasRawArticleImage(`![<img src="alt.png">](ebao-asset://${imageId})`)).toBe(false)
     expect(articleSubmissionWarnings({ ...content, body: `正文 ![<img src="alt.png">](ebao-asset://${imageId})` },
-      [tt], [capability])).toContain('头条：正文图片会在原位置保留占位，请在头条草稿中手动上传')
+      [tt], [capability])).toContain('头条：正文图片会在原位置保留占位，请从发布历史打开头条草稿手动补图')
   })
 })

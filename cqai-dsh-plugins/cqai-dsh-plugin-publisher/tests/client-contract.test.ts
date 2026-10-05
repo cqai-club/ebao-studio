@@ -47,7 +47,7 @@ describe('unified publisher client contract', () => {
     expect(video).toContain("contentType: 'video', contentId: current.id, revision: current.revision")
     expect(video).toContain('api<PublisherContent>(`content/${selectedContentId}`)')
     expect(video).toContain('await flush()\n    onBack()')
-    expect(entry).toContain("api<PublisherContent>('contents', { contentType: type })")
+    expect(entry).toContain('<CreateDraftDialog contentType={createTarget}')
     expect(video).toContain("api<PublisherContent>('content-copy', { id: current.id })")
     expect(article).toContain('contentType, contentId: current.id, revision: current.revision')
     expect(video).not.toMatch(/\b(?:file|videoPath|filePath)\s*:/u)

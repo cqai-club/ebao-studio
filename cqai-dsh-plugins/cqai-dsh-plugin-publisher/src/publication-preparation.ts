@@ -227,8 +227,8 @@ export function openPublicationFromSource(
   if (candidate && Object.keys(candidate.platformVariants ?? {}).some(platform => !targetPlatforms.includes(platform as Platform))) {
     throw new Error('平台版本不属于所选平台')
   }
-  // The editable master owns the union. Each target later gets its own exact
-  // selection, so an image removed from a platform body is not uploaded there.
+  // The editable master owns the union. Only a separately edited platform body
+  // gets an exact selection; platforms following the master also follow later images.
   const bodies = candidate
     ? [mainBody, ...targetPlatforms.map(platform => candidate.platformVariants?.[platform]?.body).filter((value): value is string => value !== undefined)]
     : [source.body]
@@ -239,7 +239,7 @@ export function openPublicationFromSource(
   }
   if (orderedSources.length > 20) throw new Error('每份发布内容最多 20 张图片，请先精简内容源')
 
-  const created = createContent(contentType, env)
+  const created = createContent(contentType, env, candidate?.title ?? source.title)
   try {
     let current = created
     const assetBySource = new Map<string, string>()
@@ -251,16 +251,16 @@ export function openPublicationFromSource(
       const assetId = current.assets[current.assets.length - 1]!.id
       assetBySource.set(imageSource, assetId)
     }
-    const variants = Object.fromEntries(targetPlatforms.map(platform => {
+    const variants = Object.fromEntries(targetPlatforms.flatMap(platform => {
       const variant = candidate!.platformVariants?.[platform]
-      const effectiveBody = variant?.body ?? mainBody
-      const selected = [...new Set(imageSources(effectiveBody))].map(src => assetBySource.get(src)!)
-      return [platform, {
+      if (variant?.body === undefined) return variant ? [[platform, { ...variant }]] : []
+      const selected = [...new Set(imageSources(variant.body))].map(src => assetBySource.get(src)!)
+      return [[platform, {
         ...variant,
-        ...(variant?.body === undefined ? {} : { body: rewriteImages(variant.body, assetBySource, contentType) }),
+        body: rewriteImages(variant.body, assetBySource, contentType),
         assetOrder: selected,
         coverAssetId: selected[0] ?? null,
-      }]
+      }]]
     })) as Partial<Record<Platform, PublisherPlatformVariant>>
     current = saveContent(current.id, {
       revision: current.revision,
