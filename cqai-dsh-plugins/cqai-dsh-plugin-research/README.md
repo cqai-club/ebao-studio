@@ -25,6 +25,22 @@
 
 因此上游更新技能时，面板会自动反映最新状态，不需要重新发版。
 
+## 安装（可选插件）
+
+本插件**不随 e宝工坊安装包提供**，也不进入产品默认 Profile；只有主动安装的用户才会看到
+「e研宝」。两种方式任选其一：
+
+1. **插件市场**：账号菜单 →「插件管理」→「插件市场」，搜索 `cqai-dsh-plugin-research`
+   后安装。
+2. **DSH 终端**（市场条目尚未收录时）：
+
+   ```bash
+   dsh plugin --profile desktop add cqai-dsh-plugin-research
+   ```
+
+安装后需要重启才生效。技能正文仍来自本机已安装的 `academic-research-skills`，本插件只提供
+面板和目录，不随包分发技能内容。
+
 ## 使用方式
 
 1. 打开侧边栏的「e研宝」。
@@ -45,7 +61,11 @@
 ```bash
 corepack yarn workspace cqai-dsh-plugin-research build
 corepack yarn workspace cqai-dsh-plugin-research typecheck
+corepack yarn workspace cqai-dsh-plugin-research test
 ```
+
+`prepack` 会在 `npm publish` 前重新构建 `lib/`，因此发布包始终包含最新产物。
+`publishConfig.access` 为 `public`，供插件市场从 npm 官方 registry 解析。
 
 ## 许可与归属
 
