@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { verifyBundledSkills } from './packaged-filesystem-smoke.ts'
+import { verifyNativeComputerUseCatalog } from './packaged-computer-use-smoke.ts'
 import { rgPath } from '@vscode/ripgrep'
 import AdmZip from 'adm-zip'
 import { exportDiagnosticsZip } from './diagnostic-export.ts'
@@ -229,5 +230,9 @@ try {
 await verifyBundledSkills(fileURLToPath(new URL('./', installAnchor)))
 await smokeSessionMigration()
 await smokeDiagnosticExportWorker()
+// This import runs inside app.asar, exercising both native bindings and the
+// physical shared-library path. Catalog discovery never executes OS tools.
+const { CuaDriver } = await import('@trycua/cua-driver')
+await verifyNativeComputerUseCatalog(() => CuaDriver.create(undefined))
 
 process.stdout.write(OK_MARKER)

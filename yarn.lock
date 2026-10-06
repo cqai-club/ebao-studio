@@ -12516,11 +12516,11 @@ __metadata:
   resolution: "cqai-dsh-plugin-research@workspace:cqai-dsh-plugins/cqai-dsh-plugin-research"
   dependencies:
     "@deepseek-ai/cordis": "npm:^4.0.2"
-    "@deepseek-ai/dsh-client-ui-layout": "npm:0.1.7-rc.2"
-    "@deepseek-ai/dsh-client-ui-renderer": "npm:0.1.7-rc.2"
-    "@deepseek-ai/dsh-client-ui-sidebar": "npm:0.1.7-rc.2"
-    "@deepseek-ai/dsh-client-ui-slots": "npm:0.1.7-rc.2"
-    "@deepseek-ai/dsh-host-webserver": "npm:0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-layout": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-client-ui-sidebar": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-client-ui-slots": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-host-webserver": "npm:0.2.0-rc.2"
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:^18.3.0"
     react: "npm:^18.3.1"
@@ -12529,11 +12529,11 @@ __metadata:
     vitest: "npm:4.1.8"
   peerDependencies:
     "@deepseek-ai/cordis": ^4.0.2
-    "@deepseek-ai/dsh-client-ui-layout": ^0.1.7-rc.2
-    "@deepseek-ai/dsh-client-ui-renderer": ^0.1.7-rc.2
-    "@deepseek-ai/dsh-client-ui-sidebar": ^0.1.7-rc.2
-    "@deepseek-ai/dsh-client-ui-slots": ^0.1.7-rc.2
-    "@deepseek-ai/dsh-host-webserver": ^0.1.7-rc.2
+    "@deepseek-ai/dsh-client-ui-layout": ^0.2.0-rc.2
+    "@deepseek-ai/dsh-client-ui-renderer": ^0.2.0-rc.2
+    "@deepseek-ai/dsh-client-ui-sidebar": ^0.2.0-rc.2
+    "@deepseek-ai/dsh-client-ui-slots": ^0.2.0-rc.2
+    "@deepseek-ai/dsh-host-webserver": ^0.2.0-rc.2
     react: ^18.2.0
   languageName: unknown
   linkType: soft
