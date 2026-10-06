@@ -3,6 +3,25 @@
   "version": "0.1.0",
   "description": "e研宝：把 academic-research-skills 的四套学术技能接成易宝工坊里的数字员工。",
   "license": "MIT",
+  "homepage": "https://github.com/cqai-club/ebao-studio/tree/master/cqai-dsh-plugins/cqai-dsh-plugin-research#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cqai-club/ebao-studio.git",
+    "directory": "cqai-dsh-plugins/cqai-dsh-plugin-research"
+  },
+  "bugs": {
+    "url": "https://github.com/cqai-club/ebao-studio/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "research",
+    "academic"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -42,6 +61,7 @@
   },
   "scripts": {
     "build": "tsdown",
+    "prepack": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
