@@ -1,11 +1,12 @@
 /** Headless artifact smoke for the Electron-backed dsh and pnpm command entries. */
 
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import electronPath from 'electron'
+import { initProfile, resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
 import { installDesktopPnpmRuntime } from '../lib/desktop-runtime-environment.js'
 
 const packageRoot = new URL('../', import.meta.url)
@@ -161,7 +162,8 @@ function runPackagedPnpmShim() {
 }
 
 function runFlatProfileDshEntry() {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-flat-cli-smoke-'))
+  // The CLI direct-entry check compares its canonical module URL to argv[1].
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-desktop-flat-cli-smoke-')))
   const desktopPackage = join(root, 'node_modules', 'dsh-plugin-desktop')
   const linkedAppBootPackage = join(root, 'node_modules', '@deepseek-ai', 'dsh-app-boot')
   const linkedAtomicWritePackage = join(root, 'node_modules', '@deepseek-ai', 'dsh-atomic-write')
@@ -169,6 +171,12 @@ function runFlatProfileDshEntry() {
   const linkedDshHomePathsPackage = join(root, 'node_modules', '@deepseek-ai', 'dsh-home-paths')
   const linkedDshPackage = join(root, 'node_modules', '@deepseek-ai', 'dsh')
   const linkedSemverPackage = join(root, 'node_modules', 'semver')
+  const entry = join(desktopPackage, 'lib', 'desktop-cli.js')
+  const env = cleanEnvironment()
+  env.DSH_HOME = join(root, 'dsh-home')
+  env.DSH_DESKTOP_DEFAULT_PROFILE = 'desktop'
+  const profileDir = resolveProfileDir('desktop', env.DSH_HOME)
+  let installation
   try {
     mkdirSync(join(root, 'node_modules', '@deepseek-ai'), { recursive: true })
     cpSync(fileURLToPath(new URL('lib/', packageRoot)), join(desktopPackage, 'lib'), { recursive: true })
@@ -179,16 +187,41 @@ function runFlatProfileDshEntry() {
     symlinkSync(dshHomePathsPackage, linkedDshHomePathsPackage, process.platform === 'win32' ? 'junction' : 'dir')
     symlinkSync(dshPackage, linkedDshPackage, process.platform === 'win32' ? 'junction' : 'dir')
     symlinkSync(semverPackage, linkedSemverPackage, process.platform === 'win32' ? 'junction' : 'dir')
+    // DSH 0.2 reserves desktop Profile initialization for the application,
+    // including pnpm help. Exercise both sides without using the user's home.
+    const missingProfile = spawnSync(electronPath, [
+      '--expose-internals', entry, 'plugin', '--help',
+    ], { encoding: 'utf8', env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, shell: false })
+    if (missingProfile.error !== undefined) throw missingProfile.error
+    if (missingProfile.status !== 1
+      || !missingProfile.stderr.includes('once to initialize its profile')
+      || existsSync(join(profileDir, 'package.json'))) {
+      throw new Error(`flat profile dsh plugin help did not preserve the Desktop initialization guard: ${String(missingProfile.status)} (${String(missingProfile.signal)}): ${missingProfile.stderr.trim() || missingProfile.stdout.trim()}`)
+    }
+    initProfile(profileDir, [])
+    installation = installDesktopPnpmRuntime({
+      platform: process.platform,
+      appExecutable: electronPath,
+      pnpmBinPath: pnpmCli,
+      electronVersion,
+      stateDir: join(root, 'runtime'),
+      environment: env,
+    })
+    assertNoRunnerEnvironment('flat profile pnpm PATH installation', env)
     runElectronEntry(
       'flat profile dsh plugin help',
       ['--expose-internals'],
-      join(desktopPackage, 'lib', 'desktop-cli.js'),
+      entry,
       ['plugin', '--help'],
-      undefined,
-      { DSH_DESKTOP_DEFAULT_PROFILE: 'desktop' },
+      /Usage:\s+pnpm/u,
+      env,
     )
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    try {
+      installation?.dispose()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-desktop-beta",
-  "version": "0.0.11-beta.1",
+  "version": "0.0.12-beta.1",
   "description": "e宝工坊 Beta: an Electron shell composed as a DeepSeek Harness Cordis plugin",
   "license": "MIT",
   "publishConfig": {
@@ -494,6 +494,11 @@
       ]
     },
     "win": {
+      "files": [
+        "!node_modules/@trycua/cua-driver-win32-arm64-msvc/**",
+        "!node_modules/@ubjs/node-win32-arm64-msvc/**",
+        "!node_modules/@deepseek-ai/libreoffice-kit-win32-arm64/**"
+      ],
       "asarUnpack": [
         "build/app-icon.png",
         "build/tray-icon-white.png",

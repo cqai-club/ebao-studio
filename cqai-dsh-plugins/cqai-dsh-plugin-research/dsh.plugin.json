@@ -1,0 +1,8 @@
+{
+  "id": "cqai-dsh-plugin-research",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "e研宝：academic-research-skills 数字员工",
+  "engines": { "dsh": ">=0.1.5-rc.1" },
+  "client": { "main": "./lib/client.js" }
+}

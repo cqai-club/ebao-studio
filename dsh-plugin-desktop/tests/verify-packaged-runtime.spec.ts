@@ -23,6 +23,7 @@ import {
   MAX_CUA_DRIVER_SMART_UNPACK_BYTES,
   MAX_UBJS_NODE_SMART_UNPACK_BYTES,
   MAX_COMPUTER_USE_SMART_UNPACK_FILES,
+  MAX_COMPUTER_USE_UNPACKED_RUNTIME_BYTES,
   MAX_LIBREOFFICE_KIT_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_FILES,
@@ -877,6 +878,53 @@ describe('packaged desktop runtime verification', () => {
     expect(() => verifySelectiveUnpackedRuntime(
       asarIndex(files.map(file => file.path)), '/build/resources/app.asar.unpacked', files,
     )).toThrow(`smart-unpack budget ${String(MAX_COMPUTER_USE_SMART_UNPACK_FILES)} files/${String(budget)} bytes`)
+  })
+
+  it('accepts the macOS universal Computer Use payload without losing the full inventory', () => {
+    // Aggregated physical bytes from the failed macOS universal CI package.
+    const files = [
+      { path: 'node_modules/node-pty/native.node', bytes: 588_813_104 },
+      { path: 'node_modules/@trycua/cua-driver-darwin-arm64/libcua_driver_sdk.dylib', bytes: 53_208_005 },
+      { path: 'node_modules/@trycua/cua-driver-darwin-x64/libcua_driver_sdk.dylib', bytes: 53_207_999 },
+      { path: 'node_modules/@ubjs/node-darwin-arm64/uniffi-runtime-napi.darwin-arm64.node', bytes: 838_246 },
+      { path: 'node_modules/@ubjs/node-darwin-x64/uniffi-runtime-napi.darwin-x64.node', bytes: 793_986 },
+    ]
+    const summary = verifySelectiveUnpackedRuntime(
+      asarIndex(files.map(file => file.path)), '/build/resources/app.asar.unpacked', files,
+    )
+    expect(summary.bytes).toBe(696_861_340)
+    expect(summary.files).toBe(files.length)
+  })
+
+  it('does not lend unused Computer Use byte allowance to the existing payload', () => {
+    const files = [
+      { path: 'node_modules/node-pty/native.node', bytes: MAX_UNPACKED_RUNTIME_BYTES },
+      { path: 'node_modules/@trycua/cua-driver-darwin-arm64/libcua_driver_sdk.dylib', bytes: 1 },
+    ]
+    const archive = asarIndex(files.map(file => file.path))
+    expect(() => verifySelectiveUnpackedRuntime(
+      archive, '/build/resources/app.asar.unpacked', files,
+    )).not.toThrow()
+    files[0]!.bytes += 1
+    expect(() => verifySelectiveUnpackedRuntime(
+      archive, '/build/resources/app.asar.unpacked', files,
+    )).toThrow(`exceeds selective ASAR byte budget ${String(MAX_UNPACKED_RUNTIME_BYTES)}`)
+  })
+
+  it('caps the combined reviewed Computer Use payload independently of ordinary bytes', () => {
+    const files = [
+      { path: 'node_modules/@trycua/cua-driver-darwin-arm64/native.node', bytes: MAX_CUA_DRIVER_SMART_UNPACK_BYTES },
+      { path: 'node_modules/@trycua/cua-driver-darwin-x64/native.node', bytes: MAX_CUA_DRIVER_SMART_UNPACK_BYTES },
+      { path: 'node_modules/@ubjs/node-darwin-arm64/native.node', bytes: MAX_UBJS_NODE_SMART_UNPACK_BYTES },
+      { path: 'node_modules/@ubjs/node-darwin-x64/native.node', bytes: MAX_UBJS_NODE_SMART_UNPACK_BYTES },
+    ]
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex(files.map(file => file.path)), '/build/resources/app.asar.unpacked', files,
+    )).not.toThrow()
+    files.push({ path: 'node_modules/@trycua/cua-driver-linux-x64-gnu/native.node', bytes: 1 })
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex(files.map(file => file.path)), '/build/resources/app.asar.unpacked', files,
+    )).toThrow(`exceeds combined Computer Use byte budget ${String(MAX_COMPUTER_USE_UNPACKED_RUNTIME_BYTES)}`)
   })
 
   it.each(REQUIRED_COMPUTER_USE_RUNTIME_ENTRIES)('keeps Computer Use module %s protected inside ASAR', path => {
