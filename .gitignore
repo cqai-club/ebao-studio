@@ -28,3 +28,9 @@ __pycache__/
 dsh-desktop-next/lib/
 dsh-desktop-next/dist/
 dsh-desktop-next/.desktop-next/
+
+# Scratch artifacts produced by the plugin publish gate:
+# `npm pack --json` output, packed tarballs, and the registry check.
+cqai-dsh-plugins/*/pack.json
+cqai-dsh-plugins/*/*.tgz
+/published.json
