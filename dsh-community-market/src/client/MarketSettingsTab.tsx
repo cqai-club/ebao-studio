@@ -2012,7 +2012,9 @@ function ItemActionModal({
           <div className="dshMarketDetails">
             <div className="dshMarketDetailsIntro">
               <PluginIcon item={value.item} large />
-              <MarketDescription text={value.item.description ?? value.item.summary} />
+              {value.item.description === undefined
+                ? <p className="dshMarketDescription">{value.item.summary}</p>
+                : <MarketDescription text={value.item.description} />}
             </div>
             {inventoryLoading && (
               <div className="dshMarketOperationProgress" role="status">
