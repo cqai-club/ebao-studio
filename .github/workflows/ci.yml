@@ -96,6 +96,9 @@ jobs:
       - name: Install Chromium for Next window regression
         if: needs.changes.outputs.product == 'true'
         run: yarn workspace dsh-desktop-next exec playwright install --with-deps chromium
+      - name: Verify Ebao home layout against the published frontend
+        if: needs.changes.outputs.product == 'true'
+        run: yarn workspace cqai-dsh-plugin-desktop-presentation test:layout
       - name: Verify Next window controls in the official frontend
         if: needs.changes.outputs.product == 'true'
         run: yarn workspace dsh-desktop-next verify:window-controls

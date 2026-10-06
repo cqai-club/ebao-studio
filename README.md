@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/ebao-desktop-workbench.jpg" alt="e宝工坊工作台与数字员工插件入口的真实截图" width="100%">
+  <img src="assets/ebao-desktop-home.jpg" alt="e宝工坊首页、E宝机器人与数字员工入口的真实截图" width="100%">
 </p>
 
-工作台与插件入口。截图中的「即将上线」入口暂不可用，实际可用功能取决于 Profile 与启用的插件。
+首页的 E宝机器人与数字员工入口。实际可用功能取决于 Profile 与启用的插件。
 
 # e宝工坊
 
@@ -16,7 +16,7 @@ e宝工坊是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
   <img src="assets/ebao-video-workbench.jpg" alt="e宝工坊 e剪宝已有口播视频制作表单的真实截图" width="100%">
 </p>
 
-e剪宝的已有口播视频制作表单，可选择素材、填写文案并调整制作设置。以上两张截图均采自 macOS Beta `v0.0.11-beta.1` 的中文界面。
+e剪宝的已有口播视频制作表单，可选择素材、填写文案并调整制作设置。以上两张截图均采自 macOS Beta `v0.0.12-beta.1` 的中文界面。
 
 ## 使用
 

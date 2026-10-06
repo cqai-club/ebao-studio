@@ -43,7 +43,8 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo No tests yet"
+    "test": "echo No tests yet",
+    "test:layout": "yarn build && node --test tests/home-layout.test.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
