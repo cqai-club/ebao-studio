@@ -35,6 +35,7 @@ import type {
   MarketStateResponse,
 } from '../api-types.js'
 import { marketMediaAssetUrl } from '../media/ref.js'
+import { MarketDescription } from './MarketDescription.js'
 import {
   executeMarketOperation,
   mutateMarketSource,
@@ -2011,7 +2012,7 @@ function ItemActionModal({
           <div className="dshMarketDetails">
             <div className="dshMarketDetailsIntro">
               <PluginIcon item={value.item} large />
-              <p>{value.item.description ?? value.item.summary}</p>
+              <MarketDescription text={value.item.description ?? value.item.summary} />
             </div>
             {inventoryLoading && (
               <div className="dshMarketOperationProgress" role="status">
