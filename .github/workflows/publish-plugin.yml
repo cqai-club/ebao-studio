@@ -1,14 +1,14 @@
 name: Publish plugin
 
 # Publish one CQAI DSH plugin package to the public npm registry, where the
-# Community Market resolves it. Optional plugins such as e研宝 are never part
-# of the Desktop install bundle, so this is the only path that makes them
-# installable for users.
+# Community Market resolves it. Only plugins maintained in this repository
+# use this workflow. External plugins such as e研宝 are released from their
+# standalone repositories.
 #
 # Two entry points:
 #   * workflow_dispatch with an explicit plugin directory and version.
 #   * a tag named `plugin-<package-name>-v<MAJOR.MINOR.PATCH>`, for example
-#     `plugin-cqai-dsh-plugin-research-v0.1.0`. The tag names both the package
+#     `plugin-cqai-dsh-plugin-imagegen-v0.1.0`. The tag names both the package
 #     and the version, so it can never publish the wrong artifact.
 #
 # Requires an npm automation token stored as the `NPM_TOKEN` repository secret
@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       plugin:
-        description: Workspace-relative plugin directory, e.g. cqai-dsh-plugins/cqai-dsh-plugin-research
+        description: Workspace-relative plugin directory, e.g. cqai-dsh-plugins/cqai-dsh-plugin-imagegen
         required: true
         type: string
       version:

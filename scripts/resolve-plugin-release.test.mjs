@@ -47,26 +47,26 @@ function resolveRelease(env) {
   }
 }
 
-const researchDir = 'cqai-dsh-plugins/cqai-dsh-plugin-research'
+const imagegenDir = 'cqai-dsh-plugins/cqai-dsh-plugin-imagegen'
 
 describe('resolve-plugin-release tag pushes', () => {
   it('maps a tag to the real workspace package directory', () => {
-    const result = resolveRelease({ EVENT_NAME: 'push', TAG_NAME: 'plugin-cqai-dsh-plugin-research-v0.1.0' })
+    const result = resolveRelease({ EVENT_NAME: 'push', TAG_NAME: 'plugin-cqai-dsh-plugin-imagegen-v0.1.0' })
     assert.equal(result.code, 0, result.stderr)
-    assert.equal(result.outputs.plugin_dir, researchDir)
-    assert.equal(result.outputs.package_name, 'cqai-dsh-plugin-research')
+    assert.equal(result.outputs.plugin_dir, imagegenDir)
+    assert.equal(result.outputs.package_name, 'cqai-dsh-plugin-imagegen')
     assert.equal(result.outputs.version, '0.1.0')
     assert.equal(result.outputs.dry_run, 'false')
   })
 
   it('refuses a package name absent from the workspace', () => {
-    const result = resolveRelease({ EVENT_NAME: 'push', TAG_NAME: 'plugin-not-a-real-package-v1.0.0' })
+    const result = resolveRelease({ EVENT_NAME: 'push', TAG_NAME: 'plugin-cqai-dsh-plugin-research-v0.2.3' })
     assert.equal(result.code, 1)
     assert.match(result.stderr, /no cqai-dsh-plugins\/\* package is named/u)
   })
 
   it('refuses a prerelease tag because the Market needs a stable version', () => {
-    const result = resolveRelease({ EVENT_NAME: 'push', TAG_NAME: 'plugin-cqai-dsh-plugin-research-v0.1.0-rc.1' })
+    const result = resolveRelease({ EVENT_NAME: 'push', TAG_NAME: 'plugin-cqai-dsh-plugin-imagegen-v0.1.0-rc.1' })
     assert.equal(result.code, 1)
     assert.match(result.stderr, /tag must look like/u)
   })
@@ -86,7 +86,7 @@ describe('resolve-plugin-release tag pushes', () => {
   it('never rehearses a tag push', () => {
     const result = resolveRelease({
       EVENT_NAME: 'push',
-      TAG_NAME: 'plugin-cqai-dsh-plugin-research-v0.1.0',
+      TAG_NAME: 'plugin-cqai-dsh-plugin-imagegen-v0.1.0',
       INPUT_DRY_RUN: 'true',
     })
     assert.equal(result.code, 0, result.stderr)
@@ -98,20 +98,20 @@ describe('resolve-plugin-release manual dispatch', () => {
   it('honors an explicit directory, version and rehearsal flag', () => {
     const result = resolveRelease({
       EVENT_NAME: 'workflow_dispatch',
-      INPUT_PLUGIN: researchDir,
+      INPUT_PLUGIN: imagegenDir,
       INPUT_VERSION: '0.1.0',
       INPUT_DRY_RUN: 'true',
     })
     assert.equal(result.code, 0, result.stderr)
-    assert.equal(result.outputs.plugin_dir, researchDir)
-    assert.equal(result.outputs.package_name, 'cqai-dsh-plugin-research')
+    assert.equal(result.outputs.plugin_dir, imagegenDir)
+    assert.equal(result.outputs.package_name, 'cqai-dsh-plugin-imagegen')
     assert.equal(result.outputs.dry_run, 'true')
   })
 
   it('treats an unset rehearsal flag as a real publish', () => {
     const result = resolveRelease({
       EVENT_NAME: 'workflow_dispatch',
-      INPUT_PLUGIN: researchDir,
+      INPUT_PLUGIN: imagegenDir,
       INPUT_VERSION: '0.1.0',
       INPUT_DRY_RUN: '',
     })
@@ -162,7 +162,7 @@ describe('resolve-plugin-release manual dispatch', () => {
   it('refuses a prerelease version', () => {
     const result = resolveRelease({
       EVENT_NAME: 'workflow_dispatch',
-      INPUT_PLUGIN: researchDir,
+      INPUT_PLUGIN: imagegenDir,
       INPUT_VERSION: '0.1.0-rc.1',
     })
     assert.equal(result.code, 1)
@@ -172,7 +172,7 @@ describe('resolve-plugin-release manual dispatch', () => {
   it('refuses a non-semver version', () => {
     const result = resolveRelease({
       EVENT_NAME: 'workflow_dispatch',
-      INPUT_PLUGIN: researchDir,
+      INPUT_PLUGIN: imagegenDir,
       INPUT_VERSION: 'v0.1.0',
     })
     assert.equal(result.code, 1)
@@ -182,7 +182,7 @@ describe('resolve-plugin-release manual dispatch', () => {
   it('refuses a plugin directory without a readable manifest', () => {
     const result = resolveRelease({
       EVENT_NAME: 'workflow_dispatch',
-      INPUT_PLUGIN: 'cqai-dsh-plugins/cqai-dsh-plugin-nonexistent',
+      INPUT_PLUGIN: 'cqai-dsh-plugins/cqai-dsh-plugin-research',
       INPUT_VERSION: '0.1.0',
     })
     assert.equal(result.code, 1)
