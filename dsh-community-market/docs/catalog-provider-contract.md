@@ -281,7 +281,9 @@ The Host performs catalog I/O only for the selected source. The icon asset servi
 ### Data and renderer boundary
 
 - Use strict schemas with unknown object properties rejected. Unknown major versions fail closed.
-- Treat names, descriptions, publisher claims, notices, and all other remote strings as untrusted plain text. Never inject them as HTML or Markdown with raw HTML enabled.
+- Treat names, descriptions, publisher claims, notices, and all other remote strings as untrusted text. Never inject them as HTML or enable Markdown raw HTML. The item `description` may contain a safe CommonMark subset: headings, paragraphs, ordered and unordered lists, emphasis, inline and fenced code, blockquotes, and user-activated credential-free HTTPS links on standard port 443. Raw HTML remains visible literal text; Markdown images display their alternate text without loading media. Other display fields remain plain text.
+- The v1 `plainText` transport schema is unchanged: LF, CR, other forbidden control characters, and bidirectional controls remain invalid. Providers retaining multiline description Markdown encode line boundaries as Unicode line or paragraph separators (`U+2028` / `U+2029`); the description renderer restores these boundaries before parsing. Single-line descriptions continue to render as ordinary paragraphs. This presentation neither fetches remote README files nor bypasses the Host icon-media resolver.
+- After parsing, all displayed text and link titles also neutralize forbidden control and bidirectional characters decoded from Markdown entities. Structural newlines and code indentation remain intact; decoding entities cannot bypass the display boundary.
 - Canonicalize package and repository identity before grouping or installation. Reject ambiguous, credential-bearing, or unsupported repository URLs.
 - Do not load remote scripts, adapter definitions, stylesheets, iframes, or executable mappings from a source manifest or snapshot. Remote icon candidates are fetched only by the Host media resolver; a normalized snapshot contains only opaque `assetRef` values.
 - Reject or visibly neutralize control characters and bidirectional text controls in display and confirmation fields. Open external HTTPS links only after a user gesture.
@@ -407,7 +409,7 @@ The current automated contract, adapter, Host, Client, media, and installation s
 | Security | DNS answer changes to a prohibited address | Connection blocked; source-specific safe error shown |
 | Security | Body is oversized, deeply invalid, non-JSON, slow, or contains unknown fields | Request aborted/rejected; no cache or renderer update |
 | Security | Icon redirects to a prohibited host, exceeds image limits, has a false media type, or fails decoding | Asset request becomes unavailable and Renderer uses its local placeholder; Renderer never contacts the remote host and the valid catalog item remains usable |
-| Security | Remote text contains HTML/script/Markdown injection | Displayed as inert text; no code or navigation executes |
+| Security | Remote description contains HTML/script, images, or unsafe Markdown links | HTML is literal text, images never load, unsafe links are inert; safe HTTPS links require a user gesture |
 | Security | Display text contains controls/Bidi spoofing, or an external link appears without a gesture | Unsafe text is rejected/neutralized; no link opens automatically |
 | Security | Source attempts to use cookies, auth, custom headers, or remote adapter code | Capability unavailable and input rejected |
 | Lifecycle | Selection changes, is cleared, or Host is disposed during fetch | Fetch aborts, resources release, session state resets when applicable, and no late result mutates state |

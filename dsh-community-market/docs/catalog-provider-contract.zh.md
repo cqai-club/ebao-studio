@@ -281,7 +281,9 @@ Host 只为当前已选来源执行目录 I/O。图标 asset service 同时最�
 ### 数据与 renderer 边界
 
 - 使用 strict schema，拒绝 object 的未知字段；遇到未知 major version 时关闭失败。
-- 名称、描述、publisher claim、notice 和其他远程字符串都按不可信纯文本处理；不得作为 HTML 注入，也不得启用 Markdown raw HTML。
+- 名称、描述、publisher claim、notice 和其他远程字符串都按不可信文本处理；不得作为 HTML 注入，也不得启用 Markdown raw HTML。条目的 `description` 可使用安全的 CommonMark 子集：标题、段落、有序与无序列表、强调、行内与围栏代码、引用，以及用户操作后打开的标准 443 端口无凭据 HTTPS 链接。原始 HTML 作为字面文本展示；Markdown 图片只展示替代文字，不加载媒体。其他展示字段仍按纯文本处理。
+- v1 的 `plainText` 传输 schema 保持不变：LF、CR、其他禁止的 control character 和双向文本控制符仍无效。Provider 保留多行 description Markdown 时，用 Unicode 行分隔符或段落分隔符（`U+2028` / `U+2029`）编码行边界；描述渲染器恢复这些边界后再解析。已有单行描述仍按普通段落展示。这种展示不获取远程 README，也不绕过 Host 图标媒体解析器。
+- 解析后，所有展示文本和链接标题还会中和 Markdown 字符实体解码产生的禁止控制字符与双向文本控制符。结构换行和代码缩进保持有效；字符实体解码不能绕过展示边界。
 - 分组或安装前必须规范化 package 与 repository identity。拒绝歧义、带 credentials 或不支持的 repository URL。
 - 不从来源 manifest 或 snapshot 加载远程 script、adapter definition、stylesheet、iframe 或可执行 mapping。远程图标候选只能由 Host 媒体解析器获取；标准化 snapshot 只能包含不透明 `assetRef`。
 - 拒绝或明确中和展示/确认字段中的 control character 与双向文本控制符。只有用户操作后才能打开外部 HTTPS 链接。
@@ -407,7 +409,7 @@ Provider 与 adapter 作者可以直接使用对应的[最小来源 manifest](ex
 | 安全 | DNS answer 变成禁止地址 | 阻止连接，并显示来源级安全错误 |
 | 安全 | Body 过大、深度非法、非 JSON、过慢或含未知字段 | 中止/拒绝请求，不更新 cache 或 renderer |
 | 安全 | 图标 redirect 到禁止 host、超过图片限制、media type 伪造或无法解码 | Asset 请求变为不可用，Renderer 改用本地占位图；Renderer 不接触远程 host，其余合法目录条目仍可用 |
-| 安全 | 远程文本包含 HTML/script/Markdown injection | 作为惰性文本展示，不执行代码或 navigation |
+| 安全 | 远程描述包含 HTML/script、图片或不安全 Markdown 链接 | HTML 作为字面文本，图片不加载，不安全链接不可操作；安全 HTTPS 链接只在用户操作后打开 |
 | 安全 | 展示文本包含 control/Bidi 欺骗，或外部链接没有用户操作 | 拒绝/中和不安全文本；不自动打开链接 |
 | 安全 | 来源尝试使用 cookie、auth、自定义 header 或远程 adapter 代码 | 该能力不存在，输入被拒绝 |
 | 生命周期 | 请求中切换/清空选择或 dispose Host | Fetch abort，释放资源，适用时重置会话，迟到结果不能修改状态 |
