@@ -38,20 +38,26 @@ describe('desktop client environment', () => {
     const effect = vi.fn()
     const inject = vi.fn()
     const register = vi.fn()
+    const injectServices = vi.fn()
     const ctx = {
+      remote: { pluginManager: { listPlugins: vi.fn(), setPluginEnabled: vi.fn() } },
       effect,
-      inject: vi.fn(),
+      inject: injectServices,
       slots: { inject, register },
       locale: { bind: () => (key: string) => key },
       configForms: { get: () => ({}) },
     } as unknown as ClientContext
     try {
       apply(ctx)
+      const mountComputerUse = injectServices.mock.calls.find(([dependencies]) => dependencies.includes('remote.pluginManager'))![1] as (scope: ClientContext) => void
+      mountComputerUse(ctx)
       expect(inject.mock.calls.map(([name]) => name)).toEqual([
         'sidebar.brand.mark',
         'conversation.hero.brand.mark',
         'settings.section',
         ...(platform === 'linux' ? [] : ['sidebar.footer.action']),
+        'plugins.item',
+        'plugins.detail.actions',
       ])
       const updateSeat = inject.mock.calls.find(([name]) => name === 'sidebar.footer.action')
       if (platform === 'linux') {
@@ -725,9 +731,11 @@ describe('sidebar footer stacking', () => {
       search: `?dsh-desktop-platform=darwin&dsh-desktop-mode=${mode}&dsh-desktop-version=2.0.3&dsh-desktop-material=off`,
     } })
     const effect = vi.fn()
+    const injectServices = vi.fn()
     const ctx = {
+      remote: { pluginManager: { listPlugins: vi.fn(), setPluginEnabled: vi.fn() } },
       effect,
-      inject: vi.fn(),
+      inject: injectServices,
       on: vi.fn(() => () => {}),
       reflect: { get: vi.fn(() => undefined), provide: vi.fn(() => () => {}) },
       theme: { getTheme: vi.fn(() => ({ active: { colorScheme: 'dark', tokens: {} } })) },
@@ -744,8 +752,16 @@ describe('sidebar footer stacking', () => {
 
     try {
       apply(ctx)
+      const mountComputerUse = injectServices.mock.calls.find(([dependencies]) => dependencies.includes('remote.pluginManager'))![1] as (scope: ClientContext) => void
+      mountComputerUse(ctx)
       expect(effect.mock.calls.map(([, label]) => label))
         .toContain('dsh-plugin-desktop: sidebar footer stacking styles')
+      expect(ctx.slots.register).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'plugins.item', id: 'desktop-computer-use',
+      }), expect.any(Function))
+      expect(ctx.slots.register).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'plugins.detail.actions', id: 'desktop-computer-use-toggle',
+      }), expect.any(Function))
     }
     finally {
       vi.unstubAllGlobals()

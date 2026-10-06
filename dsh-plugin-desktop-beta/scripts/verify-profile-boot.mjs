@@ -1,5 +1,6 @@
 /** Headless smoke for the complete published DSH Web profile and renderer manifest. */
 
+import assert from 'node:assert/strict'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -170,7 +171,6 @@ try {
       dshHome: home, stateRoot: join(home, 'aa-smoke-state'), uvPath: 'uv',
     } }] : []),
   ]
-  const patches = [...prepared.patches, ...prepared.overlays]
   const packageRoot = new URL('../', import.meta.url)
   const pnpmBinPath = fileURLToPath(new URL('node_modules/pnpm/bin/pnpm.mjs', packageRoot))
   const electronVersion = JSON.parse(
@@ -237,44 +237,48 @@ try {
     clearEnvironmentPath: pnpmRuntime.clearEnvironmentPath,
     dshBootstrapPath: fileURLToPath(new URL('../lib/desktop-cli.js', import.meta.url)),
   }
-  const profileBoot = createDesktopProfileBoot(prepared, pnpmBootstrap)
-  ctx = await boot(
-    BIN_NAME,
-    prepared.rootConfig,
-    patches,
-    async (host) => {
-      profileBoot.prepare(host)
-      // Match the public resolver path used by packaged Electron.
-      host.loader.internal = undefined
-      host.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([]))
-      host.provide('desktopBrowserAccess', BROWSER_ACCESS)
-      host.provide('desktopLanHttps', LAN_HTTPS)
-      host.provide('desktopRuntime', runtime)
-      host.provide('desktopPnpmBootstrap', pnpmBootstrap)
-      await host.plugin(DesktopProfileService, {
-        current: {
-          name: 'desktop',
-          dir: prepared.profile.dir,
-        },
-        list: () => [{
-          name: 'desktop',
-          dir: prepared.profile.dir,
-          exists: true,
-          bundles: prepared.profile.layers.map(layer => layer.packageName),
-          webCapable: true,
-        }],
-        persistSelection: () => {},
-        requestRestart: () => {},
-      })
-      provideCmdline(host, {
-        args: ['--host', '127.0.0.1', '--port', '0'],
-        exit: () => {},
-      })
-    },
-    prepared.bareModuleBaseUrl,
-  )
-  profileBoot.markReady()
-  await runtime.mountScheduled()
+  async function startProfile(preparedProfile) {
+    const profileBoot = createDesktopProfileBoot(preparedProfile, pnpmBootstrap)
+    const application = await boot(
+      BIN_NAME,
+      preparedProfile.rootConfig,
+      [...preparedProfile.patches, ...preparedProfile.overlays],
+      async (host) => {
+        profileBoot.prepare(host)
+        // Match the public resolver path used by packaged Electron.
+        host.loader.internal = undefined
+        host.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([]))
+        host.provide('desktopBrowserAccess', BROWSER_ACCESS)
+        host.provide('desktopLanHttps', LAN_HTTPS)
+        host.provide('desktopRuntime', runtime)
+        host.provide('desktopPnpmBootstrap', pnpmBootstrap)
+        await host.plugin(DesktopProfileService, {
+          current: {
+            name: 'desktop',
+            dir: preparedProfile.profile.dir,
+          },
+          list: () => [{
+            name: 'desktop',
+            dir: preparedProfile.profile.dir,
+            exists: true,
+            bundles: preparedProfile.profile.layers.map(layer => layer.packageName),
+            webCapable: true,
+          }],
+          persistSelection: () => {},
+          requestRestart: () => {},
+        })
+        provideCmdline(host, {
+          args: ['--host', '127.0.0.1', '--port', '0'],
+          exit: () => {},
+        })
+      },
+      preparedProfile.bareModuleBaseUrl,
+    )
+    profileBoot.markReady()
+    await runtime.mountScheduled()
+    return application
+  }
+  ctx = await startProfile(prepared)
 
   const imagegenEntry = [...ctx.loader.entries()]
     .find(entry => entry.options.name === 'cqai-dsh-plugin-imagegen')
@@ -340,6 +344,14 @@ try {
   if (ctx.get('pluginManager') === undefined) {
     throw new Error('Desktop Profile did not activate the official plugin manager')
   }
+  const nativeModule = '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'
+  const nativeRow = (await ctx.get('pluginManager').listPlugins()).find(row => row.moduleName === nativeModule)
+  assert.ok(nativeRow, 'Computer Use must be visible to the official plugin manager')
+  assert.equal(nativeRow.enabled, false, 'Native Computer Use must start off')
+  assert.equal(nativeRow.readOnlyReason, undefined, 'The native provider must remain manageable')
+  assert.ok(ctx.get('computerUse'), 'The Computer Use registry must be present')
+  assert.equal(ctx.get('computerUse').providerName, undefined)
+  assert.equal(ctx.tools.schemas().some(tool => tool.name.startsWith('cua_driver_native__')), false)
   // Resolve AND mount Creator: discovery alone cannot catch missing Host services.
   // 0.1.7 replaced `standingKeyFor` with `acquireScope`, a disposable revision
   // lease: the composition is mounted at registration and the lease still throws
@@ -577,6 +589,37 @@ try {
     '@deepseek-ai/dsh-client-ui-directory-picker-native',
   ]) {
     if (ids.has(id)) throw new Error(`assembled advanced Web graph unexpectedly includes ${id}`)
+  }
+  if (process.argv.includes('--computer-use')) {
+    // The installed SDK's create()/listToolsJson() only initialize the runtime
+    // and its catalog. Never execute a tool, capture, input, or permission request.
+    async function verifyNativeSelection(enabled) {
+      const row = (await ctx.get('pluginManager').listPlugins()).find(item => item.moduleName === nativeModule)
+      assert.ok(row, 'The native provider must survive profile recomposition')
+      assert.equal(row.enabled, enabled)
+      assert.equal(row.readOnlyReason, undefined)
+      assert.equal(ctx.get('computerUse').providerName, enabled ? 'cua-driver-native' : undefined)
+      const tools = ctx.tools.schemas().filter(tool => tool.name.startsWith('cua_driver_native__'))
+      if (enabled) {
+        assert.equal(row.fiberPhase, 'active', JSON.stringify(row))
+        assert.ok(tools.some(tool => tool.name === 'cua_driver_native__check_permissions'))
+        assert.ok(tools.some(tool => tool.name === 'cua_driver_native__get_window_state'))
+      } else assert.equal(tools.length, 0, 'Disabling must remove all native tools')
+      return row
+    }
+    for (const enabled of [true, false]) {
+      const row = (await ctx.get('pluginManager').listPlugins()).find(item => item.moduleName === nativeModule)
+      const outcome = await ctx.get('pluginManager').setPluginEnabled(row.entryId, enabled)
+      assert.equal(outcome.application, 'applied', JSON.stringify(outcome))
+      await verifyNativeSelection(enabled)
+      await ctx.fiber.dispose()
+      ctx = undefined
+      const restarted = prepareDesktopProfile('1', home, 'win32', undefined, undefined, undefined, { aaEnabled: aaRequested })
+      restarted.overlays = prepared.overlays
+      ctx = await startProfile(restarted)
+      await verifyNativeSelection(enabled)
+    }
+    process.stdout.write('verify-profile-boot: Native Computer Use catalog, enable/disable and restart persistence passed without executing tools\n')
   }
   process.stdout.write('verify-profile-boot: Creator, plugin manager and two Profile HMR generations passed\n')
 } finally {

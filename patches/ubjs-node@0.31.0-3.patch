@@ -1,0 +1,17 @@
+diff --git a/typescript/dist/resolve-lib.js b/typescript/dist/resolve-lib.js
+--- a/typescript/dist/resolve-lib.js
++++ b/typescript/dist/resolve-lib.js
+@@ -156,7 +156,12 @@
+             cause,
+         });
+     }
+-    const binaryPath = (0, node_path_1.join)((0, node_path_1.dirname)(pkgJsonPath), libFileName(crateName, process.platform));
++    const logicalPath = (0, node_path_1.join)((0, node_path_1.dirname)(pkgJsonPath), libFileName(crateName, process.platform));
++    // Cua's Rust loader requires an OS path; Electron's logical ASAR path
++    // cannot be passed to dlopen. Its platform package is explicitly unpacked.
++    const binaryPath = crateName === "cua_driver_sdk" && npmPackageBase === "@trycua/cua-driver-"
++        ? logicalPath.replace(/([\\/])app\.asar([\\/])/u, "$1app.asar.unpacked$2")
++        : logicalPath;
+     if (!(0, node_fs_1.existsSync)(binaryPath)) {
+         throw new ResolveLibPathError({
+             message: `Platform package "${pkgName}" is installed but does not contain ` +

@@ -202,6 +202,106 @@ describe('desktop profile composition', {
     ])
   })
 
+  it('keeps the three Schedule row controls disabled without selecting the optional bundle', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const manifestPath = join(dir, 'package.json')
+    const manifest = readFileSync(manifestPath, 'utf8')
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+    const rows = composeEntries([prepared.patches]).filter(row =>
+      ['time-context', 'schedule', 'ui-schedule'].includes(row.id ?? ''),
+    )
+
+    expect(rows).toEqual([
+      { id: 'time-context', name: '@deepseek-ai/dsh-time-context', disabled: true },
+      { id: 'schedule', name: '@deepseek-ai/dsh-schedule', disabled: true },
+      { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule', disabled: true },
+    ])
+    expect(prepared.profile.layers.some(layer =>
+      layer.packageName === '@deepseek-ai/dsh-experimental-schedule-bundle',
+    )).toBe(false)
+    expect(readFileSync(manifestPath, 'utf8')).toBe(manifest)
+  })
+
+  it('preserves saved Schedule row enables and composes pending row edits without persisting them', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const patchPath = join(dir, 'cordis.patch.yml')
+    const saved = JSON.stringify([
+      { id: 'time-context', disabled: false, config: { timeZone: 'Asia/Shanghai' } },
+      { id: 'schedule', disabled: false, config: { deliveryHistoryDays: 14 } },
+      { id: 'ui-schedule', disabled: false },
+    ]) + '\n'
+    writeFileSync(patchPath, saved)
+    const rows = composeEntries([prepareDesktopProfile(undefined, home, 'darwin').patches])
+
+    expect(rows.find(row => row.id === 'time-context')).toMatchObject({
+      disabled: false, config: { timeZone: 'Asia/Shanghai' },
+    })
+    expect(rows.find(row => row.id === 'schedule')).toMatchObject({
+      disabled: false, config: { deliveryHistoryDays: 14 },
+    })
+    expect(rows.find(row => row.id === 'ui-schedule')?.disabled).toBe(false)
+
+    const pending = prepareDesktopProfile(undefined, home, 'darwin', undefined, undefined, undefined, {
+      profilePatches: [{ id: 'ui-schedule', disabled: false }],
+    })
+    const pendingRows = composeEntries([pending.patches])
+    expect(pendingRows.find(row => row.id === 'time-context')?.disabled).toBe(true)
+    expect(pendingRows.find(row => row.id === 'schedule')?.disabled).toBe(true)
+    expect(pendingRows.find(row => row.id === 'ui-schedule')?.disabled).toBe(false)
+    expect(readFileSync(patchPath, 'utf8')).toBe(saved)
+  })
+
+  it('applies machine Schedule row overrides after the active Profile patch', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    writeFileSync(join(dir, 'cordis.patch.yml'), JSON.stringify([
+      { id: 'schedule', disabled: true, config: { deliveryHistoryDays: 14 } },
+    ]) + '\n')
+    writeFileSync(join(home, 'cordis.patch.yml'), JSON.stringify([
+      { id: 'schedule', disabled: false, config: { deliveryHistoryDays: 90 } },
+    ]) + '\n')
+
+    const rows = composeEntries([prepareDesktopProfile(undefined, home, 'darwin').patches])
+    expect(rows.find(row => row.id === 'schedule')).toMatchObject({
+      disabled: false, config: { deliveryHistoryDays: 90 },
+    })
+    expect(rows.find(row => row.id === 'time-context')?.disabled).toBe(true)
+    expect(rows.find(row => row.id === 'ui-schedule')?.disabled).toBe(true)
+  })
+
+  it('uses the selected Schedule bundle once and lets later row patches override its defaults', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const manifestPath = join(dir, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      dsh: { profile: { bundles: string[] } }
+    }
+    manifest.dsh.profile.bundles.push('@deepseek-ai/dsh-experimental-schedule-bundle')
+    writeFileSync(manifestPath, JSON.stringify(manifest, undefined, 2) + '\n')
+    const selected = prepareDesktopProfile(undefined, home, 'darwin')
+    const rows = composeEntries([selected.patches]).filter(row =>
+      ['time-context', 'schedule', 'ui-schedule'].includes(row.id ?? ''),
+    )
+    expect(rows).toHaveLength(3)
+    expect(rows.map(row => row.disabled ?? false)).toEqual([false, false, false])
+
+    writeFileSync(join(dir, 'cordis.patch.yml'), JSON.stringify([
+      { id: 'schedule', disabled: true },
+      { id: 'time-context', config: { timeZone: 'Asia/Shanghai' } },
+    ]) + '\n')
+    const editedRows = composeEntries([prepareDesktopProfile(undefined, home, 'darwin').patches]).filter(row =>
+      ['time-context', 'schedule', 'ui-schedule'].includes(row.id ?? ''),
+    )
+    expect(editedRows).toHaveLength(3)
+    expect(editedRows.find(row => row.id === 'schedule')?.disabled).toBe(true)
+    expect(editedRows.find(row => row.id === 'time-context')).toMatchObject({
+      config: { timeZone: 'Asia/Shanghai' },
+    })
+    expect(editedRows.find(row => row.id === 'ui-schedule')?.disabled ?? false).toBe(false)
+  })
+
   it('removes the old bundled activities row but preserves a later manual install', () => {
     const packageName = '@cqaiclub/dsh-plugin-activities'
     const home = temporaryHome()

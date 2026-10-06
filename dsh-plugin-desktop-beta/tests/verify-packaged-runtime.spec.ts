@@ -20,6 +20,9 @@ import {
   indexPackagedAsarHeader,
   listDesktopRuntimeEntries,
   MAX_DATAIKU_UV_SMART_UNPACK_BYTES,
+  MAX_CUA_DRIVER_SMART_UNPACK_BYTES,
+  MAX_UBJS_NODE_SMART_UNPACK_BYTES,
+  MAX_COMPUTER_USE_SMART_UNPACK_FILES,
   MAX_LIBREOFFICE_KIT_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_BYTES,
   MAX_PNPM_SMART_UNPACK_FILES,
@@ -28,6 +31,8 @@ import {
   MAX_UNPACKED_RUNTIME_FILES,
   preparePackagedMacExecutables,
   REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
+  REQUIRED_COMPUTER_USE_RUNTIME_ENTRIES,
+  REQUIRED_COMPUTER_USE_NATIVE_ENTRIES,
   REQUIRED_CQAI_IMAGEGEN_RUNTIME_ENTRIES,
   REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
   REQUIRED_DSH_IM_RUNTIME_ENTRIES,
@@ -150,6 +155,8 @@ function completeArchiveEntries(): string[] {
     ...Object.values(REQUIRED_POSIX_FS_EXT_ENTRIES.darwin),
     ...Object.values(REQUIRED_POSIX_FS_EXT_ENTRIES.linux),
     ...REQUIRED_MACOS_UNIVERSAL_ENTRIES,
+    ...Object.values(REQUIRED_COMPUTER_USE_NATIVE_ENTRIES.win32).flat(),
+    ...Object.values(REQUIRED_COMPUTER_USE_NATIVE_ENTRIES.linux).flat(),
   ])]
 }
 
@@ -163,6 +170,7 @@ function requiredPhysicalEntries(runtimeContext: PackagedRuntimeContext): string
     return [
       ...desktopAssets,
       ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
+      ...REQUIRED_COMPUTER_USE_NATIVE_ENTRIES.win32.x64,
     ]
   }
   if (runtimeContext.electronPlatformName === 'darwin' && runtimeContext.arch === 4) {
@@ -175,6 +183,7 @@ function requiredPhysicalEntries(runtimeContext: PackagedRuntimeContext): string
     return [
       ...desktopAssets,
       REQUIRED_POSIX_FS_EXT_ENTRIES[runtimeContext.electronPlatformName][architecture],
+      ...REQUIRED_COMPUTER_USE_NATIVE_ENTRIES[runtimeContext.electronPlatformName][architecture],
     ]
   }
   return [...desktopAssets]
@@ -773,10 +782,12 @@ describe('packaged desktop runtime verification', () => {
     expect(requiredPhysicalEntries(mac)).toEqual([
       ...REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES,
       REQUIRED_POSIX_FS_EXT_ENTRIES.darwin.arm64,
+      ...REQUIRED_COMPUTER_USE_NATIVE_ENTRIES.darwin.arm64,
     ])
     expect(requiredPhysicalEntries(windows)).toEqual([
       ...REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES,
       ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
+      ...REQUIRED_COMPUTER_USE_NATIVE_ENTRIES.win32.x64,
     ])
     expect(requiredPhysicalEntries(mac)).not.toContain('build/app-icon.png')
     expect(requiredPhysicalEntries(windows)).not.toContain('build/app-icon-mac.png')
@@ -814,6 +825,65 @@ describe('packaged desktop runtime verification', () => {
       '4 files/100 bytes; node_modules/node-pty=2 files/50 bytes, '
       + 'node_modules/@vscode/ripgrep-win32-x64=1 files/40 bytes, desktop/build=1 files/10 bytes',
     )
+  })
+
+  it.each([
+    ['darwin', 4, 'node_modules/@trycua/cua-driver-darwin-x64/libcua_driver_sdk.dylib'],
+    ['darwin', 3, 'node_modules/@trycua/cua-driver-darwin-arm64/cua_driver_node_runtime.node'],
+    ['win32', 1, 'node_modules/@trycua/cua-driver-win32-x64-msvc/cua_driver_sdk.dll'],
+    ['linux', 1, 'node_modules/@trycua/cua-driver-linux-x64-gnu/libcua_driver_sdk.so'],
+    ['linux', 3, 'node_modules/@ubjs/node-linux-arm64-gnu/uniffi-runtime-napi.linux-arm64-gnu.node'],
+  ] as const)('requires Computer Use native payloads physically outside ASAR on %s/%s', (platform, arch, missing) => {
+    const runtimeContext = context('/build', platform, arch)
+    const fixture = physicalFixture(runtimeContext, { missing })
+    expect(() => verifyPackagedRuntime(
+      runtimeContext,
+      headerReader(completeArchiveEntries(), requiredPhysicalEntries(runtimeContext)),
+      fixture.exists, () => fixture.files,
+    )).toThrow(`missing required physical entries: ${missing}`)
+  })
+
+  it('accepts only reviewed Computer Use platform roots while retaining per-package bounds', () => {
+    const files = [
+      { path: 'node_modules/@trycua/cua-driver-darwin-arm64/libcua_driver_sdk.dylib', bytes: 51_494_720 },
+      { path: 'node_modules/@trycua/cua-driver-darwin-arm64/cua_driver_node_runtime.node', bytes: 1_712_272 },
+      { path: 'node_modules/@trycua/cua-driver-darwin-arm64/package.json', bytes: 482 },
+      { path: 'node_modules/@ubjs/node-darwin-arm64/uniffi-runtime-napi.darwin-arm64.node', bytes: 837_472 },
+    ]
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex(files.map(file => file.path)), '/build/resources/app.asar.unpacked', files,
+    )).not.toThrow()
+    for (const root of ['@trycua/cua-driver-unreviewed', '@ubjs/node-unreviewed']) {
+      const path = `node_modules/${root}/native.node`
+      expect(() => verifySelectiveUnpackedRuntime(
+        asarIndex([path]), '/build/resources/app.asar.unpacked', [{ path, bytes: 1 }],
+      )).toThrow(`non-allowlisted package roots: node_modules/${root}`)
+    }
+  })
+
+  it.each([
+    ['node_modules/@trycua/cua-driver-darwin-arm64', MAX_CUA_DRIVER_SMART_UNPACK_BYTES],
+    ['node_modules/@ubjs/node-darwin-arm64', MAX_UBJS_NODE_SMART_UNPACK_BYTES],
+  ] as const)('caps bytes and file count for Computer Use platform package %s', (root, budget) => {
+    const path = `${root}/native.node`
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([path]), '/build/resources/app.asar.unpacked', [{ path, bytes: budget }],
+    )).not.toThrow()
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([path]), '/build/resources/app.asar.unpacked', [{ path, bytes: budget + 1 }],
+    )).toThrow(`smart-unpack budget ${String(MAX_COMPUTER_USE_SMART_UNPACK_FILES)} files/${String(budget)} bytes`)
+    const files = Array.from({ length: MAX_COMPUTER_USE_SMART_UNPACK_FILES + 1 }, (_, index) => ({
+      path: `${root}/native-${String(index)}.node`, bytes: 1,
+    }))
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex(files.map(file => file.path)), '/build/resources/app.asar.unpacked', files,
+    )).toThrow(`smart-unpack budget ${String(MAX_COMPUTER_USE_SMART_UNPACK_FILES)} files/${String(budget)} bytes`)
+  })
+
+  it.each(REQUIRED_COMPUTER_USE_RUNTIME_ENTRIES)('keeps Computer Use module %s protected inside ASAR', path => {
+    expect(() => verifySelectiveUnpackedRuntime(
+      asarIndex([path]), '/build/resources/app.asar.unpacked', [{ path, bytes: 1 }],
+    )).toThrow(`mirrors ordinary archived modules: ${path}`)
   })
 
   it('keeps the reviewed smart-unpack surface explicit', () => {

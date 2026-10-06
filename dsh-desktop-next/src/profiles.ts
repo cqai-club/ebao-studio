@@ -2,7 +2,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { initProfile, loadOverlayPatches, loadProfileDirectory, PROFILE_TEMPLATES, readProfilePatches, type Profile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import { bundlePatchPaths, composeEntries, initProfile, loadOverlayPatches, loadProfileDirectory, PROFILE_TEMPLATES, readProfileManifest, readProfilePatches, resolveBundleDir, type Profile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { atomicJson, atomicText, readPrivateFile } from './private-files.ts'
 import { NextRecovery } from './recovery.ts'
@@ -224,6 +224,21 @@ export class NextProfiles {
   }
 }
 
+/** Keep the existing Schedule row controls available until the optional bundle is selected. */
+function nextCapabilityPatches(profile: Profile, installAnchor: string): Profile['patches'] {
+  const patches = loadOverlayPatches('dsh-desktop-next', NEXT_BUNDLE_PATCH)
+  const scheduleBundle = '@deepseek-ai/dsh-experimental-schedule-bundle'
+  if (profile.layers.some(layer => layer.packageName === scheduleBundle)) return patches
+  // 0.2 moved these rows out of Web. Reuse the shipped definitions with an
+  // opt-in default, before profile/home overrides and the manager's row edits.
+  const directory = resolveBundleDir('dsh-desktop-next', scheduleBundle, installAnchor, profile.dir)
+  const bundle = readProfileManifest('dsh-desktop-next', directory).dsh?.bundle
+  if (bundle === undefined) throw new Error('Schedule bundle has no patch declaration')
+  const rows = composeEntries(bundlePatchPaths(directory, bundle).map(path => loadOverlayPatches('dsh-desktop-next', path)))
+  patches.push({ insert: rows.map(row => ({ ...row, disabled: true })) })
+  return patches
+}
+
 /** Add product capabilities without replacing the upstream Web presentation. */
 export function loadNextProfile(projectDir: string, home: string, installAnchor = NEXT_PACKAGE): Profile {
   const manager = new NextProfiles(home)
@@ -244,7 +259,7 @@ export function loadNextProfile(projectDir: string, home: string, installAnchor 
   if (!lstatSync(link, { throwIfNoEntry: false })) symlinkSync(target, link, 'junction')
   const profile = loadProfileDirectory('dsh-desktop-next', projectDir, installAnchor)
   profile.layers.push({ packageName: 'dsh-desktop-next', packageDir: target,
-    patchPaths: [NEXT_BUNDLE_PATCH], patches: loadOverlayPatches('dsh-desktop-next', NEXT_BUNDLE_PATCH) })
+    patchPaths: [NEXT_BUNDLE_PATCH], patches: nextCapabilityPatches(profile, installAnchor) })
   const overlay = [
     { id: 'agents-anywhere-bridge-next', config: {
       dshHome: home,
@@ -261,7 +276,7 @@ export function loadNextProfile(projectDir: string, home: string, installAnchor 
 export function readNextProfilePatches(projectDir: string, home: string, overlays: readonly string[], profilePatches?: readonly Profile['patches'][number][]) {
   const profile = loadProfileDirectory('dsh-desktop-next', projectDir, NEXT_PACKAGE, { userLayer: false })
   profile.layers.push({ packageName: 'dsh-desktop-next', packageDir: dirname(NEXT_PACKAGE),
-    patchPaths: [NEXT_BUNDLE_PATCH], patches: loadOverlayPatches('dsh-desktop-next', NEXT_BUNDLE_PATCH) })
+    patchPaths: [NEXT_BUNDLE_PATCH], patches: nextCapabilityPatches(profile, NEXT_PACKAGE) })
   profile.patches = profilePatches === undefined
     ? existsSync(profile.patchPath) ? loadOverlayPatches('dsh-desktop-next', profile.patchPath) : []
     : [...profilePatches]
