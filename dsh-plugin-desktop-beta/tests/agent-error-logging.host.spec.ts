@@ -28,10 +28,10 @@ it('writes a plugin-reported agent failure to the real Host log files', async ()
   let pnpm: ReturnType<typeof installDesktopPnpmRuntime> | undefined
   let stderr = ''
   try {
-    writeFileSync(join(home, 'settings.yaml'), 'dsh-desktop:\n  mode: advanced\nagent-presets:\n  default: minimal\n')
+    writeFileSync(join(home, 'settings.yaml'), 'dsh-desktop:\n  mode: advanced\n  port: 0\nagent-presets:\n  default: minimal\n')
     const prepared = prepareDesktopProfile('1', home, 'win32', undefined, undefined, undefined, { aaEnabled: false })
     prepared.overlays = []
-    prepared.port = 0
+    expect(prepared.port).toBe(0)
 
     // A real server-side plugin. Its `apply` runs inside the Host's plugin
     // tree, so this emit takes the same route agent-loop's failure report does
