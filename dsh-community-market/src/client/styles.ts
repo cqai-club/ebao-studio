@@ -497,7 +497,7 @@ const css = `
   gap: 14px;
 }
 
-.dshMarketDetailsIntro > p {
+.dshMarketDetailsIntro > .dshMarketDescription {
   min-width: 0;
   flex: 1;
 }
@@ -507,6 +507,91 @@ const css = `
   color: var(--dsw-alias-label-primary);
   font-size: 14px;
   line-height: 22px;
+  white-space: pre-wrap;
+}
+
+.dshMarketDescription {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.dshMarketDetails .dshMarketDescription p {
+  white-space: normal;
+}
+
+.dshMarketDetails .dshMarketDescription > * + * {
+  margin-top: 12px;
+}
+
+.dshMarketDescription h1,
+.dshMarketDescription h2,
+.dshMarketDescription h3,
+.dshMarketDescription h4,
+.dshMarketDescription h5,
+.dshMarketDescription h6 {
+  margin-bottom: 8px;
+  font-size: 15px;
+  line-height: 23px;
+  font-weight: 600;
+}
+
+.dshMarketDescription > :first-child {
+  margin-top: 0;
+}
+
+.dshMarketDescription ul,
+.dshMarketDescription ol {
+  margin-bottom: 0;
+  padding-left: 24px;
+}
+
+.dshMarketDescription li + li,
+.dshMarketDetails .dshMarketDescription li > * + * {
+  margin-top: 4px;
+}
+
+.dshMarketDescription a {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dshMarketDescription a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.dshMarketDescription code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-family: var(--dsw-font-family-code, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 12px;
+}
+
+.dshMarketDescription pre {
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  white-space: pre-wrap;
+}
+
+.dshMarketDescription pre code {
+  padding: 0;
+}
+
+.dshMarketDescription blockquote {
+  margin-right: 0;
+  margin-left: 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--dsw-alias-border-l2);
+}
+
+.dshMarketDescriptionLiteral {
   white-space: pre-wrap;
 }
 
