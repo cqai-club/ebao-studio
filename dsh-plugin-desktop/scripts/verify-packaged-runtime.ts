@@ -73,7 +73,7 @@ const PNPM_RUNTIME_VERSION = packageVersion(PNPM_PACKAGE_ROOT)
 /** Maximum physical file count accepted beside ASAR after smart unpack. */
 export const MAX_UNPACKED_RUNTIME_FILES = 2_000
 
-/** Maximum physical payload accepted beside ASAR after smart unpack. */
+/** Maximum existing payload beside ASAR, before the separately bounded Computer Use native payload. */
 export const MAX_UNPACKED_RUNTIME_BYTES = 600 * 1024 * 1024
 
 /** Narrow ceiling for pnpm's smart-unpacked native-helper package root. */
@@ -92,9 +92,13 @@ export const MAX_CUA_DRIVER_SMART_UNPACK_BYTES = 64 * 1024 * 1024
 export const MAX_UBJS_NODE_SMART_UNPACK_BYTES = 8 * 1024 * 1024
 export const MAX_COMPUTER_USE_SMART_UNPACK_FILES = 8
 
-/** Package roots electron-builder may smart-unpack as one indivisible unit. */
-export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
-  // Only the SDK's reviewed release-platform packages may leave ASAR.
+/** A universal app carries at most two reviewed SDK and UniFFI architectures. */
+export const MAX_COMPUTER_USE_UNPACKED_RUNTIME_BYTES = 2 * (
+  MAX_CUA_DRIVER_SMART_UNPACK_BYTES + MAX_UBJS_NODE_SMART_UNPACK_BYTES
+)
+
+/** Only these reviewed native packages receive the separate Computer Use byte allowance. */
+const REVIEWED_COMPUTER_USE_SMART_UNPACK_PACKAGE_ROOTS = [
   'node_modules/@trycua/cua-driver-darwin-arm64',
   'node_modules/@trycua/cua-driver-darwin-x64',
   'node_modules/@trycua/cua-driver-win32-x64-msvc',
@@ -105,6 +109,11 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
   'node_modules/@ubjs/node-win32-x64-msvc',
   'node_modules/@ubjs/node-linux-arm64-gnu',
   'node_modules/@ubjs/node-linux-x64-gnu',
+] as const
+
+/** Package roots electron-builder may smart-unpack as one indivisible unit. */
+export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
+  ...REVIEWED_COMPUTER_USE_SMART_UNPACK_PACKAGE_ROOTS,
   // Agents Anywhere launches its bundled Python connector through uv.
   'node_modules/@dataiku/uv-darwin-arm64',
   'node_modules/@dataiku/uv-darwin-x64',
@@ -933,9 +942,18 @@ export function verifySelectiveUnpackedRuntime(
       `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds selective ASAR file budget ${String(MAX_UNPACKED_RUNTIME_FILES)}; inventory: ${inventory}`,
     )
   }
-  if (summary.bytes > MAX_UNPACKED_RUNTIME_BYTES) {
+  const computerUseBytes = summary.groups
+    .filter(group => REVIEWED_COMPUTER_USE_SMART_UNPACK_PACKAGE_ROOTS.some(root => root === group.root))
+    .reduce((bytes, group) => bytes + group.bytes, 0)
+  if (computerUseBytes > MAX_COMPUTER_USE_UNPACKED_RUNTIME_BYTES) {
     throw new Error(
-      `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds selective ASAR byte budget ${String(MAX_UNPACKED_RUNTIME_BYTES)}; inventory: ${inventory}`,
+      `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds combined Computer Use byte budget ${String(MAX_COMPUTER_USE_UNPACKED_RUNTIME_BYTES)}; inventory: ${inventory}`,
+    )
+  }
+  const existingPayloadBytes = summary.bytes - computerUseBytes
+  if (existingPayloadBytes > MAX_UNPACKED_RUNTIME_BYTES) {
+    throw new Error(
+      `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds selective ASAR byte budget ${String(MAX_UNPACKED_RUNTIME_BYTES)} for existing payload (${String(existingPayloadBytes)} bytes); separately bounded Computer Use payload: ${String(computerUseBytes)} bytes; inventory: ${inventory}`,
     )
   }
   return summary
