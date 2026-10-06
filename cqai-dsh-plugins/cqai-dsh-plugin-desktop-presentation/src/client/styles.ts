@@ -22,25 +22,31 @@ const COVER_CSS = Object.entries(coverImages).map(([id, url]) => {
 
 const HERO_HOME = 'body:is([data-dsh-desktop-mode="extended"],[data-dsh-desktop-mode="advanced"]) [data-conversation-content][data-content-phase="hero"]:has(.eBaoHeroSlot):not(:has([data-office-ppt-template-panel]))'
 const HERO_PPT = 'body:is([data-dsh-desktop-mode="extended"],[data-dsh-desktop-mode="advanced"]) [data-conversation-content][data-content-phase="hero"]:has(.eBaoHeroSlot):has([data-office-ppt-template-panel])'
+// Locate the published HeroShell through the renderer's public slot anchor.
+// Upstream CSS Module class names change when its client bundle is rebuilt.
+const HERO_SLOT = '[data-slot="conversation.hero.headline"]'
+const HERO_HEADLINE = `${HERO_HOME} div:has(> span > span > ${HERO_SLOT}):has(.eBaoHeroSlot)`
+const HERO_TITLE_GROUP = `${HERO_HOME} span:has(> span > ${HERO_SLOT}):has(.eBaoHeroSlot)`
+const HERO_ROOT = `${HERO_HOME} div:has(> div > div > span > span > ${HERO_SLOT}):has(.eBaoHeroSlot)`
 
 const CSS = `
 /* Keep navigation quiet while the same plugin artwork stays colorful elsewhere. */
 [data-pane="sidebar"] .cqai-plugin-panel-icon { filter: grayscale(1) contrast(1.2); }
 
 /* The pinned HeroShell owns the brand mark and preview badge outside the headline slot. */
-${HERO_HOME} .zNic4G_headline:has(.eBaoHeroSlot) > .zNic4G_fishHitbox,
-${HERO_HOME} .zNic4G_headline:has(.eBaoHeroSlot) .zNic4G_previewBadge {
+${HERO_HEADLINE} > span:not(:has(.eBaoHeroSlot)),
+${HERO_TITLE_GROUP} > span:not(:has(.eBaoHeroSlot)) {
   display: none;
 }
-${HERO_HOME} .zNic4G_root:has(.eBaoHeroSlot) { container: eBaoHero / inline-size; }
-${HERO_HOME} .zNic4G_headline:has(.eBaoHeroSlot) {
+${HERO_ROOT} { container: eBaoHero / inline-size; }
+${HERO_HEADLINE} {
   align-self: center;
   width: max(0px, calc(var(--dsh-conversation-column-width, 100%) - 60px));
   max-width: 1480px;
   flex: none;
 }
-${HERO_HOME} .zNic4G_titleGroup:has(.eBaoHeroSlot),
-${HERO_HOME} span:has(> .eBaoHeroSlot) { display: block; width: 100%; }
+${HERO_TITLE_GROUP},
+${HERO_HOME} span:has(> ${HERO_SLOT}):has(.eBaoHeroSlot) { display: block; width: 100%; }
 .eBaoHeroSlot {
   box-sizing: border-box;
   display: flex;

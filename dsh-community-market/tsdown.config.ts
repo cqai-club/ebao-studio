@@ -14,6 +14,7 @@ export default defineConfig({
     dts: false,
     clean: false,
     sourcemap: true,
+    deps: { alwaysBundle: ['mdast-util-from-markdown'] },
     external: [
       'react',
       'react/jsx-runtime',

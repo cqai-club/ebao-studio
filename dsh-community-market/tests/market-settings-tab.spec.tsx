@@ -409,6 +409,40 @@ describe('MarketSettingsTab', () => {
     })).toBeTruthy()
   })
 
+  it.each([
+    '[tools]: https://example.org',
+    'Literal **asterisks** and [Project](https://example.org/project) in a summary',
+  ])('preserves the complete summary as plain text when description is absent: %s', async summary => {
+    const item = makeItem(firstSource)
+    delete item.description
+    item.summary = summary
+    vi.mocked(readMarketState).mockResolvedValue(enabledState)
+    vi.mocked(readMarketCatalog).mockResolvedValue(catalogForSource(firstSource, [item]))
+    render(<MarketSettingsTab {...props} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Fixture Plugin/u }))
+    const dialog = screen.getByRole('dialog', { name: item.displayName })
+    const summaryText = within(dialog).getByText(summary)
+    expect(summaryText.textContent).toBe(summary)
+    expect(summaryText.querySelector('strong, a')).toBeNull()
+  })
+
+  it('renders description Markdown instead of the plain summary in the details dialog', async () => {
+    const item = makeItem(firstSource)
+    item.summary = 'Summary fallback that should stay on the card.'
+    item.description = '## Workbench details\u2028\u2028Use **four skills**.\u2028\u2028[Project](https://example.org/project)'
+    vi.mocked(readMarketState).mockResolvedValue(enabledState)
+    vi.mocked(readMarketCatalog).mockResolvedValue(catalogForSource(firstSource, [item]))
+    render(<MarketSettingsTab {...props} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Fixture Plugin/u }))
+    const dialog = screen.getByRole('dialog', { name: item.displayName })
+    expect(within(dialog).getByRole('heading', { level: 2, name: 'Workbench details' })).toBeTruthy()
+    expect(within(dialog).getByText('four skills').tagName).toBe('STRONG')
+    expect(within(dialog).getByRole('link', { name: 'Project' }).getAttribute('href')).toBe('https://example.org/project')
+    expect(within(dialog).queryByText(item.summary)).toBeNull()
+  })
+
   it('keeps the official plugin glyph when a same-origin icon cannot be loaded', async () => {
     vi.mocked(readMarketState).mockResolvedValue(enabledState)
     vi.mocked(readMarketCatalog).mockResolvedValue(catalog)
