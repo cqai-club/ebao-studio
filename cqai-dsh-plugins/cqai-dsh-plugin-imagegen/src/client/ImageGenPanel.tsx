@@ -7,7 +7,7 @@
  * a platform module) so the studio matches the dsh shell look by construction.
  */
 
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -16,8 +16,15 @@ import { errorMessage, tt } from './helpers.ts'
 import { TemplateLibrary } from './TemplateLibrary.tsx'
 import { GooeyNav } from './GooeyNav.tsx'
 import { CanvasWorkspace } from './CanvasWorkspace.tsx'
+import { EcommerceHistoryMenu } from './EcommerceHistoryMenu.tsx'
+import { ecommerceHistoryCopy as ec } from './ecommerce-history-copy.ts'
+import { useEcommerceHistory } from './use-ecommerce-history.ts'
+import { EcommerceImagePrompt } from './EcommerceImagePrompt.tsx'
+import { ecommerceResultPrompt, type EcommerceResultPrompt } from './ecommerce-result-prompt.ts'
+import type { EcommerceRun, EcommerceSlotStatus } from '../ecommerce-run-protocol.ts'
 import { useImageGenLanguageTick } from './use-language.ts'
 import { buildNormalGenerationStream, isNormalGeneration, normalizeSize } from './normal-generation-stream.ts'
+import { listAdditionalGenerationHistory, mergeGenerationOverview, preserveGenerationHistoryHashes, type GenerationOverviewEntry } from './generation-overview.ts'
 import { createTaskPollingState, mergeTaskSummaries } from './generation-task-poll.ts'
 import { ecommerceSlotPrompt } from './ecommerce-prompts.ts'
 import type { CqaiImageProviderView, EcommerceRefRole, GeneratedImage, GenerateMode, GenerateRequest, GenerationTask, GenerationTaskStatus, HistoryEntry, HistoryImageRef, ProductSetDraft, ProductSetSlot } from '../protocol.ts'
@@ -72,8 +79,7 @@ const ECOMMERCE_DRAFT_STORAGE_KEY = 'dsh-imagegen-ecommerce-draft'
 const ECOMMERCE_ASSET_ROLES = ['product', 'packaging', 'detail', 'style'] as const
 type EcommerceAssetRole = Exclude<EcommerceRefRole, 'none'>
 const MAX_ECOMMERCE_ASSETS = 4
-/** One uploaded product asset. Session-only: data URLs are far too large for
- *  the localStorage draft, so assets never persist across reloads. */
+/** Editable draft assets. Submitted runs persist their bytes on the Host. */
 interface ProductAsset {
   id: string
   dataUrl: string
@@ -318,11 +324,6 @@ function effectiveEcommerceLanguage(draft: ProductSetDraft): string {
   return draft.language === 'custom' ? draft.customLanguage?.trim() ?? '' : draft.language
 }
 
-/** Consistency prefix for slots generated after the main image exists. */
-function withAnchorNote(prompt: string): string {
-  return '商品套图一致性约束：附件是本套商品的主图，图中商品（外形、颜色、材质、Logo、包装文字）必须与附件完全一致，不得重新发明商品。' + prompt
-}
-
 /** Studio tabs: the two generation modes plus the gallery view. */
 type PanelTab = GenerateMode | 'gallery'
 
@@ -332,7 +333,6 @@ type PanelWorkspace = 'normal' | 'ecommerce' | 'canvas'
 
 type GalleryFilter = string
 type ComparisonSession = { taskIds: string[]; prompt: string; comparisonId: string }
-type HistoryGroup = { key: string; entries: HistoryEntry[]; models: string[] }
 
 /** One image unit in the ecommerce results canvas: a live queue task or a
  *  restored history entry of the viewed product set. */
@@ -340,42 +340,14 @@ interface EcommerceResultItem {
   id: string
   label: string
   slotKey: string
-  status: GenerationTaskStatus
+  status: EcommerceSlotStatus
   model: string
   prompt: string
   error?: string
-  images: GeneratedImage[]
-  /** The request to resubmit when regenerating this slot. */
+  images: HistoryImageRef[]
+  imagePrompts: EcommerceResultPrompt[]
+  /** The saved per-slot request, never submitted by a history read. */
   source: GenerateRequest
-}
-
-function modelsOfHistoryEntry(entry: HistoryEntry): string[] {
-  return entry.comparisonModels?.length !== undefined && entry.comparisonModels.length > 1
-    ? entry.comparisonModels
-    : [entry.model]
-}
-
-/** Comparison runs collapse by comparisonId, product sets by projectId. */
-function historyGroupKey(entry: HistoryEntry): string {
-  if (entry.comparisonId !== undefined) return entry.comparisonId
-  if (entry.workflow === 'ecommerce' && entry.projectId !== undefined) return `project:${entry.projectId}`
-  return entry.id
-}
-
-/** Collapse the per-model history rows that belong to one comparison run. */
-function groupHistoryEntries(entries: HistoryEntry[]): HistoryGroup[] {
-  const groups = new Map<string, HistoryGroup>()
-  for (const entry of entries) {
-    const key = historyGroupKey(entry)
-    const existing = groups.get(key)
-    if (existing === undefined) {
-      groups.set(key, { key, entries: [entry], models: modelsOfHistoryEntry(entry) })
-    } else {
-      existing.entries.push(entry)
-      existing.models = [...new Set([...existing.models, ...modelsOfHistoryEntry(entry)])]
-    }
-  }
-  return [...groups.values()]
 }
 
 function newComparisonId(): string {
@@ -391,6 +363,10 @@ export function ImageGenPanel(props: {
   conversation?: ConversationService
 }) {
   const { api, scope, conversation } = props
+  const ecommerceHistory = useEcommerceHistory(api)
+  const [workspace, setWorkspace] = useState<PanelWorkspace>('normal')
+  const workspaceRef = useRef(workspace)
+  workspaceRef.current = workspace
   const config = useConfig(scope)
   const [cqaiProvider, setCqaiProvider] = useState<CqaiImageProviderView>({
     provider: 'cqai', immutable: true, state: 'signed-out', models: [],
@@ -441,18 +417,20 @@ export function ImageGenPanel(props: {
   }, [api])
 
   useEffect(() => {
+    if (workspace === 'ecommerce' && ecommerceHistory.run !== null) return
     if (providerId !== 'cqai' && !customChannels.some(channel => channel.id === providerId)) setProviderId('cqai')
-  }, [providerId, customChannels.map(channel => channel.id).join('\u0000')])
+  }, [providerId, customChannels.map(channel => channel.id).join('\u0000'), workspace, ecommerceHistory.run?.id])
 
   const [tab, setTab] = useState<PanelTab>('text')
-  const [workspace, setWorkspace] = useState<PanelWorkspace>('normal')
   const [canvasImportRequest, setCanvasImportRequest] = useState<{ source: 'history' | 'gallery'; entryId: string; imageIndex: number } | undefined>()
+  const [canvasOpenProjectId, setCanvasOpenProjectId] = useState<string>()
   /** Switch to a normal-generation tab, leaving any task workspace. */
   const openTab = (next: PanelTab): void => {
     setWorkspace('normal')
     setTab(next)
   }
   const addEntryToCanvas = (source: 'history' | 'gallery', entryId: string, imageIndex = 0): void => {
+    setCanvasOpenProjectId(undefined)
     setCanvasImportRequest({ source, entryId, imageIndex })
     setWorkspace('canvas')
   }
@@ -478,7 +456,14 @@ export function ImageGenPanel(props: {
   const [submitting, setSubmitting] = useState(false)
   const [enhancing, setEnhancing] = useState(false)
   const [configGuide, setConfigGuide] = useState<'generation' | 'enhancement' | 'disabled' | null>(null)
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [history, setHistoryState] = useState<HistoryEntry[]>([])
+  const setHistory = useCallback((entries: HistoryEntry[]): void => {
+    setHistoryState(previous => preserveGenerationHistoryHashes(entries, previous))
+  }, [])
+  const [additionalHistory, setAdditionalHistory] = useState<GenerationOverviewEntry[]>([])
+  const [historyReadError, setHistoryReadError] = useState<string | null>(null)
+  const [overviewReadError, setOverviewReadError] = useState<string | null>(null)
+  const [overviewRefresh, setOverviewRefresh] = useState(0)
   const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null)
   const [gallery, setGallery] = useState<HistoryEntry[]>([])
   const [galleryViewingId, setGalleryViewingId] = useState<string | null>(null)
@@ -537,16 +522,23 @@ export function ImageGenPanel(props: {
   })
   const [ecommercePreview, setEcommercePreview] = useState(false)
   const [ecommerceGenerating, setEcommerceGenerating] = useState(false)
+  const [ecommerceRetrying, setEcommerceRetrying] = useState<ReadonlySet<string>>(() => new Set())
+  const ecommerceRetryingRef = useRef(new Set<string>())
+  const ecommerceCancellationEpochs = useRef(new Map<string, number>())
+  const ecommerceRetryRequests = useRef(new Map<string, Set<Promise<EcommerceRun>>>())
+  const ecommerceCancellingRef = useRef(new Set<string>())
+  const [ecommerceCancelling, setEcommerceCancelling] = useState<ReadonlySet<string>>(() => new Set())
+  const [ecommerceNeedsModelChoice, setEcommerceNeedsModelChoice] = useState(false)
   const [ecommerceEnhancing, setEcommerceEnhancing] = useState(false)
   const [ecommercePolishing, setEcommercePolishing] = useState<string | null>(null)
-  const [ecommerceProjectId, setEcommerceProjectId] = useState<string | null>(null)
   const [ecommerceAssets, setEcommerceAssets] = useState<ProductAsset[]>([])
-  /** History-restored product set currently shown in the results canvas. */
-  const [ecommerceRestored, setEcommerceRestored] = useState<{ projectId: string; projectName: string; items: EcommerceResultItem[] } | null>(null)
-  /** Pending main-image anchor: the main image task is in flight; once it
-   *  completes, the remaining slots are resubmitted with it as their shared
-   *  reference so every image in the set shows the same product. */
-  const [ecommerceAnchor, setEcommerceAnchor] = useState<{ projectId: string; mainTaskIds: string[]; remaining: GenerateRequest[] } | null>(null)
+  const ecommerceViewEpoch = useRef(0)
+  const draftBeforeHistory = useRef<{
+    draft: ProductSetDraft; assets: ProductAsset[]; providerId: string; model: string;
+    quality: string; detail: string; preview: boolean; needsModelChoice: boolean
+  } | null>(null)
+  const ecommerceSubmissionBusy = useRef(false)
+  const pendingEcommerceSubmit = useRef<{ fingerprint: string; requestId: string } | null>(null)
   const [ecommerceRefOpen, setEcommerceRefOpen] = useState(false)
   const [configCollapsed, setConfigCollapsed] = useState(readConfigCollapsed)
   const [configWidth, setConfigWidth] = useState(readConfigWidth)
@@ -565,7 +557,8 @@ export function ImageGenPanel(props: {
   const previewStage = useRef<HTMLDivElement>(null)
   const normalHistory = history.filter(isNormalGeneration)
   const normalTasks = tasks.filter(task => isNormalGeneration(task.request))
-  const activeTasks = tasks.filter(task => task.status === 'queued' || task.status === 'running')
+  const trayTasks = tasks.filter(task => task.request.canvas !== undefined)
+  const activeTasks = trayTasks.filter(task => task.status === 'queued' || task.status === 'running')
   const activeNormalTasks = normalTasks.filter(task => task.status === 'queued' || task.status === 'running')
   const activeTask = activeNormalTasks.find(task => task.status === 'running') ?? activeNormalTasks[0]
   const generating = submitting || activeNormalTasks.length > 0
@@ -573,8 +566,9 @@ export function ImageGenPanel(props: {
   useElapsed(generating, generationStartedAt)
 
   useEffect(() => {
+    if (ecommerceHistory.run !== null) return
     try { window.localStorage.setItem(ECOMMERCE_DRAFT_STORAGE_KEY, JSON.stringify(ecommerce)) } catch { /* optional draft persistence */ }
-  }, [ecommerce])
+  }, [ecommerce, ecommerceHistory.run])
 
   useEffect(() => {
     try {
@@ -584,49 +578,19 @@ export function ImageGenPanel(props: {
     }
   }, [configCollapsed])
 
-  // Main-image anchor chain: when the main image task of a product set
-  // completes, resubmit the remaining slots with the generated main image as
-  // their shared reference. Cleared up front so a re-render cannot double-
-  // submit; failures surface as a canvas error.
-  useEffect(() => {
-    if (ecommerceAnchor === null) return
-    const anchor = ecommerceAnchor
-    const mains = tasks.filter(task => anchor.mainTaskIds.includes(task.id))
-    if (mains.length === 0) return
-    if (mains.every(task => task.status === 'failed' || task.status === 'cancelled')) {
-      setEcommerceAnchor(null)
-      setError(tt('ecommerce.anchorFailed'))
-      return
-    }
-    const done = mains.find(task => task.status === 'completed' && task.result !== undefined && task.result.images.length > 0)
-    if (done === undefined) return
-    setEcommerceAnchor(null)
-    const dataUrl = srcOf(done.result!.images[0]!)
-    const requests = anchor.remaining.map(request => ({
-      ...request,
-      mode: 'edit' as const,
-      image: dataUrl,
-      refName: 'set-main-anchor',
-      prompt: withAnchorNote(request.prompt),
-    }))
-    void Promise.all(requests.map(request => api.taskSubmit(request)))
-      .then(submitted => { setTasks(previous => [...submitted, ...previous]) })
-      .catch(caught => { setError(errorMessage(caught)) })
-  }, [api, tasks, ecommerceAnchor])
-
-
   // An empty model is deliberate: it means "follow the Provider default".
   // Keep only explicit, still-valid task overrides. This lets a newly saved
   // CQAI default take effect without mistaking the old automatic choice for a
   // user-selected per-task override.
   const imageModelKey = modeModels.join('\u0000')
   useEffect(() => {
+    if (workspace === 'ecommerce' && (ecommerceHistory.run !== null || ecommerceNeedsModelChoice)) return
     setModel(previous => previous === '' || modeModels.includes(previous) ? previous : '')
     setCompareModels(previous => {
       const retained = previous.filter(candidate => modeModels.includes(candidate))
       return retained.length > 0 ? retained : automaticModel === '' ? [] : [automaticModel]
     })
-  }, [imageModelKey, automaticModel, providerId])
+  }, [imageModelKey, automaticModel, providerId, workspace, ecommerceHistory.run?.id, ecommerceNeedsModelChoice])
 
   const filteredGallery = gallery
     .filter(entry => {
@@ -643,36 +607,71 @@ export function ImageGenPanel(props: {
   const galleryTagOptions = [...new Set(gallery.flatMap(entry => entry.tags ?? []))].sort((a, b) => a.localeCompare(b))
   const galleryModels = [...new Set([...imageModels, ...gallery.map(entry => entry.model)])]
 
-  const filteredHistory = groupHistoryEntries(history).filter(group => group.entries.some(entry => {
-    const query = historyQuery.trim().toLocaleLowerCase()
-    const models = modelsOfHistoryEntry(entry)
-    return (query === '' || `${entry.prompt} ${models.join(' ')}`.toLocaleLowerCase().includes(query))
-      && (historyModelFilter === 'all' || models.includes(historyModelFilter))
-      && (historyRatioFilter === 'all' || normalizeSize(entry.size) === historyRatioFilter)
-  }))
-
-  const normalStreamItems = buildNormalGenerationStream(history, tasks, {
+  const overviewHistory = mergeGenerationOverview(history, additionalHistory)
+  const normalStreamItems = buildNormalGenerationStream(overviewHistory, tasks, {
     query: historyQuery,
     model: historyModelFilter,
     ratio: historyRatioFilter,
   })
   const normalStreamModels = [...new Set([
-    ...normalHistory.map(entry => entry.model),
+    ...overviewHistory.map(entry => entry.model),
     ...normalTasks.map(task => task.request.model),
   ])]
   const normalStreamRatios = [...new Set([
-    ...normalHistory.map(entry => normalizeSize(entry.size)),
+    ...overviewHistory.map(entry => normalizeSize(entry.size)),
     ...normalTasks.map(task => normalizeSize(task.request.size)),
   ])]
+
+  const normalStreamScrollRef = useRef<HTMLDivElement>(null)
+  const [normalColumnCount, setNormalColumnCount] = useState(1)
+  const normalStreamVisible = workspace === 'normal' && tab !== 'gallery'
+  const normalStreamHasItems = normalStreamItems.length > 0
+  useEffect(() => {
+    const scroll = normalStreamScrollRef.current
+    if (!normalStreamVisible || scroll === null) return
+    // Keep cards at least 220px wide, with a 12px gap. Measuring this surface
+    // also handles sidebar changes and lets wider windows fit more columns.
+    const updateColumns = (width: number): void => {
+      setNormalColumnCount(Math.max(1, Math.floor((width + 12) / 232)))
+    }
+    const measure = (): void => {
+      const style = window.getComputedStyle(scroll)
+      updateColumns(scroll.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure)
+      return () => { window.removeEventListener('resize', measure) }
+    }
+    const observer = new ResizeObserver(entries => {
+      const entry = entries.find(entry => entry.target === scroll)
+      if (entry !== undefined) updateColumns(entry.contentRect.width)
+    })
+    observer.observe(scroll)
+    return () => { observer.disconnect() }
+  }, [normalStreamVisible, normalStreamHasItems])
 
   // History feeds the default result stream; gallery is requested when opened.
   useEffect(() => {
     let disposed = false
-    api.historyList()
-      .then(entries => { if (!disposed) setHistory(entries) })
-      .catch(() => { /* history unavailable — leave the list empty */ })
+    api.historyList(undefined, true)
+      .then(entries => { if (!disposed) { setHistory(entries); setHistoryReadError(null) } })
+      .catch(caught => { if (!disposed) setHistoryReadError(errorMessage(caught)) })
     return () => { disposed = true }
-  }, [api])
+  }, [api, workspace, overviewRefresh])
+
+  // Durable task and canvas outputs can outlive the bounded shared history.
+  // Read metadata when returning to the overview or when a task changes;
+  // inspecting this list never submits generation or downloads the image bank.
+  const ecommerceOverviewVersion = ecommerceHistory.runs.map(run => `${run.id}:${run.updatedAt}`).join('|')
+  useEffect(() => {
+    if (workspace !== 'normal' || tab === 'gallery') return
+    let disposed = false
+    void listAdditionalGenerationHistory(api)
+      .then(entries => { if (!disposed) { setAdditionalHistory(entries); setOverviewReadError(null) } })
+      .catch(caught => { if (!disposed) setOverviewReadError(errorMessage(caught)) })
+    return () => { disposed = true }
+  }, [api, workspace, tab, ecommerceOverviewVersion, overviewRefresh])
 
   useEffect(() => {
     if (tab !== 'gallery' && workspace !== 'canvas' || galleryLoaded.current) return
@@ -722,14 +721,14 @@ export function ImageGenPanel(props: {
         if (disposed) return
         tasksRef.current = next
         setTasks(next)
-        const completed = newlyCompleted.find(task => !comparisonRef.current?.taskIds.includes(task.id))
+        const completed = newlyCompleted.find(task => isNormalGeneration(task.request) && !comparisonRef.current?.taskIds.includes(task.id))
         if (completed?.result !== undefined) {
           setImages(completed.result.images)
           if (completed.result.history !== undefined) setHistory(completed.result.history)
-          setError(completed.result.historyError ?? null)
+          if (workspaceRef.current === 'normal') setError(completed.result.historyError ?? null)
         }
         if (newlyCompleted.length > 0) {
-          void api.historyList().then(entries => {
+          void api.historyList(undefined, true).then(entries => {
             if (!disposed) setHistory(entries)
           }).catch(() => {})
         }
@@ -786,6 +785,8 @@ export function ImageGenPanel(props: {
       setError(cqaiProvider.message ?? (cqaiProvider.state === 'reauth-required' ? 'CQAI Club 登录已失效，请重新登录。' : '请先登录 CQAI Club 后再使用提示词增强。'))
       return
     }
+    const viewEpoch = ecommerceViewEpoch.current
+    const originalInfo = ecommerce.promptInfo
     setEcommerceEnhancing(true)
     setError(null)
     try {
@@ -798,11 +799,11 @@ export function ImageGenPanel(props: {
         `已有信息:${ecommerce.promptInfo.trim() !== '' ? ecommerce.promptInfo : '无,请根据商品名称与类目合理补全'}`,
       ].join('\n')
       const result = await api.enhancePrompt(instruction)
-      setEcommerce(previous => ({ ...previous, promptInfo: result }))
+      if (viewEpoch === ecommerceViewEpoch.current) setEcommerce(previous => previous.promptInfo === originalInfo ? { ...previous, promptInfo: result } : previous)
     } catch (caught) {
-      setError(errorMessage(caught))
+      if (viewEpoch === ecommerceViewEpoch.current) setError(errorMessage(caught))
     } finally {
-      setEcommerceEnhancing(false)
+      if (viewEpoch === ecommerceViewEpoch.current) setEcommerceEnhancing(false)
     }
   }
 
@@ -812,20 +813,22 @@ export function ImageGenPanel(props: {
       setError(cqaiProvider.message ?? '请先登录 CQAI Club 后再使用提示词润色。')
       return
     }
+    const viewEpoch = ecommerceViewEpoch.current
     const key = `${slot.key}-${index + 1}`
     const source = ecommerceSlotPrompt(ecommerce, slot, index)
     setEcommercePolishing(key)
     setError(null)
     try {
       const polished = await api.polishPrompt(source)
+      if (viewEpoch !== ecommerceViewEpoch.current) return
       // A user may switch products or edit the draft while the model is busy.
       setEcommerce(previous => {
         const currentSlot = previous.slots.find(item => item.key === slot.key)
         if (currentSlot === undefined || ecommerceSlotPrompt(previous, currentSlot, index) !== source) return previous
         return { ...previous, promptOverrides: { ...previous.promptOverrides, [key]: polished } }
       })
-    } catch (caught) { setError(errorMessage(caught)) }
-    finally { setEcommercePolishing(null) }
+    } catch (caught) { if (viewEpoch === ecommerceViewEpoch.current) setError(errorMessage(caught)) }
+    finally { if (viewEpoch === ecommerceViewEpoch.current) setEcommercePolishing(null) }
   }
 
   /** Read up to five reference images. The first remains the primary image;
@@ -859,11 +862,12 @@ export function ImageGenPanel(props: {
     setAdditionalRefImages([])
   }
 
-  /** Read uploaded product assets into session-only data-URL chips. Product
+  /** Read editable draft assets into data-URL chips. Product
    *  refs cap at MAX_ECOMMERCE_ASSETS; the style group holds a single image
    *  that gets replaced on re-upload. */
   const acceptEcommerceFiles = (files: FileList | undefined, role: 'product' | 'style' = 'product'): void => {
-    if (files === undefined) return
+    if (files === undefined || ecommerceHistory.run !== null) return
+    const viewEpoch = ecommerceViewEpoch.current
     const incoming = Array.from(files).filter(file => file.type.startsWith('image/') && file.size <= REF_IMAGE_MAX_BYTES)
     if (incoming.length === 0) {
       setError(tt('edit.uploadHint'))
@@ -872,7 +876,7 @@ export function ImageGenPanel(props: {
     for (const file of incoming) {
       const reader = new FileReader()
       reader.onload = () => {
-        if (typeof reader.result !== 'string') return
+        if (viewEpoch !== ecommerceViewEpoch.current || typeof reader.result !== 'string') return
         const dataUrl = reader.result
         setEcommerceAssets(previous => {
           if (role === 'style') {
@@ -886,7 +890,7 @@ export function ImageGenPanel(props: {
           return [...previous, { id: newComparisonId(), dataUrl, name: file.name, role: 'product' }]
         })
       }
-      reader.onerror = () => { setError(tt('edit.uploadHint')) }
+      reader.onerror = () => { if (viewEpoch === ecommerceViewEpoch.current) setError(tt('edit.uploadHint')) }
       reader.readAsDataURL(file)
     }
   }
@@ -950,146 +954,246 @@ export function ImageGenPanel(props: {
     }
   }
 
+  const applyEcommerceConfiguration = (run: EcommerceRun): void => {
+    ++ecommerceViewEpoch.current
+    setEcommerceEnhancing(false)
+    setEcommercePolishing(null)
+    if (run.config !== undefined) {
+      setEcommerce(structuredClone(run.config.draft))
+      setEcommerceAssets(run.config.assets.map(asset => ({ ...asset, dataUrl: asset.url })))
+      setProviderId(run.config.providerId)
+      setModel(run.config.model)
+      setQuality(normalizeQuality(run.config.quality))
+      setDetail(run.config.detail)
+    }
+    setEcommercePreview(false)
+    setError(null)
+    setViewingHistoryId(null)
+    setGalleryViewingId(null)
+  }
+
+  const preserveEcommerceDraft = (): void => {
+    if (ecommerceHistory.run !== null || draftBeforeHistory.current !== null) return
+    draftBeforeHistory.current = {
+      draft: structuredClone(ecommerce), assets: ecommerceAssets.map(asset => ({ ...asset })),
+      providerId, model, quality, detail, preview: ecommercePreview, needsModelChoice: ecommerceNeedsModelChoice,
+    }
+  }
+
+  const openEcommerceRun = async (id: string): Promise<void> => {
+    preserveEcommerceDraft()
+    const epoch = ++ecommerceViewEpoch.current
+    try {
+      const run = await ecommerceHistory.open(id)
+      if (run === null || epoch !== ecommerceViewEpoch.current) return
+      applyEcommerceConfiguration(run)
+      setWorkspace('ecommerce')
+    } catch (caught) {
+      if (epoch === ecommerceViewEpoch.current && ecommerceHistory.selectedId() === null) draftBeforeHistory.current = null
+      throw caught
+    }
+  }
+
   const handleEcommerceGenerate = async (): Promise<void> => {
-    if (ecommerceGenerateDisabled) return
+    if (ecommerceGenerateDisabled || ecommerceHistory.run !== null || ecommerceSubmissionBusy.current) return
     if (providerId === 'cqai' && cqaiProvider.state !== 'signed-in') {
-      setError(cqaiProvider.message ?? (cqaiProvider.state === 'reauth-required' ? 'CQAI Club 登录已失效，请重新登录。' : '请先登录 CQAI Club 后再生图。'))
+      setError(cqaiProvider.message ?? '请先登录 CQAI Club 后再生图。')
       return
     }
     if (!enabled || !configured || !apiKeySet) { openSettingsGuide('generation'); return }
-    const projectId = ecommerce.projectId || newComparisonId()
-    const buildRequest = (slot: ProductSetSlot, index: number): GenerateRequest => {
-      // Each slot picks one reference by asset role; a slot without a matching
-      // asset (or 'none') falls back to text-to-image.
+    const epoch = ecommerceViewEpoch.current
+    const requests = ecommerceSlots.flatMap(slot => Array.from({ length: slot.count }, (_, index): GenerateRequest => {
       const refRole = slot.refRole ?? 'product'
       const asset = refRole === 'none' ? undefined : ecommerceAssets.find(item => item.role === refRole)
       return {
-        mode: asset !== undefined ? 'edit' as const : 'text' as const,
-        model: modeModels.includes(model) ? model : automaticModel,
-        prompt: ecommerceSlotPrompt(ecommerce, slot, index),
-        size: ecommerce.size,
-        quality,
-        n: 1,
-        detail,
-        ...(defaultChannelId !== undefined ? { channelId: defaultChannelId } : {}),
-        ...(asset !== undefined ? { image: asset.dataUrl, refName: asset.name } : {}),
-        workflow: 'ecommerce' as const,
-        projectId,
-        projectName: ecommerce.productName.trim(),
-        slotKey: `${slot.key}-${index + 1}`,
-        slotLabel: slot.label,
+        mode: asset === undefined ? 'text' : 'edit', model: activeModel,
+        prompt: ecommerceSlotPrompt(ecommerce, slot, index), size: ecommerce.size, quality, detail, n: 1,
+        channelId: defaultChannelId,
+        ...(asset === undefined ? {} : { image: asset.dataUrl, refName: asset.name }),
+        workflow: 'ecommerce', projectName: ecommerce.productName.trim(),
+        slotKey: `${slot.key}-${index + 1}`, slotLabel: slot.label,
       }
+    }))
+    const input = { draft: { ...ecommerce, projectId: '' }, providerId, model: activeModel, quality, detail, assets: ecommerceAssets, requests }
+    const fingerprint = JSON.stringify(input)
+    if (pendingEcommerceSubmit.current?.fingerprint !== fingerprint) {
+      pendingEcommerceSubmit.current = { fingerprint, requestId: newComparisonId() }
     }
-    // Anchor chain: with a main-image slot enabled, only the main image is
-    // submitted now; the remaining slots follow once it completes (see the
-    // anchor effect) so the whole set shares one product. Without a main
-    // slot, every slot submits immediately with its own reference.
-    const mainSlots = ecommerceSlots.filter(slot => slot.key === 'main')
-    const otherSlots = ecommerceSlots.filter(slot => slot.key !== 'main')
-    const anchorChain = mainSlots.length > 0 && otherSlots.length > 0
-    const leadSlots = anchorChain ? mainSlots : ecommerceSlots
-    const requests = leadSlots.flatMap(slot => Array.from({ length: slot.count }, (_, index) => buildRequest(slot, index)))
-    const remaining = anchorChain
-      ? otherSlots.flatMap(slot => Array.from({ length: slot.count }, (_, index) => {
-        const { image: _image, refName: _refName, ...rest } = buildRequest(slot, index)
-        return rest
-      }))
-      : []
-    setEcommerceGenerating(true); setSubmitting(true); setError(null); setEcommerceProjectId(projectId); setEcommerceRestored(null); setEcommerceAnchor(null)
+    ecommerceSubmissionBusy.current = true
+    setEcommerceGenerating(true); setSubmitting(true); setError(null)
     try {
-      const submitted = await Promise.all(requests.map(request => api.taskSubmit(request)))
-      setTasks(previous => [...submitted, ...previous])
-      setEcommercePreview(false)
-      if (anchorChain) setEcommerceAnchor({ projectId, mainTaskIds: submitted.map(task => task.id), remaining })
-    } catch (caught) { setError(errorMessage(caught)) } finally { setSubmitting(false); setEcommerceGenerating(false) }
+      const run = await api.ecommerceSubmit({ ...input, requestId: pendingEcommerceSubmit.current!.requestId })
+      pendingEcommerceSubmit.current = null
+      if (epoch === ecommerceViewEpoch.current) {
+        preserveEcommerceDraft()
+        ecommerceHistory.select(run)
+        applyEcommerceConfiguration(run)
+      }
+      await ecommerceHistory.refresh()
+    } catch (caught) {
+      if (epoch === ecommerceViewEpoch.current) setError(errorMessage(caught))
+    } finally {
+      ecommerceSubmissionBusy.current = false
+      setSubmitting(false); setEcommerceGenerating(false)
+    }
   }
 
-  /** Start over with a fresh product draft (the old results stay in history). */
   const newEcommerceProduct = (): void => {
+    ++ecommerceViewEpoch.current
+    ecommerceHistory.select(null)
+    draftBeforeHistory.current = null
+    pendingEcommerceSubmit.current = null
+    setEcommerceNeedsModelChoice(false)
     setEcommerce(defaultEcommerceDraft())
     setEcommercePreview(false)
-    setEcommerceProjectId(null)
-    setEcommerceRestored(null)
-    setEcommerceAnchor(null)
     setEcommerceAssets([])
+    setEcommerceEnhancing(false)
+    setEcommercePolishing(null)
     clearReferenceImages()
     setError(null)
   }
 
-  /** Re-run every image of one slot with its original request. */
-  const regenerateEcommerceSlot = async (label: string): Promise<void> => {
-    if (ecommerceGenerating) return
-    const group = ecommerceMergedItems.filter(item => item.label === label)
-    if (group.length === 0) return
-    setEcommerceGenerating(true)
+  const returnEcommerceDraft = (): void => {
+    const saved = draftBeforeHistory.current
+    if (saved === null) { newEcommerceProduct(); return }
+    ++ecommerceViewEpoch.current
+    ecommerceHistory.select(null)
+    draftBeforeHistory.current = null
+    setEcommerceNeedsModelChoice(saved.needsModelChoice)
+    setEcommerce(saved.draft); setEcommerceAssets(saved.assets)
+    setProviderId(saved.providerId); setModel(saved.model); setQuality(saved.quality); setDetail(saved.detail)
+    setEcommercePreview(saved.preview)
     setError(null)
+  }
+
+  const copyEcommerceRun = async (): Promise<void> => {
+    const run = ecommerceHistory.run
+    if (run?.config === undefined) return
+    const epoch = ecommerceViewEpoch.current
     try {
-      const submitted = await Promise.all(group.map(item => api.taskSubmit({ ...item.source })))
-      setTasks(previous => [...submitted, ...previous])
+      const assets = await Promise.all(run.config.assets.map(async asset => {
+        const response = await fetch(asset.url)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const blob = await response.blob()
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result))
+          reader.onerror = () => reject(new Error('reference image could not be read'))
+          reader.readAsDataURL(blob)
+        })
+        return { id: asset.id, name: asset.name, role: asset.role, dataUrl }
+      }))
+      if (epoch !== ecommerceViewEpoch.current) return
+      ++ecommerceViewEpoch.current
+      ecommerceHistory.select(null)
+      draftBeforeHistory.current = null
+      setEcommerce({ ...structuredClone(run.config.draft), projectId: '' })
+      setEcommerceAssets(assets)
+      setProviderId(run.config.providerId); setModel(run.config.model)
+      setQuality(normalizeQuality(run.config.quality)); setDetail(run.config.detail)
+      setEcommercePreview(false)
+      const available = availableModelGroups.some(group => group.providerId === run.config!.providerId && group.models.includes(run.config!.model))
+      setEcommerceNeedsModelChoice(!available)
+      pendingEcommerceSubmit.current = null
+      setError(available ? null : ec('modelUnavailable'))
+    } catch (caught) { if (epoch === ecommerceViewEpoch.current) setError(errorMessage(caught)) }
+  }
+
+  const regenerateEcommerceSlot = async (label: string): Promise<void> => {
+    const run = ecommerceHistory.run
+    if (run === null || run.legacy || ecommerceCancellingRef.current.has(run.id)) return
+    const slots = run.slots.filter(item => item.label === label)
+    const key = JSON.stringify([run.id, label])
+    if (slots.length === 0 || slots.some(slot => slot.status === 'queued' || slot.status === 'running') || ecommerceRetryingRef.current.has(key)) return
+    const epoch = ecommerceViewEpoch.current
+    const cancellationEpoch = ecommerceCancellationEpochs.current.get(run.id) ?? 0
+    ecommerceRetryingRef.current.add(key)
+    setEcommerceRetrying(new Set(ecommerceRetryingRef.current))
+    try {
+      for (const slot of slots) {
+        // Cancelling the run also stops the remainder of a multi-image retry.
+        if (cancellationEpoch !== (ecommerceCancellationEpochs.current.get(run.id) ?? 0)) break
+        const pending = api.ecommerceRetry(run.id, slot.key)
+        const requests = ecommerceRetryRequests.current.get(run.id) ?? new Set<Promise<EcommerceRun>>()
+        requests.add(pending)
+        ecommerceRetryRequests.current.set(run.id, requests)
+        let next: EcommerceRun
+        try { next = await pending } finally {
+          requests.delete(pending)
+          if (requests.size === 0) ecommerceRetryRequests.current.delete(run.id)
+        }
+        if (epoch === ecommerceViewEpoch.current && cancellationEpoch === (ecommerceCancellationEpochs.current.get(run.id) ?? 0)) ecommerceHistory.update(next)
+      }
+      await ecommerceHistory.refresh()
     } catch (caught) {
-      setError(errorMessage(caught))
+      if (epoch === ecommerceViewEpoch.current && cancellationEpoch === (ecommerceCancellationEpochs.current.get(run.id) ?? 0)) setError(errorMessage(caught))
     } finally {
-      setEcommerceGenerating(false)
+      ecommerceRetryingRef.current.delete(key)
+      setEcommerceRetrying(new Set(ecommerceRetryingRef.current))
     }
   }
 
-  /** Open one persisted product set from history: rebuild the grouped results
-   *  canvas from its entries. Reference images are not persisted, so restored
-   *  edit-mode slots regenerate as text-to-image. */
-  const viewEcommerceProject = async (group: HistoryGroup): Promise<void> => {
-    const entry = group.entries[0]
-    if (entry === undefined || entry.projectId === undefined) return
+  const removeEcommerceRun = async (id: string): Promise<void> => {
+    const item = ecommerceHistory.runs.find(run => run.id === id)
+    if (!window.confirm(ec('deleteConfirm', { name: item?.name ?? id }))) return
+    const epoch = ecommerceViewEpoch.current
+    ecommerceHistory.setRuns(await api.ecommerceRemove(id))
+    if (epoch === ecommerceViewEpoch.current && ecommerceHistory.selectedId() === id) returnEcommerceDraft()
+    setHistory(await api.historyList())
+  }
+
+  const clearEcommerceRuns = async (): Promise<void> => {
+    const active = ecommerceHistory.runs.filter(run => run.status === 'queued' || run.status === 'running')
+    const count = ecommerceHistory.runs.length - active.length
+    if (count === 0 || !window.confirm(ec('clearConfirm', { count, active: active.length }))) return
+    const epoch = ecommerceViewEpoch.current
+    const remaining = await api.ecommerceClear()
+    ecommerceHistory.setRuns(remaining)
+    const selectedId = ecommerceHistory.selectedId()
+    if (epoch === ecommerceViewEpoch.current && selectedId !== null && !remaining.some(run => run.id === selectedId)) returnEcommerceDraft()
+    setHistory(await api.historyList())
+  }
+
+  const cancelEcommerceRun = async (id: string): Promise<void> => {
+    if (ecommerceCancellingRef.current.has(id)) return
+    const epoch = ecommerceViewEpoch.current
+    ecommerceCancellingRef.current.add(id)
+    setEcommerceCancelling(new Set(ecommerceCancellingRef.current))
+    ecommerceCancellationEpochs.current.set(id, (ecommerceCancellationEpochs.current.get(id) ?? 0) + 1)
     try {
-      const items: EcommerceResultItem[] = await Promise.all(group.entries.map(async item => ({
-        id: item.id,
-        label: item.slotLabel ?? '',
-        slotKey: item.slotKey ?? '',
-        status: 'completed' as const,
-        model: item.model,
-        prompt: item.prompt,
-        images: await historyImagesToGenerated(item.images),
-        source: {
-          mode: item.mode === 'edit' ? 'text' as const : item.mode,
-          model: item.model,
-          prompt: item.prompt,
-          size: item.size,
-          quality: item.quality,
-          detail: item.detail,
-          n: 1,
-          ...item.channelId !== undefined ? { channelId: item.channelId } : {},
-          workflow: 'ecommerce' as const,
-          projectId: entry.projectId!,
-          projectName: entry.projectName ?? '',
-          slotKey: item.slotKey ?? '',
-          slotLabel: item.slotLabel ?? '',
-        },
-      })))
-      setWorkspace('ecommerce')
-      setEcommerceRestored({ projectId: entry.projectId, projectName: entry.projectName ?? '', items })
-      setEcommerceProjectId(entry.projectId)
-      setEcommercePreview(false)
-      setError(null)
-      setViewingHistoryId(entry.id)
-      setGalleryViewingId(null)
-    } catch (caught) {
-      setError(errorMessage(caught))
+      // Order cancellation after already-sent retry submissions, so a delayed
+      // POST cannot restart the run after the cancel reaches the Host.
+      await Promise.allSettled([...(ecommerceRetryRequests.current.get(id) ?? [])])
+      const next = await api.ecommerceCancel(id)
+      if (epoch === ecommerceViewEpoch.current && ecommerceHistory.selectedId() === id) ecommerceHistory.update(next)
+      await ecommerceHistory.refresh()
+    } finally {
+      ecommerceCancellingRef.current.delete(id)
+      setEcommerceCancelling(new Set(ecommerceCancellingRef.current))
     }
   }
 
   /** Download a JSON manifest describing the whole product set (prompts,
    *  slots and task outcomes) so results stay reproducible outside the panel. */
   const exportEcommerceManifest = (): void => {
+    const run = ecommerceHistory.run
+    const saved = run?.config?.draft
+    const name = saved?.productName || run?.slots[0]?.request.projectName || ''
     const manifest = {
+      configurationComplete: saved !== undefined,
       project: {
-        id: ecommerceProjectId,
-        name: ecommerce.projectName || ecommerce.productName,
-        productName: ecommerce.productName,
-        category: ecommerce.category,
-        platform: ecommerce.platform,
-        language: ecommerce.language,
-        size: ecommerce.size,
-        promptInfo: ecommerce.promptInfo,
+        id: run?.id ?? null,
+        name,
+        productName: saved?.productName ?? name,
+        category: saved?.category,
+        platform: saved?.platform,
+        language: saved?.language,
+        customLanguage: saved?.customLanguage,
+        size: saved?.size ?? run?.slots[0]?.request.size,
+        promptInfo: saved?.promptInfo,
       },
+      config: run?.config,
+      slots: run?.slots,
       generatedAt: new Date().toISOString(),
       images: ecommerceMergedItems.map(item => ({
         slotKey: item.slotKey,
@@ -1104,7 +1208,7 @@ export function ImageGenPanel(props: {
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `dsh-product-set-${(ecommerce.projectName || ecommerce.productName || 'set').replace(/[^\w-]+/g, '-')}.json`
+    anchor.download = `dsh-product-set-${(name || 'set').replace(/[^\w-]+/g, '-')}.json`
     anchor.click()
     URL.revokeObjectURL(url)
   }
@@ -1160,11 +1264,6 @@ export function ImageGenPanel(props: {
     return () => window.cancelAnimationFrame(frame)
   }, [preview, previewScale])
 
-  const loadHistoryGroup = async (group: HistoryGroup): Promise<GeneratedImage[]> => {
-    const loaded = await Promise.all(group.entries.map(entry => historyImagesToGenerated(entry.images)))
-    return loaded.flat()
-  }
-
   const viewHistoryEntry = async (entry: HistoryEntry): Promise<void> => {
     try {
       const restored = (await historyImagesToGenerated(entry.images)).map(image => image.revisedPrompt === undefined
@@ -1176,46 +1275,6 @@ export function ImageGenPanel(props: {
       if (restored.length > 0) openPreview(restored, 0)
     } catch (caught) {
       setError(errorMessage(caught))
-    }
-  }
-
-  /** View every model result from one comparison as one canvas result set. */
-  const viewHistoryGroup = async (group: HistoryGroup): Promise<void> => {
-    const entry = group.entries[0]
-    if (entry === undefined) return
-    // Product sets rebuild their grouped results canvas instead of the
-    // generic image workspace.
-    if (entry.workflow === 'ecommerce' && entry.projectId !== undefined) {
-      await viewEcommerceProject(group)
-      return
-    }
-    try {
-      const restored = await loadHistoryGroup(group)
-      setError(null)
-      setViewingHistoryId(entry.id)
-      setGalleryViewingId(null)
-      if (restored.length > 0) openPreview(restored, 0)
-    } catch (caught) {
-      setError(errorMessage(caught))
-    }
-  }
-
-  /** Remove every persisted row belonging to one comparison group. */
-  const deleteHistoryGroup = async (group: HistoryGroup): Promise<void> => {
-    const ids = new Set(group.entries.map(entry => entry.id))
-    setHistory(previous => previous.filter(entry => !ids.has(entry.id)))
-    if (viewingHistoryId !== null && ids.has(viewingHistoryId)) setViewingHistoryId(null)
-    if (ecommerceRestored !== null && group.entries.some(entry => entry.projectId === ecommerceRestored.projectId)) {
-      setEcommerceRestored(null)
-      setEcommerceProjectId(null)
-      setEcommerceAnchor(null)
-    }
-    try {
-      let next = history
-      for (const id of ids) next = await api.historyRemove(id)
-      setHistory(next)
-    } catch {
-      // Keep the optimistic local removal.
     }
   }
 
@@ -1234,47 +1293,25 @@ export function ImageGenPanel(props: {
     setSelectedGalleryIds(new Set())
     setComparison(null)
     setComparisonFullscreen(false)
-    setEcommerceRestored(null)
     setError(null)
     setConversationMessage(null)
     setGalleryMessage(null)
   }
 
-  /** Remove all history entries. */
-  const clearHistory = async (): Promise<void> => {
-    if (!window.confirm(tt('history.clearConfirm'))) return
-    setHistory([])
-    setViewingHistoryId(null)
-    try {
-      setHistory(await api.historyClear())
-    } catch {
-      // Keep the cleared local state.
-    }
-  }
-
   /** Clear only ordinary generation rows; canvas and ecommerce history stay intact. */
   const clearNormalHistory = async (): Promise<void> => {
     if (normalHistory.length === 0 || !window.confirm(tt('history.clearNormalConfirm'))) return
-    const ids = new Set(normalHistory.map(entry => entry.id))
-    setHistory(previous => previous.filter(entry => !ids.has(entry.id)))
-    if (viewingHistoryId !== null && ids.has(viewingHistoryId)) setViewingHistoryId(null)
     try {
-      let next = history
-      for (const id of ids) next = await api.historyRemove(id)
-      setHistory(next)
-    } catch {
-      void api.historyList().then(setHistory).catch(() => {})
-    }
+      setHistory(await api.historyClear('normal'))
+      setViewingHistoryId(null)
+    } catch (caught) { setError(errorMessage(caught)) }
   }
 
   const deleteNormalHistoryEntry = async (entry: HistoryEntry): Promise<void> => {
-    setHistory(previous => previous.filter(item => item.id !== entry.id))
-    if (viewingHistoryId === entry.id) setViewingHistoryId(null)
     try {
-      setHistory(await api.historyRemove(entry.id))
-    } catch {
-      void api.historyList().then(setHistory).catch(() => {})
-    }
+      setHistory(await api.historyRemove(entry.id, 'normal'))
+      if (viewingHistoryId === entry.id) setViewingHistoryId(null)
+    } catch (caught) { setError(errorMessage(caught)) }
   }
 
   /** Add one generated image to the gallery (host deduplicates by content).
@@ -1532,9 +1569,12 @@ export function ImageGenPanel(props: {
   // (mirrors handleGenerate's pick). Over the limit the counter turns red and
   // the button locks — the engine would fast-fail anyway, but the user sees
   // why before spending a click.
-  const activeModel = modeModels.includes(model) ? model : automaticModel
+  const activeModel = workspace === 'ecommerce' && ecommerceHistory.run?.config !== undefined
+    ? ecommerceHistory.run.config.model
+    : workspace === 'ecommerce' && ecommerceNeedsModelChoice ? model : modeModels.includes(model) ? model : automaticModel
   const activeModelKey = activeModel === '' ? '' : imageModelChoiceKey(providerId, activeModel)
   const chooseImageModel = (nextProviderId: string, nextModel: string): void => {
+    setEcommerceNeedsModelChoice(false)
     if (nextProviderId !== providerId) {
       setProviderId(nextProviderId)
       setCompareModels([])
@@ -1548,33 +1588,16 @@ export function ImageGenPanel(props: {
   const generateDisabled = submitting || activeModel === '' || promptOverLimit
   const ecommerceSlots = ecommerce.slots.filter(slot => slot.enabled && slot.count > 0)
   const ecommerceTotal = ecommerceSlots.reduce((total, slot) => total + slot.count, 0)
-  const ecommerceGenerateDisabled = submitting || ecommerceGenerating || ecommercePolishing !== null || ecommerceSlots.length === 0 || ecommerce.productName.trim() === '' || (ecommerce.language === 'custom' && effectiveEcommerceLanguage(ecommerce) === '')
+  const ecommerceGenerateDisabled = ecommerceNeedsModelChoice || activeModel === '' || ecommerceHistory.run !== null || submitting || ecommerceGenerating || ecommercePolishing !== null || ecommerceSlots.length === 0 || ecommerce.productName.trim() === '' || (ecommerce.language === 'custom' && effectiveEcommerceLanguage(ecommerce) === '')
   const ecommerceFileInput = useRef<HTMLInputElement>(null)
   /** Which group (主图/风格) the shared file input uploads into. */
   const ecommerceUploadRoleRef = useRef<'product' | 'style'>('product')
-  // The results canvas merges live tasks of the active project with restored
-  // history entries of the same project; restored slots that were regenerated
-  // this session are covered by their live counterparts (same slotKey).
-  const ecommerceProjectTasks = ecommerceProjectId === null
-    ? []
-    : tasks.filter(task => task.request.workflow === 'ecommerce' && task.request.projectId === ecommerceProjectId)
-  const liveSlotKeys = new Set(ecommerceProjectTasks.map(task => task.request.slotKey ?? task.id))
-  const ecommerceMergedItems: EcommerceResultItem[] = [
-    ...ecommerceProjectTasks.map(task => ({
-      id: task.id,
-      label: task.request.slotLabel ?? '',
-      slotKey: task.request.slotKey ?? '',
-      status: task.status,
-      model: task.request.model,
-      prompt: task.request.prompt,
-      ...task.error !== undefined ? { error: task.error } : {},
-      images: task.result?.images ?? [],
-      source: task.request,
-    })),
-    ...(ecommerceRestored !== null && ecommerceRestored.projectId === ecommerceProjectId
-      ? ecommerceRestored.items.filter(item => !liveSlotKeys.has(item.slotKey))
-      : []),
-  ]
+  const ecommerceMergedItems: EcommerceResultItem[] = ecommerceHistory.run?.slots.map(slot => ({
+    id: `${ecommerceHistory.run!.id}:${slot.key}`, label: slot.label, slotKey: slot.key,
+    status: slot.status, model: slot.request.model, prompt: slot.request.prompt,
+    error: slot.error, images: slot.images, source: slot.request,
+    imagePrompts: slot.images.map((_image, index) => ecommerceResultPrompt(slot, index, { legacy: ecommerceHistory.run?.legacy })),
+  })) ?? []
   const ecommerceDoneCount = ecommerceMergedItems.filter(item => item.status === 'completed').length
   const ecommerceFailedCount = ecommerceMergedItems.filter(item => item.status === 'failed' || item.status === 'cancelled').length
   const ecommerceResultGroups = [...new Set(ecommerceMergedItems.map(item => item.label))]
@@ -1588,35 +1611,47 @@ export function ImageGenPanel(props: {
     <section key={group.label} className={css.ecommerceGroup} data-ecommerce-group={group.label} data-main={main ? '' : undefined}>
       <header>
         <strong>{group.label}</strong>
-        <span>{group.items.filter(item => item.status === 'completed').length}/{group.items.length}</span>
-        <button type="button" className={css.galleryBulkButton} disabled={ecommerceGenerating} onClick={() => { void regenerateEcommerceSlot(group.label) }}>{tt('ecommerce.results.regenerate')}</button>
+        <span>{ecommerceHistory.run?.legacy ? ec('legacyProgress', { count: group.items.reduce((count, item) => count + item.images.length, 0) }) : `${group.items.filter(item => item.status === 'completed').length}/${group.items.length}`}</span>
+        <button type="button" className={css.galleryBulkButton} disabled={ecommerceHistory.run?.legacy || ecommerceCancelling.has(ecommerceHistory.run?.id ?? '') || ecommerceRetrying.has(JSON.stringify([ecommerceHistory.run?.id, group.label])) || group.items.some(item => item.status === 'queued' || item.status === 'running')} onClick={() => { void regenerateEcommerceSlot(group.label) }}>{tt('ecommerce.results.regenerate')}</button>
       </header>
       <div className={css.ecommerceGroupGrid}>
-        {group.items.map(item => (
-          <div key={item.id} className={css.ecommerceTaskCard} data-status={item.status}>
-            {item.status === 'completed' && item.images.length > 0 ? item.images.map((image, imageIndex) => (
-              <figure
-                key={imageIndex}
-                className={css.imageCard}
-                role="button"
-                tabIndex={0}
-                title={tt('preview.open')}
-                onClick={() => { openPreview(item.images, imageIndex) }}
-              >
-                <img className={css.image} src={srcOf(image)} alt={`${group.label} ${imageIndex + 1}`} />
-                <span className={css.ecommerceResultBadge}>{group.label}</span>
-                <span className={css.ecommerceTaskActions} onClick={event => event.stopPropagation()}>
-                  <a className={css.ecommerceActionChip} href={srcOf(image)} download={`product-${item.slotKey || item.id}-${imageIndex + 1}.${extensionOf(image.mime)}`}>{tt('download')}</a>
-                  <button type="button" className={css.ecommerceActionChip} disabled={galleryAdding} onClick={() => { void addToGallery(image) }}>{tt('gallery.add')}</button>
-                  <button type="button" className={css.ecommerceActionChip} disabled={conversationBusy} onClick={() => { void addImageToConversation(image, imageIndex, `${item.id}:${imageIndex}`) }}>{addingToConversation === `${item.id}:${imageIndex}` ? tt('conversation.adding') : tt('conversation.add')}</button>
-                </span>
-              </figure>
+        {group.items.map((item, slotIndex) => (
+          <div key={item.id} className={css.ecommerceResultSlot} data-status={item.status}>
+            {item.images.length > 0 ? item.images.map((image, imageIndex) => (
+              <div key={`${image.url}:${imageIndex}`} className={css.ecommerceResultImage} data-ecommerce-result-image>
+                <div className={css.ecommerceTaskCard}>
+                  <figure
+                    className={css.imageCard}
+                    role="button"
+                    tabIndex={0}
+                    title={tt('preview.open')}
+                    onClick={() => { void historyImagesToGenerated(item.images).then(images => openPreview(images, imageIndex)).catch(caught => setError(errorMessage(caught))) }}
+                    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void historyImagesToGenerated(item.images).then(images => openPreview(images, imageIndex)).catch(caught => setError(errorMessage(caught))) } }}
+                  >
+                    <img className={css.image} src={image.url} loading="lazy" alt={`${group.label} ${imageIndex + 1}`} />
+                    <span className={css.ecommerceResultBadge}>{group.label}</span>
+                    <span className={css.ecommerceTaskActions} onClick={event => event.stopPropagation()}>
+                      <a className={css.ecommerceActionChip} href={image.url} download={`product-${item.slotKey || item.id}-${imageIndex + 1}.${extensionOf(image.mime)}`}>{tt('download')}</a>
+                      <button type="button" className={css.ecommerceActionChip} disabled={galleryAdding} onClick={() => { void historyImagesToGenerated([image]).then(images => addToGallery(images[0]!, { ...item.source, id: item.id, createdAt: ecommerceHistory.run?.createdAt ?? Date.now(), images: [] })).catch(caught => setError(errorMessage(caught))) }}>{tt('gallery.add')}</button>
+                      <button type="button" className={css.ecommerceActionChip} disabled={conversationBusy} onClick={() => { void historyImagesToGenerated([image]).then(images => addImageToConversation(images[0]!, imageIndex, `${item.id}:${imageIndex}`)).catch(caught => setError(errorMessage(caught))) }}>{addingToConversation === `${item.id}:${imageIndex}` ? tt('conversation.adding') : tt('conversation.add')}</button>
+                    </span>
+                  </figure>
+                </div>
+                <EcommerceImagePrompt
+                  label={ec('promptImageLabel', { label: group.label, index: group.items.slice(0, slotIndex).reduce((count, previous) => count + Math.max(1, previous.images.length), 0) + imageIndex + 1 })}
+                  slotKey={item.slotKey}
+                  imageIndex={imageIndex}
+                  result={item.imagePrompts[imageIndex]}
+                />
+              </div>
             )) : (
-              <span className={css.ecommerceTaskState}>
-                <b>{group.label}</b>
-                {tt(`tasks.${item.status}` as never)}
-                {item.error !== undefined ? ` · ${item.error}` : ''}
-              </span>
+              <div className={css.ecommerceTaskCard}>
+                <span className={css.ecommerceTaskState}>
+                  <b>{group.label}</b>
+                  {ec(`status.${item.status}`)}
+                  {item.error !== undefined ? ` · ${item.error}` : ''}
+                </span>
+              </div>
             )}
           </div>
         ))}
@@ -1624,7 +1659,7 @@ export function ImageGenPanel(props: {
     </section>
   )
   const conversationBusy = addingToConversation !== null || galleryConversationAddingId !== null || historyConversationAddingId !== null
-  const viewingEntry = viewingHistoryId === null ? null : history.find(entry => entry.id === viewingHistoryId) ?? null
+  const viewingEntry = viewingHistoryId === null ? null : overviewHistory.find(entry => entry.id === viewingHistoryId) ?? null
   const previewImage = preview === null ? null : preview.images[preview.index] ?? null
   const comparisonTasks = comparison === null ? [] : comparison.taskIds.map(id => tasks.find(task => task.id === id)).filter((task): task is GenerationTask => task !== undefined)
   const comparisonResults = comparisonTasks.filter(task => task.status === 'completed' && task.result !== undefined)
@@ -1689,160 +1724,15 @@ export function ImageGenPanel(props: {
     closePreview()
   }
 
-  // History is part of the official keyed main panel. The shell sidebar owns
-  // navigation only; keeping data surfaces inside the panel avoids reaching
-  // into private shell DOM and works for both empty and active sessions.
-  const historyPanel = (
-    <aside className={css.history} data-dsh-imagegen-history>
-      <header className={css.historyHeader}>
-        <span className={css.historyTitle}>{tt('history.title')}</span>
-        <div className={css.historyHeaderActions}>
-          <button
-            type="button"
-            className={css.historyNew}
-            data-history-new=""
-            aria-label={tt('canvas.new')}
-            title={tt('canvas.newHint')}
-            onClick={startNewCreation}
-          >
-            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
-          </button>
-          <button
-            type="button"
-            className={css.historyNew}
-            data-history-open-folder=""
-            aria-label={tt('gallery.openFolder')}
-            title={tt('gallery.openFolderHint')}
-            onClick={() => { void api.openDataFolder() }}
-          >
-            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1.5 4.2A1.2 1.2 0 0 1 2.7 3h2.9l1.6 1.9h6.1A1.2 1.2 0 0 1 14.5 6.1v6.2a1.2 1.2 0 0 1-1.2 1.2H2.7a1.2 1.2 0 0 1-1.2-1.2z" /></svg>
-          </button>
-          {history.length > 0 ? (
-            <button type="button" className={css.historyClear} data-history-clear="" onClick={() => { void clearHistory() }}>
-              {tt('history.clear')}
-            </button>
-          ) : null}
-        </div>
-      </header>
-
-      <div className={css.historyFilters}>
-        <input className={css.historySearch} value={historyQuery} onChange={event => { setHistoryQuery(event.target.value) }} placeholder={tt('history.search')} aria-label={tt('history.search')} />
-        <select value={historyModelFilter} onChange={event => { setHistoryModelFilter(event.target.value) }} aria-label={tt('history.model')}>
-          <option value="all">{tt('history.allModels')}</option>
-          {[...new Set(history.flatMap(entry => modelsOfHistoryEntry(entry)))].map(option => <option key={option} value={option}>{option}</option>)}
-        </select>
-        <select value={historyRatioFilter} onChange={event => { setHistoryRatioFilter(event.target.value) }} aria-label={tt('history.ratio')}>
-          <option value="all">{tt('history.allRatios')}</option>
-          {[...new Set(history.map(entry => normalizeSize(entry.size)))].map(option => <option key={option} value={option}>{option}</option>)}
-        </select>
-      </div>
-
-      {filteredHistory.length === 0 ? (
-        <div className={css.historyEmpty}>{tt('history.empty')}</div>
-      ) : (
-        <div className={css.historyList}>
-          {filteredHistory.map(group => {
-            const entry = group.entries[0]!
-            const isComparison = group.models.length > 1
-            const imageCount = group.entries.reduce((total, item) => total + item.images.length, 0)
-            return (
-              <div
-                key={group.key}
-                className={css.historyItem}
-                data-active={group.entries.some(item => item.id === viewingHistoryId) ? '' : undefined}
-                data-comparison={isComparison ? '' : undefined}
-              >
-                <button
-                  type="button"
-                  className={css.historyMain}
-                  data-dsh-imagegen-history-main=""
-                  onClick={() => { void viewHistoryGroup(group) }}
-                >
-                  {entry.images.length > 0 ? (
-                    <img className={css.historyThumb} src={entry.images[0]!.url} alt="" loading="lazy" decoding="async" />
-                  ) : (
-                    <span className={css.historyThumbPlaceholder} />
-                  )}
-                  <span className={css.historyInfo}>
-                    <span className={css.historyPrompt}>{entry.prompt}</span>
-                    <span className={css.historyMeta}>
-                      {isComparison
-                        ? tt('compare.title')
-                        : entry.workflow === 'ecommerce'
-                          ? `${tt('ecommerce.short')}${entry.projectName !== undefined && entry.projectName !== '' ? ` · ${entry.projectName}` : ''}`
-                          : tt(`mode.${entry.mode === 'edit' ? 'edit' : 'text'}` as const)}
-                      {' · '}{isComparison ? group.models.join(' · ') : entry.model}
-                      {' · '}{formatTime(entry.createdAt)}
-                      {' · '}{imageCount} {tt('history.images')}
-                    </span>
-                  </span>
-                </button>
-                <span className={css.historyActions}>
-                  {entry.images.length > 0 ? (
-                    <button
-                      type="button"
-                      className={css.historyIconAction}
-                      disabled={conversationBusy}
-                      title={`${tt('conversation.add')}：${tt('conversation.addHint')}`}
-                      aria-label={tt('conversation.add')}
-                      data-history-add-conversation=""
-                      onClick={() => { void addHistoryEntryToConversation(entry) }}
-                    >
-                      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 2.5h8A1.5 1.5 0 0 1 13.5 4v5a1.5 1.5 0 0 1-1.5 1.5H8.5L5.5 13v-2.5H4A1.5 1.5 0 0 1 2.5 9V4A1.5 1.5 0 0 1 4 2.5z" /></svg>
-                    </button>
-                  ) : null}
-                  {entry.images.length > 0 ? (
-                    <button
-                      type="button"
-                      className={css.historyIconAction}
-                      disabled={galleryAdding}
-                      title={tt('gallery.add')}
-                      aria-label={tt('gallery.add')}
-                      data-history-add-gallery=""
-                      onClick={() => { void addHistoryEntryToGallery(entry) }}
-                    >
-                      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5" /><circle cx="5.9" cy="6.1" r="1" /><path d="M13.5 10.2l-3.1-3.1L4.6 13" /></svg>
-                    </button>
-                  ) : null}
-                  {entry.images.length > 0 ? (
-                    <button
-                      type="button"
-                      className={css.historyIconAction}
-                      title={tt('canvas.addToCanvas')}
-                      aria-label={tt('canvas.addToCanvas')}
-                      data-history-add-canvas=""
-                      onClick={() => { addEntryToCanvas('history', entry.id, 0) }}
-                    >
-                      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M5 8h6M8 5v6" /></svg>
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className={css.historyIconAction}
-                    data-danger
-                    title={tt('history.delete')}
-                    aria-label={tt('history.delete')}
-                    onClick={() => { void deleteHistoryGroup(group) }}
-                  >
-                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2.5 4.5h11" /><path d="M6 4.5V3.2a.7.7 0 0 1 .7-.7h2.6a.7.7 0 0 1 .7.7v1.3" /><path d="M4.3 4.5l.6 8.1a1 1 0 0 0 1 .9h4.2a1 1 0 0 0 1-.9l.6-8.1" /><path d="M6.7 7v4M9.3 7v4" /></svg>
-                  </button>
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </aside>
-  )
-
   const normalStreamPanel = (
     <div className={css.normalStream} data-dsh-imagegen-normal-feed="" data-layout="masonry">
       <header className={css.normalStreamHeader}>
         <span className={css.normalStreamHeading}>
-          <strong>{tt('tasks.title')}</strong>
+          <strong>{tt('history.allGenerations')}</strong>
           <span>{tt('tasks.count', { count: normalStreamItems.length })}</span>
         </span>
         <span className={css.normalStreamHeaderActions}>
+          <button type="button" onClick={() => { setOverviewRefresh(value => value + 1) }}>{tt('history.refresh')}</button>
           {comparison !== null && comparisonResults.length > 0 ? (
             <button type="button" onClick={() => { setComparisonFullscreen(true) }}>{tt('compare.fullscreen')}</button>
           ) : null}
@@ -1853,7 +1743,7 @@ export function ImageGenPanel(props: {
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1.5 4.2A1.2 1.2 0 0 1 2.7 3h2.9l1.6 1.9h6.1A1.2 1.2 0 0 1 14.5 6.1v6.2a1.2 1.2 0 0 1-1.2 1.2H2.7a1.2 1.2 0 0 1-1.2-1.2z" /></svg>
           </button>
           {normalHistory.length > 0 ? (
-            <button type="button" data-normal-feed-clear="" onClick={() => { void clearNormalHistory() }}>{tt('history.clear')}</button>
+            <button type="button" data-normal-feed-clear="" onClick={() => { void clearNormalHistory() }}>{tt('history.clearNormal')}</button>
           ) : null}
         </span>
       </header>
@@ -1871,6 +1761,8 @@ export function ImageGenPanel(props: {
       </div>
 
       {error !== null ? <div className={css.normalStreamError} role="alert">{tt('canvas.error', { error })}</div> : null}
+      {historyReadError !== null ? <div className={css.normalStreamError} role="alert">{tt('history.loadError', { error: historyReadError })}</div> : null}
+      {overviewReadError !== null ? <div className={css.normalStreamError} role="alert">{tt('history.loadError', { error: overviewReadError })}</div> : null}
 
       {normalStreamItems.length === 0 ? (
         <div className={css.normalStreamEmpty}>
@@ -1880,13 +1772,16 @@ export function ImageGenPanel(props: {
           <strong>{tt('history.empty')}</strong>
         </div>
       ) : (
-        <div className={css.normalStreamScroll}>
-          <div className={css.normalStreamMasonry}>
-            {[0, 1].map(columnIndex => (
+        <div ref={normalStreamScrollRef} className={css.normalStreamScroll} data-normal-feed-scroll="">
+          <div className={css.normalStreamMasonry} data-columns={normalColumnCount} style={{ '--dsh-normal-feed-columns': normalColumnCount } as CSSProperties}>
+            {Array.from({ length: normalColumnCount }, (_, columnIndex) => (
               <div key={columnIndex} className={css.normalStreamColumn} data-normal-feed-column={columnIndex}>
-                {normalStreamItems.filter((_, itemIndex) => itemIndex % 2 === columnIndex).map((item, rowIndex) => {
+                {normalStreamItems.filter((_, itemIndex) => itemIndex % normalColumnCount === columnIndex).map(item => {
                   const task = item.kind === 'task' ? item.task : undefined
-                  const entry = item.kind === 'history' ? item.entry : undefined
+                  const entry = item.kind === 'history' ? item.entry as GenerationOverviewEntry : undefined
+                  const ecommerceRunId = entry?.overview?.kind === 'ecommerce' ? entry.overview.runId
+                    : entry?.projectId !== undefined && ecommerceHistory.runs.some(run => run.id === entry.projectId) ? entry.projectId : undefined
+                  const originalCanvasId = entry?.overview?.kind === 'canvas' ? entry.overview.canvasId : entry?.canvas?.canvasId
                   const request = task?.request ?? entry!
                   const taskImages = task?.result?.images ?? []
                   const taskPreviewImages = taskImages.map(image => image.revisedPrompt === undefined
@@ -1903,7 +1798,6 @@ export function ImageGenPanel(props: {
                       data-normal-feed-card=""
                       data-source={item.kind}
                       data-status={status}
-                      style={{ '--dsh-normal-feed-order': rowIndex * 2 + columnIndex } as CSSProperties}
                     >
                       {imageSrc !== undefined ? (
                         <button
@@ -1947,9 +1841,11 @@ export function ImageGenPanel(props: {
                             <>
                               <button type="button" disabled={conversationBusy} onClick={() => { void addHistoryEntryToConversation(entry) }}>{historyConversationAddingId === entry.id ? tt('conversation.adding') : tt('conversation.add')}</button>
                               <button type="button" disabled={galleryAdding} onClick={() => { void addHistoryEntryToGallery(entry) }}>{tt('gallery.add')}</button>
-                              <button type="button" onClick={() => { addEntryToCanvas('history', entry.id, 0) }}>{tt('canvas.addToCanvas')}</button>
+                              {entry.overview === undefined ? <button type="button" onClick={() => { addEntryToCanvas('history', entry.id, 0) }}>{tt('canvas.addToCanvas')}</button> : null}
+                              {ecommerceRunId !== undefined ? <button type="button" onClick={() => { void openEcommerceRun(ecommerceRunId).catch(caught => setError(errorMessage(caught))) }}>{tt('history.openEcommerce')}</button> : null}
+                              {originalCanvasId !== undefined ? <button type="button" onClick={() => { setCanvasImportRequest(undefined); setCanvasOpenProjectId(originalCanvasId); setWorkspace('canvas') }}>{tt('history.openCanvas')}</button> : null}
                               <a href={entry.images[0]!.url} download={`dsh-history-${entry.id}.${extensionOf(entry.images[0]!.mime)}`}>{tt('download')}</a>
-                              <button type="button" data-danger="" onClick={() => { void deleteNormalHistoryEntry(entry) }}>{tt('history.delete')}</button>
+                              {entry.overview === undefined && isNormalGeneration(entry) ? <button type="button" data-danger="" onClick={() => { void deleteNormalHistoryEntry(entry) }}>{tt('history.delete')}</button> : null}
                             </>
                           ) : null}
                           {task !== undefined && (status === 'queued' || status === 'running') ? <button type="button" onClick={() => { void api.taskCancel(task.id) }}>{tt('tasks.cancel')}</button> : null}
@@ -1968,9 +1864,20 @@ export function ImageGenPanel(props: {
     </div>
   )
 
+  const ecommerceHistoryActions = (
+    <span className={css.ecommerceHistoryActions}>
+      <EcommerceHistoryMenu
+        runs={ecommerceHistory.runs} selectedId={ecommerceHistory.run?.id ?? null}
+        loading={ecommerceHistory.loading} error={ecommerceHistory.error} openingId={ecommerceHistory.openingId}
+        onOpen={openEcommerceRun} onRefresh={() => { void ecommerceHistory.refresh() }}
+        onRemove={removeEcommerceRun} onClear={clearEcommerceRuns} onCancel={cancelEcommerceRun}
+      />
+      <button type="button" className={css.galleryBulkButton} data-ecommerce-new="" onClick={newEcommerceProduct}>{tt('ecommerce.results.newProduct')}</button>
+    </span>
+  )
+
   const isGallery = workspace === 'normal' && tab === 'gallery'
   const isGeneration = workspace === 'normal' && tab !== 'gallery'
-  const showsHistoryRail = workspace === 'ecommerce'
 
   return (
     <div className={css.panel}>
@@ -1984,8 +1891,11 @@ export function ImageGenPanel(props: {
           onSelect={index => {
             if (index === 0) openTab('text')
             else if (index === 1) openTab('gallery')
-            else if (index === 2) setWorkspace('canvas')
-            else setWorkspace('ecommerce')
+            else if (index === 2) { setCanvasImportRequest(undefined); setCanvasOpenProjectId(undefined); setWorkspace('canvas') }
+            else {
+              if (ecommerceHistory.run !== null) applyEcommerceConfiguration(ecommerceHistory.run)
+              setWorkspace('ecommerce')
+            }
           }}
           items={[
             { key: 'normal', label: tt('workspace.normal') },
@@ -2007,11 +1917,7 @@ export function ImageGenPanel(props: {
         </span>
       </header>
 
-      <div className={css.studio} data-history-rail={showsHistoryRail ? 'true' : 'false'}>
-        {/* Ordinary generation owns its unified feed, while the asset library
-            and infinite canvas use their full workspace. Ecommerce keeps the
-            legacy project-history rail until its dedicated history lands. */}
-        {showsHistoryRail ? historyPanel : null}
+      <div className={css.studio}>
         <div className={css.generation} data-workspace={workspace}>
           {/* ------------------------------------------------ config sidebar */}
           <aside
@@ -2096,6 +2002,8 @@ export function ImageGenPanel(props: {
 
             {workspace === 'ecommerce' ? (
               <section className={css.ecommerceWorkspace} data-ecommerce-workspace="">
+                {ecommerceHistory.run?.legacy ? <p className={css.ecommerceRunNotice}>{ec('legacyWarning')}</p> : (
+                <fieldset className={css.ecommerceConfiguration} disabled={ecommerceHistory.run !== null} data-ecommerce-config-readonly={ecommerceHistory.run !== null ? '' : undefined}>
                 <div className={css.ecommerceSection}>
                   <header className={css.ecommerceCardHead}>
                     <h3>{tt('ecommerce.productRefTitle')}<small className={css.ecommerceSectionHint}>{tt('ecommerce.productRefHint')}</small></h3>
@@ -2304,6 +2212,7 @@ export function ImageGenPanel(props: {
                     }}
                   >
                     <option value="" disabled>{tt('model.label')}</option>
+                    {activeModel !== '' && !availableModelGroups.some(group => group.providerId === providerId && group.models.includes(activeModel)) ? <option value={activeModelKey}>{activeModel} · {ec('modelUnavailable')}</option> : null}
                     {availableModelGroups.map(group => (
                       <optgroup key={group.providerId} label={group.name}>
                         {group.models.map(item => (
@@ -2325,6 +2234,8 @@ export function ImageGenPanel(props: {
                     event.target.value = ''
                   }}
                 />
+                </fieldset>
+                )}
               </section>
             ) : null}
 
@@ -2495,7 +2406,7 @@ export function ImageGenPanel(props: {
             <section className={css.footer}>
             {workspace === 'ecommerce' ? (
               <div className={css.ecommerceFooterBody}>
-                {ecommercePreview ? (
+                {ecommerceHistory.run !== null ? <span className={css.ecommerceFooterHint}>{ec('viewing')}</span> : ecommercePreview ? (
                   <>
                     <div className={css.ecommercePlanMini}>
                       <strong>{tt('ecommerce.planTitle', { count: ecommerceTotal })}</strong>
@@ -2601,9 +2512,11 @@ export function ImageGenPanel(props: {
                 && imageModels.length > 1}
               connected={connected}
               history={history}
+              onHistoryChange={setHistory}
               gallery={gallery}
               tasks={tasks}
               importRequest={canvasImportRequest}
+              openProjectId={canvasOpenProjectId}
               onImportRequestHandled={() => { setCanvasImportRequest(undefined) }}
               onOpenSettings={() => { openSettingsGuide('generation') }}
             />
@@ -2737,6 +2650,7 @@ export function ImageGenPanel(props: {
                 </div>
                 <div className={css.ecommerceResultsActions}>
                   <button type="button" className={css.galleryBulkButton} onClick={() => { setEcommercePreview(false) }}>{tt('gallery.tagsCancel')}</button>
+                  {ecommerceHistoryActions}
                 </div>
               </header>
               <div className={css.ecommercePromptList}>
@@ -2789,20 +2703,17 @@ export function ImageGenPanel(props: {
               <header className={css.ecommerceResultsHeader}>
                 <div>
                   <h3>{tt('ecommerce.results.title')}</h3>
-                  {ecommerceRestored !== null && ecommerceRestored.projectId === ecommerceProjectId && ecommerceRestored.projectName !== '' ? (
-                    <span>{ecommerceRestored.projectName}</span>
+                  {ecommerceHistory.run !== null ? <span>{ecommerceHistory.run.config?.draft.productName ?? ecommerceHistory.runs.find(run => run.id === ecommerceHistory.run!.id)?.name}</span> : null}
+                  {ecommerceHistory.run !== null && !ecommerceHistory.run.legacy ? (
+                    <span data-ecommerce-run-progress="">{ec(`status.${ecommerceHistory.run.status}`)} · {tt('ecommerce.results.progress', { done: ecommerceDoneCount, total: ecommerceMergedItems.length })}{ecommerceFailedCount > 0 ? ` · ${tt('ecommerce.results.failed', { count: ecommerceFailedCount })}` : ''}</span>
                   ) : null}
-                  {ecommerceMergedItems.length > 0 ? (
-                    <span>
-                      {tt('ecommerce.results.progress', { done: ecommerceDoneCount, total: ecommerceMergedItems.length })}
-                      {ecommerceFailedCount > 0 ? ` · ${tt('ecommerce.results.failed', { count: ecommerceFailedCount })}` : ''}
-                    </span>
-                  ) : null}
-                  {ecommerceAnchor !== null ? <span data-ecommerce-anchor="">{tt('ecommerce.anchorPending')}</span> : null}
+                  {ecommerceHistory.run?.legacy ? <span>{ec('legacyWarning')}</span> : null}
                 </div>
                 <div className={css.ecommerceResultsActions}>
+                  {ecommerceHistory.run !== null && draftBeforeHistory.current !== null ? <button type="button" className={css.galleryBulkButton} data-ecommerce-return-draft="" onClick={returnEcommerceDraft}>{ec('returnDraft')}</button> : null}
+                  {ecommerceHistory.run?.config !== undefined ? <button type="button" className={css.galleryBulkButton} data-ecommerce-copy-config="" onClick={() => { void copyEcommerceRun() }}>{ec('copyConfig')}</button> : null}
                   {ecommerceMergedItems.length > 0 ? <button type="button" className={css.galleryBulkButton} data-ecommerce-export="" onClick={exportEcommerceManifest}>{tt('ecommerce.results.export')}</button> : null}
-                  <button type="button" className={css.galleryBulkButton} data-ecommerce-new="" onClick={newEcommerceProduct}>{tt('ecommerce.results.newProduct')}</button>
+                  {ecommerceHistoryActions}
                 </div>
               </header>
               {ecommerceMergedItems.length === 0 ? (
@@ -2817,7 +2728,7 @@ export function ImageGenPanel(props: {
               )}
             </div>
           ) : null}
-          {!isGallery && !isGeneration && tasks.length > 0 ? (
+          {workspace === 'canvas' && trayTasks.length > 0 ? (
             <section className={css.taskTray} data-open={taskTrayOpen ? 'true' : 'false'} aria-label={tt('tasks.title')}>
               <header className={css.taskTrayHeader}>
                 <button type="button" className={css.taskTrayToggle} aria-expanded={taskTrayOpen} onClick={() => { setTaskTrayOpen(open => !open) }}>
@@ -2828,7 +2739,7 @@ export function ImageGenPanel(props: {
                 {taskTrayOpen ? <button type="button" className={css.taskTrayClose} aria-label={tt('preview.close')} onClick={() => { setTaskTrayOpen(false) }}>×</button> : null}
               </header>
               <div className={css.taskRows}>
-                {tasks.slice(0, 5).map(task => (
+                {trayTasks.slice(0, 5).map(task => (
                   <div key={task.id} className={css.taskRow} data-status={task.status}>
                     <span className={css.taskStatus}>{tt(`tasks.${task.status}` as never)}</span>
                     <span className={css.taskPrompt}>{task.request.prompt}</span>

@@ -1,0 +1,45 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -43,6 +43,7 @@
+ const ALL_INTERFACES_HOST = "0.0.0.0";
+ const BROWSER_OPENER_MODULE = import.meta.resolve("open");
+ const BROWSER_OPENER_PROGRAM = `
++for (const name of Object.keys(process.env)) if (name.toUpperCase() === 'ELECTRON_RUN_AS_NODE') delete process.env[name]
+ try {
+   const { default: open } = await import(${JSON.stringify(BROWSER_OPENER_MODULE)})
+   const launcher = await open(process.argv[1])
+@@ -122,7 +123,11 @@
+ 		"--",
+ 		url
+ 	], {
+-		env: scrubbedParentEnv(),
++		windowsHide: true,
++		env: {
++			...scrubbedParentEnv(),
++			ELECTRON_RUN_AS_NODE: "1"
++		},
+ 		stdio: [
+ 			"ignore",
+ 			"inherit",
+diff --git a/cordis.patch.yml b/cordis.patch.yml
+--- a/cordis.patch.yml
++++ b/cordis.patch.yml
+@@ -51,7 +51,7 @@
+         exportTimeoutMillis: 20000
+         shutdownTimeoutMillis: 2000
+         serviceName: deepseek-harness-desktop
+-        serviceVersion: !!js process.env.DSH_CLIENT_VERSION
++        serviceVersion: !!js process.env.DSH_CLIENT_VERSION ?? '0.2.0-rc.2'
+         endpoint: !!js process.env.DSH_PRODUCT_ANALYTICS_OTLP_URL
+ 
+     - id: product-analytics
+@@ -59,7 +59,7 @@
+       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+       config:
+         enabled: true
+-        appVersion: !!js process.env.DSH_CLIENT_VERSION
++        appVersion: !!js process.env.DSH_CLIENT_VERSION ?? '0.2.0-rc.2'
+ 
+     # Host-owned opt-in sampled when a new Web session receives its preset
+     # delegation tools. The Plugins page edits this settings namespace.

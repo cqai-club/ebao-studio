@@ -35,7 +35,11 @@ const ALLOWED_LICENSES = new Set([
   '0BSD',
   'Unlicense',
   'MPL-2.0',
+  // Cua's native SDK library is MIT; its bundled UniFFI Node runtime is MPL-2.0.
+  'MIT AND MPL-2.0',
   'CC0-1.0',
+  // type-fest grants MIT or CC0-1.0; Desktop uses the MIT option.
+  '(MIT OR CC0-1.0)',
   'Zlib',
   'Python-2.0',
   // mailsplit grants a choice of MIT or EUPL; Desktop uses the MIT option.

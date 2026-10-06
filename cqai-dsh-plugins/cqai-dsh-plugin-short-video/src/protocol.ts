@@ -130,7 +130,14 @@ export function audioPreviewReuseIssue(source: Job, draft: Draft, subtitleProvid
   }
 }
 export function materialPreviewReuseIssue(source: Job, draft: Draft): string | undefined {
-  if (source.status !== 'completed' || source.stopAt !== 'materials' || source.params.video_source !== 'cqai_video') return '请先完成 AI 视频素材生成'
+  if (source.stopAt !== 'materials' || source.params.video_source !== 'cqai_video') return '请先完成 AI 视频素材生成'
+  if (source.status === 'running') return 'AI 视频素材正在生成，请等待任务完成'
+  if (source.status !== 'completed') {
+    if (source.videoTasks?.some(task => ['submitting', 'queued', 'in_progress'].includes(task.status))) return '视频镜头可能已受理，请核对远端任务并在原任务中继续，避免重复计费'
+    if (source.status === 'failed') return 'AI 视频素材生成失败，请查看任务错误并确认模型和服务可用后再生成素材'
+    if (source.status === 'cancelled' || source.status === 'interrupted') return 'AI 视频素材生成已停止，请查看原任务状态后继续'
+    return '请先完成 AI 视频素材生成'
+  }
   const perVideo = Math.ceil(Number(source.params.target_duration_seconds) / Number(source.params.video_clip_duration))
   if (!source.materialGroups?.length || source.materialGroups.length !== source.params.video_count || !Number.isFinite(perVideo) || source.materialGroups.some(group => group.length !== perVideo)) return '已生成素材缺少镜头文件'
   const generatedTerms=Array.isArray(source.state?.terms) && source.state.terms.every(term=>typeof term==='string') ? source.state.terms.join(', ') : undefined
@@ -154,6 +161,25 @@ export type Catalog = {
   warning?: string
   defaultText?: string
   defaultImage?: string
+}
+
+export const VIDEO_MODEL_UNAVAILABLE = '该模型未声明可用的视频生成服务，暂不可选；请刷新模型列表，或联系管理员确认服务配置'
+
+/** Share the capability gate between the selector, imported drafts, and Host submissions. */
+export function videoModelIssue(catalog: Catalog | undefined, model: string): string | undefined {
+  if (!catalog?.signedIn) return '请先登录 CQAI Club 并刷新模型列表'
+  if (!model) return '请选择可用的 CQAI Club 视频模型'
+  const selected = catalog.video?.find(item => item.id === model)
+  if (!selected) return '所选视频模型不在当前 CQAI Club 账号中，请刷新模型列表并重新选择'
+  if (selected.callable !== true) return VIDEO_MODEL_UNAVAILABLE
+}
+
+export function defaultVideoModel(catalog: Catalog | undefined, current = ''): string {
+  // Keep explicit/history parameters, including models used by completed paid clips.
+  // videoModelIssue blocks new submissions if that selection is no longer callable.
+  if (current) return current
+  if (!catalog?.signedIn) return ''
+  return catalog.video?.find(model => model.callable === true)?.id || ''
 }
 export type Settings = {
   pexelsConfigured: boolean

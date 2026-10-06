@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { API, audioPreviewReuseIssue, defaultParams, defaultSettings, materialKeyIssue, materialPreviewReuseIssue, needsText, stageRequirements, subtitlePreviewReuseIssue, workflowIdForJob, workflowIdForNewJob, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
+import { API, audioPreviewReuseIssue, defaultParams, defaultSettings, materialKeyIssue, materialPreviewReuseIssue, needsText, stageRequirements, subtitlePreviewReuseIssue, videoModelIssue, workflowIdForJob, workflowIdForNewJob, type Artifact, type ContentAction, type ContentResult, type Draft, type Job, type Settings, type Stage, type UploadKind } from './protocol.ts'
 import { createVideoMaterial, validateVideoMaterialRequest } from './video-provider.ts'
 export { needsText } from './protocol.ts'
 
@@ -185,7 +185,15 @@ function pythonPath(dataRoot: string): string {
   return process.platform === 'win32' ? join(venv, 'Scripts', 'python.exe') : join(venv, 'bin', 'python')
 }
 export function shortVideoEnvironment(dataRoot: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return {...commonToolEnvironment(dirname(dataRoot), base), MPT_DSH_DATA_ROOT: dataRoot, PYTHONUTF8: '1'}
+  const env: NodeJS.ProcessEnv = {...commonToolEnvironment(dirname(dataRoot), base), MPT_DSH_DATA_ROOT: dataRoot, PYTHONUTF8: '1'}
+  // The Host includes [::1] for undici, but Whisper's HTTPX requires bare IPv6 in NO_PROXY.
+  // Normalize only the Python child environment so the Host retains its proxy bypass policy.
+  for (const key of ['no_proxy', 'NO_PROXY'] as const) {
+    if (typeof env[key] === 'string') {
+      env[key] = env[key].split(',').map(entry => entry.trim() === '[::1]' ? '::1' : entry).join(',')
+    }
+  }
+  return env
 }
 function terminate(child: ChildProcess): void {
   if (!child.pid) return
@@ -402,8 +410,10 @@ export function apply(ctx: Context): void {
     if (textNeeded && !available.text.some(m=>m.id===draft.textModel)) throw new Error('所选文本模型不在当前 CQAI Club 账号中')
     if (imageNeeded && !draft.imageModel) throw new Error('请选择 CQAI Club 图片模型')
     if (imageNeeded && !available.image.some(m=>m.id===draft.imageModel)) throw new Error('所选图片模型不在当前 CQAI Club 账号中')
-    if (videoNeeded && !draft.videoModel) throw new Error('请选择 CQAI Club 视频模型')
-    if (videoNeeded && !available.video.some(m=>m.id===draft.videoModel)) throw new Error('所选视频模型不在当前 CQAI Club 账号中')
+    if (videoNeeded) {
+      const issue = videoModelIssue(available, draft.videoModel)
+      if (issue) throw new Error(issue)
+    }
   }
   const llmCall = async (model: string, prompt: string): Promise<string> => {
     const available=await catalog()

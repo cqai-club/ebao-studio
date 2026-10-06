@@ -1,7 +1,8 @@
 import type { GenerateRequest, GenerationTask, HistoryEntry } from '../protocol.ts'
+import { generationOrigin, type GenerationOriginMetadata } from '../history-origin.ts'
 
 /** Metadata shared by requests and persisted history for workspace routing. */
-type GenerationOrigin = Pick<GenerateRequest, 'canvas' | 'workflow' | 'projectId' | 'slotKey'>
+type GenerationOrigin = GenerationOriginMetadata
 
 export interface NormalGenerationFilters {
   query: string
@@ -34,10 +35,7 @@ export function normalizeSize(value: string): string {
  * naturally remain ordinary history.
  */
 export function isNormalGeneration(origin: GenerationOrigin): boolean {
-  return origin.canvas === undefined
-    && origin.workflow !== 'ecommerce'
-    && origin.projectId === undefined
-    && origin.slotKey === undefined
+  return generationOrigin(origin) === 'normal'
 }
 
 function matchesFilters(
@@ -51,7 +49,8 @@ function matchesFilters(
 }
 
 /**
- * Merge live ordinary tasks with persisted ordinary history. A completed task
+ * Merge live ordinary tasks with all supplied persisted history. Origin metadata
+ * routes live progress but does not hide completed results. A completed task
  * whose result already contains the updated history is represented by that
  * durable row only; completed results without history stay visible as a
  * session fallback so a persistence failure never hides a generated image.
@@ -62,7 +61,6 @@ export function buildNormalGenerationStream(
   filters: NormalGenerationFilters,
 ): NormalGenerationStreamItem[] {
   const historyItems: NormalGenerationStreamItem[] = history
-    .filter(isNormalGeneration)
     .filter(entry => matchesFilters(entry, filters))
     .map(entry => ({ kind: 'history', key: `history:${entry.id}`, createdAt: entry.createdAt, entry }))
 

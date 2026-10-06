@@ -26,8 +26,7 @@ export function articleSubmissionWarnings(
     const sources = articleImageSources(selected.body)
     const assets = new Map(selected.assets.map(asset => [asset.id, asset]))
     const notes: string[] = []
-    if (account.platform === 'tt' && selected.summary.trim()) notes.push('独立摘要不会写入头条文章')
-    if ((account.platform === 'wxmp' || account.platform === 'tt' || account.platform === 'bjh') && selected.tags.length > 0) {
+    if ((account.platform === 'wxmp' || account.platform === 'bjh') && selected.tags.length > 0) {
       notes.push('文章标签暂不写入该平台')
     }
     if (account.platform === 'juejin' && !selected.platformFields.juejin?.category?.trim()) {
@@ -41,7 +40,7 @@ export function articleSubmissionWarnings(
     const effectiveCoverId = selectedCover?.id ?? selected.assets[0]?.id
     if (account.platform === 'tt') {
       if (sources.length > 0 || hasRawArticleImage(selected.body)) {
-        notes.push('正文图片会在原位置保留占位，请在头条草稿中手动上传')
+        notes.push('正文图片会在原位置保留占位，请从发布历史打开头条草稿手动补图')
       }
     } else if (account.platform === 'juejin' || account.platform === 'blbl') {
       if (sources.length > 0 || hasRawArticleImage(selected.body)) notes.push('正文插图将从该平台版本移除')
@@ -78,7 +77,7 @@ export function articleSubmissionWarnings(
     } else if (!selectedCover && selected.assets.length > 0 && account.platform !== 'tt') {
       notes.push('将自动选取首张图片作为封面')
     }
-    if (account.platform === 'tt' && effectiveCoverId) notes.push('封面需在头条草稿中手动设置')
+    if (account.platform === 'tt' && effectiveCoverId) notes.push('封面需手动设置，请从发布历史打开头条草稿')
     if (account.platform !== 'wxmp' && selected.coverAssetId && !selectedCover && selected.assets.length === 0) {
       notes.push('封面不在该平台所选图片中，提交时将忽略')
     }
@@ -103,7 +102,8 @@ export function contentSubmissionError(
     if (!selected.title.trim()) return '请填写标题'
     if (selected.contentType === 'article' && !selected.body.trim()) return '请填写正文'
     if (selected.contentType === 'image-note' && selected.assets.length === 0) return '图文至少添加一张图片'
-    if (selected.contentType === 'image-note' && selected.coverAssetId && !selected.assets.some(asset => asset.id === selected.coverAssetId)) {
+    if (selected.contentType === 'image-note' && account.platform !== 'wxmp'
+      && selected.coverAssetId && !selected.assets.some(asset => asset.id === selected.coverAssetId)) {
       return `${PLATFORM_LABELS[account.platform]}封面不在该平台已选图片中`
     }
     if (selected.contentType === 'article' && account.platform === 'wxmp') {
@@ -121,7 +121,9 @@ export function contentSubmissionError(
       }
     }
     const titleLimit = capability.maxTitleLength?.[selected.contentType]
-    if (selected.contentType !== 'article' && titleLimit !== undefined && selected.title.length > titleLimit) {
+    const titleLength = account.platform === 'wxmp' && selected.contentType === 'image-note'
+      ? Array.from(selected.title).length : selected.title.length
+    if (selected.contentType !== 'article' && titleLimit !== undefined && titleLength > titleLimit) {
       return `${PLATFORM_LABELS[account.platform]}标题不能超过 ${titleLimit} 字`
     }
     const assetLimit = capability.maxAssets?.[selected.contentType]

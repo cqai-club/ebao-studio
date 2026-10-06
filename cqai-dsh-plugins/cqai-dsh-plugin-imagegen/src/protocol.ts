@@ -1051,6 +1051,8 @@ export interface HistoryImageRef {
   url: string
   /** MIME type, e.g. image/png. */
   mime: string
+  /** SHA256 of stored image bytes, returned only when list opts in. */
+  sha256?: string
   /** Upstream revised prompt, when provided. */
   revisedPrompt?: string
 }

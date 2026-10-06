@@ -13,6 +13,8 @@ import path from 'node:path'
 import { HISTORY_MAX, type GenerateMode, type HistoryEntry, type HistoryEntryInput } from './protocol.ts'
 import { notifyImageSaved } from './storage-sync.ts'
 import { imageDataRoot } from './image-storage-path.ts'
+import { generationOrigin, HistoryScopeMismatchError, type HistoryScope } from './history-origin.ts'
+import { readStoredImageHash } from './stored-image-hash.ts'
 
 function historyDir(): string { return imageDataRoot() }
 function indexPath(): string { return path.join(historyDir(), 'index.json') }
@@ -128,11 +130,9 @@ function isStoredEntry(value: unknown): value is StoredEntry {
   return typeof entry.id === 'string'
     && typeof entry.createdAt === 'number'
     && (entry.mode === 'text' || entry.mode === 'edit')
-    && (entry.workflow === undefined || entry.workflow === 'ecommerce')
-    && (entry.projectId === undefined || typeof entry.projectId === 'string')
-    && (entry.projectName === undefined || typeof entry.projectName === 'string')
-    && (entry.slotKey === undefined || typeof entry.slotKey === 'string')
-    && (entry.slotLabel === undefined || typeof entry.slotLabel === 'string')
+    // Origin metadata is checked by generationOrigin. Do not drop an
+    // otherwise readable legacy row merely because its markers conflict or
+    // are malformed: it must survive source clears and later index writes.
     && typeof entry.prompt === 'string'
     && Array.isArray(entry.images)
     && entry.images.every(image => {
@@ -181,9 +181,29 @@ function toWire(entry: StoredEntry): HistoryEntry {
 }
 
 /** List the persisted history, newest first, as wire entries. */
-export async function listHistory(): Promise<HistoryEntry[]> {
+export async function listHistory(scope?: HistoryScope): Promise<HistoryEntry[]> {
   const entries = await readIndex()
-  return entries.map(toWire)
+  return entries.filter(entry => scope === undefined || generationOrigin(entry) === scope).map(toWire)
+}
+
+/** Retain each source independently; legacy ecommerce projects are indivisible.
+ * Ambiguous rows are never removed automatically. New ecommerce runs own a
+ * separate asset store, so these rules apply only to the shared legacy index. */
+function retainedEntries(entries: StoredEntry[]): StoredEntry[] {
+  const counts = { normal: 0, canvas: 0 }
+  const ecommerceProjects = new Set<string>()
+  return entries.filter(entry => {
+    const origin = generationOrigin(entry)
+    if (origin === 'unknown') return true
+    if (origin === 'ecommerce') {
+      const key = entry.projectId ?? entry.id
+      if (ecommerceProjects.has(key)) return true
+      if (ecommerceProjects.size >= HISTORY_MAX) return false
+      ecommerceProjects.add(key)
+      return true
+    }
+    return ++counts[origin] <= HISTORY_MAX
+  })
 }
 
 /** Append one generation, evicting the oldest beyond HISTORY_MAX. */
@@ -232,32 +252,36 @@ export async function appendHistory(input: HistoryEntryInput): Promise<HistoryEn
       ...input.canvas === undefined ? {} : { canvas: input.canvas },
     }
     const merged = [entry, ...await readIndex()]
-    const kept = merged.slice(0, HISTORY_MAX)
-    for (const dropped of merged.slice(HISTORY_MAX)) await removeEntryFiles(dropped)
+    const kept = retainedEntries(merged)
+    const retained = new Set(kept)
     await writeIndex(kept)
+    for (const dropped of merged.filter(entry => !retained.has(entry))) await removeEntryFiles(dropped)
     return kept.map(toWire)
   })
 }
 
 /** Remove one entry (and its image files). */
-export async function removeHistory(id: string): Promise<HistoryEntry[]> {
+export async function removeHistory(id: string, scope?: HistoryScope): Promise<HistoryEntry[]> {
   return mutateHistory(async () => {
     const previous = await readIndex()
     const target = previous.find(entry => entry.id === id)
-    if (target !== undefined) await removeEntryFiles(target)
+    if (scope !== undefined && target !== undefined && generationOrigin(target) !== scope) throw new HistoryScopeMismatchError()
     const kept = previous.filter(entry => entry.id !== id)
     await writeIndex(kept)
+    if (target !== undefined) await removeEntryFiles(target)
     return kept.map(toWire)
   })
 }
 
 /** Remove every entry (and all image files). */
-export async function clearHistory(): Promise<HistoryEntry[]> {
+export async function clearHistory(scope?: HistoryScope): Promise<HistoryEntry[]> {
   return mutateHistory(async () => {
     const previous = await readIndex()
-    for (const entry of previous) await removeEntryFiles(entry)
-    await writeIndex([])
-    return []
+    const removed = previous.filter(entry => scope === undefined || generationOrigin(entry) === scope)
+    const kept = previous.filter(entry => scope !== undefined && generationOrigin(entry) !== scope)
+    await writeIndex(kept)
+    for (const entry of removed) await removeEntryFiles(entry)
+    return kept.map(toWire)
   })
 }
 
@@ -272,4 +296,9 @@ export async function readHistoryImage(file: string): Promise<{ data: Buffer; mi
   } catch {
     return undefined
   }
+}
+
+/** Opt-in list metadata; hash only the stored bytes, never browser input. */
+export async function readHistoryImageHash(file: string): Promise<string | undefined> {
+  return readStoredImageHash(imagesDir(), file)
 }

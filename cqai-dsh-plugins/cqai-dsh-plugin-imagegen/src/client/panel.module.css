@@ -109,10 +109,6 @@
   flex: 1;
 }
 
-.studio[data-history-rail='true'] {
-  grid-template-columns: clamp(220px, 24vw, 300px) minmax(0, 1fr);
-}
-
 .generation {
   display: flex;
   width: auto;
@@ -236,6 +232,8 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+  container-name: imagegen-feed;
+  container-type: inline-size;
 }
 
 .normalStreamHeader {
@@ -247,6 +245,7 @@
   padding: 10px 14px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   flex: none;
+  flex-wrap: wrap;
 }
 
 .normalStreamHeading {
@@ -276,6 +275,8 @@
   align-items: center;
   gap: 6px;
   flex: none;
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .normalStreamHeaderActions button {
@@ -371,7 +372,6 @@
   padding: 12px 12px 16px;
   scrollbar-width: thin;
   scrollbar-color: var(--dsw-alias-border-l2) transparent;
-  container-type: inline-size;
 }
 
 .normalStreamScroll::-webkit-scrollbar { width: 8px; }
@@ -380,7 +380,7 @@
 .normalStreamMasonry {
   display: grid;
   width: 100%;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--dsh-normal-feed-columns, 1), minmax(0, 1fr));
   align-items: start;
   gap: 12px;
 }
@@ -429,7 +429,6 @@
   display: block;
   width: 100%;
   height: auto;
-  min-height: 180px;
   object-fit: cover;
   background: var(--dsw-alias-bg-base);
 }
@@ -575,10 +574,9 @@
 .normalCardActions button:disabled { cursor: wait; opacity: .5; }
 .normalCardActions button[data-danger]:hover { border-color: var(--dsw-alias-label-error); color: var(--dsw-alias-label-error); }
 
-@container (max-width: 620px) {
-  .normalStreamMasonry { display: flex; flex-direction: column; }
-  .normalStreamColumn { display: contents; }
-  .normalTaskCard { order: var(--dsh-normal-feed-order); }
+@container imagegen-feed (max-width: 500px) {
+  .normalStreamFilters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .normalStreamSearch { grid-column: 1 / -1; }
 }
 
 .taskTray {
@@ -899,6 +897,30 @@
   padding: 10px 8px 18px;
 }
 
+.ecommerceConfiguration {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.ecommerceRunNotice {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.ecommerceHistoryActions {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 /* Config cards in the 参考布局 style: elevated white cards, head row with a
  * count chip, hint line under the title. */
 .ecommerceSection {
@@ -961,9 +983,21 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.ecommerceSection input:not([type="checkbox"]), .ecommerceSection select, .ecommerceSection textarea { box-sizing: border-box; width: 100%; padding: 9px 11px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-3); border: 1px solid var(--dsw-alias-border-l2); border-radius: 9px; font: inherit; }
+.ecommerceSection input:not([type="checkbox"]),
+.ecommerceSection select,
+.ecommerceSection textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 11px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-3);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 13px;
+}
 .ecommerceSection input:not([type="checkbox"]):focus-visible, .ecommerceSection select:focus-visible, .ecommerceSection textarea:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
-.ecommerceSection textarea { min-height: 68px; resize: vertical; line-height: 1.5; }
+.ecommerceSection textarea { min-height: 68px; resize: vertical; line-height: 1.6; }
 
 .ecommerceField {
   display: flex;
@@ -1282,6 +1316,9 @@
   flex-direction: column;
   gap: 14px;
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  container: ecommerce-results / inline-size;
   margin: 0 auto;
   padding: 16px 18px;
   overflow-y: auto;
@@ -1292,6 +1329,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .ecommerceResultsHeader h3 {
@@ -1303,6 +1341,8 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .ecommerceResultsHeader span {
@@ -1313,6 +1353,10 @@
 .ecommerceResultsActions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .ecommerceResultsEmpty {
@@ -1448,6 +1492,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
   padding: 0;
   border: none;
   border-radius: 0;
@@ -1476,8 +1521,20 @@
 
 .ecommerceGroupGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 12px;
+  align-items: start;
+}
+
+.ecommerceResultSlot,
+.ecommerceResultImage {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+@container ecommerce-results (max-width: 640px) {
+  .ecommerceGroups[data-split] { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* AI 帮写 icon button, floats at the 参数信息 card's top-right. */
@@ -1521,8 +1578,8 @@
   overflow: hidden;
 }
 
-.ecommerceTaskCard[data-status="failed"],
-.ecommerceTaskCard[data-status="cancelled"] {
+.ecommerceResultSlot[data-status="failed"] .ecommerceTaskCard,
+.ecommerceResultSlot[data-status="cancelled"] .ecommerceTaskCard {
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
 }
@@ -2797,14 +2854,7 @@
     grid-template-rows: minmax(0, 1fr);
     overflow-y: hidden;
   }
-  .studio[data-history-rail='true'] {
-    grid-template-rows: minmax(220px, 36%) minmax(0, 1fr);
-    overflow-y: auto;
-  }
-  .history { grid-column: 1; grid-row: 1; min-height: 220px; }
-  .generation { grid-column: 1; grid-row: 1; flex-direction: column; min-height: 0; }
-  .studio[data-history-rail='true'] .generation { grid-row: 2; }
-  .studio[data-history-rail='false'] .generation { overflow-y: auto; }
+  .generation { grid-column: 1; grid-row: 1; flex-direction: column; min-height: 0; overflow-y: auto; }
   .config { width: auto; max-width: none; height: auto; min-height: 0; }
   .config[data-gallery='true'] { flex: none; }
   .canvas { min-height: 560px; }

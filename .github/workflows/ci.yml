@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [master]
+    branches: [dev, master]
   push:
-    branches: [master]
+    branches: [dev, master]
   workflow_dispatch:
 
 permissions:
@@ -45,6 +45,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+          node --test scripts/release-flow.test.mjs
+          node scripts/release-flow.mjs integration
           node --test scripts/bilingual-docs.test.mjs
           node scripts/verify-bilingual-docs.mjs
           node --test scripts/market-dependency-direction.test.mjs
@@ -148,9 +150,13 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           corepack yarn@1.22.22 install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           corepack yarn@1.22.22 test:publisher-worker
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           corepack yarn@1.22.22 build:dir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           corepack yarn@1.22.22 electron-builder --config electron-builder.publisher.yml --win dir --x64 --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Smoke Windows Publisher Worker lifecycle
         run: node scripts/smoke-windows-publisher-worker.mjs
       - uses: actions/setup-node@v6
@@ -219,7 +225,9 @@ jobs:
       - name: Build Linux AppImage and Debian package
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
-        run: yarn workspace ${{ matrix.workspace }} dist:linux
+        # The native Computer Use constructor needs a desktop service connection.
+        # Use a virtual display for the real ASAR smoke; no OS tool is executed.
+        run: xvfb-run -a yarn workspace ${{ matrix.workspace }} dist:linux
 
   desktop-macos:
     needs: changes

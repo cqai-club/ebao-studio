@@ -8,6 +8,7 @@
   "include": ["scripts/**/*.ts", "src/*.ts", "tests/**/*.ts", "tests/**/*.tsx"],
   "exclude": [
     "tests/client-boot-health.spec.ts",
+    "tests/client-computer-use.spec.ts",
     "tests/client-aa-settings.spec.ts",
     "tests/client-desktop-settings.spec.ts",
     "tests/client-desktop-update-settings.spec.ts",

@@ -25,4 +25,9 @@ describe('publisher history target opening', () => {
     expect(openTargetNotice('review-window', 'unknown')).not.toContain('列表')
     expect(() => openTargetNotice('unknown' as never)).toThrow('平台打开结果无效')
   })
+  it('opens Toutiao history without referring to a retained window or result-pending label', () => {
+    expect(openTargetNotice('review-window', 'unknown', 'tt')).toBe('已打开头条稿件，请在平台内查看并补齐图片。')
+    expect(openTargetNotice('draft-list', 'unknown', 'tt')).toContain('任务未完成')
+    expect(openTargetNotice('draft-list', 'unknown', 'tt')).not.toMatch(/保留|待确认/u)
+  })
 })

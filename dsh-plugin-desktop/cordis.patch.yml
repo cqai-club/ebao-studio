@@ -18,6 +18,11 @@
       name: dsh-plugin-desktop/profiles
     - id: desktop-updates
       name: dsh-plugin-desktop/updates
+    - id: computer-use
+      name: '@deepseek-ai/dsh-computer-use'
+    - id: computer-use-cua-driver-native
+      name: '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'
+      disabled: true
 
 # A desktop launch has no terminal operator waiting for the Web readiness line.
 - id: web-runtime

@@ -29,6 +29,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 // type-check time either.
 import { IMAGEGEN_PROFILE_ENTRY_ID, IMAGEGEN_SETTINGS_NAMESPACE, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigPreviewRequest, type CanvasSkillConfigPreviewResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillConfigView, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type ChannelConfig, type ModelMapping } from './protocol.ts'
 import { makeRoutes, type SettingsSeam } from './routes.ts'
+import { disposeEcommerceRoutes } from './ecommerce-routes.ts'
 import { syncAllTemplates } from './templates-store.ts'
 import { setStorageSyncHandler, putObject, type StorageSyncConfig } from './storage-sync.ts'
 
@@ -723,6 +724,7 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
   // entry points; Agent tools wait for their task result by default and render
   // images in the tool result instead of injecting a synthetic user message.
   const runtime = new ImageGenerationRuntime(channelsView)
+  let ecommerceTeardown: Promise<void> = Promise.resolve()
 
   // Host-rendered copy (skill catalog labels, run errors, produced node titles)
   // resolves through the same dictionaries the browser bundle ships, so a run
@@ -935,6 +937,9 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
           failed.push({ source, message: messageOf(error) })
         }
       }
+      // Older clients expect a top-level message for ok:false. Keep source
+      // details in failed[] as well, so the actual cause never becomes HTTP 200.
+      if (installed.length === 0 && message === undefined) message = failed[0]?.message
       return {
         ok: installed.length > 0,
         installed,
@@ -1151,7 +1156,8 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
       () => {
         let disposed = false
         let disposeMounted: (() => void) | undefined
-        void settingsStartup!.then(() => {
+        void settingsStartup!.then(async () => {
+          await ecommerceTeardown
           if (disposed) return
           const routes = makeRoutes({
             settings: seam,
@@ -1191,6 +1197,7 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
             for (const route of [skillImageBridge.route(), ...routes]) disposers.push(ctx.webServer.register(route))
           } catch (error) {
             for (const dispose of disposers.splice(0)) dispose()
+            ecommerceTeardown = disposeEcommerceRoutes(runtime)
             throw new Error('检测到旧 @dickpy/dsh-imagegen 或另一 ImageGen 实例占用同一路由；为保护 ~/.dsh/dsh-imagegen，两个插件不能同时挂载。', { cause: error })
           }
           // Background template sync: the upstream sources update on their own
@@ -1214,9 +1221,11 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
         }).catch((error: unknown) => {
           ctx.logger.error('cqai imagegen routes failed to start: %s', messageOf(error))
         })
-        return () => {
+        return async () => {
           disposed = true
           disposeMounted?.()
+          ecommerceTeardown = disposeEcommerceRoutes(runtime)
+          await ecommerceTeardown
         }
       },
       'dsh-imagegen: routes',
@@ -1296,7 +1305,8 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
   // no settings service, whose installSettingsSection never fires its hooks).
   sync()
 
-  return () => {
+  return async () => {
+    await disposeEcommerceRoutes(runtime)
     disposeMountGuard()
     configConfirmations.clear()
     skillImageBridge.dispose()

@@ -373,3 +373,30 @@ it('keeps the recovery deselection ledger across a feature change and never rese
   expect(after.dsh.profile.bundles).toContain(AA_PACKAGE)
   expect(after.dsh.profile.bundles).not.toContain(COMMUNITY_MARKET_PACKAGE)
 })
+
+
+it('keeps Schedule manageable but opt-in and preserves row or bundle selections on recomposition', () => {
+  const manager = profiles()
+  const dir = manager.ensure('desktop')
+  const modules = ['@deepseek-ai/dsh-time-context', '@deepseek-ai/dsh-schedule', '@deepseek-ai/dsh-client-ui-schedule']
+  const scheduleRows = (patches: Parameters<typeof composeEntries>[0]) =>
+    composeEntries(patches).filter(row => modules.includes(row.name ?? ''))
+  const loaded = loadNextProfile(dir, manager.home)
+  const defaults = scheduleRows(loaded.layers.map(layer => layer.patches))
+  expect(defaults.map(row => row.name)).toEqual(modules)
+  expect(defaults.every(row => row.disabled === true)).toBe(true)
+  const edits = defaults.map(row => ({ id: row.id, disabled: false }))
+  expect(scheduleRows([readNextProfilePatches(dir, manager.home, [], edits)]).every(row => row.disabled === false)).toBe(true)
+  writeFileSync(loaded.patchPath, JSON.stringify(edits))
+  expect(scheduleRows([readNextProfilePatches(dir, manager.home, [])]).every(row => row.disabled === false)).toBe(true)
+  writeFileSync(loaded.patchPath, '[]\n')
+  const manifestPath = join(dir, 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  manifest.dsh.profile.bundles.push('@deepseek-ai/dsh-experimental-schedule-bundle')
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  const selected = scheduleRows(loadNextProfile(dir, manager.home).layers.map(layer => layer.patches))
+  expect(selected.map(row => row.name)).toEqual(modules)
+  expect(selected.every(row => !row.disabled)).toBe(true)
+  expect(scheduleRows([readNextProfilePatches(dir, manager.home, [])]).map(row => row.name)).toEqual(modules)
+  expect(scheduleRows([readNextProfilePatches(dir, manager.home, [])]).every(row => !row.disabled)).toBe(true)
+})
