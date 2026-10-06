@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing canonical vMAJOR.MINOR.PATCH tag to publish
+        description: Canonical vMAJOR.MINOR.PATCH tag to create AFTER master packaging succeeds
         required: true
         type: string
       macos_mode:
@@ -15,25 +15,25 @@ on:
         options:
           - signed
           - unsigned-test
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-master
   cancel-in-progress: false
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
-  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
-  RELEASE_REF: ${{ inputs.release_tag || github.ref }}
+  RELEASE_TAG: ${{ inputs.release_tag }}
+  RELEASE_REF: ${{ github.sha }}
   MACOS_UNSIGNED_TEST: ${{ inputs.macos_mode == 'unsigned-test' }}
 
 jobs:
   verify:
+    # Dispatch exclusively from master; every checkout uses the dispatch SHA.
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -53,32 +53,10 @@ jobs:
           path: ${{ steps.yarn-cache.outputs.dir }}
           key: release-yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - run: yarn install --immutable
-      - name: Verify release identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          release_version="${RELEASE_TAG#v}"
-          if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tag must be canonical vMAJOR.MINOR.PATCH SemVer: $RELEASE_TAG" >&2
-            exit 1
-          fi
-          RELEASE_VERSION="$release_version" node --input-type=module <<'NODE'
-          import { readFileSync } from 'node:fs'
-
-          const releaseVersion = process.env.RELEASE_VERSION
-          const stable = JSON.parse(readFileSync('dsh-plugin-desktop/package.json', 'utf8'))
-          const beta = JSON.parse(readFileSync('dsh-plugin-desktop-beta/package.json', 'utf8'))
-          const releaseIndex = JSON.parse(readFileSync('release/desktop-version.json', 'utf8'))
-          if (stable.version !== releaseVersion) {
-            throw new Error(`tag ${releaseVersion} does not match stable Desktop ${stable.version}`)
-          }
-          if (beta.version !== `${releaseVersion}-beta.1`) {
-            throw new Error(`beta Desktop ${beta.version} does not match ${releaseVersion}-beta.1`)
-          }
-          if (releaseIndex.channel !== 'stable' || releaseIndex.version !== releaseVersion) {
-            throw new Error(`release index does not select stable ${releaseVersion}`)
-          }
-          NODE
+      - name: Verify master promotion and release identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-flow.mjs preflight
       - name: Run complete headless gate
         run: yarn check
 
@@ -166,9 +144,10 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: release-windows
+          overwrite: true
           path: release-assets/*
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
   macos:
     needs: verify
@@ -248,9 +227,10 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: release-macos
+          overwrite: true
           path: release-assets/*
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
   publish:
     needs: [verify, windows, macos]
@@ -258,21 +238,21 @@ jobs:
     permissions:
       actions: read
       contents: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 1
-          # The artifacts were built from RELEASE_REF by the platform jobs. For a
-          # manually dispatched release, validate and publish them with the
-          # workflow revision that was dispatched, so a verifier repair does not
-          # require moving the immutable release tag.
-          ref: ${{ github.sha }}
+          ref: ${{ env.RELEASE_REF }}
       - uses: actions/download-artifact@v8
         with:
-          pattern: release-*
+          name: release-windows
           path: release-assets
-          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-macos
+          path: release-assets
       - name: Verify assets and create checksums
         shell: bash
         run: |
@@ -299,69 +279,30 @@ jobs:
             sha256sum --check SHA256SUMS
           )
           node scripts/verify-release-assets.mjs --directory release-assets --version "$version"
-      - name: Publish prerelease
-        shell: bash
+      - name: Record verified packaging provenance
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          release_title="e宝工坊 ${RELEASE_TAG}（预发布）"
-          macos_note='macOS 自动更新构件必须使用 Developer ID 签名并完成 Apple 公证；本工作流会在缺少签名或公证凭据时失败，而不会发布不可自动更新的 macOS 构件。'
-          if [[ "$MACOS_UNSIGNED_TEST" == 'true' ]]; then
-            release_title="e宝工坊 ${RELEASE_TAG}（未签名 macOS 测试预发布）"
-            macos_note='本次 macOS 构件是未签名测试包：仅供测试者明确下载、在 Gatekeeper 提示中手动授权打开及验证更新发现链路。它不是生产 macOS 自动更新构件；不要将其作为正式发布或静默替换的依据。后续生产 macOS 发布仍必须使用 Developer ID 签名并完成 Apple 公证。'
-          fi
-          cat > RELEASE_NOTES.md <<'NOTES'
-          ## 本次预发布版本
-
-          数字人视频现在获取账户服务的 Relay 实时报价，显示获取进度、失败原因和费用确认提示，防止重复点击及使用历史估算提交生成。修复小红书及多入口登录状态误判，保留完整账号会话，并明确提示无法确认的登录状态。
-
-          本版本修复 e剪宝制作环境安装失败：应用私有 Python 3.11 的检测参数冲突会导致 Windows 等平台下载后仍无法通过检查；构建时补齐媒体运行库 uv 执行权限。Windows 发布流程新增真实的首次环境安装验证，检查共享媒体工具、短视频锁定依赖、Python 识别和字幕字体。
-
-          修复 macOS ffprobe 的私有动态库加载和系统字体发现，优先选择可用中文字体，解决字幕找不到系统字体的错误。短视频当前任务记录新增“打开文件夹”和“打开素材文件夹”，制作过程中也可以查看已下载素材。插件市场与 Agents Anywhere 按发布时最新版本验证。TalkCraft 上游采用 PolyForm Noncommercial 1.0.0；商业使用需取得作者授权。
-
-          ### 下载与自动更新
-
-          - Windows x64：安装版 `Setup.exe` 或免安装 `Portable.zip`；已安装的稳定版会在确认后下载 `Setup.exe`，选择“重启并更新”后由安装器自动接管。
-          - macOS：Intel 与 Apple Silicon 通用的 `universal.dmg`；`universal.zip` 和 `latest-mac.yml` 仅供已安装应用的安全自动更新使用。
-          - `latest.yml`、`latest-mac.yml`：Electron Updater 的 SHA-512 更新元数据。
-          - `SHA256SUMS`：四个可下载安装构件的 SHA-256 校验值。
-
-          ### 预发布说明
-
-          __MACOS_RELEASE_NOTE__ Windows 安装包和便携包尚未进行 Authenticode 签名，可能显示“未知发布者”或 SmartScreen 提示。SHA-256 与 Electron Updater 的 SHA-512 仅验证传输完整性，不替代平台代码签名。
-          NOTES
-          python3 - "$macos_note" <<'PY'
-          from pathlib import Path
-          import sys
-
-          notes = Path('RELEASE_NOTES.md')
-          notes.write_text(notes.read_text().replace('__MACOS_RELEASE_NOTE__', sys.argv[1]))
-          PY
-          gh release create "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "$release_title" \
-            --prerelease \
-            --notes-file RELEASE_NOTES.md \
+        run: node scripts/release-flow.mjs record
+      - name: Preserve verified artifacts before creating a tag
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-validated-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
             release-assets/*
+            release-provenance.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Create immutable tag and publish verified prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-flow.mjs publish
       - name: Verify published release assets
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          release_json="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease)"
-          RELEASE_JSON="$release_json" RELEASE_TAG="$RELEASE_TAG" node --input-type=module <<'NODE'
-          const release = JSON.parse(process.env.RELEASE_JSON)
-          if (release.tagName !== process.env.RELEASE_TAG || release.isPrerelease !== true) {
-            throw new Error(`Published release identity is invalid: ${process.env.RELEASE_TAG}`)
-          }
-          NODE
           downloaded="$(mktemp -d)"
           trap 'rm -rf "$downloaded"' EXIT
-          gh release download "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --dir "$downloaded"
-          node scripts/verify-release-assets.mjs --directory "$downloaded" --version "$version"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$downloaded"
+          node scripts/verify-release-assets.mjs --directory "$downloaded" --version "${RELEASE_TAG#v}"
