@@ -1,6 +1,8 @@
 <p align="center">
-  <img src="assets/desktop-hero-en.png" alt="e宝工坊 desktop app" width="100%">
+  <img src="assets/ebao-desktop-workbench.jpg" alt="Actual e宝工坊 workbench and digital employee plugin entries in the Chinese UI" width="100%">
 </p>
+
+Workbench and plugin entries. Entries marked “即将上线” (coming soon) are not yet available; available features depend on the Profile and enabled plugins.
 
 # e宝工坊
 
@@ -11,8 +13,10 @@ e宝工坊 is an open-source desktop app for Windows and macOS built around [Dee
 This repository pins an **unmodified upstream** version. Repository-owned plugins and an Electron launcher compose the desktop features around it. The project is maintained independently by the community and is not affiliated with or endorsed by DeepSeek or the official upstream team.
 
 <p align="center">
-  <img src="assets/desktop-chat-en.png" alt="e宝工坊 chat interface screenshot" width="100%">
+  <img src="assets/ebao-video-workbench.jpg" alt="Actual e宝工坊 e剪宝 form for producing a video from existing talking footage in the Chinese UI" width="100%">
 </p>
+
+The e剪宝 form for producing a video from existing talking footage, with media selection, script input, and production settings. Both screenshots above were captured in the Chinese UI of macOS Beta `v0.0.11-beta.1`.
 
 ## Use
 
