@@ -2,6 +2,9 @@ import { createElement, Fragment, useMemo, type ReactNode } from 'react'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import type { Definition, Nodes, Root } from 'mdast'
 
+const MAX_DESCRIPTION_DEPTH = 32
+const MAX_DESCRIPTION_NODES = 1_000
+
 function displayText(value: string, code = false): string {
   // Entities are decoded by the Markdown parser, after the transport has been validated.
   // Keep structural newlines and code indentation while visibly neutralizing decoded controls.
@@ -19,6 +22,19 @@ function safeLink(value: string): string | undefined {
   } catch {
     return undefined
   }
+}
+
+function hasBoundedStructure(root: Root): boolean {
+  const pending: { node: Nodes; depth: number }[] = [{ node: root, depth: 0 }]
+  let visited = 0
+  while (pending.length > 0) {
+    const { node, depth } = pending.pop()!
+    if (++visited > MAX_DESCRIPTION_NODES || depth > MAX_DESCRIPTION_DEPTH) return false
+    if ('children' in node) {
+      for (const child of node.children) pending.push({ node: child, depth: depth + 1 })
+    }
+  }
+  return true
 }
 
 function renderDescription(root: Root): ReactNode {
@@ -76,6 +92,17 @@ function renderDescription(root: Root): ReactNode {
 
 /** Render only inert CommonMark text structure and user-activated, credential-free HTTPS links. */
 export function MarketDescription({ text }: { text: string }): ReactNode {
-  const content = useMemo(() => renderDescription(fromMarkdown(text.replace(/[\u2028\u2029]/gu, '\n'))), [text])
+  const content = useMemo(() => {
+    const normalized = text.replace(/[\u2028\u2029]/gu, '\n')
+    const literal = () => <span className="dshMarketDescriptionLiteral">{displayText(normalized)}</span>
+    try {
+      const root = fromMarkdown(normalized)
+      // Valid transport text can still encode thousands of nested blockquotes.
+      // Check iteratively before either our renderer or React sees that tree.
+      return hasBoundedStructure(root) ? renderDescription(root) : literal()
+    } catch {
+      return literal()
+    }
+  }, [text])
   return <div className="dshMarketDescription">{content}</div>
 }

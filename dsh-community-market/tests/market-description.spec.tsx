@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { Ajv } from 'ajv'
+import * as markdown from 'mdast-util-from-markdown'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MarketDescription } from '../src/client/MarketDescription.js'
 import { installMarketStyles } from '../src/client/styles.js'
+
+vi.mock('mdast-util-from-markdown', async importOriginal => {
+  const actual = await importOriginal<typeof import('mdast-util-from-markdown')>()
+  return { ...actual, fromMarkdown: vi.fn(actual.fromMarkdown) }
+})
 
 afterEach(cleanup)
 
@@ -33,6 +42,47 @@ describe('Market description Markdown', () => {
     const { container } = render(<MarketDescription text={text} />)
     expect(container.querySelector('p')?.textContent).toBe(text)
     expect(container.querySelectorAll('h1, h2, h3, li, a, img')).toHaveLength(0)
+  })
+
+  it('renders a transport-valid deeply nested description as inert text without crashing', () => {
+    const text = '> '.repeat(2_000) + 'hello'
+    expect(text).toHaveLength(4_005)
+    const schema = JSON.parse(readFileSync(resolve('docs/schemas/catalog-provider-page.schema.json'), 'utf8'))
+    const validate = new Ajv().compile({
+      $defs: { plainText: schema.$defs.plainText },
+      ...schema.$defs.item.properties.description,
+    })
+    expect(validate(text)).toBe(true)
+    const { container } = render(<MarketDescription text={text} />)
+    expect(container.querySelector('.dshMarketDescriptionLiteral')?.textContent).toBe(text)
+    expect(container.querySelectorAll('blockquote, a, img')).toHaveLength(0)
+  })
+
+  it('bounds the rendered node count while preserving all oversized structure as inert text', () => {
+    const text = '**word** '.repeat(400)
+    expect(text.length).toBeLessThan(5_000)
+    const { container } = render(<MarketDescription text={text} />)
+    expect(container.querySelector('.dshMarketDescriptionLiteral')?.textContent).toBe(text)
+    expect(container.querySelector('strong')).toBeNull()
+  })
+
+  it('keeps fallback text safe and preserves transport line boundaries', () => {
+    const text = '> '.repeat(2_000) + '<script>bad</script>\u2028unsafe\u202e'
+    const { container } = render(<MarketDescription text={text} />)
+    expect(container.textContent).toBe(text.replace('\u2028', '\n').replace('\u202e', '\ufffd'))
+    expect(container.querySelectorAll('script, a, img')).toHaveLength(0)
+  })
+
+  it('falls back to inert text when Markdown parsing fails', () => {
+    const parser = vi.mocked(markdown.fromMarkdown).mockImplementationOnce(() => { throw new Error('Parser failure') })
+    try {
+      const text = '<img src="https://tracking.example/pixel">\u2028[link](javascript:bad)'
+      const { container } = render(<MarketDescription text={text} />)
+      expect(container.querySelector('.dshMarketDescriptionLiteral')?.textContent).toBe(text.replace('\u2028', '\n'))
+      expect(container.querySelectorAll('img, a')).toHaveLength(0)
+    } finally {
+      parser.mockRestore()
+    }
   })
 
   it('keeps paragraph spacing despite the existing details paragraph reset', () => {
