@@ -1,6 +1,8 @@
 <p align="center">
-  <img src="assets/desktop-hero-zh.png" alt="e宝工坊桌面应用" width="100%">
+  <img src="assets/ebao-desktop-home.jpg" alt="e宝工坊首页、E宝机器人与数字员工入口的真实截图" width="100%">
 </p>
+
+首页的 E宝机器人与数字员工入口。实际可用功能取决于 Profile 与启用的插件。
 
 # e宝工坊
 
@@ -11,8 +13,10 @@ e宝工坊是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 本仓库固定一个**不修改源码**的上游版本，桌面能力由仓库自己的插件和 Electron 启动器组合。项目由社区独立维护，与深度求索及上游官方团队没有隶属或背书关系。
 
 <p align="center">
-  <img src="assets/desktop-chat-zh.png" alt="e宝工坊对话界面截图" width="100%">
+  <img src="assets/ebao-video-workbench.jpg" alt="e宝工坊 e剪宝已有口播视频制作表单的真实截图" width="100%">
 </p>
+
+e剪宝的已有口播视频制作表单，可选择素材、填写文案并调整制作设置。以上两张截图均采自 macOS Beta `v0.0.12-beta.1` 的中文界面。
 
 ## 使用
 

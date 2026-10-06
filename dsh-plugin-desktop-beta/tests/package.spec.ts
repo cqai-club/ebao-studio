@@ -91,7 +91,7 @@ const dshResolution = (name: string): unknown =>
 describe('published package surface', () => {
   it('keeps the private workspace version-neutral and versions the Beta package', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.12-beta.1')
+    expect(manifest.version).toBe('0.0.13-beta.1')
   })
 
   it('runs all desktop editions and community market typechecks from the root command', () => {
@@ -867,7 +867,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.12-beta.1')
+    expect(manifest.version).toBe('0.0.13-beta.1')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',

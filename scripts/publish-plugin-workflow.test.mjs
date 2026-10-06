@@ -130,7 +130,8 @@ describe('workspace plugin discovery', () => {
         // Directories without a readable manifest are not publishable plugins.
       }
     }
-    assert.ok(discovered.has('cqai-dsh-plugin-research'), 'e研宝 must be discoverable for a tag push')
+    assert.ok(discovered.has('cqai-dsh-plugin-imagegen'), 'e图宝 must be discoverable for a tag push')
+    assert.ok(!discovered.has('cqai-dsh-plugin-research'), 'e研宝 is released from its standalone repository')
     for (const [name, directory] of discovered) {
       assert.match(directory, /^[A-Za-z0-9._-]+$/u, `${name} must map to a tag-safe directory`)
     }
