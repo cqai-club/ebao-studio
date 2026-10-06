@@ -1348,6 +1348,21 @@ export function prepareDesktopProfile(
     throw new Error(`${BIN_NAME}: desktop profile is missing @deepseek-ai/dsh-web-app`)
   }
 
+  // 0.2 moved these opt-in Web rows into an optional bundle. Keep the
+  // existing row controls available before user patches, while a selected
+  // Schedule bundle remains their sole source and controls its own defaults.
+  const scheduleBundle = '@deepseek-ai/dsh-experimental-schedule-bundle'
+  if (!profile.layers.some(layer => layer.packageName === scheduleBundle)) {
+    const directory = resolveOverlayPackage(scheduleBundle, {
+      installPackageUrl: pathToFileURL(INSTALL_ANCHOR).href,
+      profilePackageUrl: bareModuleBaseUrl,
+    }).selected.packageDir
+    const bundle = readProfileManifest(BIN_NAME, directory).dsh?.bundle
+    if (bundle === undefined) throw new Error(BIN_NAME + ': Schedule bundle has no patch declaration')
+    const rows = composeEntries(bundlePatchPaths(directory, bundle).map(path => loadOverlayPatches(BIN_NAME, path)))
+    bundlePatches.push({ insert: rows.map(row => ({ ...row, disabled: true })) })
+  }
+
   const loadedHomePatches = loadDesktopMachinePatches(home)
   const { patches: homePatches, skipped: skippedOptionalEntries } = omitUnresolvedOptionalEntries(
     loadedHomePatches,

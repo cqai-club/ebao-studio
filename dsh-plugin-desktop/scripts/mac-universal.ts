@@ -37,8 +37,19 @@ export function macSmokeExecutableSlices(
   return ['x86_64', 'arm64']
 }
 
+/** Cua SDK library and both native bindings required by each macOS CPU. */
+export const MACOS_COMPUTER_USE_NATIVE_ENTRIES = [
+  { arch: 'arm64', path: 'node_modules/@trycua/cua-driver-darwin-arm64/libcua_driver_sdk.dylib' },
+  { arch: 'arm64', path: 'node_modules/@trycua/cua-driver-darwin-arm64/cua_driver_node_runtime.node' },
+  { arch: 'arm64', path: 'node_modules/@ubjs/node-darwin-arm64/uniffi-runtime-napi.darwin-arm64.node' },
+  { arch: 'x86_64', path: 'node_modules/@trycua/cua-driver-darwin-x64/libcua_driver_sdk.dylib' },
+  { arch: 'x86_64', path: 'node_modules/@trycua/cua-driver-darwin-x64/cua_driver_node_runtime.node' },
+  { arch: 'x86_64', path: 'node_modules/@ubjs/node-darwin-x64/uniffi-runtime-napi.darwin-x64.node' },
+] as const satisfies readonly { readonly arch: MacUniversalArch; readonly path: string }[]
+
 /** Thin native files that must be present for each CPU inside the packaged app directory. */
 export const MACOS_UNIVERSAL_NATIVE_ENTRIES = [
+  ...MACOS_COMPUTER_USE_NATIVE_ENTRIES,
   {
     arch: 'arm64',
     path: 'node_modules/@dataiku/uv-darwin-arm64/bin/uv',

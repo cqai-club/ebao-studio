@@ -32,6 +32,14 @@ diff --git a/package.json b/package.json
      "lib",
      "skills",
      "cordis.patch.yml",
+@@ -60,6 +62,6 @@
+   "peerDependencies": {
+     "@deepseek-ai/cordis": "~4.0.4",
+-    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2"
++    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || 0.2.0-rc.2"
+   },
+   "keywords": [
+     "dsh-plugin",
 diff --git a/assets/plugin-icon.svg b/assets/plugin-icon.svg
 new file mode 100644
 --- /dev/null

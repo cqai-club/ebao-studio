@@ -18,6 +18,7 @@ import './onboarding.css'
 import { applyAdvancedShell } from './advanced-shell.ts'
 import { startRendererBootReporter } from './boot-health.ts'
 import { applyDesktopBrand } from './desktop-brand.tsx'
+import { registerDesktopComputerUse } from './computer-use.tsx'
 import { applyDesktopSettings } from './desktop-settings.ts'
 import { registerDesktopUpdateAction } from './desktop-update-action.ts'
 import { installDesktopDirectoryPickerBridge } from './directory-picker.ts'
@@ -131,6 +132,7 @@ export function apply(ctx: ClientContext): void {
   const environment = parseDesktopClientEnvironment(window.location.search)
   if (!environment) return
   applyDesktopBrand(ctx)
+  registerDesktopComputerUse(ctx, environment.platform)
   ctx.effect(
     () => provideDesktopWindow(ctx, desktopWindowService(environment)),
     'dsh-plugin-desktop: native window geometry service',

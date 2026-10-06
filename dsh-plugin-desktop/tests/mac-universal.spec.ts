@@ -47,6 +47,22 @@ describe('universal macOS native runtime preparation', () => {
     ])
   })
 
+  it.each([
+    'node_modules/@trycua/cua-driver-darwin-arm64/libcua_driver_sdk.dylib',
+    'node_modules/@trycua/cua-driver-darwin-x64/libcua_driver_sdk.dylib',
+    'node_modules/@trycua/cua-driver-darwin-arm64/cua_driver_node_runtime.node',
+    'node_modules/@trycua/cua-driver-darwin-x64/cua_driver_node_runtime.node',
+    'node_modules/@ubjs/node-darwin-arm64/uniffi-runtime-napi.darwin-arm64.node',
+    'node_modules/@ubjs/node-darwin-x64/uniffi-runtime-napi.darwin-x64.node',
+  ])('refuses to prepare a package missing the Computer Use payload %s', missing => {
+    const chmod = vi.fn()
+    const desktopRoot = resolve('/desktop')
+    expect(() => prepareMacUniversalRuntime({
+      desktopRoot, exists: path => path !== join(desktopRoot, missing), chmod,
+    })).toThrow(join(desktopRoot, missing))
+    expect(chmod).not.toHaveBeenCalled()
+  })
+
   it('fails before changing permissions when one architecture is incomplete', () => {
     const chmod = vi.fn()
     const desktopRoot = resolve('/desktop')

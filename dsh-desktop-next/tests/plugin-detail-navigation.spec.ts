@@ -46,8 +46,10 @@ function fixture() {
   }
   runInNewContext(source, { window: { __ModuleLoader__: { load: (entry: { factory: (require: unknown) => { apply: typeof apply } }) => { apply = entry.factory(require).apply } } } })
   const noop = () => () => {}
+  const configurations = { view: { namespaces: [] } }
   apply!({ effect: (effect: () => void) => effect(), on: noop,
     locale: { register: noop, bind: () => (key: string) => key }, remote: { $on: noop },
+    configForms: { describe: () => ({ getSnapshot: () => configurations, subscribe: noop }), get: vi.fn() },
     layout: { panelInfo: { subscribe: noop }, selectPanel: vi.fn() }, reflect: { provide: noop },
     slots: { inject: (_name: string, register: () => unknown) => {
       const result = register()
@@ -73,7 +75,7 @@ function fixture() {
     installedCardEntries: { subscribe: noop, getSnapshot: () => [] },
     shellAvailable: { subscribe: noop, getSnapshot: () => false },
     t: (key: string) => key, ensure: vi.fn(), resolveText: (text: string) => text,
-    useConfigurations: () => [], usePluginManager: () => state, useConfigLedger: () => ledger, setEnabled, setRowEnabled,
+    useConfigurations: (select: (snapshot: typeof configurations) => unknown) => select(configurations), usePluginManager: () => state, useConfigLedger: () => ledger, setEnabled, setRowEnabled,
     renderSlot: (name: string, owner: Record<string, unknown>, options?: unknown) => {
       if (name === 'plugins.overview') overview = owner as typeof overview
       return jsx('slot', { name, owner, options })

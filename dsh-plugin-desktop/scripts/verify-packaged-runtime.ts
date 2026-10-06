@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { extractFile, getRawHeader, listPackage } from '@electron/asar'
 import {
   FORBIDDEN_MACOS_UNIVERSAL_ENTRIES,
+  MACOS_COMPUTER_USE_NATIVE_ENTRIES,
   MACOS_UNIVERSAL_NATIVE_ENTRIES,
 } from './mac-universal.ts'
 
@@ -86,8 +87,24 @@ export const MAX_DATAIKU_UV_SMART_UNPACK_BYTES = 64 * 1024 * 1024
 export const MAX_LIBREOFFICE_KIT_SMART_UNPACK_BYTES = 192 * 1024 * 1024
 export const MAX_SHERPA_ONNX_SMART_UNPACK_BYTES = 48 * 1024 * 1024
 
+/** Per-platform bounds for the pinned Cua SDK and its UniFFI binding. */
+export const MAX_CUA_DRIVER_SMART_UNPACK_BYTES = 64 * 1024 * 1024
+export const MAX_UBJS_NODE_SMART_UNPACK_BYTES = 8 * 1024 * 1024
+export const MAX_COMPUTER_USE_SMART_UNPACK_FILES = 8
+
 /** Package roots electron-builder may smart-unpack as one indivisible unit. */
 export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
+  // Only the SDK's reviewed release-platform packages may leave ASAR.
+  'node_modules/@trycua/cua-driver-darwin-arm64',
+  'node_modules/@trycua/cua-driver-darwin-x64',
+  'node_modules/@trycua/cua-driver-win32-x64-msvc',
+  'node_modules/@trycua/cua-driver-linux-arm64-gnu',
+  'node_modules/@trycua/cua-driver-linux-x64-gnu',
+  'node_modules/@ubjs/node-darwin-arm64',
+  'node_modules/@ubjs/node-darwin-x64',
+  'node_modules/@ubjs/node-win32-x64-msvc',
+  'node_modules/@ubjs/node-linux-arm64-gnu',
+  'node_modules/@ubjs/node-linux-x64-gnu',
   // Agents Anywhere launches its bundled Python connector through uv.
   'node_modules/@dataiku/uv-darwin-arm64',
   'node_modules/@dataiku/uv-darwin-x64',
@@ -203,6 +220,44 @@ export interface PackagedRuntimeContext {
   }
 }
 
+/** Computer Use modules stay archived; only reviewed platform payloads are unpacked. */
+export const REQUIRED_COMPUTER_USE_RUNTIME_ENTRIES = [
+  'node_modules/@deepseek-ai/dsh-computer-use/lib/index.js',
+  'node_modules/@deepseek-ai/dsh-experimental-computer-use-cua-driver-native/lib/index.js',
+  'node_modules/@trycua/cua-driver/dist/index.js',
+  'node_modules/@trycua/cua-driver/dist/native/node-runtime.js',
+  'node_modules/@trycua/cua-driver/dist/native/cua_driver_sdk-ffi.js',
+  'node_modules/@ubjs/node/index.js',
+  'node_modules/@ubjs/node/typescript/dist/resolve-lib.js',
+] as const
+
+/** Physical libraries selected by the configured Computer Use release architectures. */
+export const REQUIRED_COMPUTER_USE_NATIVE_ENTRIES = {
+  darwin: {
+    arm64: MACOS_COMPUTER_USE_NATIVE_ENTRIES.filter(entry => entry.arch === 'arm64').map(entry => entry.path),
+    x64: MACOS_COMPUTER_USE_NATIVE_ENTRIES.filter(entry => entry.arch === 'x86_64').map(entry => entry.path),
+  },
+  win32: {
+    x64: [
+      'node_modules/@trycua/cua-driver-win32-x64-msvc/cua_driver_sdk.dll',
+      'node_modules/@trycua/cua-driver-win32-x64-msvc/cua_driver_node_runtime.node',
+      'node_modules/@ubjs/node-win32-x64-msvc/uniffi-runtime-napi.win32-x64-msvc.node',
+    ],
+  },
+  linux: {
+    x64: [
+      'node_modules/@trycua/cua-driver-linux-x64-gnu/libcua_driver_sdk.so',
+      'node_modules/@trycua/cua-driver-linux-x64-gnu/cua_driver_node_runtime.node',
+      'node_modules/@ubjs/node-linux-x64-gnu/uniffi-runtime-napi.linux-x64-gnu.node',
+    ],
+    arm64: [
+      'node_modules/@trycua/cua-driver-linux-arm64-gnu/libcua_driver_sdk.so',
+      'node_modules/@trycua/cua-driver-linux-arm64-gnu/cua_driver_node_runtime.node',
+      'node_modules/@ubjs/node-linux-arm64-gnu/uniffi-runtime-napi.linux-arm64-gnu.node',
+    ],
+  },
+} as const
+
 /** Stable non-desktop archive entries required by the packaged runtime. */
 export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'package.json',
@@ -217,6 +272,7 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   ...REQUIRED_CQAI_PUBLISHER_RUNTIME_ENTRIES,
   ...REQUIRED_DSH_IM_RUNTIME_ENTRIES,
   ...REQUIRED_DSH_PPT_RUNTIME_ENTRIES,
+  ...REQUIRED_COMPUTER_USE_RUNTIME_ENTRIES,
   'node_modules/open/index.js',
   // In-app update staging and its abort bridge must remain ASAR-integrity protected.
   'node_modules/electron-updater/out/main.js',
@@ -269,6 +325,7 @@ export const FORBIDDEN_UNPACKED_RUNTIME_ENTRIES = [
   'node_modules/@deepseek-ai/dsh-web-app/lib/index.js',
   // Preset inputs are ordinary read-only data covered by ASAR integrity.
   ...REQUIRED_AGENT_PRESET_RUNTIME_ENTRIES,
+  ...REQUIRED_COMPUTER_USE_RUNTIME_ENTRIES,
   'node_modules/@vscode/ripgrep/lib/index.js',
   'node_modules/open/index.js',
   'node_modules/yaml/dist/index.js',
@@ -858,6 +915,19 @@ export function verifySelectiveUnpackedRuntime(
       )
     }
   }
+  for (const [prefix, budget] of [
+    ['node_modules/@trycua/cua-driver-', MAX_CUA_DRIVER_SMART_UNPACK_BYTES],
+    ['node_modules/@ubjs/node-', MAX_UBJS_NODE_SMART_UNPACK_BYTES],
+  ] as const) {
+    const oversized = summary.groups.find(group => group.root.startsWith(prefix)
+      && (group.files > MAX_COMPUTER_USE_SMART_UNPACK_FILES || group.bytes > budget))
+    if (oversized !== undefined) {
+      throw new Error(
+        `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds ${prefix} smart-unpack budget `
+        + `${String(MAX_COMPUTER_USE_SMART_UNPACK_FILES)} files/${String(budget)} bytes for ${oversized.root}; inventory: ${inventory}`,
+      )
+    }
+  }
   if (summary.files > MAX_UNPACKED_RUNTIME_FILES) {
     throw new Error(
       `dsh-plugin-desktop: unpacked runtime at ${unpackedRoot} exceeds selective ASAR file budget ${String(MAX_UNPACKED_RUNTIME_FILES)}; inventory: ${inventory}`,
@@ -954,12 +1024,17 @@ export function verifyPackagedRuntime(
     ? [
         ...desktopPhysicalEntries,
         ...REQUIRED_WINDOWS_X64_NODE_PTY_ENTRIES,
+        ...REQUIRED_COMPUTER_USE_NATIVE_ENTRIES.win32.x64,
       ]
     : context.electronPlatformName === 'darwin' && context.arch === 4
       ? [...desktopPhysicalEntries, ...REQUIRED_MACOS_UNIVERSAL_ENTRIES]
       : posixFsExtEntry === undefined
         ? desktopPhysicalEntries
-        : [...desktopPhysicalEntries, posixFsExtEntry]
+        : [
+            ...desktopPhysicalEntries,
+            posixFsExtEntry,
+            ...REQUIRED_COMPUTER_USE_NATIVE_ENTRIES[context.electronPlatformName === 'darwin' ? 'darwin' : 'linux'][context.arch === 1 ? 'x64' : 'arm64'],
+          ]
   const runtimeRoot = hasAsar ? unpackedRoot : resolvePackagedApplicationRoot(context)
   const requiredEntries = hasAsar
     ? requiredPhysicalEntries
