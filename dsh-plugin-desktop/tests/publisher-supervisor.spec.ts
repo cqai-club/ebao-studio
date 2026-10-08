@@ -442,7 +442,11 @@ describe('PublisherSupervisor', () => {
       if (handshake(frame, worker)) return
       if (frame.method === 'accounts.list') worker.reply(frame.id, [])
       if (frame.method === 'system.shutdown') { worker.reply(frame.id, { ok: true }); worker.exit(0) }
-    }, { platform: 'win32', pickLocalVideo: async () => file })
+    }, {
+      platform: 'win32', pickLocalVideo: async () => file,
+      // Named-pipe setup and replies use real I/O, unlike the in-memory fixture.
+      handshakeTimeoutMs: 2_000, requestTimeoutMs: 2_000,
+    })
     expect(supervisor.status()).toMatchObject({ supported: true, running: false, legacyAccountImportSupported: false })
     await expect(supervisor.request('accounts.importPreview')).rejects.toMatchObject({ code: 'import-not-supported' })
     await expect(supervisor.request('accounts.importApply')).rejects.toMatchObject({ code: 'import-not-supported' })
