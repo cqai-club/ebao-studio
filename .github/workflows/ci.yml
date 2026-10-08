@@ -99,9 +99,9 @@ jobs:
       - name: Verify Ebao home layout against the published frontend
         if: needs.changes.outputs.product == 'true'
         run: yarn workspace cqai-dsh-plugin-desktop-presentation test:layout
-      - name: Verify optional CQAI Club extension and MCP settings through the composed Host
+      - name: Verify built-in CQAI Club account and default navigation through the composed Host
         if: needs.changes.outputs.product == 'true'
-        run: yarn workspace dsh-plugin-desktop-beta verify:profile --club-mcp-browser
+        run: yarn workspace dsh-plugin-desktop-beta verify:profile --club-account-browser
       - name: Verify Next window controls in the official frontend
         if: needs.changes.outputs.product == 'true'
         run: yarn workspace dsh-desktop-next verify:window-controls

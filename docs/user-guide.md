@@ -76,7 +76,7 @@ dsh plugin update
 
 开关会保存在当前 Profile；开启后重新启动应用会自动连接，令牌由 Host 自动续期。网络失败时页面保留错误与重连入口；关闭开关或退出账号会移除对应对话工具。
 
-扩展需要支持扩展入口的新版 e宝工坊；旧版账号插件会明确提示升级。未发布的版本可以在插件管理中填写本地 `.tgz` 文件的绝对路径安装。部署管理员须先在 Logto 注册独立的 MCP API 资源及角色权限。客户端复用现有 CQAI Club Native 应用和回调，配置说明见[账号插件说明](../cqai-dsh-plugins/cqai-dsh-plugin-account/README.md#扩展授权)。
+扩展要求内置账号提供 `extensionApiVersion: 1` 和资源授权接口，并支持动态扩展入口。目前该能力仅在 [PR #47](https://github.com/cqai-club/ebao-studio/pull/47) 的源码构建中验证，尚无已正式发布的最低 App 版本；现有正式版不能仅凭账号包号 `0.1.1` 判断兼容。请使用包含这项能力的新版构建，旧版账号插件会明确提示升级。未发布的版本可以在插件管理中填写本地 `.tgz` 文件的绝对路径安装。部署管理员须先在 Logto 注册独立的 MCP API 资源及角色权限。客户端复用现有 CQAI Club Native 应用和回调，配置说明见[账号插件说明](../cqai-dsh-plugins/cqai-dsh-plugin-account/README.md#扩展授权)。
 
 ![安装 CQAI Club 扩展后的 MCP 设置：启用开关、登录授权及连接状态](assets/cqai-club-mcp.png)
 

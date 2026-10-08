@@ -1,7 +1,0 @@
-# The base CQAI Club plugin owns login and portal tokens. This extension only
-# needs the public portal origin for signed-out activity browsing.
-- insert:
-    - id: cqaiclub-extension
-      name: '@cqaiclub/dsh-plugin-extension'
-      config:
-        portalUrl: 'https://cqaiclub.asia'

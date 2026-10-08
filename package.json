@@ -746,7 +746,7 @@
     "market:prepare": "node scripts/prepare-dsh-market.mjs",
     "market:check": "node scripts/prepare-dsh-market.mjs --check",
     "test:market-release": "node --test scripts/prepare-dsh-market.test.mjs",
-    "build:cqai-plugins": "yarn workspaces foreach -A --topological-dev --include 'cqai-dsh-plugins/*' run build",
+    "build:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run build",
     "typecheck:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run typecheck",
     "test:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run test",
     "test:release-assets": "node --test scripts/verify-release-assets.test.mjs",
