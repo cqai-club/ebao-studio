@@ -319,18 +319,19 @@ export type GrantPayload = AccountGrantPayload & (
 
 export type ClubPortalAuthorization = 'signed-out' | 'reauth-required' | 'ready'
 
-export type ClubMcpState = 'disabled' | 'signed-out' | 'reauth-required' | 'disconnected' | 'connecting' | 'connected' | 'error'
-export type ClubMcpStatus = {
-  enabled: boolean
-  url: string
-  state: ClubMcpState
-  toolCount: number
-  message?: string
-  code?: string
+export type DsnResourceDefinition = { resource: string; enabled: boolean }
+export type DsnResourceAuthorization = { state: ClubPortalAuthorization; generation: number }
+export type DsnResourceEvent = { type: 'authorized' | 'invalidated'; generation: number }
+/** Host-only lease: credential values are never returned to extensions or RPC. */
+export type DsnResourceSession = {
+  readonly legacyEnabled: boolean
+  authorization(): Promise<DsnResourceAuthorization>
+  authorize(signal?: AbortSignal): Promise<DsnAccountSnapshot>
+  fetch(init?: RequestInit, signal?: AbortSignal): Promise<Response>
+  setActive(enabled: boolean): void
+  subscribe(listener: (event: DsnResourceEvent) => void): () => void
+  dispose(): void
 }
-export type ClubMcpConfigureRequest = { enabled: boolean }
-export type ClubMcpConnectRequest = { reconnect?: boolean }
-export type ClubMcpAuthorizationResult = { snapshot: DsnAccountSnapshot; mcp: ClubMcpStatus }
 
 export type DsnAccountService = {
   getStatus(options?: { refreshAccount?: boolean; signal?: AbortSignal }): Promise<DsnAccountSnapshot>
@@ -348,12 +349,8 @@ export type DsnAccountService = {
   getClubPortalAuthorization(): Promise<ClubPortalAuthorization>
   beginClubPortalAuthorization(signal?: AbortSignal): Promise<DsnAccountSnapshot>
   fetchClubPortal(path: `/api/v1/${string}`, init?: RequestInit, signal?: AbortSignal): Promise<Response>
-  getClubMcpStatus(): Promise<ClubMcpStatus>
-  configureClubMcp(request: ClubMcpConfigureRequest): Promise<ClubMcpStatus>
-  connectClubMcp(signal?: AbortSignal, options?: ClubMcpConnectRequest): Promise<ClubMcpStatus>
-  beginClubMcpAuthorization(signal?: AbortSignal): Promise<ClubMcpAuthorizationResult>
-  /** Host-only fixed-endpoint proxy. Tokens never enter the public RPC protocol. */
-  fetchClubMcp(init?: RequestInit, signal?: AbortSignal): Promise<Response>
+  readonly extensionApiVersion: 1
+  useResource(owner: import('@deepseek-ai/cordis').Context, definition: DsnResourceDefinition): DsnResourceSession
 }
 
 export type LogoutResult = {

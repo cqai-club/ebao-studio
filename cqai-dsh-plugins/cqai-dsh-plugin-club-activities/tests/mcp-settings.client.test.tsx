@@ -4,7 +4,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { act, createElement, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ClubMcpStatus, DsnAccountSnapshot } from '../src/protocol.ts'
+import type { ClubMcpStatus, DsnAccountSnapshot } from '../src/mcp/protocol.ts'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
   const { createElement } = await import('react')
@@ -15,7 +15,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
   }
 })
 
-import { CqaiMcpSettingsPanel, mcpSettingsEn, mcpSettingsZh } from '../src/client/mcp-settings.tsx'
+import { CqaiMcpSettingsPanel, mcpSettingsEn, mcpSettingsZh } from '../src/client/mcp/mcp-settings.tsx'
 
 const officialUrl = 'https://cqaiclub.asia/mcp'
 const disabled: ClubMcpStatus = { enabled: false, url: officialUrl, state: 'disabled', toolCount: 0 }
@@ -38,8 +38,11 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function mount(call: ReturnType<typeof vi.fn>, language: 'zh' | 'en' = 'zh', on?: (event: string, callback: () => void) => () => void) {
-  const ctx = { connection: { rpc: { call } }, ...(on === undefined ? {} : { on }) } as unknown as ClientContext
+async function mount(call: (channel: string, endpoint: string, payload: unknown) => unknown, language: 'zh' | 'en' = 'zh', on?: (event: string, callback: () => void) => () => void) {
+  const ctx = { connection: { rpc: { call: (channel: string, endpoint: string, payload: unknown) => {
+    expect(channel).toBe(endpoint.startsWith('mcp/') ? '/cqaiclub-mcp' : '/cqaiclub-dsn-account')
+    return call(channel, endpoint, payload)
+  } } }, ...(on === undefined ? {} : { on }) } as unknown as ClientContext
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -220,6 +223,32 @@ describe('CQAI official MCP settings mounted UI', () => {
     await act(async () => { button('重试').click() })
     expect(toggle().disabled).toBe(false)
     expect(container!.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('cancels the shared account authorization through the account channel and refreshes MCP status through its own channel', async () => {
+    const pending: DsnAccountSnapshot = {
+      state: 'authorizing', attemptId: 'cancel-mcp-login', authorizationUrl: 'https://auth.example/oidc/auth',
+      expiresAt: Date.now() + 60_000, message: 'Finish authorization',
+    }
+    const status: ClubMcpStatus = { ...connected, state: 'signed-out', toolCount: 0 }
+    const call = vi.fn(async (_channel: string, endpoint: string, payload: unknown) => {
+      if (endpoint === 'mcp/status') return { ok: true, value: status }
+      if (endpoint === 'mcp/authorize') return { ok: true, value: { snapshot: pending, mcp: status } }
+      if (endpoint === 'authorization/cancel') {
+        expect(payload).toEqual({ attemptId: 'cancel-mcp-login' })
+        return { ok: true, value: { state: 'signed-out' } }
+      }
+      throw new Error(`Unexpected RPC: ${endpoint}`)
+    })
+    await mount(call)
+    await act(async () => { button('登录并授权').click() })
+    await act(async () => { button('取消授权').click() })
+    expect(call.mock.calls.map(([channel, endpoint]) => [channel, endpoint])).toEqual([
+      ['/cqaiclub-mcp', 'mcp/status'], ['/cqaiclub-mcp', 'mcp/authorize'],
+      ['/cqaiclub-dsn-account', 'authorization/cancel'], ['/cqaiclub-mcp', 'mcp/status'],
+    ])
+    expect(container!.textContent).not.toContain('请在浏览器中完成授权')
+    expect(button('登录并授权').disabled).toBe(false)
   })
 
   it('refreshes changed tool counts and signed-out status without reconnecting or starting authorization', async () => {

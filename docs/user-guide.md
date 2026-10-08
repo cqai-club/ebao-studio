@@ -68,15 +68,17 @@ dsh plugin update
 
 ## CQAI Club 官网工具
 
-从账号菜单打开 **CQAI Club → MCP 服务**，开启「官网 MCP」，即可使用当前账号连接官网工具。服务地址由插件固定为 `https://cqaiclub.asia/mcp`，不需要填写地址、Client ID、令牌或环境变量，也不需要在终端单独登录。
+先在插件管理中安装并启用 **CQAI Club 扩展插件**（`@cqaiclub/dsh-plugin-extension`）。这是一个可选插件，同时提供「俱乐部活动」和「MCP 服务」两个入口；停用或卸载扩展后，两项入口一起移除。账号、积分和会员仍由内置账号插件提供。
+
+从账号菜单打开 **CQAI Club → MCP 服务**，开启「官网 MCP」，即可使用现有登录账号连接官网工具。服务地址固定为 `https://cqaiclub.asia/mcp`，不需要填写地址、Client ID、令牌或环境变量，也不需要在终端单独登录。「俱乐部活动」也复用这个账号，可以浏览活动、报名和取消报名。
 
 未登录时，在该页面点击登录；已有账号尚未授权官网工具时，点击补充授权，在系统浏览器完成一次授权后返回应用。连接成功会显示可用工具数量，随后可在对话中查询活动、报名或取消报名、整理活动草稿、发布活动和提交插件。活动管理仍要求账号具有 `activity:publish` 权限；插件投稿需要真实的公开 npm 包，投稿成功并不代表已经上架。
 
 开关会保存在当前 Profile；开启后重新启动应用会自动连接，令牌由 Host 自动续期。网络失败时页面保留错误与重连入口；关闭开关或退出账号会移除对应对话工具。
 
-部署管理员须先在 Logto 注册独立的 MCP API 资源及角色权限。客户端复用现有 CQAI Club Native 应用和回调，不需要为内置接入创建另一套登录应用。配置说明见[账号插件说明](../cqai-dsh-plugins/cqai-dsh-plugin-account/README.md#官网-mcp)。
+扩展需要支持扩展入口的新版 e宝工坊；旧版账号插件会明确提示升级。未发布的版本可以在插件管理中填写本地 `.tgz` 文件的绝对路径安装。部署管理员须先在 Logto 注册独立的 MCP API 资源及角色权限。客户端复用现有 CQAI Club Native 应用和回调，配置说明见[账号插件说明](../cqai-dsh-plugins/cqai-dsh-plugin-account/README.md#扩展授权)。
 
-![CQAI Club 官网 MCP 设置：启用开关、登录授权及连接状态](assets/cqai-club-mcp.png)
+![安装 CQAI Club 扩展后的 MCP 设置：启用开关、登录授权及连接状态](assets/cqai-club-mcp.png)
 
 ## 打开终端
 

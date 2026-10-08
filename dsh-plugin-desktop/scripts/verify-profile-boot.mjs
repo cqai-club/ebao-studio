@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -143,11 +143,23 @@ try {
     }))
   }
   const prepared = prepareDesktopProfile('1', home, 'win32', undefined, undefined, undefined, { aaEnabled: aaRequested })
+  if (process.argv.includes('--club-mcp-browser')) {
+    // Explicitly installed, initially disabled: the product defaults never include the extension.
+    const extensionDir = fileURLToPath(new URL('../../cqai-dsh-plugins/cqai-dsh-plugin-club-activities/', import.meta.url))
+    const extensionLink = join(prepared.profile.dir, 'node_modules', '@cqaiclub', 'dsh-plugin-extension')
+    mkdirSync(join(extensionLink, '..'), { recursive: true })
+    symlinkSync(extensionDir, extensionLink, 'junction')
+    const manifestPath = join(prepared.profile.dir, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.dependencies['@cqaiclub/dsh-plugin-extension'] = `file:${extensionDir}`
+    writeFileSync(manifestPath, JSON.stringify(manifest))
+  }
   const productLayers = prepared.profile.layers.map(layer => layer.packageName)
   const accountLayerIndex = productLayers.indexOf('@cqaiclub/dsn-account')
   const imagegenLayerIndex = productLayers.indexOf('cqai-dsh-plugin-imagegen')
   if (accountLayerIndex < 0 || imagegenLayerIndex !== accountLayerIndex + 1
-    || productLayers.includes('@cqaiclub/dsh-plugin-activities')) {
+    || productLayers.includes('@cqaiclub/dsh-plugin-activities')
+    || productLayers.includes('@cqaiclub/dsh-plugin-extension')) {
     throw new Error(`desktop profile did not mount ImageGen after CQAI account without activities: ${productLayers.join(', ')}`)
   }
   if (brokenAa && (!prepared.aaFailure || prepared.aaEnabled)) throw new Error('Broken AA bundle did not fail closed')
@@ -535,7 +547,17 @@ try {
   }
   if (process.argv.includes('--club-mcp-browser')) {
     const { verifyClubMcpBrowser } = await import('../../scripts/verify-club-mcp-browser.mjs')
-    await verifyClubMcpBrowser({ url: expectedUrl, cookie, headers: { [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value } })
+    await verifyClubMcpBrowser({
+      url: expectedUrl, cookie, headers: { [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value },
+      async setExtensionEnabled(enabled) {
+        const result = await ctx.get('pluginManager').setBundleEnabled('@cqaiclub/dsh-plugin-extension', enabled)
+        assert.equal(result.application, 'applied', JSON.stringify(result))
+        const rows = (await ctx.get('pluginManager').listPlugins()).filter(row => row.moduleName === '@cqaiclub/dsh-plugin-extension')
+        assert.equal(rows.length, enabled ? 1 : 0)
+        if (enabled) assert.equal(rows[0].fiberPhase, 'active', JSON.stringify(rows))
+        if (!enabled) assert.equal(ctx.tools.schemas().some(tool => tool.name.startsWith('mcp__cqai_club__') || tool.name.startsWith('cqai_club_')), false)
+      },
+    })
   }
   if (process.argv.includes('--ejianbao-browser')) {
     const { verifyEjianbaoBrowser } = await import('../../scripts/verify-ejianbao-browser.mjs')

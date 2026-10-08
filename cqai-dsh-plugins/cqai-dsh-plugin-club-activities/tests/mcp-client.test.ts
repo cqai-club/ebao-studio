@@ -1,10 +1,12 @@
 import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition as BaseToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ClubMcpClient, type ClubMcpClientUpdate } from '../src/mcp-client.ts'
-import { DEFAULT_CLUB_MCP_URL } from '../src/protocol.ts'
+import { ClubMcpClient, type ClubMcpClientUpdate } from '../src/mcp/mcp-client.ts'
+import { DEFAULT_CLUB_MCP_URL } from '../src/mcp/protocol.ts'
+
+type ToolDefinition = BaseToolDefinition & { name: string }
 
 const cleanups: Array<() => Promise<void>> = []
 const nativeFetch = globalThis.fetch.bind(globalThis)
@@ -296,7 +298,7 @@ describe('CQAI Club Host MCP adapter', () => {
     await expect(redirect.connect()).rejects.toThrow('重定向')
     expect(tools.size).toBe(0)
     const http = await endpoint()
-    const foreign = { name: 'mcp__cqai_club__club_my_registrations' } as ToolDefinition
+    const foreign = { name: 'mcp__cqai_club__club_my_registrations' } as unknown as ToolDefinition
     tools.set(foreign.name, foreign)
     const client = makeClient(ctx, http.fetchImpl)
     await expect(client.connect()).rejects.toThrow('duplicate registry')

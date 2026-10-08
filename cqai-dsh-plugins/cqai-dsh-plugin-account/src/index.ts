@@ -23,7 +23,6 @@ import {
   preferredCqaiOnboardingModel,
 } from './onboarding.ts'
 import { Config, normalizeConfig, type AccountConfigInput } from './config.ts'
-import { ClubMcpClient } from './mcp-client.ts'
 import { DsnAccountError, errorCodeOf, safeErrorMessage } from './errors.ts'
 import { openLoopbackCallbackServer, type LoopbackCallbackServer } from './loopback-callback.ts'
 import { OidcClient, Prompt, type AuthorizationRequest, type TokenResponse } from './oidc.ts'
@@ -42,10 +41,9 @@ import {
   remainingQuota,
   type DsnAccountConfig,
   type ClubPortalAuthorization,
-  type ClubMcpStatus,
-  type ClubMcpConfigureRequest,
-  type ClubMcpConnectRequest,
-  type ClubMcpAuthorizationResult,
+  type DsnResourceDefinition,
+  type DsnResourceEvent,
+  type DsnResourceSession,
   type DsnAccountService,
   type DsnAccountSnapshot,
   type DsnCategoryDefaultModels,
@@ -69,11 +67,10 @@ export type {
   BrowserAuthorizationNotice,
   DsnAccountConfig,
   ClubPortalAuthorization,
-  ClubMcpStatus,
-  ClubMcpState,
-  ClubMcpConfigureRequest,
-  ClubMcpConnectRequest,
-  ClubMcpAuthorizationResult,
+  DsnResourceDefinition,
+  DsnResourceAuthorization,
+  DsnResourceEvent,
+  DsnResourceSession,
   DsnAccountService,
   DsnAccountSnapshot,
   DsnCategoryDefaultModels,
@@ -96,7 +93,7 @@ export type {
   PublicAccount,
 } from './protocol.ts'
 export {
-  DSN_DEFAULT_MODEL_CATEGORY_ORDER, DSN_MODEL_CATEGORY_ORDER, MODEL_CATALOG_CACHE_TTL_MS,
+  DEFAULT_CLUB_MCP_URL, DSN_DEFAULT_MODEL_CATEGORY_ORDER, DSN_MODEL_CATEGORY_ORDER, MODEL_CATALOG_CACHE_TTL_MS,
   isAudioModel, isChatModel, isImageGenerationModel, isModelInCategory, isVideoCatalogEntry, isVideoModel, isVisionChatModel,
 } from './protocol.ts'
 export { DsnAccountError } from './errors.ts'
@@ -146,6 +143,14 @@ type ActiveAttempt = {
   promise?: Promise<void>
 }
 
+type ResourceLease = {
+  active: boolean
+  disposed: boolean
+  generation: number
+  controller: AbortController
+  listeners: Set<(event: DsnResourceEvent) => void>
+}
+
 type PendingAuthorization = {
   attemptId: string
   state: string
@@ -193,11 +198,10 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
   private refreshPromise?: Promise<string>
   private clubPortalRefreshPromise?: Promise<string>
   private clubMcpRefreshPromise?: Promise<string>
-  private clubMcp?: ClubMcpClient
-  private clubMcpConnection: Pick<ClubMcpStatus, 'state' | 'toolCount' | 'message' | 'code'> = { state: 'disconnected', toolCount: 0 }
-  private clubMcpConnectPromise?: Promise<ClubMcpStatus>
-  private clubMcpGeneration = 0
-  private clubMcpSigningOut = false
+  readonly extensionApiVersion = 1 as const
+  private readonly resourceLeases = new Set<ResourceLease>()
+  private resourceGeneration = 0
+  private signingOut = false
   private modelCatalog?: DsnModelCatalog
   private modelCatalogIdentity?: string
   private modelCatalogPromise?: Promise<DsnModelCatalog>
@@ -226,35 +230,6 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     })
     this.accountService = new AccountServiceClient(this.config.accountServiceUrl, fetch, this.config.requestTimeoutMs)
     this.clubPortal = new ClubPortalClient(this.config.clubPortalUrl, fetch, this.config.requestTimeoutMs)
-    if (typeof ctx.inject === 'function') {
-      ctx.inject(['tools'], (toolsCtx) => {
-        const client = new ClubMcpClient({
-          ctx: toolsCtx,
-          timeoutMs: this.config.requestTimeoutMs,
-          fetchImpl: async (input, init) => {
-            const target = input instanceof Request ? input.url : String(input)
-            if (target !== DEFAULT_CLUB_MCP_URL || input instanceof Request) {
-              throw new DsnAccountError('DSN_CLIENT_FORBIDDEN', 'MCP 只能连接 CQAI Club 官网。')
-            }
-            return this.fetchClubMcp(init, init?.signal ?? undefined)
-          },
-          onStatusChange: (status) => {
-            if (this.clubMcp === client && this.config.clubMcpEnabled && !this.clubMcpSigningOut) this.clubMcpConnection = status
-          },
-        })
-        this.clubMcp = client
-        toolsCtx.effect(() => () => {
-          if (this.clubMcp === client) {
-            void this.closeClubMcp()
-            this.clubMcp = undefined
-          } else {
-            void client.close()
-          }
-        }, 'cqaiclub-dsn-account: club mcp')
-        if (this.config.clubMcpEnabled) void this.connectClubMcp().catch(() => undefined)
-      })
-    }
-
     // CQAI owns category defaults independently of the global chat model.
     // In rc.2, Settings edits volatile fields on this plugin's Loader entry.
     const configuredDefaults = config?.categoryDefaultModels
@@ -391,104 +366,101 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     return response
   }
 
-  async getClubMcpStatus(): Promise<ClubMcpStatus> {
-    const base = { enabled: this.config.clubMcpEnabled, url: DEFAULT_CLUB_MCP_URL, toolCount: 0 }
-    if (!base.enabled) return { ...base, state: 'disabled' }
-    if (this.clubMcpSigningOut) return { ...base, state: 'signed-out', message: '正在退出 CQAI Club。' }
-    const grant = await this.readGrant()
-    if (grant === undefined) return { ...base, state: 'signed-out', message: '请先登录 CQAI Club。' }
-    if (grant.refreshToken === undefined || !this.isClubMcpGrant(grant)) {
-      return { ...base, state: 'reauth-required', message: '请补充授权，以连接官网 MCP。' }
+  useResource(owner: Context, definition: DsnResourceDefinition): DsnResourceSession {
+    if (definition.resource !== DEFAULT_CLUB_MCP_URL || typeof definition.enabled !== 'boolean') {
+      throw new DsnAccountError('DSN_CLIENT_FORBIDDEN', '资源扩展只能连接 CQAI Club 官网 MCP。')
     }
-    return { ...base, ...this.clubMcpConnection }
-  }
-
-  async configureClubMcp(request: ClubMcpConfigureRequest): Promise<ClubMcpStatus> {
-    if (typeof request.enabled !== 'boolean') throw new DsnAccountError('DSN_PROTOCOL_ERROR', '官网 MCP 开关必须是布尔值。')
-    const settings = typeof this.root.get === 'function' ? this.root.get('settings') : undefined
-    if (settings === undefined) throw new DsnAccountError('DSN_CONFIG_INVALID', '当前配置服务不可用，无法保存官网 MCP 开关。')
-    await settings.mutate(CQAI_CATEGORY_DEFAULT_MODELS_SETTINGS_NAMESPACE, [
-      { op: 'set', path: ['clubMcpEnabled'], value: request.enabled },
-    ])
-    this.config.clubMcpEnabled = request.enabled
-    await this.closeClubMcp()
-    return this.getClubMcpStatus()
-  }
-
-  async connectClubMcp(signal?: AbortSignal, options: ClubMcpConnectRequest = {}): Promise<ClubMcpStatus> {
-    const generation = this.clubMcpGeneration
-    const client = this.clubMcp
-    const status = await this.getClubMcpStatus()
-    if (generation !== this.clubMcpGeneration || client !== this.clubMcp) return this.getClubMcpStatus()
-    if (['disabled', 'signed-out', 'reauth-required'].includes(status.state)) return status
-    if (this.clubMcpConnectPromise !== undefined) return this.clubMcpConnectPromise
-    if (!options.reconnect && status.state === 'connected') return status
-    if (client === undefined) {
-      this.clubMcpConnection = { state: 'error', toolCount: 0, message: '官网 MCP 工具服务尚未就绪。', code: 'DSN_ACCOUNT_UNAVAILABLE' }
-      return this.getClubMcpStatus()
+    const lease: ResourceLease = {
+      active: definition.enabled, disposed: false, generation: this.resourceGeneration,
+      controller: new AbortController(), listeners: new Set(),
     }
-    const connecting = (async () => {
-      const grant = await this.readGrant()
-      if (generation !== this.clubMcpGeneration || client !== this.clubMcp || !this.config.clubMcpEnabled || this.clubMcpSigningOut
-        || grant === undefined || !this.isClubMcpGrant(grant) || grant.refreshToken === undefined) return this.getClubMcpStatus()
-      const identity = modelCatalogIdentity(grant)
-      const connectionGeneration = generation + 1
-      await this.closeClubMcp(true)
-      if (connectionGeneration !== this.clubMcpGeneration || client !== this.clubMcp || !this.config.clubMcpEnabled || this.clubMcpSigningOut) return this.getClubMcpStatus()
-      const currentGrant = await this.readGrant()
-      if (connectionGeneration !== this.clubMcpGeneration || client !== this.clubMcp || !this.config.clubMcpEnabled || this.clubMcpSigningOut
-        || currentGrant === undefined || !this.isClubMcpGrant(currentGrant) || currentGrant.refreshToken === undefined
-        || modelCatalogIdentity(currentGrant) !== identity) return this.getClubMcpStatus()
-      this.clubMcpConnection = { state: 'connecting', toolCount: 0 }
-      try {
-        const { toolCount } = await client.connect(signal)
-        if (connectionGeneration === this.clubMcpGeneration && client === this.clubMcp && !this.clubMcpSigningOut && this.config.clubMcpEnabled) {
-          this.clubMcpConnection = { state: 'connected', toolCount }
+    this.resourceLeases.add(lease)
+    const dispose = () => {
+      if (lease.disposed) return
+      lease.disposed = true
+      lease.active = false
+      this.invalidateLease(lease)
+      lease.listeners.clear()
+      this.resourceLeases.delete(lease)
+    }
+    owner.effect(() => dispose, 'cqaiclub-dsn-account: resource lease')
+    return {
+      legacyEnabled: this.config.clubMcpEnabled,
+      authorization: async () => {
+        const generation = lease.generation
+        const grant = await this.readGrant()
+        if (generation !== lease.generation || lease.disposed || !lease.active || this.signingOut || grant === undefined) {
+          return { state: 'signed-out', generation: lease.generation }
         }
-      } catch (error) {
-        if (connectionGeneration === this.clubMcpGeneration && client === this.clubMcp && !this.clubMcpSigningOut && this.config.clubMcpEnabled) {
-          if (this.clubMcpConnection.state !== 'error' || this.clubMcpConnection.code === undefined) {
-            this.clubMcpConnection = { state: 'error', toolCount: 0, code: errorCodeOf(error), message: error instanceof DsnAccountError ? error.message : '官网 MCP 连接失败，请重试。' }
-          }
+        return { state: grant.refreshToken !== undefined && this.isClubMcpGrant(grant) ? 'ready' : 'reauth-required', generation }
+      },
+      authorize: async (signal) => {
+        this.assertResourceActive(lease)
+        const authorizationGeneration = this.authorizationGeneration
+        const active = this.activeAttempt
+        if (active !== undefined && active.clubMcpResource !== DEFAULT_CLUB_MCP_URL) {
+          this.cancelAuthorization(active.id)
+          await active.promise
         }
-      }
-      return this.getClubMcpStatus()
-    })()
-    this.clubMcpConnectPromise = connecting
-    try {
-      return await connecting
-    } finally {
-      if (this.clubMcpConnectPromise === connecting) this.clubMcpConnectPromise = undefined
+        this.assertResourceActive(lease)
+        // Cancellation above advances the authorization generation itself.
+        const expectedGeneration = active !== undefined && active.clubMcpResource !== DEFAULT_CLUB_MCP_URL
+          ? authorizationGeneration + 1 : authorizationGeneration
+        const grant = await this.readGrant()
+        this.assertResourceActive(lease)
+        if (expectedGeneration !== this.authorizationGeneration) throw new DsnAccountError('DSN_LOGIN_CANCELLED', 'CQAI Club 登录已取消。')
+        return this.startAuthorization(signal, grant === undefined ? Prompt.LoginConsent : Prompt.Consent)
+      },
+      fetch: (init, signal) => this.fetchResource(lease, init, signal),
+      setActive: (enabled) => {
+        if (typeof enabled !== 'boolean') throw new DsnAccountError('DSN_PROTOCOL_ERROR', '资源开关必须是布尔值。')
+        if (lease.disposed || lease.active === enabled) return
+        lease.active = enabled
+        this.invalidateLease(lease)
+      },
+      subscribe: (listener) => {
+        if (lease.disposed) return () => undefined
+        lease.listeners.add(listener)
+        return () => lease.listeners.delete(listener)
+      },
+      dispose,
     }
   }
 
-  async beginClubMcpAuthorization(signal?: AbortSignal): Promise<ClubMcpAuthorizationResult> {
-    if (!this.config.clubMcpEnabled) throw new DsnAccountError('DSN_CONFIG_INVALID', '请先启用官网 MCP。')
-    const active = this.activeAttempt
-    if (active !== undefined && active.clubMcpResource !== DEFAULT_CLUB_MCP_URL) {
-      this.cancelAuthorization(active.id)
-      await active.promise
-    }
-    await this.closeClubMcp()
-    const grant = await this.readGrant()
-    const snapshot = await this.startAuthorization(signal, grant === undefined ? Prompt.LoginConsent : Prompt.Consent)
-    return { snapshot, mcp: await this.getClubMcpStatus() }
+  private assertResourceActive(lease: ResourceLease): void {
+    if (this.signingOut || lease.disposed || !lease.active) throw new DsnAccountError('DSN_AUTH_REQUIRED', '官网 MCP 已断开。')
   }
 
-  async fetchClubMcp(init: RequestInit = {}, signal?: AbortSignal): Promise<Response> {
-    const generation = this.clubMcpGeneration
-    if (this.clubMcpSigningOut) throw new DsnAccountError('DSN_AUTH_REQUIRED', '正在退出 CQAI Club。')
+  private invalidateLease(lease: ResourceLease): void {
+    lease.generation += 1
+    lease.controller.abort()
+    lease.controller = new AbortController()
+    this.notifyLease(lease, 'invalidated')
+  }
+
+  private notifyLease(lease: ResourceLease, type: DsnResourceEvent['type']): void {
+    for (const listener of lease.listeners) {
+      try { listener({ type, generation: lease.generation }) } catch { /* Extension cleanup cannot interrupt account logout. */ }
+    }
+  }
+
+  private invalidateResources(): void {
+    this.resourceGeneration += 1
+    for (const lease of this.resourceLeases) this.invalidateLease(lease)
+  }
+
+  private async fetchResource(lease: ResourceLease, init: RequestInit = {}, signal?: AbortSignal): Promise<Response> {
+    this.assertResourceActive(lease)
+    const generation = lease.generation
     if (init.body != null && typeof init.body !== 'string') {
       throw new DsnAccountError('DSN_CLIENT_FORBIDDEN', '官网 MCP 请求必须使用 JSON 文本。')
     }
     signal ??= init.signal ?? undefined
-    let accessToken = await this.getValidClubMcpAccessToken(false, signal)
-    const timeout = AbortSignal.timeout(this.config.requestTimeoutMs)
-    const requestSignal = signal === undefined ? timeout : AbortSignal.any([signal, timeout])
+    const requestSignal = AbortSignal.any([lease.controller.signal, AbortSignal.timeout(this.config.requestTimeoutMs), ...(signal === undefined ? [] : [signal])])
+    let accessToken = await this.getValidClubMcpAccessToken(false, requestSignal)
     const request = (token: string) => {
-      if (generation !== this.clubMcpGeneration || this.clubMcpSigningOut || !this.config.clubMcpEnabled) {
-        throw new DsnAccountError('DSN_AUTH_REQUIRED', '官网 MCP 已断开。')
-      }
+      this.assertResourceActive(lease)
+      if (generation !== lease.generation || requestSignal.aborted) throw new DsnAccountError('DSN_AUTH_REQUIRED', '官网 MCP 已断开。')
       const headers = new Headers(init.headers)
       headers.set('Authorization', `Bearer ${token}`)
       return fetch(DEFAULT_CLUB_MCP_URL, { ...init, headers, credentials: 'omit', redirect: 'error', signal: requestSignal })
@@ -496,17 +468,11 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     const response = await request(accessToken)
     if (response.status !== 401) return response
     await response.body?.cancel()
-    accessToken = await this.getValidClubMcpAccessToken(true, signal, accessToken)
-    // Only an explicit 401 is retried, with the exact same JSON-RPC body and
-    // requestKey. Ambiguous network failures are left to the caller.
+    this.assertResourceActive(lease)
+    if (generation !== lease.generation || requestSignal.aborted) throw new DsnAccountError('DSN_AUTH_REQUIRED', '官网 MCP 已断开。')
+    accessToken = await this.getValidClubMcpAccessToken(true, requestSignal, accessToken)
+    // Retry only an explicit 401, preserving the exact JSON body/requestKey.
     return request(accessToken)
-  }
-
-  private async closeClubMcp(keepConnecting = false): Promise<void> {
-    this.clubMcpGeneration += 1
-    this.clubMcpConnection = { state: 'disconnected', toolCount: 0 }
-    if (!keepConnecting) this.clubMcpConnectPromise = undefined
-    await this.clubMcp?.close()
   }
 
   async getTopUpInfo(signal?: AbortSignal): Promise<DsnTopUpInfo> {
@@ -833,14 +799,6 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
           const result = await this.logout(signal)
           return ok({ snapshot: this.snapshot, ...result })
         }
-        case 'mcp/status':
-          return ok(await this.getClubMcpStatus())
-        case 'mcp/configure':
-          return ok(await this.configureClubMcp(readClubMcpConfigureRequest(payload)))
-        case 'mcp/connect':
-          return ok(await this.connectClubMcp(signal, readClubMcpConnectRequest(payload)))
-        case 'mcp/authorize':
-          return ok(await this.beginClubMcpAuthorization(signal))
         default:
           return failure('DSN_PROTOCOL_ERROR', '未知的 CQAI Club RPC 操作')
       }
@@ -854,7 +812,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     prompt: (typeof Prompt)[keyof typeof Prompt] = Prompt.LoginConsent,
   ): Promise<DsnAccountSnapshot> {
     const generation = this.authorizationGeneration
-    if (this.clubMcpSigningOut) throw new DsnAccountError('DSN_LOGIN_CANCELLED', '正在退出 CQAI Club。')
+    if (this.signingOut) throw new DsnAccountError('DSN_LOGIN_CANCELLED', '正在退出 CQAI Club。')
     if (this.activeAttempt !== undefined) return this.snapshot
     if (!this.config.clientId.trim()) {
       const next: DsnAccountSnapshot = {
@@ -867,6 +825,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       return next
     }
 
+    this.invalidateResources()
     const attemptId = randomUUID()
     const callbackServer = await openLoopbackCallbackServer(
       OAUTH_CALLBACK_PATH,
@@ -874,14 +833,14 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       signal,
     )
     let request: AuthorizationRequest
-    const clubMcpResource = this.config.clubMcpEnabled ? DEFAULT_CLUB_MCP_URL : undefined
+    const clubMcpResource = [...this.resourceLeases].some(lease => lease.active && !lease.disposed) ? DEFAULT_CLUB_MCP_URL : undefined
     try {
       request = await this.oidc.createAuthorizationRequest(
         callbackServer.redirectUri,
         { prompt, additionalResources: [this.config.clubPortalResource, ...(clubMcpResource === undefined ? [] : [clubMcpResource])] },
         signal,
       )
-      if (signal?.aborted || generation !== this.authorizationGeneration || this.clubMcpSigningOut) {
+      if (signal?.aborted || generation !== this.authorizationGeneration || this.signingOut) {
         throw new DsnAccountError('DSN_LOGIN_CANCELLED', 'CQAI Club 登录已取消。')
       }
     } catch (cause) {
@@ -924,7 +883,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       method: 'authorization-code',
       interaction,
     }).then((outcome) => {
-      if (this.activeAttempt !== active || generation !== this.authorizationGeneration || this.clubMcpSigningOut) return
+      if (this.activeAttempt !== active || generation !== this.authorizationGeneration || this.signingOut) return
       if (outcome.status === 'authorized') {
         return this.refreshSnapshotFromGrant()
       }
@@ -953,7 +912,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       try {
         await this.desktopLoginRuntime.openExternal(request.authorizationUrl)
       } catch {
-        if (this.activeAttempt === active && generation === this.authorizationGeneration && !this.clubMcpSigningOut) {
+        if (this.activeAttempt === active && generation === this.authorizationGeneration && !this.signingOut) {
           this.setSnapshot({
             state: 'authorizing',
             attemptId,
@@ -981,7 +940,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
 
   private noticeForAttempt(attemptId: string, notice: { message: string; url?: string; code?: string }): void {
     const active = this.activeAttempt
-    if (active === undefined || active.id !== attemptId || active.generation !== this.authorizationGeneration || this.clubMcpSigningOut) return
+    if (active === undefined || active.id !== attemptId || active.generation !== this.authorizationGeneration || this.signingOut) return
     this.setSnapshot({
       state: 'authorizing',
       attemptId,
@@ -1058,17 +1017,17 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       return { kind: 'grant', payload }
     })
     this.assertCurrentAuthorization(attempt, session.signal)
-    await this.closeClubMcp()
+    this.invalidateResources()
     this.assertCurrentAuthorization(attempt, session.signal)
     this.clearModelCatalog()
     this.setSnapshot(this.snapshotFromGrant(payload))
-    if (this.config.clubMcpEnabled) void this.connectClubMcp().catch(() => undefined)
+    for (const lease of this.resourceLeases) if (lease.active && !lease.disposed) this.notifyLease(lease, 'authorized')
     void this.listModels({ refresh: true }).catch(() => undefined)
     session.notify({ message: 'CQAI Club 登录成功。' })
   }
 
   private assertCurrentAuthorization(attempt: ActiveAttempt, signal: AbortSignal): void {
-    if (signal.aborted || this.activeAttempt !== attempt || attempt.generation !== this.authorizationGeneration || this.clubMcpSigningOut) {
+    if (signal.aborted || this.activeAttempt !== attempt || attempt.generation !== this.authorizationGeneration || this.signingOut) {
       throw new DsnAccountError('DSN_LOGIN_CANCELLED', 'CQAI Club 登录已取消。')
     }
   }
@@ -1217,7 +1176,6 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
   }
 
   private async getValidClubMcpAccessToken(forceRefresh: boolean, signal?: AbortSignal, rejectedToken?: string): Promise<string> {
-    if (!this.config.clubMcpEnabled) throw new DsnAccountError('DSN_CONFIG_INVALID', '官网 MCP 尚未启用。')
     const grant = await this.readGrant()
     if (grant === undefined) throw new DsnAccountError('DSN_AUTH_REQUIRED', '请先登录 CQAI Club。')
     if (!this.isClubMcpGrant(grant) || grant.refreshToken === undefined) {
@@ -1244,8 +1202,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     try {
       const record = await this.credentials.modifyRecord(this.credential, async (current) => {
         const grant = readGrantPayload(current)
-        if (!this.config.clubMcpEnabled) throw new DsnAccountError('DSN_CONFIG_INVALID', '官网 MCP 尚未启用。')
-        if (grant === undefined) throw new DsnAccountError('DSN_AUTH_REQUIRED', '请先登录 CQAI Club。')
+            if (grant === undefined) throw new DsnAccountError('DSN_AUTH_REQUIRED', '请先登录 CQAI Club。')
         if (!this.isClubMcpGrant(grant) || grant.refreshToken === undefined) {
           throw new DsnAccountError('DSN_REAUTH_REQUIRED', '请补充授权，以连接官网 MCP。')
         }
@@ -1288,7 +1245,6 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       if (reauthError !== undefined) {
         this.clearModelCatalog()
         this.setSnapshot({ state: 'reauth-required', reason: 'CQAI Club 登录已失效，请重新登录。' })
-        void this.closeClubMcp()
       }
       throw normalizeUnknownError(error)
     }
@@ -1432,12 +1388,13 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
   }
 
   private async logout(signal?: AbortSignal): Promise<LogoutResult> {
-    this.clubMcpSigningOut = true
+    this.signingOut = true
+    this.invalidateResources()
     this.authorizationGeneration += 1
     this.cancelAuthorization(this.activeAttempt?.id)
     this.activeAttempt = undefined
     try {
-      await this.closeClubMcp()
+      this.invalidateResources()
       const grant = await this.readGrant()
       if (grant === undefined) {
         await this.clearCredential()
@@ -1453,7 +1410,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       // and publish the new snapshot before the best-effort remote revoke.
       await this.clearCredential()
       this.setSnapshot({ state: 'signed-out' })
-      await this.closeClubMcp()
+      this.invalidateResources()
       try {
         remoteRevoked = await this.oidc.revoke(token, grant.refreshToken === undefined ? 'access_token' : 'refresh_token', signal)
         if (!remoteRevoked) warning = '本地已退出，但远端授权未确认撤销。'
@@ -1462,8 +1419,8 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       }
       return { remoteRevoked, ...(warning === undefined ? {} : { warning }) }
     } finally {
-      await this.closeClubMcp()
-      this.clubMcpSigningOut = false
+      this.invalidateResources()
+      this.signingOut = false
     }
   }
 
@@ -1506,6 +1463,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
 
   private setSnapshot(snapshot: DsnAccountSnapshot): void {
     if (sameSnapshot(this.snapshot, snapshot)) return
+    if (snapshot.state === 'signed-out' || snapshot.state === 'reauth-required') this.invalidateResources()
     this.snapshot = snapshot
     ;(this.root as unknown as { emit(event: string, value: DsnAccountSnapshot): void }).emit('dsn-account/changed', snapshot)
   }
@@ -1575,20 +1533,6 @@ function categoryLabel(category: DsnDefaultModelCategory): string {
   }
 }
 
-function readClubMcpConfigureRequest(payload: unknown): ClubMcpConfigureRequest {
-  if (!isObject(payload) || typeof payload.enabled !== 'boolean' || Object.keys(payload).some(key => key !== 'enabled')) {
-    throw new DsnAccountError('DSN_PROTOCOL_ERROR', '官网 MCP 配置只接受 enabled 开关。')
-  }
-  return { enabled: payload.enabled }
-}
-
-function readClubMcpConnectRequest(payload: unknown): ClubMcpConnectRequest {
-  if (!isObject(payload) || (payload.reconnect !== undefined && typeof payload.reconnect !== 'boolean')
-    || Object.keys(payload).some(key => key !== 'reconnect')) {
-    throw new DsnAccountError('DSN_PROTOCOL_ERROR', '官网 MCP 连接只接受 reconnect 布尔值。')
-  }
-  return payload.reconnect === undefined ? {} : { reconnect: payload.reconnect }
-}
 
 function readBoolean(payload: unknown, key: string): boolean {
   return isObject(payload) && payload[key] === true

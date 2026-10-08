@@ -28,6 +28,7 @@ export const Config = z.object({
   accountServiceUrl: z.string().default(DEFAULT_ACCOUNT_SERVICE_URL),
   clubPortalResource: z.string().default(DEFAULT_CLUB_PORTAL_RESOURCE),
   clubPortalUrl: z.string().default(DEFAULT_CLUB_PORTAL_URL),
+  // Deprecated: read only by resource extensions during first-use migration.
   clubMcpEnabled: z.boolean().default(false).volatile(),
   scopes: z.array(String).role('table').default([...DEFAULT_SCOPES]),
   requestTimeoutMs: z.natural().min(1000).default(15_000),

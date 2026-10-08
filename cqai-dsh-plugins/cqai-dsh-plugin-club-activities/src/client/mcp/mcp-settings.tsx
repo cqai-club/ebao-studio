@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { Button, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ClubMcpState, ClubMcpStatus, DsnAccountSnapshot } from '../protocol.ts'
-import { authorizeClubMcp, configureClubMcp, connectClubMcp, getClubMcpStatus, rpcCall } from './rpc.ts'
+import type { ClubMcpState, ClubMcpStatus, DsnAccountSnapshot } from '../../mcp/protocol.ts'
+import { authorizeClubMcp, configureClubMcp, connectClubMcp, getClubMcpStatus, accountRpcCall } from './rpc.ts'
 
 export const mcpSettingsZh = {
   mcpTitle: 'MCP 服务',
@@ -164,7 +164,7 @@ export function CqaiMcpSettingsPanel({ ctx, t }: {
       polling = true
       const requestedRevision = revision.current
       try {
-        const next = await rpcCall<DsnAccountSnapshot>(ctx, 'snapshot/get', {})
+        const next = await accountRpcCall<DsnAccountSnapshot>(ctx, 'snapshot/get', {})
         if (!active || !mounted.current || requestedRevision !== revision.current || next.state === 'authorizing') return
         active = false
         setAuthorization(next)
@@ -238,7 +238,7 @@ export function CqaiMcpSettingsPanel({ ctx, t }: {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Button variant="outline" disabled={busy !== undefined} onClick={() => { window.open(pendingAuthorization.authorizationUrl, '_blank', 'noopener,noreferrer') }}>{t('mcpReopenBrowser')}</Button>
               <Button variant="ghost" disabled={busy !== undefined} onClick={() => { void perform('canceling', async () => {
-                const next = await rpcCall<DsnAccountSnapshot>(ctx, 'authorization/cancel', { attemptId: pendingAuthorization.attemptId })
+                const next = await accountRpcCall<DsnAccountSnapshot>(ctx, 'authorization/cancel', { attemptId: pendingAuthorization.attemptId })
                 if (mounted.current) setAuthorization(next)
                 const mcp = await getClubMcpStatus(ctx)
                 if (mounted.current) setStatus(mcp)

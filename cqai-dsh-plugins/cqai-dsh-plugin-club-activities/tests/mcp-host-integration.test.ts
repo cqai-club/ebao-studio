@@ -1,9 +1,14 @@
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
+import * as extension from '../src/index.ts'
 import { credentialKey, type CredentialRecord } from '@deepseek-ai/dsh-credentials'
-import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition as BaseToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DsnAccountServiceRuntime } from '../src/index.ts'
-import { DEFAULT_CLUB_MCP_URL } from '../src/protocol.ts'
+import { DsnAccountServiceRuntime } from '@cqaiclub/dsn-account'
+import { ClubMcpService } from '../src/mcp/index.ts'
+import { DEFAULT_CLUB_MCP_URL } from '../src/mcp/protocol.ts'
+
+type ToolDefinition = BaseToolDefinition & { name: string }
 
 const issuer = 'https://auth.integration.test/oidc'
 const accountResource = 'https://account.integration.test'
@@ -173,7 +178,7 @@ function host(options: { expiredAccount?: boolean } = {}) {
       begin: async () => { throw new Error('This integration must reuse the authorized account') },
       cancel: vi.fn(),
     },
-    connection: { rpc: { handle: (_channel: string, handler: typeof rpc) => { rpc = handler; return async () => undefined } } },
+    connection: { rpc: { handle: (channel: string, handler: typeof rpc) => { if (channel !== '/cqaiclub-mcp') rpc = handler; return async () => undefined } } },
     tools: { register: (definition: ToolDefinition) => {
       if (tools.has(definition.name)) throw new Error('duplicate tool')
       tools.set(definition.name, definition)
@@ -182,7 +187,7 @@ function host(options: { expiredAccount?: boolean } = {}) {
     settings: {
       configure: () => () => undefined,
       mutate: async (_namespace: string, operations: Array<{ path: string[]; value: unknown }>) => {
-        for (const operation of operations) if (operation.path[0] === 'clubMcpEnabled') store.enabled = operation.value === true
+        for (const operation of operations) if (operation.path[0] === 'mcpEnabled') store.enabled = operation.value === true
       },
     },
     agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-v4-flash' }), saveSelection: async () => undefined },
@@ -202,12 +207,14 @@ function host(options: { expiredAccount?: boolean } = {}) {
     requestTimeoutMs: 2000,
     categoryDefaultModels: { get: () => ({}) },
   })
+  Object.assign(root, { dsnAccount: runtime })
+  const mcp = new ClubMcpService(root, { enabled: { get: () => store.enabled }, requestTimeoutMs: 2000 })
   cleanups.push(async () => {
-    await runtime.configureClubMcp({ enabled: false })
+    await mcp.configureClubMcp({ enabled: false })
     for (const dispose of disposers.reverse()) dispose()
   })
   return {
-    runtime, tools, records,
+    runtime, mcp, tools, records,
     rpc: (endpoint: string) => {
       if (rpc === undefined) throw new Error('Runtime RPC was not registered')
       return rpc(endpoint, {}, new AbortController().signal)
@@ -220,7 +227,7 @@ function host(options: { expiredAccount?: boolean } = {}) {
   }
 }
 
-async function connect(runtime: DsnAccountServiceRuntime) {
+async function connect(runtime: ClubMcpService) {
   await runtime.configureClubMcp({ enabled: true })
   await expect(runtime.connectClubMcp()).resolves.toMatchObject({ state: 'connected', toolCount: 1 })
 }
@@ -244,7 +251,7 @@ describe('real account Runtime → Host tool → MCP SDK integration', () => {
   it('obtains a separate MCP audience token and retries an explicit 401 once with the exact original write', async () => {
     const wire = wireFixture()
     const app = host()
-    await connect(app.runtime)
+    await connect(app.mcp)
     expect(wire.refreshRequests.map((request) => request.resource)).toEqual([DEFAULT_CLUB_MCP_URL])
     expect(wire.mcpRequests.some((request) => request.rpc?.method === 'initialize')).toBe(true)
     expect(wire.mcpRequests.some((request) => request.rpc?.method === 'tools/list')).toBe(true)
@@ -264,9 +271,9 @@ describe('real account Runtime → Host tool → MCP SDK integration', () => {
   it('serializes concurrent Account, Portal and MCP refreshes against one rotating refresh token', async () => {
     const wire = wireFixture()
     const app = host({ expiredAccount: true })
-    await app.runtime.configureClubMcp({ enabled: true })
+    await app.mcp.configureClubMcp({ enabled: true })
     const [accountResult, portalResult, status] = await Promise.all([
-      app.runtime.getAccount(), app.runtime.fetchClubPortal('/api/v1/activities'), app.runtime.connectClubMcp(),
+      app.runtime.getAccount(), app.runtime.fetchClubPortal('/api/v1/activities'), app.mcp.connectClubMcp(),
     ])
     expect(accountResult).toEqual(account)
     expect(portalResult.status).toBe(200)
@@ -286,13 +293,13 @@ describe('real account Runtime → Host tool → MCP SDK integration', () => {
   it('keeps the existing tool generation for default connect and replaces it only for an explicit reconnect', async () => {
     const wire = wireFixture()
     const app = host()
-    await connect(app.runtime)
+    await connect(app.mcp)
     const original = definition(app.tools)
-    await Promise.all([app.runtime.connectClubMcp(), app.runtime.connectClubMcp()])
+    await Promise.all([app.mcp.connectClubMcp(), app.mcp.connectClubMcp()])
     expect(definition(app.tools)).toBe(original)
     expect(wire.mcpRequests.filter((request) => request.rpc?.method === 'initialize')).toHaveLength(1)
     await expect(execute(original)).resolves.toMatchObject({ structuredContent: { id: 'activity-44' } })
-    await expect(app.runtime.connectClubMcp(undefined, { reconnect: true })).resolves.toMatchObject({ state: 'connected', toolCount: 1 })
+    await expect(app.mcp.connectClubMcp(undefined, { reconnect: true })).resolves.toMatchObject({ state: 'connected', toolCount: 1 })
     expect(definition(app.tools)).not.toBe(original)
     expect(wire.mcpRequests.filter((request) => request.rpc?.method === 'initialize')).toHaveLength(2)
     await expect(execute(original)).rejects.toThrow('已断开')
@@ -303,12 +310,12 @@ describe('real account Runtime → Host tool → MCP SDK integration', () => {
   it('unregisters real tools on disable and logout and revokes the latest shared refresh token', async () => {
     const wire = wireFixture()
     const app = host()
-    await connect(app.runtime)
+    await connect(app.mcp)
     const disabledTool = definition(app.tools)
-    await expect(app.runtime.configureClubMcp({ enabled: false })).resolves.toMatchObject({ state: 'disabled', toolCount: 0 })
+    await expect(app.mcp.configureClubMcp({ enabled: false })).resolves.toMatchObject({ state: 'disabled', toolCount: 0 })
     expect(app.tools.size).toBe(0)
     await expect(execute(disabledTool)).rejects.toThrow('已断开')
-    await connect(app.runtime)
+    await connect(app.mcp)
     const signedOutTool = definition(app.tools)
     wire.rejectNextCalls()
     await execute(signedOutTool)
@@ -317,7 +324,7 @@ describe('real account Runtime → Host tool → MCP SDK integration', () => {
     expect(app.tools.size).toBe(0)
     expect(app.records.has(credential)).toBe(false)
     expect(wire.revocations).toEqual([refreshToken])
-    await expect(app.runtime.getClubMcpStatus()).resolves.toMatchObject({ state: 'signed-out', toolCount: 0 })
+    await expect(app.mcp.getClubMcpStatus()).resolves.toMatchObject({ state: 'signed-out', toolCount: 0 })
     const count = wire.mcpRequests.length
     await expect(execute(signedOutTool)).rejects.toThrow('已断开')
     expect(wire.mcpRequests).toHaveLength(count)
@@ -326,23 +333,65 @@ describe('real account Runtime → Host tool → MCP SDK integration', () => {
   it('surfaces a second 401 without an SDK retry and removes the unusable tools', async () => {
     const wire = wireFixture()
     const app = host()
-    await connect(app.runtime)
+    await connect(app.mcp)
     wire.rejectNextCalls(2)
     await expect(execute(definition(app.tools), 'exhausted-401')).rejects.toThrow()
     expect(wire.mcpRequests.filter((request) => request.rpc?.method === 'tools/call')).toHaveLength(2)
     expect(wire.refreshRequests).toHaveLength(2)
     expect(app.tools.size).toBe(0)
-    await expect(app.runtime.getClubMcpStatus()).resolves.toMatchObject({ state: 'error', toolCount: 0 })
+    await expect(app.mcp.getClubMcpStatus()).resolves.toMatchObject({ state: 'error', toolCount: 0 })
   })
 
   it('does not replay a write when its network outcome is unknown', async () => {
     const wire = wireFixture()
     const app = host()
-    await connect(app.runtime)
+    await connect(app.mcp)
     wire.failNextCallNetwork()
     await expect(execute(definition(app.tools), 'unknown-network-outcome')).rejects.toThrow()
     expect(wire.mcpRequests.filter((request) => request.rpc?.method === 'tools/call')).toHaveLength(1)
     expect(wire.refreshRequests).toHaveLength(1)
     expect(app.tools.size).toBe(0)
   })
+  it('unloads activities and real remote MCP tools together through the single extension entry without deleting the shared grant', async () => {
+    const wire = wireFixture()
+    const app = host()
+    const ctx = new Context()
+    const routes = new Map<string, unknown>()
+    ctx.provide('dsnAccount', app.runtime)
+    // Use the production Connection channel validator and owner-scoped route
+    // registration. A mock rpc.handle would accept an invalid channel name.
+    ctx.provide('webServer', { register: (route: { path: string }) => {
+      routes.set(route.path, route)
+      return () => { routes.delete(route.path) }
+    } })
+    new HostConnectionService(ctx, ['localhost'], { isAuthenticated: () => true } as unknown as ConstructorParameters<typeof HostConnectionService>[2])
+    ctx.provide('settings', { configure: () => () => undefined, mutate: async () => undefined })
+    ctx.provide('tools', { register: (definition: ToolDefinition) => {
+      if (app.tools.has(definition.name)) throw new Error('duplicate tool')
+      app.tools.set(definition.name, definition)
+      return () => { app.tools.delete(definition.name) }
+    } })
+    ctx.provide('skills', { register: () => () => undefined })
+    const firstInstall = ctx.plugin(extension, { portalUrl: 'https://cqaiclub.asia' })
+    await firstInstall
+    await expect(ctx.clubMcp.getClubMcpStatus()).resolves.toMatchObject({ enabled: false, state: 'disabled' })
+    expect(app.tools.has('mcp__cqai_club__club_create_activity')).toBe(false)
+    await firstInstall.dispose()
+    const fork = ctx.plugin(extension, { portalUrl: 'https://cqaiclub.asia', mcpEnabled: true })
+    cleanups.push(async () => { await fork.dispose() })
+    await fork
+    await expect(ctx.clubMcp.connectClubMcp()).resolves.toMatchObject({ state: 'connected', toolCount: 1 })
+    const remote = definition(app.tools)
+    expect(routes.has('/cqaiclub-mcp')).toBe(true)
+    expect(app.tools.has('cqai_club_list_activities')).toBe(true)
+    const grant = app.records.get(credential)
+    await fork.dispose()
+    expect(app.tools.size).toBe(0)
+    expect(routes.size).toBe(0)
+    expect(app.records.get(credential)).toBe(grant)
+    expect(wire.revocations).toEqual([])
+    await expect(execute(remote)).rejects.toThrow('已断开')
+    await expect(app.runtime.getStatus()).resolves.toMatchObject({ state: 'signed-in' })
+  })
+
 })

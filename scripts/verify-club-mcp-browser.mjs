@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
-export async function verifyClubMcpBrowser({ url, cookie, headers }) {
+export async function verifyClubMcpBrowser({ url, cookie, headers, setExtensionEnabled }) {
   const { chromium } = createRequire(new URL('../dsh-desktop-next/package.json', import.meta.url))('playwright')
   const browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'msedge' } : {}) })
   const errors = []
@@ -18,14 +18,31 @@ export async function verifyClubMcpBrowser({ url, cookie, headers }) {
     page = await context.newPage()
     page.setDefaultTimeout(25_000)
     page.on('pageerror', error => errors.push(error.message))
-    const openMcp = async () => {
+    const openClub = async () => {
       await page.getByRole('button', { name: /CQAI Club 账号菜单/u }).click()
       await page.getByRole('menuitem', { name: 'CQAI Club', exact: true }).click()
+      await page.locator('.cqai-club-nav').waitFor()
+    }
+    const assertExtensionEntries = async enabled => {
+      await page.waitForFunction(expected => {
+        const labels = [...document.querySelectorAll('.cqai-club-nav button')].map(button => button.textContent.trim())
+        return labels.includes('俱乐部活动') === expected && labels.includes('MCP 服务') === expected
+      }, enabled)
+      assert.equal(await page.locator('.cqai-club-nav').getByRole('button', { name: '俱乐部活动', exact: true }).count(), enabled ? 1 : 0)
+      assert.equal(await page.locator('.cqai-club-nav').getByRole('button', { name: 'MCP 服务', exact: true }).count(), enabled ? 1 : 0)
+    }
+    const openMcp = async () => {
+      await openClub()
       await page.locator('.cqai-club-nav').getByRole('button', { name: 'MCP 服务', exact: true }).click()
       await page.getByRole('heading', { name: 'MCP 服务', exact: true }).waitFor()
     }
     await page.goto(target.href)
-    await openMcp()
+    await openClub()
+    await assertExtensionEntries(false)
+    await setExtensionEnabled(true)
+    await assertExtensionEntries(true)
+    await page.locator('.cqai-club-nav').getByRole('button', { name: 'MCP 服务', exact: true }).click()
+    await page.getByRole('heading', { name: 'MCP 服务', exact: true }).waitFor()
     const panel = page.locator('.cqai-club-content')
     const toggle = panel.getByRole('switch', { name: '启用官网 MCP 服务' })
     await toggle.waitFor()
@@ -58,8 +75,16 @@ export async function verifyClubMcpBrowser({ url, cookie, headers }) {
       return input && !input.checked && !input.disabled
     })
     assert.match(await panel.innerText(), /未启用/u)
+    // Disabling the single extension while one of its panes is selected removes both entries.
+    await setExtensionEnabled(false)
+    await assertExtensionEntries(false)
+    assert.equal(await page.getByRole('heading', { name: 'MCP 服务', exact: true }).count(), 0)
+    await setExtensionEnabled(true)
+    await assertExtensionEntries(true)
+    await page.locator('.cqai-club-nav').getByRole('button', { name: 'MCP 服务', exact: true }).click()
+    await toggle.waitFor()
     assert.deepEqual(errors, [])
-    console.log('CQAI Club MCP browser: official-only settings, real Host persistence, and signed-out recovery passed')
+    console.log('CQAI Club extension browser: one optional bundle, both dynamic entries, live disable/re-enable, official-only MCP settings and Host persistence passed')
   } catch (error) {
     if (page) console.error('CQAI Club MCP browser errors:', errors, '\nPage:', await page.locator('body').innerText())
     throw error
