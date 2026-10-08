@@ -36,6 +36,7 @@ import {
   modelsSettingsZh,
 } from './models-settings-card.tsx'
 import { rpcCall } from './rpc.ts'
+import { CqaiMcpSettingsPanel, mcpSettingsEn, mcpSettingsZh } from './mcp-settings.tsx'
 
 const NS = 'cqaiclub-dsn-account' as const
 const CLUB_PANEL = 'cqai-club' as MainPanelId
@@ -121,6 +122,7 @@ const zh = {
   onboardingRetry: '重试模型准备',
   onboardingContinue: '继续使用其他模型',
   ...modelsSettingsZh,
+  ...mcpSettingsZh,
 } as const
 
 const en: Record<keyof typeof zh, string> = {
@@ -199,6 +201,7 @@ const en: Record<keyof typeof zh, string> = {
   onboardingRetry: 'Retry model setup',
   onboardingContinue: 'Continue with another model',
   ...modelsSettingsEn,
+  ...mcpSettingsEn,
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -239,7 +242,7 @@ type AccountLauncherProps = PropsRuntime<'settings.launcher'> & PropsRenderSlots
 }
 type AccountTranslator = AccountSettingsSectionProps['t']
 type SignedInSnapshot = Extract<DsnAccountSnapshot, { state: 'signed-in' }>
-type ClubSection = 'points' | 'membership' | 'activities'
+type ClubSection = 'points' | 'membership' | 'activities' | 'mcp'
 
 function createClubViewState() {
   let active: ClubSection = 'points'
@@ -372,16 +375,19 @@ function topUpTime(value: number | undefined): string {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString()
 }
 
-type SignedInSection = 'account' | 'billing'
+type SignedInSection = 'account' | 'billing' | 'mcp'
 
-function SignedInTabs({ active, setActive, t }: {
+function SignedInTabs({ active, setActive, t, hasAccount, includeMcp }: {
   readonly active: SignedInSection
   readonly setActive: (section: SignedInSection) => void
   readonly t: AccountTranslator
+  readonly hasAccount: boolean
+  readonly includeMcp: boolean
 }) {
   const tabs: readonly { readonly id: SignedInSection; readonly label: keyof typeof zh }[] = [
     { id: 'account', label: 'accountTab' },
-    { id: 'billing', label: 'billingTab' },
+    ...(hasAccount ? [{ id: 'billing', label: 'billingTab' }] as const : []),
+    ...(includeMcp ? [{ id: 'mcp', label: 'mcpTitle' }] as const : []),
   ]
   return (
     <div role="tablist" aria-label={t('tab')} style={{ display: 'flex', gap: 5, width: 'fit-content', maxWidth: '100%', padding: 4, overflowX: 'auto', borderRadius: 12, background: 'var(--dsw-alias-bg-module-platform, #f4f6f8)' }}>
@@ -977,7 +983,7 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<A
 
   useEffect(() => {
     if (identity !== undefined) {
-      setActiveSection('account')
+      setActiveSection(active => active === 'mcp' ? active : 'account')
     }
   }, [identity])
 
@@ -1065,8 +1071,8 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<A
       {message !== undefined ? (
         <div role="status" style={{ padding: '11px 13px', borderRadius: 10, background: 'var(--dsw-alias-bg-module-platform, #f4f6f8)', color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 13, lineHeight: 1.5 }}>{message}</div>
       ) : null}
-      {signedIn !== undefined ? <SignedInTabs active={activeSection} setActive={setActiveSection} t={t} /> : null}
-      {snapshot?.state === 'authorizing' ? (
+      {signedIn !== undefined || (!clubView && snapshot !== undefined) ? <SignedInTabs active={activeSection} setActive={setActiveSection} t={t} hasAccount={signedIn !== undefined} includeMcp={!clubView} /> : null}
+      {activeSection === 'mcp' && !clubView ? <CqaiMcpSettingsPanel ctx={ctx} t={t} /> : snapshot?.state === 'authorizing' ? (
         <div style={cardStyle}>
           <div style={{ display: 'grid', justifyItems: 'center', padding: '38px 30px 26px', textAlign: 'center' }}>
             <div style={{ display: 'grid', placeItems: 'center', width: 58, height: 58, marginBottom: 18, borderRadius: 18, background: 'color-mix(in srgb, var(--dsw-alias-state-business-primary, #2f6fda) 11%, transparent)', color: 'var(--dsw-alias-state-business-primary, #2f6fda)' }}><StateDot state="ongoing" size={22} /></div>
@@ -1141,10 +1147,11 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<A
 
 function CqaiClubPage({ t, accountContext, viewState, onBack, renderSlot }: ClubPageProps) {
   const active = useSyncExternalStore(viewState.subscribe, viewState.getSnapshot, viewState.getSnapshot)
-  const sections: readonly { readonly id: ClubSection; readonly label: 'pointsInfo' | 'membershipInfo' | 'clubActivities' }[] = [
+  const sections: readonly { readonly id: ClubSection; readonly label: 'pointsInfo' | 'membershipInfo' | 'clubActivities' | 'mcpTitle' }[] = [
     { id: 'points', label: 'pointsInfo' },
     { id: 'membership', label: 'membershipInfo' },
     { id: 'activities', label: 'clubActivities' },
+    { id: 'mcp', label: 'mcpTitle' },
   ]
   const activeLabel = sections.find(section => section.id === active)!.label
 
@@ -1165,6 +1172,8 @@ function CqaiClubPage({ t, accountContext, viewState, onBack, renderSlot }: Club
         <div className="cqai-club-content-inner">
           {active === 'points'
             ? <AccountSettingsTab t={t} accountContext={accountContext} clubView />
+            : active === 'mcp'
+              ? <CqaiMcpSettingsPanel ctx={accountContext} t={t} />
             : active === 'activities'
               ? renderSlot('cqaiclub.club.activities', {}, { fallback: <><h1 className="cqai-club-empty-title">{t(activeLabel)}</h1><p>{t('activityPluginDisabled')}</p></> })
               : <h1 className="cqai-club-empty-title">{t(activeLabel)}</h1>}

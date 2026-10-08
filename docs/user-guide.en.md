@@ -66,6 +66,18 @@ dsh plugin update
 
 An explicit `--profile <name>` always wins. Restart 易宝工坊 after plugin changes so the new bundle enters the Loader composition.
 
+## CQAI Club website tools
+
+Open **CQAI Club → MCP service** from the account menu and enable the website MCP service to connect with your current account. The plugin fixes the endpoint to `https://cqaiclub.asia/mcp`; there are no URL, client ID, token, or environment-variable fields, and no separate terminal login.
+
+Sign in on this page if needed. If an existing account has not authorized the website tools, choose the authorization action, complete it once in your system browser, and return to the app. A successful connection shows the available tool count. Conversations can then query activities, register or cancel registration, prepare activity drafts, publish activities, and submit plugins. Managing activities requires `activity:publish`; plugin submissions must reference a real public npm package, and submission does not mean publication in the market.
+
+The toggle persists in the current Profile. Enabled connections resume on application startup, and the Host renews credentials automatically. Network failures retain an error and a reconnect action; disabling the service or signing out removes its conversation tools.
+
+Deployment administrators must register the separate MCP API resource and role permissions in Logto first. The client reuses the existing CQAI Club Native app and callback. See the [account plugin configuration](../cqai-dsh-plugins/cqai-dsh-plugin-account/README.md#官网-mcp).
+
+![CQAI Club official MCP settings: enable switch, sign-in authorization, and connection status](assets/cqai-club-mcp.png)
+
 ## Opening the terminal
 
 Choose **Open DSH Terminal** from the tray, Desktop settings, or the Desktop frame. The settings action has a restart menu beside it for an ordinary restart or **Restart in Recovery Mode**; both require confirmation. macOS opens Terminal; Windows prefers Windows Terminal and falls back to PowerShell or Command Prompt when it is unavailable.

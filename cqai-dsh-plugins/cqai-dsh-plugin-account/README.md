@@ -34,3 +34,30 @@ Access Token，并在同一凭据记录内顺序轮换 Refresh Token；活动扩
 模型目录兼容 Relay 新增的 OpenRouter 风格字段。业务判断优先使用 `architecture` 的输入、输出
 模态和端点类型，只有结构化字段缺失时才回退旧 `categories`；未知的模态和参数字符串会原样
 保留，便于后续版本识别，而不会让旧分类覆盖新的目录事实。
+
+## 官网 MCP
+
+CQAI Club 页面提供官网 MCP 开关、连接状态、工具数量、重连和补充授权。服务固定为
+`https://cqaiclub.asia/mcp`，不提供地址编辑或令牌输入；用户复用插件里的账号登录，不运行
+独立桥接程序。开关默认关闭，避免后台 MCP 资源尚未登记时阻断现有账号、模型和门户功能。
+启用开关保存在当前 Profile，已授权用户重新启动后自动连接。
+
+开启后，新登录会申请 Account、Portal 和 MCP 三个资源。旧授权在插件内补一次 consent；
+Host 分别缓存不同 audience 的 Access Token，并通过同一凭据记录锁顺序更新轮转 Refresh
+Token。MCP 的动态鉴权只在 Host 执行，不把凭据送到 Renderer、RPC、静态 headers 或 Skill。
+401 会刷新一次并重试原请求；网络错误或未知结果不会自动重发业务写入。
+
+插件使用固定的 MCP SDK Client 2.0.0 连接官网，并通过 Host tools registry 注册完整的远程
+工具。普通用户可以查询、报名和投稿；活动管理要求 `activity:publish`。关闭连接、退出账号
+或销毁插件会注销这些工具。它不改动 pinned `deepseek-harness` 或通用 MCP 面板的上游实现。
+
+生产部署管理员需要：
+
+1. 在 Logto 的 API 资源中创建 identifier 为 `https://cqaiclub.asia/mcp` 的独立资源。
+2. 在该资源下创建 `activity:publish` 和 `plugin:admin`；分别按既有运营/管理员职责授权。
+3. 继续使用现有插件 Native 应用及动态端口回调
+   `http://127.0.0.1/cqaiclub-dsn-account/oauth/callback`，支持 PKCE 与 Refresh Token。
+4. 后台配置完成后，在插件里开启 MCP 并补充授权。无需另建 CLI 桥接应用或注册它的固定端口回调。
+
+本地测试使用模拟的 Logto 和官网协议响应验证登录、续期及工具调用；生产 OAuth、角色权限、
+真实业务记录和打包客户端仍须在各自环境验收。源码功能不代表已安装的旧版本已包含此入口。

@@ -533,6 +533,10 @@ try {
       headers: { [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value },
     })
   }
+  if (process.argv.includes('--club-mcp-browser')) {
+    const { verifyClubMcpBrowser } = await import('../../scripts/verify-club-mcp-browser.mjs')
+    await verifyClubMcpBrowser({ url: expectedUrl, cookie, headers: { [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value } })
+  }
   if (process.argv.includes('--ejianbao-browser')) {
     const { verifyEjianbaoBrowser } = await import('../../scripts/verify-ejianbao-browser.mjs')
     await verifyEjianbaoBrowser({url: expectedUrl, cookie, headers: {[BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value}})

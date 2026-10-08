@@ -32,6 +32,7 @@ export const Prompt = {
 
 export type AuthorizationRequestOptions = {
   prompt?: (typeof Prompt)[keyof typeof Prompt]
+  additionalResources?: readonly string[]
 }
 
 type OidcClientOptions = {
@@ -97,7 +98,7 @@ export class OidcClient {
       code_challenge_method: 'S256',
       ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
     })
-    for (const resource of this.additionalResources) {
+    for (const resource of new Set(options.additionalResources ?? this.additionalResources)) {
       if (resource !== this.resource) parameters.append('resource', resource)
     }
     authorizationUrl.search = parameters.toString()

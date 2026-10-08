@@ -1191,12 +1191,19 @@ __metadata:
     "@deepseek-ai/dsh-client-ui-slots": "npm:0.2.0-rc.2"
     "@deepseek-ai/dsh-client-ui-theme": "npm:0.2.0-rc.2"
     "@deepseek-ai/dsh-credentials": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-http-proxy": "npm:0.2.0-rc.2"
     "@deepseek-ai/dsh-invariants": "npm:0.2.0-rc.2"
     "@deepseek-ai/dsh-llm": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-mcp-client": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-sandbox": "npm:0.2.0-rc.2"
     "@deepseek-ai/dsh-scope": "npm:0.2.0-rc.2"
     "@deepseek-ai/dsh-session": "npm:0.2.0-rc.2"
     "@deepseek-ai/dsh-settings": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-subprocess": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-timeout": "npm:0.2.0-rc.2"
+    "@deepseek-ai/dsh-tools": "npm:0.2.0-rc.2"
     "@deepseek-ai/schemastery": "npm:3.18.4"
+    "@modelcontextprotocol/client": "npm:2.0.0"
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:^18.3.0"
     "@types/react-dom": "npm:^18.3.0"
@@ -1225,11 +1232,17 @@ __metadata:
     "@deepseek-ai/dsh-client-ui-slots": 0.2.0-rc.2
     "@deepseek-ai/dsh-client-ui-theme": 0.2.0-rc.2
     "@deepseek-ai/dsh-credentials": 0.2.0-rc.2
+    "@deepseek-ai/dsh-http-proxy": 0.2.0-rc.2
     "@deepseek-ai/dsh-invariants": 0.2.0-rc.2
     "@deepseek-ai/dsh-llm": 0.2.0-rc.2
+    "@deepseek-ai/dsh-mcp-client": 0.2.0-rc.2
+    "@deepseek-ai/dsh-sandbox": 0.2.0-rc.2
     "@deepseek-ai/dsh-scope": 0.2.0-rc.2
     "@deepseek-ai/dsh-session": 0.2.0-rc.2
     "@deepseek-ai/dsh-settings": 0.2.0-rc.2
+    "@deepseek-ai/dsh-subprocess": 0.2.0-rc.2
+    "@deepseek-ai/dsh-timeout": 0.2.0-rc.2
+    "@deepseek-ai/dsh-tools": 0.2.0-rc.2
   languageName: unknown
   linkType: soft
 

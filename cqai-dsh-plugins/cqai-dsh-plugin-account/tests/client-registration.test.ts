@@ -31,7 +31,13 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
     Tag: () => null,
   }
 })
-vi.mock('../src/client/rpc.ts', () => ({ rpcCall: rpc.call }))
+vi.mock('../src/client/rpc.ts', () => ({
+  rpcCall: rpc.call,
+  getClubMcpStatus: (ctx: ClientContext) => rpc.call(ctx, 'mcp/status', {}),
+  configureClubMcp: (ctx: ClientContext, enabled: boolean) => rpc.call(ctx, 'mcp/configure', { enabled }),
+  connectClubMcp: (ctx: ClientContext) => rpc.call(ctx, 'mcp/connect', {}),
+  authorizeClubMcp: (ctx: ClientContext) => rpc.call(ctx, 'mcp/authorize', {}),
+}))
 
 import { apply } from '../src/client/index.tsx'
 import { CqaiModelsSettingsCard } from '../src/client/models-settings-card.tsx'
@@ -280,6 +286,7 @@ describe('CQAI account client registration', () => {
     expect(page.options.children).toEqual({ 'cqaiclub.club.activities': { kind: 'list', scope: 'root' } })
     const labels: Record<string, string> = {
       title: 'CQAI Club', back: '返回', pointsInfo: '积分信息', membershipInfo: '会员信息', clubActivities: '俱乐部活动',
+      mcpTitle: 'MCP 服务',
       activityPluginDisabled: '活动插件未启用。',
     }
     container = document.createElement('div')
@@ -297,7 +304,7 @@ describe('CQAI account client registration', () => {
     const selected = () => nav().querySelector<HTMLButtonElement>('button[aria-current="page"]')!
     const sections = () => nav().querySelectorAll<HTMLButtonElement>('.cqai-club-section')
     expect(nav().querySelector('.cqai-club-back')?.textContent).toBe('返回')
-    expect([...sections()].map(button => button.textContent)).toEqual(['积分信息', '会员信息', '俱乐部活动'])
+    expect([...sections()].map(button => button.textContent)).toEqual(['积分信息', '会员信息', '俱乐部活动', 'MCP 服务'])
     expect(selected().textContent).toBe('积分信息')
     expect(container!.querySelector('.cqai-club-content')?.textContent).toContain('积分 10')
     expect(container!.querySelector('.cqai-club-content')?.textContent).toContain('Alice')
@@ -307,6 +314,19 @@ describe('CQAI account client registration', () => {
     expect(container!.querySelector('.cqai-club-content')?.textContent).toBe('会员信息')
     await act(async () => { sections()[2]!.click() })
     expect(container!.querySelector('.cqai-club-content')?.textContent).toContain('活动插件未启用。')
+
+    rpc.call.mockImplementation(async (_ctx: ClientContext, endpoint: string) => {
+      expect(endpoint).toBe('mcp/status')
+      return { enabled: false, url: 'https://cqaiclub.asia/mcp', state: 'disabled', toolCount: 0 }
+    })
+    await act(async () => { sections()[3]!.click() })
+    expect(selected().textContent).toBe('MCP 服务')
+    expect(container!.querySelector('.cqai-club-content h1')?.textContent).toBe('MCP 服务')
+    expect(container!.querySelector<HTMLInputElement>('input[role="switch"]')?.checked).toBe(false)
+    expect(container!.querySelector('.cqai-club-content input[type="text"]')).toBeNull()
+    expect(rpc.call).toHaveBeenCalledWith(ctx, 'mcp/status', {})
+
+    rpc.call.mockResolvedValue({ state: 'signed-out' })
 
     const openClub = (launcher.options.inject as () => { openClub: () => void })().openClub
     await act(async () => { openClub() })
@@ -405,6 +425,35 @@ describe('CQAI account client registration', () => {
     expect(rpc.call).toHaveBeenCalledWith(ctx, 'snapshot/get', {}, expect.any(AbortSignal))
     expect(complete).toHaveBeenCalledOnce()
     expect(container.childElementCount).toBe(0)
+  })
+
+  it('opens the same official MCP settings from the shared Next account section while signed out', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('desktopNext', {})
+    const { ctx, registrations } = clientHarness()
+    rpc.call.mockImplementation(async (_ctx: ClientContext, endpoint: string) => {
+      if (endpoint === 'snapshot/get') return { state: 'signed-out' }
+      if (endpoint === 'mcp/status') return { enabled: false, url: 'https://cqaiclub.asia/mcp', state: 'disabled', toolCount: 0 }
+      throw new Error(`Unexpected RPC: ${endpoint}`)
+    })
+    apply(ctx)
+    const section = registrations.find(registration => registration.options.name === 'settings.section' && registration.options.id === 'cqaiclub-dsn-account')!
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(createElement(section.render, {
+        ...(section.options.inject as () => Record<string, unknown>)(),
+        t: (key: string) => key,
+      }))
+    })
+    const tabs = [...container!.querySelectorAll<HTMLButtonElement>('button[role="tab"]')]
+    expect(tabs.map(tab => tab.textContent)).toEqual(['accountTab', 'mcpTitle'])
+    await act(async () => { tabs[1]!.click() })
+    expect(container!.querySelector<HTMLInputElement>('input[role="switch"]')?.checked).toBe(false)
+    expect(container!.querySelector<HTMLInputElement>('input[role="switch"]')?.disabled).toBe(false)
+    expect(rpc.call).toHaveBeenCalledWith(ctx, 'mcp/status', {})
+    expect(rpc.call.mock.calls.some(([, endpoint]) => endpoint === 'mcp/connect' || endpoint === 'mcp/authorize')).toBe(false)
   })
 
   it('stops showing an indefinite loading state when the account Host RPC fails', async () => {

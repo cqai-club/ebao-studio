@@ -7,6 +7,24 @@ import type {
   DsnDefaultModelCategory,
   DsnDefaultModelSelection,
 } from '../src/protocol.ts'
+import { DEFAULT_CLUB_MCP_URL } from '../src/protocol.ts'
+
+const mcpClients = vi.hoisted(() => [] as Array<{
+  connect: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+  publishStatus: (status: { state: 'connected' | 'error'; toolCount: number }) => void
+}>)
+vi.mock('../src/mcp-client.ts', () => ({
+  ClubMcpClient: class {
+    connect = vi.fn(async () => ({ toolCount: 20 }))
+    close = vi.fn(async () => undefined)
+    publishStatus: (status: { state: 'connected' | 'error'; toolCount: number }) => void
+    constructor(options: { onStatusChange: (status: { state: 'connected' | 'error'; toolCount: number }) => void }) {
+      this.publishStatus = options.onStatusChange
+      mcpClients.push(this)
+    }
+  },
+}))
 
 const issuer = 'https://auth.example.test/oidc'
 const resource = 'https://account.example.test'
@@ -30,6 +48,27 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
+function audienceToken(aud: string, marker = 'token'): string {
+  return `header.${Buffer.from(JSON.stringify({ aud, marker })).toString('base64url')}.signature`
+}
+
+function mcpGrant(extra: Record<string, unknown> = {}): Extract<CredentialRecord, { kind: 'grant' }> {
+  return { kind: 'grant', payload: {
+    version: 3, issuer, clientId: 'client-123', resource,
+    scope: ['openid', 'offline_access', 'ai:invoke', 'activity:publish'],
+    accessToken: 'account-cached', accessTokenExpiresAt: Date.now() + 3600_000,
+    refreshToken: 'refresh-initial', clubPortalResource: portalResource,
+    clubMcpResource: DEFAULT_CLUB_MCP_URL, account, accountFetchedAt: Date.now(),
+    ...extra,
+  } }
+}
+
+function storedGrant(records: Map<string, CredentialRecord>): Record<string, unknown> {
+  const record = records.get(credential)
+  if (record?.kind !== 'grant') throw new Error('grant disappeared')
+  return record.payload as Record<string, unknown>
+}
+
 type RuntimeHarness = {
   runtime: DsnAccountServiceRuntime
   flow: { run(session: { method: string; signal: AbortSignal; notify(notice: unknown): void }): Promise<void> }
@@ -44,6 +83,8 @@ type RuntimeHarness = {
     mutate: ReturnType<typeof vi.fn>
   }
   setDefaultSelection: (selection: DsnDefaultModelSelection) => void
+  detachMcp: () => void
+  settleAuthorization: () => Promise<void>
 }
 
 function makeRuntime(options: {
@@ -52,19 +93,28 @@ function makeRuntime(options: {
   loginCompletionUrl?: string
   withSettings?: boolean
   categoryDefaults?: Partial<Record<DsnDefaultModelCategory, string>>
+  clubMcpEnabled?: boolean | { get(): boolean }
+  mcpSettingsStore?: { enabled: boolean }
+  beforeCredentialDelete?: () => Promise<void>
 } = {}): RuntimeHarness {
   let flow: RuntimeHarness['flow'] | undefined
   let rpc: RuntimeHarness['rpc'] | undefined
   let activeSessionController: AbortController | undefined
+  let authorizationTask: Promise<void> | undefined
   const records = new Map<string, CredentialRecord>()
+  let credentialQueue = Promise.resolve()
   const credentials = {
     readRecord: async (key: string) => records.get(key),
     modifyRecord: async (key: string, mutate: (record: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>) => {
-      const next = await mutate(records.get(key))
-      if (next !== undefined) records.set(key, next)
-      return next ?? records.get(key)
+      const mutation = credentialQueue.then(async () => {
+        const next = await mutate(records.get(key))
+        if (next !== undefined) records.set(key, next)
+        return next ?? records.get(key)
+      })
+      credentialQueue = mutation.then(() => undefined, () => undefined)
+      return mutation
     },
-    deleteRecord: async (key: string) => { records.delete(key) },
+    deleteRecord: async (key: string) => { await options.beforeCredentialDelete?.(); records.delete(key) },
   }
   const authorization = {
     registerFlow: (candidate: RuntimeHarness['flow']) => {
@@ -73,7 +123,8 @@ function makeRuntime(options: {
     },
     begin: async (options: { method: string; interaction: { notify(notice: unknown): void } }) => {
       activeSessionController = new AbortController()
-      await flow?.run({ method: options.method, signal: activeSessionController.signal, notify: options.interaction.notify })
+      authorizationTask = flow?.run({ method: options.method, signal: activeSessionController.signal, notify: options.interaction.notify })
+      await authorizationTask
       return { status: 'authorized' as const }
     },
     cancel: vi.fn(() => activeSessionController?.abort()),
@@ -96,10 +147,11 @@ function makeRuntime(options: {
   }
   let categoryDefaults = { ...options.categoryDefaults }
   const categorySettings = {
-    mutate: vi.fn(async (_namespace: string, ops: Array<{ op: 'set'; path: string[]; value: string }>) => {
+    mutate: vi.fn(async (_namespace: string, ops: Array<{ op: 'set'; path: string[]; value: string | boolean }>) => {
       for (const op of ops) {
+        if (op.path[0] === 'clubMcpEnabled' && options.mcpSettingsStore) options.mcpSettingsStore.enabled = op.value === true
         if (op.path[0] === 'categoryDefaultModels' && op.path[1] !== undefined) {
-          categoryDefaults = { ...categoryDefaults, [op.path[1]]: op.value }
+          categoryDefaults = { ...categoryDefaults, [op.path[1]]: String(op.value) }
         }
       }
     }),
@@ -108,6 +160,7 @@ function makeRuntime(options: {
     globalDefault = { ...selection }
   }
   const emit = vi.fn()
+  let mcpCleanup: (() => void) | undefined
   const root = {
     root: undefined,
     credentials,
@@ -124,7 +177,9 @@ function makeRuntime(options: {
     agentDefaultModel: defaultModel,
     logger: { warn: vi.fn() },
     reflect: { provide: () => () => undefined },
-    effect: () => undefined,
+    effect: (setup: () => () => void, label: string) => {
+      if (label === 'cqaiclub-dsn-account: club mcp') mcpCleanup = setup()
+    },
     emit,
   } as unknown as Context & { root: Context }
   root.root = root
@@ -143,12 +198,16 @@ function makeRuntime(options: {
     accountServiceUrl: resource,
     clubPortalResource: portalResource,
     clubPortalUrl: 'https://club.example.test',
+    clubMcpEnabled: options.mcpSettingsStore ? { get: () => options.mcpSettingsStore?.enabled ?? false } : options.clubMcpEnabled,
     scopes: ['openid', 'offline_access', 'profile', 'email', 'ai:invoke'],
     requestTimeoutMs: 1000,
     categoryDefaultModels: { get: () => ({ ...categoryDefaults }) },
   })
   if (flow === undefined || rpc === undefined) throw new Error('runtime test harness did not capture registrations')
-  return { runtime, flow, rpc, records, emit, defaultModel, categorySettings, setDefaultSelection }
+  return {
+    runtime, flow, rpc, records, emit, defaultModel, categorySettings, setDefaultSelection,
+    detachMcp: () => mcpCleanup?.(), settleAuthorization: async () => { await authorizationTask?.catch(() => undefined) },
+  }
 }
 
 async function waitForSignedIn(runtime: DsnAccountServiceRuntime): Promise<void> {
@@ -173,6 +232,322 @@ afterEach(() => {
 })
 
 describe('DsnAccountServiceRuntime', () => {
+  it('keeps MCP off by default, persists only its switch, and rejects address overrides', async () => {
+    const settingsStore = { enabled: false }
+    const harness = makeRuntime({ mcpSettingsStore: settingsStore })
+    await expect(harness.runtime.getClubMcpStatus()).resolves.toEqual({ enabled: false, url: DEFAULT_CLUB_MCP_URL, state: 'disabled', toolCount: 0 })
+    const signal = new AbortController().signal
+    await expect(harness.rpc('mcp/configure', { enabled: true, url: 'https://evil.test/mcp' }, signal)).resolves.toMatchObject({ ok: false, error: { code: 'DSN_PROTOCOL_ERROR' } })
+    expect(settingsStore.enabled).toBe(false)
+    await expect(harness.rpc('mcp/configure', { enabled: true }, signal)).resolves.toMatchObject({ ok: true, value: { enabled: true, state: 'signed-out', toolCount: 0 } })
+    expect(settingsStore.enabled).toBe(true)
+    expect(harness.categorySettings.mutate).toHaveBeenCalledWith('cqaiclub-dsn-account', [{ op: 'set', path: ['clubMcpEnabled'], value: true }])
+    const restarted = makeRuntime({ mcpSettingsStore: settingsStore })
+    await expect(restarted.runtime.getClubMcpStatus()).resolves.toMatchObject({ enabled: true, state: 'signed-out' })
+    await expect(harness.rpc('mcp/configure', { enabled: false }, signal)).resolves.toMatchObject({ ok: true, value: { state: 'disabled' } })
+    expect(settingsStore.enabled).toBe(false)
+  })
+
+  it('requires explicit MCP consent for an existing portal grant without requesting a new audience using its refresh token', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const harness = makeRuntime()
+    const { clubMcpResource: _mcp, ...oldPayload } = mcpGrant().payload as Record<string, unknown>
+    harness.records.set(credential, { kind: 'grant', payload: { ...oldPayload, version: 2 } })
+    await harness.runtime.configureClubMcp({ enabled: true })
+    await expect(harness.runtime.getStatus()).resolves.toMatchObject({ state: 'signed-in' })
+    await expect(harness.runtime.getClubPortalAuthorization()).resolves.toBe('ready')
+    await expect(harness.runtime.connectClubMcp()).resolves.toMatchObject({ state: 'reauth-required', toolCount: 0 })
+    await expect(harness.runtime.fetchClubMcp()).rejects.toMatchObject({ code: 'DSN_REAUTH_REQUIRED' })
+    expect(fetch).not.toHaveBeenCalled()
+    const withoutSettings = makeRuntime({ withSettings: false })
+    await expect(withoutSettings.runtime.configureClubMcp({ enabled: true })).rejects.toMatchObject({ code: 'DSN_CONFIG_INVALID' })
+    await expect(withoutSettings.runtime.getClubMcpStatus()).resolves.toMatchObject({ enabled: false })
+  })
+
+  it('adds the third resource in plugin browser consent and keeps all tokens out of MCP RPC results', async () => {
+    const mcpToken = audienceToken(DEFAULT_CLUB_MCP_URL)
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      if (url.endsWith('/token')) {
+        const body = new URLSearchParams(String(init?.body ?? ''))
+        if (body.get('grant_type') === 'authorization_code') return json({ access_token: audienceToken(resource), refresh_token: 'fresh-browser-refresh', expires_in: 3600 })
+        expect(body.get('resource')).toBe(DEFAULT_CLUB_MCP_URL)
+        expect(body.get('refresh_token')).toBe('fresh-browser-refresh')
+        return json({ access_token: mcpToken, refresh_token: 'mcp-rotated-refresh', expires_in: 3600 })
+      }
+      if (url.endsWith('/api/account')) return json({ success: true, data: account })
+      if (url.endsWith('/v1/models')) return json({ success: true, data: [] })
+      if (url === DEFAULT_CLUB_MCP_URL) {
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${mcpToken}`)
+        expect(init?.redirect).toBe('error')
+        expect(init?.credentials).toBe('omit')
+        return json({ jsonrpc: '2.0', result: {}, id: 1 })
+      }
+      throw new Error(`unexpected test URL: ${url}`)
+    }))
+    const harness = makeRuntime()
+    const { clubMcpResource: _mcp, ...oldPayload } = mcpGrant().payload as Record<string, unknown>
+    harness.records.set(credential, { kind: 'grant', payload: { ...oldPayload, version: 2 } })
+    const oldStart = await harness.rpc('authorization/start', {}, new AbortController().signal) as {
+      ok: boolean; value: { authorizationUrl: string }
+    }
+    expect(oldStart.ok).toBe(true)
+    expect(new URL(oldStart.value.authorizationUrl).searchParams.getAll('resource')).toEqual([resource, portalResource])
+    await harness.runtime.configureClubMcp({ enabled: true })
+    const start = await harness.rpc('mcp/authorize', {}, new AbortController().signal) as {
+      ok: boolean; value: { snapshot: { authorizationUrl: string }; mcp: { state: string } }
+    }
+    expect(start.ok).toBe(true)
+    expect(start.value.mcp.state).toBe('reauth-required')
+    const authorization = new URL(start.value.snapshot.authorizationUrl)
+    expect(authorization.searchParams.getAll('resource')).toEqual([resource, portalResource, DEFAULT_CLUB_MCP_URL])
+    expect(authorization.searchParams.get('prompt')).toBe('consent')
+    const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '')
+    callback.searchParams.set('code', 'authorization-code')
+    callback.searchParams.set('state', authorization.searchParams.get('state') ?? '')
+    expect((await nativeFetch(callback)).status).toBe(200)
+    await waitForSignedIn(harness.runtime)
+    expect(storedGrant(harness.records)).toMatchObject({ version: 3, clubMcpResource: DEFAULT_CLUB_MCP_URL, clubPortalResource: portalResource })
+    await harness.runtime.fetchClubMcp({ method: 'POST', body: '{"id":1}' })
+    const status = await harness.rpc('mcp/status', {}, new AbortController().signal)
+    expect(status).toMatchObject({ ok: true, value: { enabled: true, state: 'connected', toolCount: 20 } })
+    expect(JSON.stringify([start, status])).not.toContain(mcpToken)
+    expect(JSON.stringify([start, status])).not.toContain('fresh-browser-refresh')
+    expect(JSON.stringify([start, status])).not.toContain('mcp-rotated-refresh')
+  })
+
+  it('serializes Account, Portal, and MCP refresh-token rotation and caches each audience independently', async () => {
+    const requested: Array<{ resource: string | null; refresh: string | null }> = []
+    const mcpToken = audienceToken(DEFAULT_CLUB_MCP_URL)
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      if (url.endsWith('/token')) {
+        const body = new URLSearchParams(String(init?.body ?? ''))
+        requested.push({ resource: body.get('resource'), refresh: body.get('refresh_token') })
+        await new Promise(resolve => setTimeout(resolve, 5))
+        return json({ access_token: audienceToken(body.get('resource') ?? ''), refresh_token: `rotated-${requested.length}`, expires_in: 3600 })
+      }
+      if (url.endsWith('/api/account')) return json({ success: true, data: account })
+      if (url.endsWith('/api/v1/me/activity-registrations')) return json([])
+      if (url === DEFAULT_CLUB_MCP_URL) {
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${mcpToken}`)
+        return json({ result: {} })
+      }
+      throw new Error(`unexpected test URL: ${url}`)
+    }))
+    const harness = makeRuntime({ clubMcpEnabled: true })
+    harness.records.set(credential, mcpGrant({ accessTokenExpiresAt: Date.now() - 1 }))
+    await Promise.all([
+      harness.runtime.getAccount(),
+      harness.runtime.fetchClubPortal('/api/v1/me/activity-registrations'),
+      harness.runtime.fetchClubMcp({ method: 'POST', body: '{"requestKey":"same-key"}' }),
+    ])
+    expect(requested.map(item => item.refresh)).toEqual(['refresh-initial', 'rotated-1', 'rotated-2'])
+    expect(requested.map(item => item.resource).sort()).toEqual([resource, portalResource, DEFAULT_CLUB_MCP_URL].sort())
+    expect(storedGrant(harness.records)).toMatchObject({ refreshToken: 'rotated-3', clubMcpAccessToken: mcpToken, clubPortalAccessToken: audienceToken(portalResource) })
+    await harness.runtime.fetchClubMcp()
+    expect(requested).toHaveLength(3)
+  })
+
+  it('retries only one explicit MCP 401 with the unchanged write payload, and does not retry ambiguous network failures', async () => {
+    const oldToken = audienceToken(DEFAULT_CLUB_MCP_URL, 'old')
+    const nextToken = audienceToken(DEFAULT_CLUB_MCP_URL, 'new')
+    const wireCalls: Array<{ authorization: string | null; body: RequestInit['body'] }> = []
+    let networkFailure = false
+    let refreshCount = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      if (url.endsWith('/token')) {
+        refreshCount += 1
+        return json({ access_token: nextToken, refresh_token: 'refresh-next', expires_in: 3600 })
+      }
+      if (url === DEFAULT_CLUB_MCP_URL) {
+        wireCalls.push({ authorization: new Headers(init?.headers).get('authorization'), body: init?.body })
+        if (networkFailure) throw new TypeError('network failed')
+        return json({ error: 'unauthorized' }, 401)
+      }
+      throw new Error(`unexpected test URL: ${url}`)
+    }))
+    const harness = makeRuntime({ clubMcpEnabled: true })
+    harness.records.set(credential, mcpGrant({ clubMcpAccessToken: oldToken, clubMcpAccessTokenExpiresAt: Date.now() + 3600_000 }))
+    const body = JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', params: { requestKey: 'stable-write-key' } })
+    expect((await harness.runtime.fetchClubMcp({ method: 'POST', body, headers: { Authorization: 'caller-supplied' } })).status).toBe(401)
+    expect(wireCalls).toEqual([{ authorization: `Bearer ${oldToken}`, body }, { authorization: `Bearer ${nextToken}`, body }])
+    expect(refreshCount).toBe(1)
+    networkFailure = true
+    await expect(harness.runtime.fetchClubMcp({ method: 'POST', body })).rejects.toThrow('network failed')
+    expect(wireCalls).toHaveLength(3)
+    expect(refreshCount).toBe(1)
+    await harness.runtime.configureClubMcp({ enabled: false })
+    await expect(harness.runtime.fetchClubMcp()).rejects.toMatchObject({ code: 'DSN_CONFIG_INVALID' })
+    expect(wireCalls).toHaveLength(3)
+    expect(mcpClients.at(-1)?.close).toHaveBeenCalled()
+  })
+
+  it('rejects wrong MCP audience without losing shared refresh rotation, and clears invalid grants without leaking secrets', async () => {
+    let invalidGrant = false
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      if (url.endsWith('/token')) return invalidGrant ? json({ error: 'invalid_grant' }, 400) : json({ access_token: audienceToken(resource), refresh_token: 'retained-rotated-refresh', expires_in: 3600 })
+      throw new Error(`unexpected test URL: ${url}`)
+    }))
+    const harness = makeRuntime({ clubMcpEnabled: true })
+    harness.records.set(credential, mcpGrant())
+    await expect(harness.runtime.fetchClubMcp()).rejects.toMatchObject({ code: 'DSN_PROTOCOL_ERROR' })
+    expect(storedGrant(harness.records)).toMatchObject({ refreshToken: 'retained-rotated-refresh' })
+    expect(storedGrant(harness.records)).not.toHaveProperty('clubMcpAccessToken')
+    invalidGrant = true
+    await expect(harness.runtime.fetchClubMcp()).rejects.toMatchObject({ code: 'DSN_REAUTH_REQUIRED' })
+    expect(storedGrant(harness.records)).not.toHaveProperty('refreshToken')
+    const status = await harness.runtime.getClubMcpStatus()
+    expect(status.state).toBe('reauth-required')
+    expect(JSON.stringify(status)).not.toContain('retained-rotated-refresh')
+  })
+
+  it('keeps ordinary connect idempotent and reconnects only for an explicit boolean RPC request', async () => {
+    const harness = makeRuntime({ clubMcpEnabled: true })
+    harness.records.set(credential, mcpGrant())
+    const client = mcpClients.at(-1)!
+    const signal = new AbortController().signal
+    await expect(harness.runtime.connectClubMcp()).resolves.toMatchObject({ state: 'connected', toolCount: 20 })
+    const closeCount = client.close.mock.calls.length
+    await expect(harness.rpc('mcp/connect', {}, signal)).resolves.toMatchObject({ ok: true, value: { state: 'connected' } })
+    expect(client.connect).toHaveBeenCalledOnce()
+    expect(client.close).toHaveBeenCalledTimes(closeCount)
+    await expect(harness.rpc('mcp/connect', { reconnect: 'true' }, signal)).resolves.toMatchObject({ ok: false, error: { code: 'DSN_PROTOCOL_ERROR' } })
+    await expect(harness.rpc('mcp/connect', { reconnect: true, url: DEFAULT_CLUB_MCP_URL }, signal)).resolves.toMatchObject({ ok: false, error: { code: 'DSN_PROTOCOL_ERROR' } })
+    await expect(harness.rpc('mcp/connect', { reconnect: true }, signal)).resolves.toMatchObject({ ok: true, value: { state: 'connected' } })
+    expect(client.connect).toHaveBeenCalledTimes(2)
+    expect(client.close).toHaveBeenCalledTimes(closeCount + 1)
+  })
+
+  it('cancels pending browser consent on sign-out and refuses the original callback', async () => {
+    const fetch = vi.fn(async (input: unknown) => {
+      if (String(input).endsWith('/.well-known/openid-configuration')) return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      throw new Error('cancelled authorization must never exchange a token')
+    })
+    vi.stubGlobal('fetch', fetch)
+    const harness = makeRuntime({ clubMcpEnabled: true })
+    const signal = new AbortController().signal
+    const start = await harness.rpc('mcp/authorize', {}, signal) as { value: { snapshot: { authorizationUrl: string } } }
+    const authorization = new URL(start.value.snapshot.authorizationUrl)
+    const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '')
+    callback.searchParams.set('code', 'stale-code')
+    callback.searchParams.set('state', authorization.searchParams.get('state') ?? '')
+    await expect(harness.rpc('session/logout', {}, signal)).resolves.toMatchObject({ ok: true, value: { snapshot: { state: 'signed-out' } } })
+    const response = await nativeFetch(callback).catch(() => undefined)
+    expect(response?.status).not.toBe(200)
+    await harness.settleAuthorization()
+    expect(harness.records.has(credential)).toBe(false)
+    await expect(harness.runtime.getStatus()).resolves.toMatchObject({ state: 'signed-out' })
+    expect(mcpClients.at(-1)?.connect).not.toHaveBeenCalled()
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it.each(['token', 'account'] as const)('does not commit a cancelled grant after a slow %s response ignores abort', async stage => {
+    let completeResponse!: (response: Response) => void
+    let requestStarted!: () => void
+    const barrier = new Promise<Response>(resolve => { completeResponse = resolve })
+    const requested = new Promise<void>(resolve => { requestStarted = resolve })
+    const accountFetch = vi.fn(async () => json({ success: true, data: account }))
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      if (url.endsWith('/token')) {
+        if (stage === 'token') { requestStarted(); return barrier }
+        return json({ access_token: audienceToken(resource), refresh_token: 'stale-refresh', expires_in: 3600 })
+      }
+      if (url.endsWith('/api/account')) {
+        if (stage === 'account') { requestStarted(); return barrier }
+        return accountFetch()
+      }
+      throw new Error(`unexpected test URL: ${url}`)
+    }))
+    const harness = makeRuntime({ clubMcpEnabled: true })
+    const signal = new AbortController().signal
+    const start = await harness.rpc('mcp/authorize', {}, signal) as { value: { snapshot: { authorizationUrl: string } } }
+    const authorization = new URL(start.value.snapshot.authorizationUrl)
+    const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '')
+    callback.searchParams.set('code', 'late-code')
+    callback.searchParams.set('state', authorization.searchParams.get('state') ?? '')
+    expect((await nativeFetch(callback)).status).toBe(200)
+    await requested
+    await expect(harness.rpc('session/logout', {}, signal)).resolves.toMatchObject({ ok: true, value: { snapshot: { state: 'signed-out' } } })
+    completeResponse(stage === 'token'
+      ? json({ access_token: audienceToken(resource), refresh_token: 'stale-refresh', expires_in: 3600 })
+      : json({ success: true, data: account }))
+    await harness.settleAuthorization()
+    expect(harness.records.has(credential)).toBe(false)
+    await expect(harness.runtime.getStatus()).resolves.toMatchObject({ state: 'signed-out' })
+    await expect(harness.runtime.getClubMcpStatus()).resolves.toMatchObject({ state: 'signed-out', toolCount: 0 })
+    expect(mcpClients.at(-1)?.connect).not.toHaveBeenCalled()
+    if (stage === 'token') expect(accountFetch).not.toHaveBeenCalled()
+  })
+
+  it('blocks reconnect and bearer requests throughout credential deletion and slow remote sign-out', async () => {
+    let allowDelete!: () => void
+    let deletionStarted!: () => void
+    let completeRevocation!: (response: Response) => void
+    let revocationStarted!: () => void
+    const deleteBarrier = new Promise<void>(resolve => { allowDelete = resolve })
+    const deleting = new Promise<void>(resolve => { deletionStarted = resolve })
+    const revokeBarrier = new Promise<Response>(resolve => { completeRevocation = resolve })
+    const revoking = new Promise<void>(resolve => { revocationStarted = resolve })
+    const fetch = vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, revocation_endpoint: `${issuer}/revoke` })
+      if (url.endsWith('/revoke')) { revocationStarted(); return revokeBarrier }
+      throw new Error(`unexpected test URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetch)
+    const harness = makeRuntime({ clubMcpEnabled: true, beforeCredentialDelete: async () => { deletionStarted(); await deleteBarrier } })
+    harness.records.set(credential, mcpGrant())
+    await harness.runtime.connectClubMcp()
+    const client = mcpClients.at(-1)!
+    expect(client.connect).toHaveBeenCalledOnce()
+    const logout = harness.rpc('session/logout', {}, new AbortController().signal)
+    await deleting
+    expect(harness.records.has(credential)).toBe(true)
+    await expect(harness.runtime.connectClubMcp()).resolves.toMatchObject({ state: 'signed-out', toolCount: 0 })
+    await expect(harness.runtime.fetchClubMcp()).rejects.toMatchObject({ code: 'DSN_AUTH_REQUIRED' })
+    expect(fetch).not.toHaveBeenCalled()
+    allowDelete()
+    await revoking
+    expect(harness.records.has(credential)).toBe(false)
+    await expect(harness.runtime.connectClubMcp()).resolves.toMatchObject({ state: 'signed-out', toolCount: 0 })
+    completeRevocation(new Response(null, { status: 200 }))
+    await expect(logout).resolves.toMatchObject({ ok: true, value: { snapshot: { state: 'signed-out' }, remoteRevoked: true } })
+    expect(client.connect).toHaveBeenCalledOnce()
+    expect(client.close.mock.calls.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it.each(['disable', 'detach'] as const)('does not revive a pending connection after %s and ignores detached adapter updates', async action => {
+    const harness = makeRuntime({ clubMcpEnabled: true })
+    harness.records.set(credential, mcpGrant())
+    const client = mcpClients.at(-1)!
+    let closed!: () => void
+    let releaseClose!: () => void
+    const closing = new Promise<void>(resolve => { closed = resolve })
+    const closeBarrier = new Promise<void>(resolve => { releaseClose = resolve })
+    client.close.mockImplementationOnce(async () => { closed(); await closeBarrier })
+    const connecting = harness.runtime.connectClubMcp()
+    await closing
+    if (action === 'disable') await harness.runtime.configureClubMcp({ enabled: false })
+    else harness.detachMcp()
+    releaseClose()
+    await connecting
+    expect(client.connect).not.toHaveBeenCalled()
+    const before = await harness.runtime.getClubMcpStatus()
+    expect(before).toMatchObject({ state: action === 'disable' ? 'disabled' : 'disconnected', toolCount: 0 })
+    client.publishStatus({ state: 'connected', toolCount: 99 })
+    await expect(harness.runtime.getClubMcpStatus()).resolves.toEqual(before)
+  })
+
   it('keeps legacy account grants active but requires one base-plugin re-login for portal actions', async () => {
     const harness = makeRuntime()
     harness.records.set(credential, {

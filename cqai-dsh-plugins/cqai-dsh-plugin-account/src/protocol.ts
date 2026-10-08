@@ -3,6 +3,7 @@ export const DEFAULT_RESOURCE = 'https://account.cqaiclub.asia'
 export const DEFAULT_ACCOUNT_SERVICE_URL = 'https://account.cqaiclub.asia'
 export const DEFAULT_CLUB_PORTAL_RESOURCE = 'https://cqaiclub.asia/'
 export const DEFAULT_CLUB_PORTAL_URL = 'https://cqaiclub.asia'
+export const DEFAULT_CLUB_MCP_URL = 'https://cqaiclub.asia/mcp'
 export const DEFAULT_SCOPES = [
   'openid',
   'offline_access',
@@ -281,6 +282,7 @@ export type DsnAccountConfig = {
   accountServiceUrl: string
   clubPortalResource: string
   clubPortalUrl: string
+  clubMcpEnabled: boolean
   scopes: readonly string[]
   requestTimeoutMs: number
   modelCatalogCacheTtlMs: number
@@ -298,17 +300,37 @@ type AccountGrantPayload = {
   accountFetchedAt: number
 }
 
+type ClubPortalGrant = {
+  clubPortalResource: string
+  clubPortalAccessToken?: string
+  clubPortalAccessTokenExpiresAt?: number
+}
+
 export type GrantPayload = AccountGrantPayload & (
   | { version: 1 }
-  | {
-      version: 2
-      clubPortalResource: string
-      clubPortalAccessToken?: string
-      clubPortalAccessTokenExpiresAt?: number
-    }
+  | ({ version: 2 } & ClubPortalGrant)
+  | ({
+      version: 3
+      clubMcpResource: string
+      clubMcpAccessToken?: string
+      clubMcpAccessTokenExpiresAt?: number
+    } & ClubPortalGrant)
 )
 
 export type ClubPortalAuthorization = 'signed-out' | 'reauth-required' | 'ready'
+
+export type ClubMcpState = 'disabled' | 'signed-out' | 'reauth-required' | 'disconnected' | 'connecting' | 'connected' | 'error'
+export type ClubMcpStatus = {
+  enabled: boolean
+  url: string
+  state: ClubMcpState
+  toolCount: number
+  message?: string
+  code?: string
+}
+export type ClubMcpConfigureRequest = { enabled: boolean }
+export type ClubMcpConnectRequest = { reconnect?: boolean }
+export type ClubMcpAuthorizationResult = { snapshot: DsnAccountSnapshot; mcp: ClubMcpStatus }
 
 export type DsnAccountService = {
   getStatus(options?: { refreshAccount?: boolean; signal?: AbortSignal }): Promise<DsnAccountSnapshot>
@@ -326,6 +348,12 @@ export type DsnAccountService = {
   getClubPortalAuthorization(): Promise<ClubPortalAuthorization>
   beginClubPortalAuthorization(signal?: AbortSignal): Promise<DsnAccountSnapshot>
   fetchClubPortal(path: `/api/v1/${string}`, init?: RequestInit, signal?: AbortSignal): Promise<Response>
+  getClubMcpStatus(): Promise<ClubMcpStatus>
+  configureClubMcp(request: ClubMcpConfigureRequest): Promise<ClubMcpStatus>
+  connectClubMcp(signal?: AbortSignal, options?: ClubMcpConnectRequest): Promise<ClubMcpStatus>
+  beginClubMcpAuthorization(signal?: AbortSignal): Promise<ClubMcpAuthorizationResult>
+  /** Host-only fixed-endpoint proxy. Tokens never enter the public RPC protocol. */
+  fetchClubMcp(init?: RequestInit, signal?: AbortSignal): Promise<Response>
 }
 
 export type LogoutResult = {
