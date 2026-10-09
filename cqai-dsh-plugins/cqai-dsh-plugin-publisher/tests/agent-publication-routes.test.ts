@@ -1,5 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore from '@deepseek-ai/dsh-session'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
@@ -20,10 +22,12 @@ async function fixture() {
   const previousHome = process.env.DSH_HOME
   process.env.DSH_HOME = home
   const ctx = new Context()
+  const agentCtx = new Context()
   const sessionId = 'publication-session'
   const otherSessionId = 'other-publication-session'
   const archivedSessionIds: string[] = []
   const definitions = new Map<string, ToolDefinition>()
+  const agentDefinitions = new Map<string, ToolDefinition>()
   const dispatched: Record<string, unknown>[] = []
   const submissions: PublisherSubmission[] = []
   const account: PublisherAccount = {
@@ -58,6 +62,7 @@ async function fixture() {
   }
   const dispose = async () => {
     await ctx.fiber.dispose()
+    await agentCtx.fiber.dispose()
     if (previousHome === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = previousHome
   }
@@ -73,12 +78,28 @@ async function fixture() {
     } } as never)
     ctx.provide('attachments', {} as never)
     ctx.provide('systemPrompt', { section: () => () => undefined } as never)
+    agentCtx.provide('tools', { register: (tool: ToolDefinition) => {
+      agentDefinitions.set(tool.name, tool)
+      return () => agentDefinitions.delete(tool.name)
+    } } as never)
+    agentCtx.provide('attachments', {} as never)
+    agentCtx.provide('systemPrompt', { section: () => () => undefined } as never)
     ctx.provide('sessionController', { list: async () => ({
       items: [{ sessionId }, { sessionId: otherSessionId }],
     }) } as never)
     ctx.provide('workspaceRegistry', { archivedSessionIds } as never)
     await ctx.plugin(SessionStore)
+    const agent = {
+      id: SessionId(sessionId), ctx: agentCtx, status: 'running',
+      session: ctx.sessions.create(SessionId(sessionId)),
+    } as unknown as Agent
+    ctx.provide('agents', {
+      get: (id: SessionId) => id === agent.id ? agent : undefined,
+      list: () => [agent],
+    } as never)
     await ctx.plugin(plugin)
+    expect([...definitions.keys()]).toEqual(['publisher_enable'])
+    expect(agentDefinitions.has('publisher_request_publication')).toBe(false)
 
     const request = async (
       method: 'GET' | 'POST', action: string, body: unknown = {},
@@ -106,12 +127,23 @@ async function fixture() {
     const bound = await request('POST', 'agent-draft-bind', { sessionId, contentId: content.id }, { 'x-ejianbao': '1' })
     expect(bound.status).toBe(200)
     const prepare = async (callId = 'request-publication-call') => {
-      const tool = definitions.get('publisher_request_publication')
-      if (!tool) throw new Error('Agent publication tool was not registered by Publisher')
+      const userRequest = '请把当前文章存入百家号平台草稿箱'
+      const message = createUserMessage({
+        source: { kind: 'user' }, content: [{ type: 'text', text: userRequest }],
+      })
+      ctx.emit('agent/inbox/claimed', { agent, message, turn: 1 })
+      const activation = definitions.get('publisher_enable')
+      if (!activation) throw new Error('Agent publishing activation tool was not registered by Publisher')
+      const exec = { agent, callId, signal: new AbortController().signal } as unknown as ToolRunContext
+      expect(await activation.execute({ user_request: userRequest }, exec))
+        .toMatchObject({ enabled: true, requires_user_confirmation: true })
+      expect(definitions.has('publisher_request_publication')).toBe(false)
+      const tool = agentDefinitions.get('publisher_request_publication')
+      if (!tool) throw new Error('Agent publication tool was not loaded into the requesting conversation')
       return await tool.execute({
         content_id: content.id, binding_token: bound.body.bindingToken,
         expected_revision: content.revision, platforms: ['bjh'], account_ids: [account.id], mode: 'draft',
-      }, { agent: { id: sessionId }, callId, signal: new AbortController().signal } as unknown as ToolRunContext) as {
+      }, exec) as {
         request_id: string; state: string; requires_user_confirmation: boolean
       }
     }
