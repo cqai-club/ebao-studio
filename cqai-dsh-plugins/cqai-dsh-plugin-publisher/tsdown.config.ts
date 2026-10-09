@@ -1,4 +1,5 @@
 import type { UserConfig } from 'tsdown'
+import { dirname, resolve } from 'node:path'
 const id = 'cqai-dsh-plugin-publisher'
 export default [
   {
@@ -10,6 +11,13 @@ export default [
     dts: false,
     clean: false,
     fixedExtension: false,
+    loader: { '.md': 'text' },
+    plugins: [{
+      name: 'publisher-skill-markdown',
+      resolveId(source, importer) {
+        if (importer && source.endsWith('.md?raw')) return resolve(dirname(importer), source.slice(0, -4))
+      },
+    }],
     deps: {neverBundle: [/^@deepseek-ai\//]},
   },
   {

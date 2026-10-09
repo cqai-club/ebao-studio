@@ -76,6 +76,19 @@ function setup(type: PublisherContent['contentType'] = 'article') {
 }
 
 describe('durable Agent publication confirmations', () => {
+  it.each(['binding', 'content', 'cancel'] as const)('does not create a card when its %s changes while preparing account context', async change => {
+    const t = setup()
+    const controller = new AbortController()
+    t.onAccounts(() => {
+      if (change === 'binding') t.bindings.bind('session-test', null, t.env)
+      if (change === 'content') saveContent(t.content.id, { ...t.content, revision: t.content.revision, title: '已修改的标题' }, t.env)
+      if (change === 'cancel') controller.abort(new Error('用户已取消'))
+    })
+    await expect(t.manager.prepare('session-test', `context-${change}`, { ...t.options, signal: controller.signal }))
+      .rejects.toThrow(change === 'binding' ? '草稿已切换' : change === 'content' ? '草稿已更新' : '用户已取消')
+    expect(t.count()).toBe(0)
+  })
+
   it.each(['dy', 'wxmp'] as const)('queues %s image messages only after the user confirms the selected account', async platform => {
     const t = setup('image-note')
     const latest = addAsset(t.content.id, '验收.png', Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1]), t.env)

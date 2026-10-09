@@ -4,7 +4,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-attachment'
-import type {} from '@deepseek-ai/dsh-system-prompt'
 import { AgentDraftBindings } from './agent-draft-binding.ts'
 import { addAsset, insertArticleImage, readContent, removeAsset, saveContent } from './contents.ts'
 import { listWorks, resolveWork } from './works.ts'
@@ -25,11 +24,7 @@ const imageRefSchema = {
   },
 } as const
 
-export const AGENT_DRAFT_GUIDANCE = [
-  '在多平台发布的编辑页 Agent 抽屉中，先调用 publisher_get_current_draft。返回非 null 时，只编辑绑定的当前草稿，不要修改外部 Markdown 原稿，也不要调用 publisher_register_source 或 publisher_prepare_preview。',
-  '根据返回的 content_type 编辑：文章可修改标题、正文、摘要、标签、内容声明、封面并插入正文图片；图文可修改标题、正文、标签、内容声明、封面、图片顺序，并用 publisher_add_current_draft_image 添加附件图片或按明确要求删除图片；视频可修改标题、简介、短标题、标签、内容声明，并用 publisher_list_video_works / publisher_select_current_video_work 选择已有 e剪宝成片。视频画面剪辑和本地视频文件选择不由这些工具执行。',
-  '每次写入都要先读取最新 revision 和 binding_token 并同时提交。若提示草稿更新或切换，重新读取并重新考虑用户要求。编辑工具只保存本地草稿。用户明确要求发布时，调用 publisher_request_publication 展示对话确认卡片，由用户选择账号、方式并点击确认提交；不能修改平台账号或绕过确认。',
-].join('\n')
+
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 function asToolResult<T extends object>(value: T): Record<string, JsonValue> {
@@ -96,11 +91,10 @@ async function verifiedImage(ctx: Context, source: Parameters<typeof imageRefere
   return { ref, bytes, digest }
 }
 
-export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindings): () => void {
-  const disposers = [
-    ctx.tools.register(defineTool({
+function currentDraftTool(bindings: AgentDraftBindings) {
+  return defineTool({
       name: 'publisher_get_current_draft',
-      description: 'Read the currently bound article, image-note, or video draft in the Publisher editor drawer. Returns null if this Agent conversation has no open draft. Use this before editing; it returns the content type, binding token, and latest revision required for a save.',
+      description: 'Read this conversation’s bound editor draft, binding token and current revision. Returns null when the editor is unbound.',
       parameters: {},
       output: { schema: { oneOf: [resultSchema, { type: 'null' }] } as const, render },
       async execute(_args, exec) {
@@ -109,10 +103,19 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
         if (!binding) return null
         return asToolResult(snapshot(requireContent(binding.contentId), binding.bindingToken))
       },
-    })),
+    })
+}
+
+export function registerAgentDraftReadTool(ctx: Context, bindings: AgentDraftBindings): () => void {
+  return ctx.tools.register(currentDraftTool(bindings))
+}
+
+export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindings): () => void {
+  const disposers = [
+    registerAgentDraftReadTool(ctx, bindings),
     ctx.tools.register(defineTool({
       name: 'publisher_update_current_draft',
-      description: 'Save main draft fields for the bound article, image-note, or video. Article/image-note support title, body, summary, tags, cover asset, and image order; video supports title, description, short title, and tags. All types support creative statement. Requires the exact draft ID, binding token, and revision from publisher_get_current_draft. Does not publish or change platform versions or settings.',
+      description: 'Save requested main fields in the bound local draft using its exact ID, binding token and latest revision. Does not submit to a platform.',
       parameters: {
         content_id: { type: 'string', required: true },
         binding_token: { type: 'string', required: true },
@@ -274,7 +277,6 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
         return asToolResult(snapshot(saved, binding.bindingToken))
       },
     })),
-    ctx.systemPrompt.section({ name: 'plugin:cqai-publisher:current-draft', order: 71, text: AGENT_DRAFT_GUIDANCE }),
   ]
   return () => { for (const dispose of disposers.reverse()) dispose() }
 }

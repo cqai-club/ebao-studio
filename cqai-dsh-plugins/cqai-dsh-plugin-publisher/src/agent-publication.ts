@@ -234,15 +234,19 @@ export class AgentPublications {
     if (content.revision !== record.content.revision || digest(content) !== record.contentHash) {
       throw new Error('草稿已更新，请在对话中重新准备发布确认')
     }
-    if (record.origin.kind === 'binding') {
-      this.bindings.require(record.sessionId, record.content.id, record.origin.bindingToken)
+    this.assertOrigin(record.sessionId, record.content.id, record.origin)
+  }
+
+  private assertOrigin(sessionId: string, contentId: string, origin: Origin): void {
+    if (origin.kind === 'binding') {
+      this.bindings.require(sessionId, contentId, origin.bindingToken)
     } else {
-      const source = readSourceDocument(record.origin.sourceId, this.env)
-      if (source.sessionId !== record.sessionId || source.revision !== record.origin.sourceRevision) {
+      const source = readSourceDocument(origin.sourceId, this.env)
+      if (source.sessionId !== sessionId || source.revision !== origin.sourceRevision) {
         throw new Error('原稿已更新，请在对话中重新准备发布确认')
       }
-      const candidate = readPublicationCandidate(record.sessionId)
-      if (record.origin.candidateId && candidate && candidate.id !== record.origin.candidateId) {
+      const candidate = readPublicationCandidate(sessionId)
+      if (origin.candidateId && (!candidate || candidate.id !== origin.candidateId)) {
         throw new Error('发布候选已更新，请在对话中重新准备发布确认')
       }
     }
@@ -304,7 +308,8 @@ export class AgentPublications {
     }
   }
 
-  async prepare(sessionId: string, callId: string, options: PrepareAgentPublicationOptions = {}): Promise<AgentPublicationRequest> {
+  async prepare(sessionId: string, callId: string, options: PrepareAgentPublicationOptions & { signal?: AbortSignal } = {}): Promise<AgentPublicationRequest> {
+    options.signal?.throwIfAborted()
     validAgentSessionId(sessionId)
     const id = requestId(sessionId, callId)
     if (existsSync(this.path(id))) return this.read(sessionId, id)
@@ -336,7 +341,21 @@ export class AgentPublications {
         candidateId: reviewed.id }
       if (!platforms.length) platforms.push(...reviewed.platforms)
     }
+    const originalContent = content
+    const originalContentHash = digest(content)
+    const assertPreparationOrigin = () => {
+      options.signal?.throwIfAborted()
+      if (this.bindings.current(sessionId)?.bindingToken !== binding?.bindingToken) {
+        throw new Error('当前草稿已切换或 Agent 抽屉已关闭，请重新读取草稿')
+      }
+      this.assertOrigin(sessionId, originalContent.id, origin)
+    }
     const context = await this.context()
+    options.signal?.throwIfAborted()
+    assertPreparationOrigin()
+    if (digest(readContent(originalContent.id, this.env)) !== originalContentHash) {
+      throw new Error('草稿已更新，请在对话中重新准备发布确认')
+    }
     const defaults = options.accountIds ?? platforms.flatMap(platform => {
       const matching = context.accounts.filter(account => account.platform === platform && account.loginState === 'logged-in')
       return matching.length === 1 ? [matching[0].id] : []
@@ -348,6 +367,7 @@ export class AgentPublications {
     }
     this.assertSnapshot(record)
     record.mode = this.selection(record, context.accounts, context.capabilities, { accountIds: record.accountIds, mode: record.mode }).mode
+    options.signal?.throwIfAborted()
     try { this.write(record, true) }
     catch (cause) { if ((cause as NodeJS.ErrnoException).code === 'EEXIST') return this.read(sessionId, id); throw cause }
     return this.view(record, context)
