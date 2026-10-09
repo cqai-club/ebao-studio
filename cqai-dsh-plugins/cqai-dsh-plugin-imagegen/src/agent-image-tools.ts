@@ -9,15 +9,71 @@ import type {} from '@deepseek-ai/dsh-tools'
 import { ImageGenError } from './engine.ts'
 import { ImageGenerationRuntime, type RuntimeChannel } from './generation-runtime.ts'
 import { detectImageMime } from './image-format.ts'
-import type { GenerateRequest, GenerationTask, GeneratedImage } from './protocol.ts'
+import type { CqaiImageProviderView, GenerateRequest, GenerationTask, GeneratedImage } from './protocol.ts'
 
 export interface AgentImageToolConfig {
   enabled: boolean
   allowAgentImageGeneration: boolean
+  announceToAgent?: boolean
   channels: RuntimeChannel[]
   defaultChannelId: string
   /** Async CQAI catalog/default-model resolver. */
   resolveCqaiRequest?: (request: GenerateRequest, signal?: AbortSignal) => Promise<GenerateRequest>
+  /** Read the current CQAI account catalog without preparing a generation. */
+  describeCqai?: (signal?: AbortSignal) => Promise<CqaiImageProviderView>
+}
+
+interface AgentImageProvider {
+  id: string
+  name: string
+  configured: boolean
+  state: string
+  models: { alias: string; id: string }[]
+  selection: 'default' | 'single' | 'choice-required' | 'unavailable'
+  default_model?: string
+}
+
+interface AgentImageModels {
+  default_provider: string
+  providers: AgentImageProvider[]
+}
+
+const modelsResultSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    default_provider: { type: 'string', required: true },
+    providers: { type: 'array', required: true, items: {
+      type: 'object', additionalProperties: false, properties: {
+        id: { type: 'string', required: true }, name: { type: 'string', required: true },
+        configured: { type: 'boolean', required: true }, state: { type: 'string', required: true },
+        models: { type: 'array', required: true, items: {
+          type: 'object', additionalProperties: false, properties: {
+            alias: { type: 'string', required: true }, id: { type: 'string', required: true },
+          },
+        } },
+        selection: { type: 'string', required: true, enum: ['default', 'single', 'choice-required', 'unavailable'] },
+        default_model: { type: 'string' },
+      },
+    } },
+  },
+} as const
+
+function publicImageProvider(channel: RuntimeChannel, cqai?: CqaiImageProviderView): AgentImageProvider {
+  const managed = channel.id === 'cqai'
+  const models = (managed && cqai ? cqai.models : channel.models).map(model => ({ alias: model.alias, id: model.id }))
+  const configured = managed ? cqai === undefined || cqai.state === 'signed-in'
+    : channel.apiUrl.trim() !== '' && channel.apiKey.trim() !== ''
+  const defaultModel = managed && configured && cqai?.defaultModel !== undefined
+    && models.some(model => model.id === cqai.defaultModel || model.alias === cqai.defaultModel) ? cqai.defaultModel : undefined
+  return {
+    id: channel.id, name: channel.name, configured,
+    state: managed ? cqai?.state ?? 'unknown' : configured ? 'configured' : 'unconfigured',
+    models,
+    selection: !configured || models.length === 0 ? 'unavailable'
+      : defaultModel !== undefined ? 'default' : models.length === 1 ? 'single' : 'choice-required',
+    ...defaultModel === undefined ? {} : { default_model: defaultModel },
+  }
 }
 
 interface AgentImageRef {
@@ -199,9 +255,12 @@ export async function submitAgentImageEdit(
   resolve: () => AgentImageToolConfig,
   input: { prompt: string; sourceImage: ImageAttachmentRef; provider?: string; model?: string; signal?: AbortSignal },
 ): Promise<GenerationTask> {
+  input.signal?.throwIfAborted()
   const config = resolve()
   ensureAgentImageConfigured(config)
   const reference = await attachments.readImage(input.sourceImage, input.signal)
+  input.signal?.throwIfAborted()
+  ensureAgentImageConfigured(resolve())
   const request = await resolveAgentRequest(config, {
     mode: 'edit',
     model: input.model ?? '',
@@ -213,6 +272,8 @@ export async function submitAgentImageEdit(
     image: imageDataUrl(reference),
     ...reference.ref.name === undefined ? {} : { refName: reference.ref.name },
   }, input.provider, input.signal)
+  input.signal?.throwIfAborted()
+  ensureAgentImageConfigured(resolve())
   const task = runtime.queue.submit(request)
   return waitForAgentImageTask(runtime, task.id, input.signal)
 }
@@ -320,7 +381,7 @@ function presentImageResult(_args: unknown, result: ToolResult): ToolResultView 
   return content.length === 0 ? undefined : { card: 'generic', content }
 }
 
-/** Register the global Agent tools and unregister them with the plugin lifecycle. */
+/** Register image tools in the calling scope and return their disposer. */
 export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRuntime, resolve: () => AgentImageToolConfig): () => void {
   const attachmentRefs = new Map<string, Promise<AgentImageRef[]>>()
   const ensureConfigured = (): void => { ensureAgentImageConfigured(resolve()) }
@@ -356,12 +417,31 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
   const waitForTask = (id: string, signal: AbortSignal | undefined): Promise<GenerationTask> => waitForAgentImageTask(runtime, id, signal)
   const disposers = [
     ctx.tools.register(defineTool({
+      name: 'list_image_generation_models',
+      description: 'Read current image providers, models and selection requirements. This does not generate images or change the account default.',
+      parameters: {},
+      output: { schema: modelsResultSchema, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+      async execute(_args, exec): Promise<AgentImageModels> {
+        exec.signal?.throwIfAborted()
+        const config = resolve()
+        ensureAgentImageConfigured(config)
+        const cqai = config.channels.some(channel => channel.id === 'cqai')
+          ? await config.describeCqai?.(exec.signal) : undefined
+        exec.signal?.throwIfAborted()
+        ensureConfigured()
+        return {
+          default_provider: config.channels.some(channel => channel.id === 'cqai') ? 'cqai' : config.defaultChannelId,
+          providers: config.channels.map(channel => publicImageProvider(channel, cqai)),
+        }
+      },
+    })),
+    ctx.tools.register(defineTool({
       name: 'generate_image',
-      description: 'Generate an image. By default this tool call stays pending until the task reaches a final state; completed images are shown beside this tool call, while the model receives their attachment references, without creating a user message. Set wait_for_completion to false for background mode, then use get_image_generation_task explicitly. Omit provider for CQAI. Omit model to use the valid CQAI account default or the only available image model; when several are available without a default, ask the user to choose.',
+      description: 'Generate images using the selected provider and model. Waits for completion by default; returns image references with results displayed beside this call.',
       parameters: {
         prompt: { type: 'string', required: true, description: 'Detailed image-generation prompt.' },
-        provider: { type: 'string', description: 'Provider id. Omit for CQAI; custom channels must be passed explicitly as custom:<channelId>.' },
-        model: { type: 'string', description: 'An available image model. For CQAI, omission uses the valid account default or the only available model; otherwise a choice is required.' },
+        provider: { type: 'string', description: 'Omit for CQAI; choose a custom:<channelId> explicitly.' },
+        model: { type: 'string', description: 'Available model alias or CQAI id; omit only when a default or sole model is available.' },
         size: { type: 'string', description: 'Aspect ratio such as 1:1, 16:9, 9:16, or auto.' },
         quality: { type: 'string', description: 'auto, 1k, 2k, or 4k.' },
         count: { type: 'integer', description: 'Number of images, 1 to 4. Defaults to 1.' },
@@ -375,6 +455,7 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
       },
       presentResult: presentImageResult,
       async execute(args, exec) {
+        exec.signal?.throwIfAborted()
         const config = resolve()
         ensureAgentImageConfigured(config)
         const request = await resolveAgentRequest(config, {
@@ -386,18 +467,20 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
           n: Math.min(4, Math.max(1, args.count ?? 1)),
           detail: args.detail ?? '',
         }, args.provider, exec.signal)
+        exec.signal?.throwIfAborted()
+        ensureConfigured()
         const task = runtime.queue.submit(request)
         return taskResult(args.wait_for_completion === false ? task : await waitForTask(task.id, exec.signal))
       },
     })),
     ctx.tools.register(defineTool({
       name: 'edit_image',
-      description: 'Edit an image. By default this tool call stays pending until the task reaches a final state; completed images are shown beside this tool call, while the model receives their attachment references, without creating a user message. Set wait_for_completion to false for background mode, then use get_image_generation_task explicitly. source_image must be an image reference returned by a completed generation or get_image_generation_task; pass that entire object unchanged. Omit provider for CQAI. Omit model to use the valid CQAI account default or the only available image model; when several are available without a default, ask the user to choose.',
+      description: 'Edit an existing image from its complete attachment reference. Waits for completion by default; returns new image references with results beside this call.',
       parameters: {
         prompt: { type: 'string', required: true, description: 'How to transform the source image.' },
-        source_image: { ...imageRefSchema, required: true, description: 'Image reference returned by get_image_generation_task.' },
-        provider: { type: 'string', description: 'Provider id. Omit for CQAI; custom channels must be passed explicitly as custom:<channelId>.' },
-        model: { type: 'string', description: 'An available image model. For CQAI, omission uses the valid account default or the only available model; otherwise a choice is required.' },
+        source_image: { ...imageRefSchema, required: true, description: 'Complete valid image reference from an upload, generation or image-reading tool.' },
+        provider: { type: 'string', description: 'Omit for CQAI; choose a custom:<channelId> explicitly.' },
+        model: { type: 'string', description: 'Available model alias or CQAI id; omit only when a default or sole model is available.' },
         size: { type: 'string', description: 'Aspect ratio such as 1:1, 16:9, 9:16, or auto.' },
         quality: { type: 'string', description: 'auto, 1k, 2k, or 4k.' },
         count: { type: 'integer', description: 'Number of images, 1 to 4. Defaults to 1.' },
@@ -411,9 +494,12 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
       },
       presentResult: presentImageResult,
       async execute(args, exec) {
+        exec.signal?.throwIfAborted()
         const config = resolve()
         ensureAgentImageConfigured(config)
         const reference = await ctx.attachments.readImage(restoreRef(args.source_image), exec.signal)
+        exec.signal?.throwIfAborted()
+        ensureConfigured()
         const request = await resolveAgentRequest(config, {
           mode: 'edit',
           model: args.model ?? '',
@@ -425,13 +511,15 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
           image: imageDataUrl(reference),
           ...reference.ref.name === undefined ? {} : { refName: reference.ref.name },
         }, args.provider, exec.signal)
+        exec.signal?.throwIfAborted()
+        ensureConfigured()
         const task = runtime.queue.submit(request)
         return taskResult(args.wait_for_completion === false ? task : await waitForTask(task.id, exec.signal))
       },
     })),
     ctx.tools.register(defineTool({
       name: 'get_image_generation_task',
-      description: 'Check an image-generation task status. Completed tasks return image references; their images are shown beside this tool call and the references can be passed to edit_image. Generation tools normally wait for completion, so use this for explicit recovery or status checks.',
+      description: 'Read an image task status and completed image references for recovery or explicit status checks.',
       parameters: { task_id: { type: 'string', required: true, description: 'Task id returned by generate_image or edit_image.' } },
       output: {
         schema: taskResultSchema,

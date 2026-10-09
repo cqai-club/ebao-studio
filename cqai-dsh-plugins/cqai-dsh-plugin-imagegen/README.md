@@ -6,6 +6,14 @@ e图宝是 CQAI 的 DSH 生图工作台，提供文生图、图生图、Agent �
 
 第三方 API Key、提示词增强 Key、S3 Access Key / Secret Key 和画布技能密钥统一保存在 DSH Credentials；设置界面只读取“已配置/未配置”状态。升级时先写入 Credentials，再清理旧 settings 字段，写入失败不会删除旧值。
 
+## Agent 按需生图
+
+原生 Skill `ebao-imagegen` 只在用户明确要求生成/编辑图片、查询/取消任务或查看生图模型时使用，也可通过 `/ebao-imagegen` 显式调用。普通对话仅提供简短的技能目录入口，不附加完整流程或模型表。流程见 [SKILL.md](./skills/ebao-imagegen/SKILL.md)。
+
+成功读取 Skill 后，当前用户回合才提供 `list_image_generation_models`、`generate_image`、`edit_image`、`get_image_generation_task`、`cancel_image_generation_task`；回合结束、切换用户请求或关闭设置后收回。模型目录按需实时查询，默认 CQAI，不自动切换第三方。普通子 Agent 不继承生图能力；用户显式运行的画布技能单独授权，并继续共用队列。
+
+设置「在 Agent 技能目录中提供 e图宝」沿用 `announceToAgent` 字段，控制 Skill 发现，不再向系统提示词追加播报。工作台、画布及 `/edit_image` 的直接操作入口保留。
+
 ## 开发
 
 从仓库根目录运行：
