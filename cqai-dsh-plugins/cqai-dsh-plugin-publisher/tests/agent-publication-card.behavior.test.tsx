@@ -113,6 +113,8 @@ async function click(label: string) {
 async function selectAccount(accountId: string) {
   const input = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="radio"]')).find(item => item.value === accountId)
   if (!input) throw new Error(`Account radio not found: ${accountId}`)
+  const options = input.closest('details')!
+  if (!options.open) await act(async () => { options.querySelector('summary')!.click() })
   await act(async () => { input.click() })
 }
 
@@ -164,11 +166,48 @@ describe('Agent publication tool card', () => {
     expect(container.textContent).toContain('完整正文')
     expect(container.textContent).toContain('主稿正文内容')
     expect(container.textContent).toContain('待你确认')
-    expect(button('确认发布').disabled).toBe(false)
+    expect(button('确认发布 · 1 个账号').disabled).toBe(false)
+    expect(container.querySelector<HTMLDetailsElement>('.pub-agent-publication-account-options')!.open).toBe(false)
+    expect(container.querySelector('.pub-agent-publication-selected-account')?.textContent).toContain('掘金主账号')
     await select('预览版本', 'juejin')
     expect(container.textContent).toContain('掘金平台标题')
     expect(container.textContent).toContain('掘金版本正文')
     expect(container.textContent).toContain('分类')
+    expect(queryApi).toHaveBeenCalledOnce()
+  })
+
+  it('starts with a compact three-step confirmation and lets the user expand the full preview', async () => {
+    await renderTool()
+    const preview = container.querySelector<HTMLDetailsElement>('.pub-agent-publication-preview')!
+    expect(preview.open).toBe(false)
+    expect(Array.from(container.querySelectorAll('.pub-agent-publication-step, .pub-agent-publication-targets > legend'))
+      .map(element => element.textContent)).toEqual(['1 核对内容', '2 选择账号 · 已选 1 个', '3 确认方式'])
+    expect(container.querySelector('.pub-agent-publication-content > .pub-agent-publication-title')?.textContent).toBe('周末徒步攻略')
+    expect(button('确认发布 · 1 个账号').disabled).toBe(false)
+    await act(async () => { preview.querySelector('summary')!.click() })
+    expect(preview.open).toBe(true)
+    await select('预览版本', 'juejin')
+    expect(preview.textContent).toContain('掘金版本正文')
+    expect(queryApi).toHaveBeenCalledOnce()
+  })
+
+  it('places content and account errors beside their own step and connects the accessible descriptions', async () => {
+    const value = publication({ requestedPlatforms: ['juejin', 'tt'] })
+    value.content = { ...value.content, body: '', platformVariants: {} }
+    queryApi.mockResolvedValue(value)
+    await renderTool()
+    const content = container.querySelector<HTMLElement>('[aria-label="本次发布内容"]')!
+    const accounts = container.querySelector<HTMLFieldSetElement>('.pub-agent-publication-targets')!
+    const contentError = document.getElementById(content.getAttribute('aria-describedby')!)!
+    const accountError = document.getElementById(accounts.getAttribute('aria-describedby')!)!
+    expect(content.contains(contentError)).toBe(true)
+    expect(contentError.textContent).toContain('请填写正文')
+    expect(accounts.contains(accountError)).toBe(true)
+    expect(accountError.textContent).toContain('请为头条选择一个账号')
+    expect(accountError.textContent).not.toContain('请填写正文')
+    expect(button('确认发布 · 1 个账号').disabled).toBe(true)
+    const mode = container.querySelector<HTMLSelectElement>('select[id$="-mode"]')!
+    expect(document.getElementById(mode.getAttribute('aria-describedby')!)?.textContent).toContain('本次实际提交方式')
     expect(queryApi).toHaveBeenCalledOnce()
   })
 
@@ -191,6 +230,7 @@ describe('Agent publication tool card', () => {
     expect(cardRule.style.getPropertyValue('border')).toBe('1px solid var(--pub-border)')
     const computed = getComputedStyle(card)
     expect(computed.display).toBe('grid')
+    expect(computed.boxSizing).toBe('border-box')
     expect(computed.paddingTop).toBe('14px')
     const targets = card.querySelector<HTMLElement>('.pub-agent-publication-targets')!
     expect(getComputedStyle(targets).paddingTop).toBe('0px')
@@ -208,7 +248,7 @@ describe('Agent publication tool card', () => {
     await selectAccount('tt-a')
     await select('提交方式', 'draft')
     expect(queryApi).toHaveBeenCalledOnce()
-    await click('确认转存草稿')
+    await click('确认转存草稿 · 2 个账号')
     expect(queryApi).toHaveBeenCalledWith('agent-publication-confirm', {
       sessionId: 'session-1', requestId: 'request-1', accountIds: ['juejin-b', 'tt-a'], mode: 'draft',
     })
@@ -224,7 +264,7 @@ describe('Agent publication tool card', () => {
     expect(container.querySelector('.pub-agent-publication-targets input[value="juejin-a"]')).not.toBeNull()
     expect(container.querySelector('.pub-agent-publication-targets input[value="tt-a"]')).toBeNull()
     expect(container.querySelector('.pub-agent-publication-targets input[value="xhs-unsupported"]')).toBeNull()
-    expect(button('确认发布').disabled).toBe(false)
+    expect(button('确认发布 · 1 个账号').disabled).toBe(false)
     expect(queryApi).toHaveBeenCalledOnce()
   })
 
@@ -235,9 +275,10 @@ describe('Agent publication tool card', () => {
     expect(container.querySelector('input[value="xhs-unsupported"]')).toBeNull()
     expect(container.textContent).toContain('未登录')
     expect(container.textContent).toContain('请为头条选择一个账号')
-    expect(button('确认发布').disabled).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('input[value="tt-a"]')!.closest('details')!.open).toBe(true)
+    expect(button('确认发布 · 1 个账号').disabled).toBe(true)
     await selectAccount('tt-a')
-    expect(button('确认发布').disabled).toBe(false)
+    expect(button('确认发布 · 2 个账号').disabled).toBe(false)
     expect(queryApi).toHaveBeenCalledOnce()
   })
 
@@ -246,8 +287,17 @@ describe('Agent publication tool card', () => {
     await renderTool()
     expect((container.querySelector('input[value="xhs-unsupported"]') as HTMLInputElement).disabled).toBe(true)
     expect(container.textContent).toContain('暂不支持此内容类型')
-    expect(button('确认发布').disabled).toBe(true)
+    expect(button('确认发布 · 0 个账号').disabled).toBe(true)
     expect(container.querySelector('input[value="juejin-a"]')).toBeNull()
+    expect(queryApi).toHaveBeenCalledOnce()
+  })
+
+  it('expands a selected account that needs attention and keeps its problem visible beside the account', async () => {
+    queryApi.mockResolvedValue(publication({ accountIds: ['juejin-out'] }))
+    await renderTool()
+    expect(container.querySelector('.pub-agent-publication-selected-account')?.textContent).toContain('未登录')
+    expect(container.querySelector<HTMLDetailsElement>('.pub-agent-publication-account-options')!.open).toBe(true)
+    expect(button('确认发布 · 1 个账号').disabled).toBe(true)
     expect(queryApi).toHaveBeenCalledOnce()
   })
 
@@ -261,7 +311,8 @@ describe('Agent publication tool card', () => {
     expect(container.textContent).not.toContain('独立摘要不会写入头条文章')
     expect(container.textContent).toContain('本次实际提交方式：转存草稿')
     expect(container.textContent).toContain('将整批转存草稿供你核对')
-    await click('确认转存草稿')
+    expect(container.querySelector('.pub-agent-publication-effective')!.closest('details')).toBeNull()
+    await click('确认转存草稿 · 1 个账号')
     expect(queryApi).toHaveBeenCalledWith('agent-publication-confirm', {
       sessionId: 'session-1', requestId: 'request-1', accountIds: ['tt-a'], mode: 'draft',
     })
@@ -275,10 +326,10 @@ describe('Agent publication tool card', () => {
     await renderTool()
     expect(container.textContent).toContain('本次实际提交方式：立即发布')
     expect(container.textContent).not.toMatch(/独立摘要不会写入|标签暂不写入|整批转存草稿/u)
-    expect(button('确认发布').disabled).toBe(false)
+    expect(button('确认发布 · 1 个账号').disabled).toBe(false)
     await select('预览版本', 'tt')
     expect(container.querySelector('.pub-agent-publication-summary')).toBeNull()
-    await click('确认发布')
+    await click('确认发布 · 1 个账号')
     expect(queryApi).toHaveBeenCalledWith('agent-publication-confirm', {
       sessionId: 'session-1', requestId: 'request-1', accountIds: ['tt-a'], mode: 'publish',
     })
@@ -320,7 +371,7 @@ describe('Agent publication tool card', () => {
     expect(container.textContent).toContain('一段视频简介')
     expect(container.textContent).toContain('周末徒步')
     expect(container.textContent).toContain('内容由 AI 生成')
-    await click('确认发布')
+    await click('确认发布 · 1 个账号')
     expect(queryApi).toHaveBeenCalledWith('agent-publication-confirm', {
       sessionId: 'session-1', requestId: 'request-1', accountIds: ['dy-a'], mode: 'publish',
     })
@@ -367,7 +418,7 @@ describe('Agent publication tool card', () => {
     vi.useFakeTimers()
     queryApi.mockImplementation((route: string) => Promise.resolve(route === 'agent-publication-confirm' ? accepted('queued') : publication()))
     await renderTool()
-    await click('确认发布')
+    await click('确认发布 · 1 个账号')
     expect(container.textContent).toContain('已进入本机提交队列')
     queryApi.mockResolvedValueOnce(accepted('running')).mockResolvedValueOnce(accepted(terminal))
     await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
@@ -432,7 +483,7 @@ describe('Agent publication tool card', () => {
     value.capabilities[0].requiredFields.video = ['topic']
     queryApi.mockResolvedValue(value)
     await renderTool()
-    expect(button('确认发布').disabled).toBe(true)
+    expect(button('确认发布 · 1 个账号').disabled).toBe(true)
     expect(container.textContent).toContain('请先选择一条 e剪宝成片或一个本地视频')
     expect(container.textContent).toContain('请填写抖音的话题')
     expect(queryApi).toHaveBeenCalledOnce()
@@ -453,7 +504,7 @@ describe('Agent publication tool card', () => {
     const pending = deferred<AgentPublicationRequest>()
     queryApi.mockImplementation((route: string) => route === 'agent-publication-confirm' ? pending.promise : Promise.resolve(publication()))
     await renderTool()
-    const confirm = button('确认发布')
+    const confirm = button('确认发布 · 1 个账号')
     await act(async () => { confirm.click(); confirm.click() })
     expect(queryApi.mock.calls.filter((call: unknown[]) => call[0] === 'agent-publication-confirm')).toHaveLength(1)
     expect(confirm.disabled).toBe(true)
@@ -470,10 +521,10 @@ describe('Agent publication tool card', () => {
       return Promise.resolve(++reads === 1 ? publication() : accepted('running'))
     })
     await renderTool()
-    await click('确认发布')
+    await click('确认发布 · 1 个账号')
     expect(container.textContent).toContain('提交结果待确认')
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('连接中断')
-    expect(Array.from(container.querySelectorAll('button')).some(item => item.textContent === '确认发布')).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).some(item => item.textContent?.startsWith('确认发布'))).toBe(false)
     await click('刷新状态')
     expect(queryApi.mock.calls.filter((call: unknown[]) => call[0] === 'agent-publication-confirm')).toHaveLength(1)
     expect(queryApi.mock.calls.filter((call: unknown[]) => call[0] === 'agent-publication/session-1/request-1')).toHaveLength(2)
@@ -496,7 +547,8 @@ describe('Agent publication tool card', () => {
   it.each(['stale', 'uncertain', 'submitting', 'cancelled'] as const)('keeps a %s server request read-only', async state => {
     queryApi.mockResolvedValue(publication({ state }))
     await renderTool()
-    expect(container.querySelector('fieldset')?.disabled).toBe(true)
+    expect(container.querySelector('input[type="radio"]')).toBeNull()
+    expect(container.querySelector('select[id$="-mode"]')).toBeNull()
     expect(Array.from(container.querySelectorAll('button')).some(item => item.textContent?.startsWith('确认'))).toBe(false)
     if (state === 'stale') expect(container.textContent).toContain('最新内容重新生成')
     if (state === 'uncertain') expect(container.textContent).toContain('到平台后台核对')
@@ -513,7 +565,7 @@ describe('Agent publication tool card', () => {
     expect(container.textContent).toContain('已取消本次发布')
     await act(async () => { old.resolve(publication()) })
     expect(container.textContent).toContain('已取消本次发布')
-    expect(Array.from(container.querySelectorAll('button')).some(item => item.textContent === '确认发布')).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).some(item => item.textContent?.startsWith('确认发布'))).toBe(false)
   })
 
   it('rejects a response from another session and offers only read-only reload', async () => {
@@ -537,7 +589,7 @@ describe('Agent publication tool card', () => {
   it('recovers read-only loading under React StrictMode without automatic confirmation', async () => {
     await renderTool(toolProps(), true)
     expect(container.textContent).toContain('待你确认')
-    expect(button('确认发布').disabled).toBe(false)
+    expect(button('确认发布 · 1 个账号').disabled).toBe(false)
     expect(queryApi.mock.calls.every((call: unknown[]) => call.length === 1)).toBe(true)
   })
 })

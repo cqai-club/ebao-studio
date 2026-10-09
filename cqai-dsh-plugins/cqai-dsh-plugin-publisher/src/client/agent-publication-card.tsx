@@ -61,12 +61,22 @@ function statusLabel(request: AgentPublicationRequest, uncertain: boolean, cance
     case 'uncertain': return onlyToutiao(request) ? '提交未完成' : '提交结果待确认'
     case 'submitted':
       switch (request.submission?.state) {
-        case 'queued': return '已进入本机提交队列'
-        case 'running': return '本机任务正在执行'
-        case 'completed': return '本机执行完成，请到平台后台核对'
-        case 'failed': return '本机执行失败'
+        case 'queued': return '排队中'
+        case 'running': return '执行中'
+        case 'completed': return '本机执行完成'
+        case 'failed': return '执行失败'
         default: return onlyToutiao(request) ? '任务未完成' : '已受理，执行结果待确认'
       }
+  }
+}
+
+function submissionStatusMessage(request: AgentPublicationRequest): string | undefined {
+  switch (request.submission?.state) {
+    case 'queued': return '已进入本机提交队列，等待执行。'
+    case 'running': return '本机任务正在执行，状态会自动更新。'
+    case 'completed': return '本机执行完成，请到平台后台核对。'
+    case 'failed': return '本机执行失败，请核对下方原因和平台稿件。'
+    default: return undefined
   }
 }
 
@@ -95,7 +105,6 @@ function videoProblems(request: AgentPublicationRequest, accounts: PublisherAcco
   const problems: string[] = []
   if (!content.title.trim()) problems.push('请填写标题')
   if (!content.videoSource) problems.push('请先选择一条 e剪宝成片或一个本地视频')
-  if (accounts.length === 0) problems.push('请至少选择一个发布账号')
   for (const account of accounts) {
     const capability = request.capabilities.find(item => item.platform === account.platform)
     const limit = capability?.maxTitleLength?.video
@@ -173,7 +182,8 @@ export function AgentPublicationCard({ sessionId, requestId }: { sessionId: stri
   const warnings = request && !request.submission ? articleSubmissionWarnings(request.content, selectedAccounts, request.capabilities) : []
   const effectiveMode = request?.submission?.mode
     ?? (request?.content.contentType === 'article' && warnings.length > 0 ? 'draft' : mode)
-  const problems = request ? [
+  const accountProblems = request ? [
+    ...(selectedAccounts.length === 0 ? ['请至少选择一个发布账号'] : []),
     ...request.requestedPlatforms.filter(platform => !selectedAccounts.some(account => account.platform === platform))
       .map(platform => `请为${PLATFORM_LABELS[platform]}选择一个账号`),
     ...selectedAccounts.filter(account => request.requestedPlatforms.length > 0 && !request.requestedPlatforms.includes(account.platform))
@@ -182,11 +192,13 @@ export function AgentPublicationCard({ sessionId, requestId }: { sessionId: stri
       const problem = accountProblem(request, account, effectiveMode)
       return problem ? [`${PLATFORM_LABELS[account.platform]} · ${account.displayName}：${problem}`] : []
     }),
-    ...(request.content.contentType === 'video' ? videoProblems(request, selectedAccounts)
-      : [contentSubmissionError(request.content, selectedAccounts, request.capabilities, effectiveMode)].filter((value): value is string => !!value)),
   ] : []
+  const contentProblems = request ? request.content.contentType === 'video' ? videoProblems(request, selectedAccounts)
+    : selectedAccounts.length > 0
+      ? [contentSubmissionError(request.content, selectedAccounts, request.capabilities, effectiveMode)].filter((value): value is string => !!value)
+      : [] : []
   const editable = !!request && request.state === 'awaiting-confirmation' && !uncertain && !outcomePending.current && !busy && !loading
-  const ready = editable && selectedAccounts.length > 0 && problems.length === 0
+  const ready = editable && selectedAccounts.length > 0 && accountProblems.length === 0 && contentProblems.length === 0
   const changeAccount = (platform: Platform, accountId: string) => {
     if (!editable) return
     setAccountIds(previous => [
@@ -242,73 +254,102 @@ export function AgentPublicationCard({ sessionId, requestId }: { sessionId: stri
   const videoSourceName = videoSource?.kind === 'local' ? videoSource.fileName : videoSource ? 'e剪宝成片' : undefined
   const sameServerAccounts = [...accountIds].sort().join('\u0000') === [...request.accountIds].sort().join('\u0000')
   const allWarnings = [...new Set([...(sameServerAccounts ? request.warnings : []), ...warnings])]
+  const canChoose = request.state === 'awaiting-confirmation' && !uncertain
+  const accountCount = submission?.targets.length ?? selectedAccounts.length
+  const contentExcerpt = (request.content.contentType === 'video' ? request.content.description
+    : request.content.summary || request.content.body)?.replace(/^\s{0,3}#{1,6}\s+/gmu, '').replace(/\s+/gu, ' ').slice(0, 110)
+  const statusMessage = submissionStatusMessage(request)
+  const notes = [...new Set([
+    request.message && (onlyToutiao(request) && request.state === 'uncertain'
+      ? '任务未完成，请从发布历史打开平台稿件核对，勿重复提交' : request.message),
+    submission?.message,
+  ].filter((value): value is string => !!value))]
   return <section className="pub-agent-publication" aria-label="Agent 发布确认" aria-busy={busy || loading}>
     <style data-plugin={STYLE_OWNER} data-plugin-css={STYLE_ID}>{cardCss}</style>
-    <header><strong>发布确认</strong><span role="status" aria-live="polite">{busy
+    <header><strong>{canChoose ? '发布确认' : '本次发布'}</strong><span className="pub-agent-publication-status" role="status" aria-live="polite" aria-atomic="true">{busy
       ? pendingAction === 'cancel' ? '正在取消…' : '正在提交…'
       : statusLabel(request, uncertain, pendingAction === 'cancel')}</span></header>
-    <p className="pub-agent-publication-title">{CONTENT_LABELS[request.content.contentType]} · {submission?.title || request.content.title || '未填写标题'}</p>
-    <details className="pub-agent-publication-preview" open>
-      <summary>内容预览 · 第 {request.content.revision} 版</summary>
-      <p className="pub-agent-publication-notes">{submission
-        ? '预览展示提交时的本地内容结构，已执行的平台调整见下方记录；最终以平台后台实际显示为准。'
-        : '预览展示本地主稿和平台版本，下方列出的调整将在提交时处理；最终以平台后台实际显示为准。'}</p>
-      <label htmlFor={`${id}-preview`}>预览版本</label>
-      <select id={`${id}-preview`} value={preview} onChange={event => setPreview(event.target.value as 'master' | Platform)}>
-        <option value="master">主稿</option>
-        {previewPlatforms.map(platform => <option key={platform} value={platform}>{PLATFORM_LABELS[platform]}{request.content.platformVariants?.[platform] ? ' · 平台版本' : ' · 跟随主稿'}</option>)}
-      </select>
-      <div className="pub-agent-publication-preview-body"><PublisherContentPreview content={previewContent} platform={preview === 'master' ? undefined : preview}
-        videoSourceName={videoSourceName} videoPreviewUrl={videoPreviewUrl}/></div>
-      {preview !== 'tt' && previewContent.summary && <p className="pub-agent-publication-summary"><strong>摘要</strong>{previewContent.summary}</p>}
-      <dl className="pub-agent-publication-metadata">
-        <div><dt>内容声明</dt><dd>{STATEMENT_LABELS[previewContent.creativeStatement]}</dd></div>
-        {previewContent.contentType === 'video' && <div><dt>视频号短标题</dt><dd>{previewContent.shortTitle || '未填写'}</dd></div>}
-        <div><dt>图片素材</dt><dd>{previewContent.assets.length ? previewContent.assets.map(asset => asset.name).join('、') : '无'}</dd></div>
-        {preview !== 'master' && Object.entries(previewContent.platformFields[preview] ?? {}).map(([field, value]) =>
-          <div key={field}><dt>{FIELD_LABELS[field] ?? field}</dt><dd>{value || '未填写'}</dd></div>)}
-      </dl>
-    </details>
-    {submission ? <section className="pub-agent-publication-targets" aria-label="已提交目标账号">
-      <strong>已提交目标账号</strong>
-      <ul>{submission.targets.map(target => <li key={target.accountId}>{PLATFORM_LABELS[target.platform]} · {target.accountName}</li>)}</ul>
-    </section> : <fieldset disabled={!editable} className="pub-agent-publication-targets">
-      <legend>目标账号（每个平台选择一个）</legend>
-      {platforms.map(platform => <fieldset className="pub-agent-publication-platform" key={platform}>
-        <legend>{PLATFORM_LABELS[platform]}</legend>
-        <label><input type="radio" name={`${id}-account-${platform}`} checked={!selectedAccounts.some(account => account.platform === platform)}
-          onChange={() => changeAccount(platform, '')}/><span>不提交到此平台</span></label>
-        {request.accounts.filter(account => account.platform === platform).map(account => {
-          const problem = accountProblem(request, account, mode)
-          return <label key={account.id}><input type="radio" name={`${id}-account-${platform}`} value={account.id}
-            checked={accountIds.includes(account.id)} disabled={!!problem} onChange={() => changeAccount(platform, account.id)}/>
-            <span>{account.displayName}<small>{problem || '已登录'}{account.loginError ? ` · ${account.loginError}` : ''}</small></span></label>
-        })}
-        {!request.accounts.some(account => account.platform === platform) && <p>尚无账号，请登录该平台后让 Agent 重新准备。</p>}
-      </fieldset>)}
+    {statusMessage && <p className="pub-agent-publication-notes">{statusMessage}</p>}
+    <section className="pub-agent-publication-content" aria-label="本次发布内容" aria-describedby={canChoose && contentProblems.length ? `${id}-content-errors` : undefined}>
+      {canChoose && <strong className="pub-agent-publication-step">1 核对内容</strong>}
+      <p className="pub-agent-publication-title">{submission?.title || request.content.title || '未填写标题'}</p>
+      <p className="pub-agent-publication-notes">{CONTENT_LABELS[request.content.contentType]} · 第 {request.content.revision} 版 · {request.content.assets.length} 张图片</p>
+      {contentExcerpt && <p className="pub-agent-publication-excerpt">{contentExcerpt}</p>}
+      <details className="pub-agent-publication-preview">
+        <summary>查看全文和平台版本</summary>
+        <p className="pub-agent-publication-notes">{submission
+          ? '预览为提交时的本地内容，最终显示请到平台后台核对。'
+          : '核对主稿和各平台版本，平台调整见提交方式下方。'}</p>
+        <label htmlFor={`${id}-preview`}>预览版本</label>
+        <select id={`${id}-preview`} value={preview} onChange={event => setPreview(event.target.value as 'master' | Platform)}>
+          <option value="master">主稿</option>
+          {previewPlatforms.map(platform => <option key={platform} value={platform}>{PLATFORM_LABELS[platform]}{request.content.platformVariants?.[platform] ? ' · 平台版本' : ' · 跟随主稿'}</option>)}
+        </select>
+        <div className="pub-agent-publication-preview-body"><PublisherContentPreview content={previewContent} platform={preview === 'master' ? undefined : preview}
+          videoSourceName={videoSourceName} videoPreviewUrl={videoPreviewUrl}/></div>
+        {preview !== 'tt' && previewContent.summary && <p className="pub-agent-publication-summary"><strong>摘要</strong>{previewContent.summary}</p>}
+        <dl className="pub-agent-publication-metadata">
+          <div><dt>内容声明</dt><dd>{STATEMENT_LABELS[previewContent.creativeStatement]}</dd></div>
+          {previewContent.contentType === 'video' && <div><dt>视频号短标题</dt><dd>{previewContent.shortTitle || '未填写'}</dd></div>}
+          <div><dt>图片素材</dt><dd>{previewContent.assets.length ? previewContent.assets.map(asset => asset.name).join('、') : '无'}</dd></div>
+          {preview !== 'master' && Object.entries(previewContent.platformFields[preview] ?? {}).map(([field, value]) =>
+            <div key={field}><dt>{FIELD_LABELS[field] ?? field}</dt><dd>{value || '未填写'}</dd></div>)}
+        </dl>
+      </details>
+      {canChoose && contentProblems.length > 0 && <ul id={`${id}-content-errors`} className="pub-agent-publication-error">{[...new Set(contentProblems)].map(problem => <li key={problem}>{problem}</li>)}</ul>}
+    </section>
+    {!canChoose ? <section className="pub-agent-publication-targets" aria-label={submission ? '已提交目标账号' : '本次目标账号'}>
+      <strong>{submission ? '已提交目标账号' : '本次目标账号'} · {accountCount} 个</strong>
+      <ul>{submission ? submission.targets.map(target => <li key={target.accountId}>{PLATFORM_LABELS[target.platform]} · {target.accountName}</li>)
+        : selectedAccounts.map(account => <li key={account.id}>{PLATFORM_LABELS[account.platform]} · {account.displayName}</li>)}</ul>
+    </section> : <fieldset disabled={!editable} className="pub-agent-publication-targets" aria-describedby={accountProblems.length ? `${id}-account-errors` : undefined}>
+      <legend>2 选择账号 <span className="pub-agent-publication-notes">· 已选 {accountCount} 个</span></legend>
+      <div className="pub-agent-publication-platforms">{platforms.map(platform => {
+        const selected = selectedAccounts.find(account => account.platform === platform)
+        const selectedProblem = selected && accountProblem(request, selected, mode)
+        return <fieldset className="pub-agent-publication-platform" key={platform}>
+          <legend>{PLATFORM_LABELS[platform]}</legend>
+          {selected && <p className="pub-agent-publication-selected-account">{selected.displayName}<small>{selectedProblem || '已登录'}</small></p>}
+          <details className="pub-agent-publication-account-options" open={!selected || !!selectedProblem}>
+            <summary>{selected ? '更换账号' : '选择账号'}</summary>
+            <label><input type="radio" name={`${id}-account-${platform}`} checked={!selected}
+              onChange={() => changeAccount(platform, '')}/><span>不提交到此平台</span></label>
+            {request.accounts.filter(account => account.platform === platform).map(account => {
+              const problem = accountProblem(request, account, mode)
+              return <label key={account.id}><input type="radio" name={`${id}-account-${platform}`} value={account.id}
+                checked={accountIds.includes(account.id)} disabled={!!problem} onChange={() => changeAccount(platform, account.id)}/>
+                <span>{account.displayName}<small>{problem || '已登录'}{account.loginError ? ` · ${account.loginError}` : ''}</small></span></label>
+            })}
+            {!request.accounts.some(account => account.platform === platform) && <p>尚无账号，请登录该平台后让 Agent 重新准备。</p>}
+          </details>
+        </fieldset>
+      })}</div>
       {platforms.length === 0 && <p>尚无发布账号，请先在平台账号管理中登录。</p>}
-      <label className="pub-agent-publication-mode" htmlFor={`${id}-mode`}>提交方式</label>
-      <select id={`${id}-mode`} value={mode} onChange={event => { setMode(event.target.value as PublisherMode); setError('') }}>
-        <option value="publish">立即发布</option><option value="draft">转存草稿</option>
-      </select>
+      {accountProblems.length > 0 && <ul id={`${id}-account-errors`} className="pub-agent-publication-error">{[...new Set(accountProblems)].map(problem => <li key={problem}>{problem}</li>)}</ul>}
     </fieldset>}
-    <p className="pub-agent-publication-effective">本次实际提交方式：<strong>{effectiveMode === 'draft' ? '转存草稿' : '立即发布'}</strong>{!submission && effectiveMode !== mode && '。文章需要按平台要求调整，将整批转存草稿供你核对。'}{submission?.requestedMode === 'publish' && submission.mode === 'draft' && (!onlyToutiao(request) || !!submission.adjustments?.length) && '。本次已按平台要求转存草稿供你核对。'}</p>
-    {allWarnings.length > 0 && <div className="pub-agent-publication-notes"><strong>{submission ? '提交时说明' : '提交前核对'}</strong><ul>{allWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></div>}
-    {request.state === 'awaiting-confirmation' && problems.length > 0 && <ul className="pub-agent-publication-error" role="status">{[...new Set(problems)].map(problem => <li key={problem}>{problem}</li>)}</ul>}
-    {request.errors.length > 0 && <details className="pub-agent-publication-notes"><summary>准备请求时发现的问题</summary><ul>{request.errors.map((problem, index) => <li key={`${index}-${problem}`}>{problem}</li>)}</ul></details>}
-    {request.message && <p className="pub-agent-publication-notes">{onlyToutiao(request) && request.state === 'uncertain'
-      ? '任务未完成，请从发布历史打开平台稿件核对，勿重复提交' : request.message}</p>}
-    {submission?.message && <p className="pub-agent-publication-notes">{submission.message}</p>}
-    {!!submission?.adjustments?.length && <ul className="pub-agent-publication-notes" aria-label="已提交平台调整">{submission.adjustments.flatMap(adjustment => adjustment.messages.map(message =>
-      <li key={`${adjustment.accountId}-${message}`}>{submission.targets.find(target => target.accountId === adjustment.accountId)?.accountName ?? '目标账号'}：{message}</li>))}</ul>}
+    <section className="pub-agent-publication-choice" aria-label="本次提交方式">
+      {canChoose && <fieldset disabled={!editable}>
+        <legend className="pub-agent-publication-step">3 确认方式</legend>
+        <label htmlFor={`${id}-mode`}>提交方式</label>
+        <select id={`${id}-mode`} value={mode} aria-describedby={`${id}-effective-mode`} onChange={event => { setMode(event.target.value as PublisherMode); setError('') }}>
+          <option value="publish">立即发布</option><option value="draft">转存草稿</option>
+        </select>
+      </fieldset>}
+      <p id={`${id}-effective-mode`} className="pub-agent-publication-effective">本次实际提交方式：<strong>{effectiveMode === 'draft' ? '转存草稿' : '立即发布'}</strong>{!submission && effectiveMode !== mode && '。文章需要按平台要求调整，将整批转存草稿供你核对。'}{submission?.requestedMode === 'publish' && submission.mode === 'draft' && (!onlyToutiao(request) || !!submission.adjustments?.length) && '。本次已按平台要求转存草稿供你核对。'}</p>
+      {allWarnings.length > 0 && <details className="pub-agent-publication-notes"><summary>{submission ? '提交时说明' : '平台调整说明'} · {allWarnings.length} 项</summary><ul>{allWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
+    </section>
+    {request.errors.length > 0 && <details className="pub-agent-publication-notes"><summary>准备请求时发现的问题 · {request.errors.length} 项</summary><ul>{request.errors.map((problem, index) => <li key={`${index}-${problem}`}>{problem}</li>)}</ul></details>}
+    {notes.map(note => <p key={note} className="pub-agent-publication-notes">{note}</p>)}
+    {!!submission?.adjustments?.length && <details className="pub-agent-publication-notes"><summary>查看已执行的平台调整</summary><ul aria-label="已提交平台调整">{submission.adjustments.flatMap(adjustment => adjustment.messages.map(message =>
+      <li key={`${adjustment.accountId}-${message}`}>{submission.targets.find(target => target.accountId === adjustment.accountId)?.accountName ?? '目标账号'}：{message}</li>))}</ul></details>}
     {request.state === 'stale' && <p role="status">请让 Agent 根据最新内容重新生成发布确认卡片。</p>}
     {(uncertain || request.state === 'uncertain' || submission?.state === 'unknown') && <p role="status">{onlyToutiao(request)
       ? '任务未完成，请从发布历史打开平台稿件核对，勿重复提交。' : '本次结果尚未确认，请刷新状态并到平台后台核对。'}</p>}
     {error && <p className="pub-agent-publication-error" role="alert">{error}</p>}
     <div className="pub-agent-publication-actions">
-      {request.state === 'awaiting-confirmation' && !uncertain && <>
+      {canChoose && <>
+        <Button className="pub-agent-publication-confirm" type="button" size="sm" variant="primary" disabled={!ready} onClick={() => void mutate('confirm')}>{busy && pendingAction === 'confirm' ? '正在提交…' : `确认${effectiveMode === 'draft' ? '转存草稿' : '发布'} · ${accountCount} 个账号`}</Button>
         <Button type="button" size="sm" variant="outline" disabled={!editable} onClick={() => void mutate('cancel')}>取消本次发布</Button>
-        <Button type="button" size="sm" variant="primary" disabled={!ready} onClick={() => void mutate('confirm')}>确认{effectiveMode === 'draft' ? '转存草稿' : '发布'}</Button>
       </>}
       <Button type="button" size="sm" variant="outline" disabled={busy || loading} onClick={() => void refresh()}>{loading ? '正在刷新…' : '刷新状态'}</Button>
     </div>
@@ -317,17 +358,23 @@ export function AgentPublicationCard({ sessionId, requestId }: { sessionId: stri
 }
 
 const cardCss = `${contentPreviewCss}
-.pub-agent-publication { --pub-border: var(--dsw-alias-border-l2, #e4e6e9); --pub-surface: var(--dsw-alias-bg-layer-1, #fff); --pub-soft: var(--dsw-alias-bg-module-platform, #f5f6f7); --pub-text: var(--dsw-alias-label-primary, #111318); --pub-secondary-text: var(--dsw-alias-label-secondary, #535961); display: grid; gap: 12px; width: 100%; min-width: 0; padding: 14px; border: 1px solid var(--pub-border); border-radius: 12px; background: var(--pub-surface); color: var(--pub-text); font: inherit; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.pub-agent-publication { --pub-border: var(--dsw-alias-border-l2, #e4e6e9); --pub-surface: var(--dsw-alias-bg-layer-1, #fff); --pub-soft: var(--dsw-alias-bg-module-platform, #f5f6f7); --pub-text: var(--dsw-alias-label-primary, #111318); --pub-secondary-text: var(--dsw-alias-label-secondary, #535961); display: grid; gap: 12px; width: 100%; min-width: 0; box-sizing: border-box; padding: 14px; border: 1px solid var(--pub-border); border-radius: 12px; background: var(--pub-surface); color: var(--pub-text); font: inherit; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .pub-agent-publication * { box-sizing: border-box; }
 .pub-agent-publication p, .pub-agent-publication ul, .pub-agent-publication dl { margin: 0; }
 .pub-agent-publication header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
 .pub-agent-publication header > strong { font-size: 14px; }
 .pub-agent-publication header > span, .pub-agent-publication-footnote, .pub-agent-publication-notes { color: var(--pub-secondary-text); }
-.pub-agent-publication-title { font-weight: 600; }
+.pub-agent-publication-status { padding: 2px 8px; border-radius: 6px; background: var(--pub-soft); }
+.pub-agent-publication-content { display: grid; gap: 6px; min-width: 0; }
+.pub-agent-publication-step { display: block; font-weight: 600; }
+.pub-agent-publication-title { font-size: 14px; font-weight: 600; }
+.pub-agent-publication-excerpt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--pub-secondary-text); }
 .pub-agent-publication summary { cursor: pointer; font-weight: 500; }
 .pub-agent-publication select { width: 100%; min-width: 0; min-height: 34px; padding: 5px 8px; border: 1px solid var(--pub-border); border-radius: 8px; background: var(--pub-surface); color: inherit; font: inherit; }
 .pub-agent-publication :is(button, input, select, summary):focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
 .pub-agent-publication-preview > :is(label, select) { display: block; margin-top: 8px; }
+.pub-agent-publication-preview > summary { padding: 4px 0; }
+.pub-agent-publication-preview > .pub-agent-publication-notes { margin-top: 6px; }
 .pub-agent-publication-preview-body { max-height: 420px; margin-top: 10px; overflow: auto; min-width: 0; }
 .pub-agent-publication .pub-content-preview-shell { min-height: 0; max-width: 100%; border-radius: 8px; padding: 16px; box-shadow: none; }
 .pub-agent-publication .pub-content-preview-wechat { padding: 0; }
@@ -339,18 +386,28 @@ const cardCss = `${contentPreviewCss}
 .pub-agent-publication-metadata dd { min-width: 0; margin: 0; }
 .pub-agent-publication fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .pub-agent-publication-targets > legend { margin-bottom: 8px; font-weight: 600; }
+.pub-agent-publication-targets > legend > span { font-weight: 400; }
 .pub-agent-publication-targets > ul { padding-left: 18px; margin-top: 8px; }
-.pub-agent-publication .pub-agent-publication-platform { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--pub-border); border-radius: 8px; }
+.pub-agent-publication-platforms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
+.pub-agent-publication .pub-agent-publication-platform { padding: 6px 10px; border: 1px solid var(--pub-border); border-radius: 8px; }
 .pub-agent-publication-platform legend { padding: 0 4px; }
-.pub-agent-publication-platform label { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 8px; padding: 6px 0; cursor: pointer; }
+.pub-agent-publication-platform label { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 8px; min-height: 32px; padding: 6px 0; cursor: pointer; }
 .pub-agent-publication input { margin: 4px 0 0; accent-color: var(--dsw-alias-state-business-primary, #4176e6); }
 .pub-agent-publication-platform small { display: block; color: var(--pub-secondary-text); }
+.pub-agent-publication-selected-account { padding: 4px 0; font-weight: 500; }
+.pub-agent-publication-selected-account small { font-weight: 400; }
+.pub-agent-publication-account-options > summary { min-height: 28px; padding: 3px 0; color: var(--pub-secondary-text); font-size: 12px; }
 .pub-agent-publication-platform label:has(input:disabled) { cursor: default; }
-.pub-agent-publication-mode { display: block; margin: 12px 0 6px; }
+.pub-agent-publication-choice { display: grid; gap: 8px; padding: 10px; border-radius: 8px; background: var(--pub-soft); }
+.pub-agent-publication-choice fieldset { display: grid; gap: 6px; }
+.pub-agent-publication-choice legend { margin-bottom: 6px; }
+.pub-agent-publication-choice label { font-size: 12px; color: var(--pub-secondary-text); }
 .pub-agent-publication-notes ul, ul.pub-agent-publication-notes { padding-left: 18px; }
 .pub-agent-publication-error { color: var(--dsw-alias-state-error-primary, #dc2626); }
 ul.pub-agent-publication-error { padding-left: 18px; }
 .pub-agent-publication-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.pub-agent-publication-actions > button { flex: 1 1 100px; min-height: 32px; }
+.pub-agent-publication-actions > button { flex: 0 1 auto; min-height: 34px; }
+.pub-agent-publication-actions > .pub-agent-publication-confirm { flex: 1 1 180px; }
+.pub-agent-publication-actions > button:disabled { opacity: .5; cursor: not-allowed; }
 .pub-agent-publication-footnote { font-size: 12px; }
 `

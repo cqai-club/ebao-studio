@@ -27,11 +27,9 @@ import {
 } from './contents.ts'
 import { createPublisherSubmission } from './submission-service.ts'
 import { AgentPublications } from './agent-publication.ts'
-import { registerAgentPublicationTools } from './agent-publication-tools.ts'
-import { registerAgentSourceTools } from './agent-source-tools.ts'
+import { PublisherAgentTools } from './agent-tools.ts'
 import { AgentDraftBindings, validAgentSessionId } from './agent-draft-binding.ts'
 import { readAgentDraftSession, writeAgentDraftSession } from './agent-draft-session.ts'
-import { registerAgentDraftTools } from './agent-draft-tools.ts'
 import { ensureAgentWorkspace } from './agent-workspace.ts'
 import { ensureProjectWorkspace, readProjectSettings, saveProjectSettings } from './project-workspace.ts'
 import { readSessionContent } from './session-contents.ts'
@@ -417,6 +415,7 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
 export function apply(ctx: Context): void {
   const runtime = (ctx as PublisherContext).desktopRuntime.publisher
   const draftBindings = new AgentDraftBindings()
+  let agentTools: PublisherAgentTools | undefined
   const publications = new AgentPublications(runtime, draftBindings)
   let liveSession: (id: string) => boolean = () => false
   const listedSession = async (id: string): Promise<boolean> => {
@@ -445,15 +444,15 @@ export function apply(ctx: Context): void {
     }
     const disposeSession = sessionCtx.on('session/disposed', session => {
       draftBindings.bind(session.id, null)
+      agentTools?.refresh(session.id)
     })
     return () => { disposeSession(); liveSession = () => false; draftBindings.clear() }
   })
-  ctx.inject(['tools', 'attachments', 'systemPrompt'], (agentCtx) => {
-    const disposeSource = registerAgentSourceTools(agentCtx)
-    const disposeDraft = registerAgentDraftTools(agentCtx, draftBindings)
-    const disposePublication = registerAgentPublicationTools(agentCtx, publications,
+  ctx.inject(['agents', 'tools', 'attachments', 'skills', 'systemPrompt'], (agentCtx) => {
+    const tools = new PublisherAgentTools(agentCtx, draftBindings, publications,
       async id => await listedSession(id) && !archivedSession(id))
-    return () => { disposePublication(); disposeDraft(); disposeSource() }
+    agentTools = tools
+    return () => { tools.dispose(); if (agentTools === tools) agentTools = undefined }
   })
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
@@ -511,7 +510,7 @@ export function apply(ctx: Context): void {
           const sessionId = validAgentSessionId(value.sessionId)
           const contentId = value.contentId === null ? null : uuid(value.contentId, '草稿 ID')
           if (contentId === null) {
-            draftBindings.unbind(sessionId, uuid(value.bindingToken, '绑定令牌'))
+            if (draftBindings.unbind(sessionId, uuid(value.bindingToken, '绑定令牌'))) agentTools?.refresh(sessionId)
             json(res, 200, { sessionId, contentId: null, bindingToken: null })
             return
           }
@@ -521,8 +520,10 @@ export function apply(ctx: Context): void {
           try { writeAgentDraftSession(contentId, sessionId) }
           catch (cause) {
             if (binding) draftBindings.unbind(sessionId, binding.bindingToken)
+            agentTools?.refresh(sessionId)
             throw cause
           }
+          agentTools?.refresh(sessionId)
           json(res, 200, { sessionId, contentId: binding?.contentId ?? null,
             bindingToken: binding?.bindingToken ?? null })
           return
