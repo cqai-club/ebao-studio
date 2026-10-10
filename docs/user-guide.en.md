@@ -66,6 +66,20 @@ dsh plugin update
 
 An explicit `--profile <name>` always wins. Restart 易宝工坊 after plugin changes so the new bundle enters the Loader composition.
 
+## CQAI Club website tools
+
+Install and enable the optional **CQAI Club extension** (`@cqaiclub/dsh-plugin-extension`) in plugin management. One plugin provides both **Club activities** and **MCP service**; disabling or removing it removes both entries. The built-in account plugin continues to provide sign-in, points and membership.
+
+Open **CQAI Club → MCP service** from the account menu and enable the website MCP service to connect with your existing account. The endpoint is fixed to `https://cqaiclub.asia/mcp`; there are no URL, client ID, token, or environment-variable fields, and no separate terminal login. Club activities uses the same account to browse, register and cancel registrations.
+
+Sign in on this page if needed. If an existing account has not authorized the website tools, choose the authorization action, complete it once in your system browser, and return to the app. A successful connection shows the available tool count. Conversations can then query activities, register or cancel registration, prepare activity drafts, publish activities, and submit plugins. Managing activities requires `activity:publish`; plugin submissions must reference a real public npm package, and submission does not mean publication in the market.
+
+The toggle persists in the current Profile. Enabled connections resume on application startup, and the Host renews credentials automatically. Network failures retain an error and a reconnect action; disabling the service or signing out removes its conversation tools.
+
+The extension requires a built-in account with `extensionApiVersion: 1`, the resource authorization API, and dynamic extension entries. This capability has been verified only in source builds from [PR #47](https://github.com/cqai-club/ebao-studio/pull/47); there is no released minimum App version yet. The account package version `0.1.1` alone does not establish compatibility with an existing release. Use a build that includes this capability; older account plugins report that an update is required. Before publication, install a local `.tgz` by entering its absolute path in plugin management. Deployment administrators must register the separate MCP API resource and role permissions in Logto first. The client reuses the existing CQAI Club Native app and callback. See the [account plugin configuration](../cqai-dsh-plugins/cqai-dsh-plugin-account/README.md#扩展授权).
+
+![MCP settings after installing the CQAI Club extension: enable switch, sign-in authorization, and connection status](assets/cqai-club-mcp.png)
+
 ## Opening the terminal
 
 Choose **Open DSH Terminal** from the tray, Desktop settings, or the Desktop frame. The settings action has a restart menu beside it for an ordinary restart or **Restart in Recovery Mode**; both require confirmation. macOS opens Terminal; Windows prefers Windows Terminal and falls back to PowerShell or Command Prompt when it is unavailable.

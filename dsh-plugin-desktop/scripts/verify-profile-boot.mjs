@@ -147,7 +147,8 @@ try {
   const accountLayerIndex = productLayers.indexOf('@cqaiclub/dsn-account')
   const imagegenLayerIndex = productLayers.indexOf('cqai-dsh-plugin-imagegen')
   if (accountLayerIndex < 0 || imagegenLayerIndex !== accountLayerIndex + 1
-    || productLayers.includes('@cqaiclub/dsh-plugin-activities')) {
+    || productLayers.includes('@cqaiclub/dsh-plugin-activities')
+    || productLayers.includes('@cqaiclub/dsh-plugin-extension')) {
     throw new Error(`desktop profile did not mount ImageGen after CQAI account without activities: ${productLayers.join(', ')}`)
   }
   if (brokenAa && (!prepared.aaFailure || prepared.aaEnabled)) throw new Error('Broken AA bundle did not fail closed')
@@ -531,6 +532,27 @@ try {
     await verifySkillMcpBrowser({
       url: expectedUrl, cookie,
       headers: { [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value },
+    })
+  }
+  if (process.argv.includes('--club-account-browser')) {
+    const account = ctx.get('dsnAccount')
+    assert.equal(account?.extensionApiVersion, 1, 'The App must deliver the shared account extension API')
+    assert.equal(typeof account.useResource, 'function')
+    const lease = account.useResource(ctx, { resource: 'https://cqaiclub.asia/mcp', enabled: false })
+    assert.equal(typeof lease.legacyEnabled, 'boolean')
+    assert.equal(typeof lease.authorize, 'function')
+    assert.equal(typeof lease.fetch, 'function')
+    assert.equal(typeof lease.setActive, 'function')
+    assert.equal(typeof lease.subscribe, 'function')
+    assert.equal((await lease.authorization()).state, 'signed-out')
+    lease.dispose()
+    assert.equal(ctx.get('clubMcp'), undefined, 'Default profiles must not start the optional Club MCP service')
+    assert.equal(ctx.get('clubActivities'), undefined, 'Default profiles must not start the optional activities service')
+    assert.equal(ctx.tools.schemas().some(tool => tool.name.startsWith('mcp__cqai_club__') || tool.name.startsWith('cqai_club_')), false)
+    assert.equal((await ctx.get('pluginManager').listPlugins()).some(row => row.moduleName === '@cqaiclub/dsh-plugin-extension'), false)
+    const { verifyClubAccountBrowser } = await import('../../scripts/verify-club-account-browser.mjs')
+    await verifyClubAccountBrowser({
+      url: expectedUrl, cookie, headers: { [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value },
     })
   }
   if (process.argv.includes('--ejianbao-browser')) {

@@ -13,7 +13,11 @@ import {
 } from './protocol.ts'
 
 type CategoryDefaultModels = Partial<Record<DsnDefaultModelCategory, string>>
-export type AccountPluginConfig = DsnAccountConfig & {
+export type AccountConfigInput = Partial<Omit<DsnAccountConfig, 'clubMcpEnabled'>> & {
+  clubMcpEnabled?: boolean | { get(): boolean }
+}
+export type AccountPluginConfig = Omit<DsnAccountConfig, 'clubMcpEnabled'> & {
+  clubMcpEnabled: { get(): boolean }
   categoryDefaultModels: { get(): Readonly<CategoryDefaultModels> }
 }
 
@@ -24,6 +28,8 @@ export const Config = z.object({
   accountServiceUrl: z.string().default(DEFAULT_ACCOUNT_SERVICE_URL),
   clubPortalResource: z.string().default(DEFAULT_CLUB_PORTAL_RESOURCE),
   clubPortalUrl: z.string().default(DEFAULT_CLUB_PORTAL_URL),
+  // Deprecated: read only by resource extensions during first-use migration.
+  clubMcpEnabled: z.boolean().default(false).volatile(),
   scopes: z.array(String).role('table').default([...DEFAULT_SCOPES]),
   requestTimeoutMs: z.natural().min(1000).default(15_000),
   modelCatalogCacheTtlMs: z.natural().min(1000).default(MODEL_CATALOG_CACHE_TTL_MS),
@@ -36,7 +42,7 @@ export const Config = z.object({
   }).default({}).volatile(),
 }) as unknown as z<AccountPluginConfig>
 
-export function normalizeConfig(config: Partial<DsnAccountConfig> | undefined): DsnAccountConfig {
+export function normalizeConfig(config: AccountConfigInput | undefined): DsnAccountConfig {
   const value: DsnAccountConfig = {
     issuer: config?.issuer ?? DEFAULT_ISSUER,
     clientId: config?.clientId ?? '',
@@ -44,12 +50,14 @@ export function normalizeConfig(config: Partial<DsnAccountConfig> | undefined): 
     accountServiceUrl: config?.accountServiceUrl ?? DEFAULT_ACCOUNT_SERVICE_URL,
     clubPortalResource: config?.clubPortalResource ?? DEFAULT_CLUB_PORTAL_RESOURCE,
     clubPortalUrl: config?.clubPortalUrl ?? DEFAULT_CLUB_PORTAL_URL,
+    clubMcpEnabled: typeof config?.clubMcpEnabled === 'object' ? config.clubMcpEnabled.get() : config?.clubMcpEnabled ?? false,
     scopes: config?.scopes?.length ? [...config.scopes] : [...DEFAULT_SCOPES],
     requestTimeoutMs: config?.requestTimeoutMs ?? 15_000,
     modelCatalogCacheTtlMs: config?.modelCatalogCacheTtlMs ?? MODEL_CATALOG_CACHE_TTL_MS,
   }
 
   assertHttpUrl(value.issuer, 'issuer')
+  if (typeof value.clubMcpEnabled !== 'boolean') throw new Error('clubMcpEnabled must be a boolean')
   assertHttpUrl(value.resource, 'resource')
   assertHttpUrl(value.accountServiceUrl, 'accountServiceUrl')
   assertHttpUrl(value.clubPortalResource, 'clubPortalResource')

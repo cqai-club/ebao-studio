@@ -110,7 +110,11 @@
     },
     "./client": "./client/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./club-ui": {
+      "types": "./lib/types/club-ui.d.ts",
+      "default": "./lib/club-ui.js"
+    }
   },
   "files": [
     "lib",

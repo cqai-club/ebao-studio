@@ -46,6 +46,8 @@ function accountService(response: Response, models: DsnModel[] = [textModel, mul
     getClubPortalAuthorization: vi.fn(async () => 'signed-out' as const),
     beginClubPortalAuthorization: vi.fn(),
     fetchClubPortal: vi.fn(),
+    extensionApiVersion: 1,
+    useResource: vi.fn(),
   }
 }
 

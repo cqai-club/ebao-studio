@@ -3,6 +3,7 @@ export const DEFAULT_RESOURCE = 'https://account.cqaiclub.asia'
 export const DEFAULT_ACCOUNT_SERVICE_URL = 'https://account.cqaiclub.asia'
 export const DEFAULT_CLUB_PORTAL_RESOURCE = 'https://cqaiclub.asia/'
 export const DEFAULT_CLUB_PORTAL_URL = 'https://cqaiclub.asia'
+export const DEFAULT_CLUB_MCP_URL = 'https://cqaiclub.asia/mcp'
 export const DEFAULT_SCOPES = [
   'openid',
   'offline_access',
@@ -281,6 +282,7 @@ export type DsnAccountConfig = {
   accountServiceUrl: string
   clubPortalResource: string
   clubPortalUrl: string
+  clubMcpEnabled: boolean
   scopes: readonly string[]
   requestTimeoutMs: number
   modelCatalogCacheTtlMs: number
@@ -298,17 +300,38 @@ type AccountGrantPayload = {
   accountFetchedAt: number
 }
 
+type ClubPortalGrant = {
+  clubPortalResource: string
+  clubPortalAccessToken?: string
+  clubPortalAccessTokenExpiresAt?: number
+}
+
 export type GrantPayload = AccountGrantPayload & (
   | { version: 1 }
-  | {
-      version: 2
-      clubPortalResource: string
-      clubPortalAccessToken?: string
-      clubPortalAccessTokenExpiresAt?: number
-    }
+  | ({ version: 2 } & ClubPortalGrant)
+  | ({
+      version: 3
+      clubMcpResource: string
+      clubMcpAccessToken?: string
+      clubMcpAccessTokenExpiresAt?: number
+    } & ClubPortalGrant)
 )
 
 export type ClubPortalAuthorization = 'signed-out' | 'reauth-required' | 'ready'
+
+export type DsnResourceDefinition = { resource: string; enabled: boolean }
+export type DsnResourceAuthorization = { state: ClubPortalAuthorization; generation: number }
+export type DsnResourceEvent = { type: 'authorized' | 'invalidated'; generation: number }
+/** Host-only lease: credential values are never returned to extensions or RPC. */
+export type DsnResourceSession = {
+  readonly legacyEnabled: boolean
+  authorization(): Promise<DsnResourceAuthorization>
+  authorize(signal?: AbortSignal): Promise<DsnAccountSnapshot>
+  fetch(init?: RequestInit, signal?: AbortSignal): Promise<Response>
+  setActive(enabled: boolean): void
+  subscribe(listener: (event: DsnResourceEvent) => void): () => void
+  dispose(): void
+}
 
 export type DsnAccountService = {
   getStatus(options?: { refreshAccount?: boolean; signal?: AbortSignal }): Promise<DsnAccountSnapshot>
@@ -326,6 +349,8 @@ export type DsnAccountService = {
   getClubPortalAuthorization(): Promise<ClubPortalAuthorization>
   beginClubPortalAuthorization(signal?: AbortSignal): Promise<DsnAccountSnapshot>
   fetchClubPortal(path: `/api/v1/${string}`, init?: RequestInit, signal?: AbortSignal): Promise<Response>
+  readonly extensionApiVersion: 1
+  useResource(owner: import('@deepseek-ai/cordis').Context, definition: DsnResourceDefinition): DsnResourceSession
 }
 
 export type LogoutResult = {
