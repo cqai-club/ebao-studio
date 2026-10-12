@@ -6,6 +6,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '../club-ui.ts'
 import {
   Button,
   IconSettingsOutlineMedium,
@@ -75,7 +77,6 @@ const zh = {
   pointsInfo: '积分信息',
   membershipInfo: '会员信息',
   clubActivities: '俱乐部活动',
-  activityPluginDisabled: '活动插件未安装或未启用。请在插件管理中手动添加或启用后重启桌面端。',
   billing: '账户充值',
   billingDescription: '选择充值方式与金额，随后在系统浏览器中完成支付。',
   billingLoading: '正在读取充值方式…',
@@ -153,7 +154,6 @@ const en: Record<keyof typeof zh, string> = {
   pointsInfo: 'Points',
   membershipInfo: 'Membership',
   clubActivities: 'Club activities',
-  activityPluginDisabled: 'The activities plugin is not installed or is disabled. Add or enable it in Plugin management, then restart the desktop app.',
   billing: 'Add funds',
   billingDescription: 'Choose a payment method and amount, then finish payment in your system browser.',
   billingLoading: 'Loading payment methods…',
@@ -227,7 +227,8 @@ interface AccountMenuAction {
   readonly onSelect: () => void
 }
 
-type AccountSettingsSectionProps = PropsRuntime<'settings.section'> & PropsLocale<typeof NS> & {
+type ClubRenderProps = PropsRenderSlots<'cqaiclub.club.extension' | 'cqaiclub.club.activities'>
+type AccountSettingsSectionProps = PropsRuntime<'settings.section'> & PropsLocale<typeof NS> & ClubRenderProps & {
   readonly accountContext: ClientContext
 }
 type AccountOnboardingProps = PropsRuntime<'settings.onboarding'> & PropsLocale<typeof NS> & {
@@ -239,7 +240,34 @@ type AccountLauncherProps = PropsRuntime<'settings.launcher'> & PropsRenderSlots
 }
 type AccountTranslator = AccountSettingsSectionProps['t']
 type SignedInSnapshot = Extract<DsnAccountSnapshot, { state: 'signed-in' }>
-type ClubSection = 'points' | 'membership' | 'activities'
+type ExtensionSection = `extension:${string}`
+type ClubSection = 'points' | 'membership' | ExtensionSection
+
+type ClubExtension = { readonly id: string; readonly label: string; readonly legacy?: boolean }
+
+function useClubExtensions(ctx: ClientContext, t: AccountTranslator): readonly ClubExtension[] {
+  const subscribe = useCallback((listener: () => void) => {
+    const offExtensions = ctx.slots.subscribe('cqaiclub.club.extension', listener)
+    const offActivities = ctx.slots.subscribe('cqaiclub.club.activities', listener)
+    return () => { offExtensions(); offActivities() }
+  }, [ctx])
+  const getSnapshot = useCallback(() => `${ctx.slots.getVersion('cqaiclub.club.extension')}:${ctx.slots.getVersion('cqaiclub.club.activities')}`, [ctx])
+  useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const extensions: Array<ClubExtension & { order: number }> = ctx.slots.entriesOfSlot('cqaiclub.club.extension')
+    .map(entry => ({ id: entry.options.id!, label: resolveSlotLabel(entry.options.label) ?? entry.options.id!, order: entry.options.order ?? 0 }))
+    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
+  if (!extensions.some(entry => entry.id === 'activities') && ctx.slots.entriesOfSlot('cqaiclub.club.activities').length > 0) {
+    extensions.push({ id: 'legacy-activities', label: t('clubActivities'), order: 30, legacy: true })
+    extensions.sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
+  }
+  return extensions.map(({ order: _order, ...entry }) => entry)
+}
+
+function renderClubExtension(extension: ClubExtension, renderSlot: ClubRenderProps['renderSlot']) {
+  return extension.legacy
+    ? renderSlot('cqaiclub.club.activities', {})
+    : renderSlot('cqaiclub.club.extension', {}, { only: extension.id })
+}
 
 function createClubViewState() {
   let active: ClubSection = 'points'
@@ -256,7 +284,7 @@ function createClubViewState() {
 }
 
 type ClubViewState = ReturnType<typeof createClubViewState>
-type ClubPageProps = PropsRuntime<'main'> & PropsLocale<typeof NS> & PropsRenderSlots<'cqaiclub.club.activities'> & {
+type ClubPageProps = PropsRuntime<'main'> & PropsLocale<typeof NS> & ClubRenderProps & {
   readonly accountContext: ClientContext
   readonly viewState: ClubViewState
   readonly onBack: () => void
@@ -372,16 +400,19 @@ function topUpTime(value: number | undefined): string {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString()
 }
 
-type SignedInSection = 'account' | 'billing'
+type SignedInSection = 'account' | 'billing' | ExtensionSection
 
-function SignedInTabs({ active, setActive, t }: {
+function SignedInTabs({ active, setActive, t, hasAccount, extensions }: {
   readonly active: SignedInSection
   readonly setActive: (section: SignedInSection) => void
   readonly t: AccountTranslator
+  readonly hasAccount: boolean
+  readonly extensions: readonly ClubExtension[]
 }) {
-  const tabs: readonly { readonly id: SignedInSection; readonly label: keyof typeof zh }[] = [
-    { id: 'account', label: 'accountTab' },
-    { id: 'billing', label: 'billingTab' },
+  const tabs: readonly { readonly id: SignedInSection; readonly label: string }[] = [
+    { id: 'account', label: t('accountTab') },
+    ...(hasAccount ? [{ id: 'billing', label: t('billingTab') }] as const : []),
+    ...extensions.map(extension => ({ id: `extension:${extension.id}` as const, label: extension.label })),
   ]
   return (
     <div role="tablist" aria-label={t('tab')} style={{ display: 'flex', gap: 5, width: 'fit-content', maxWidth: '100%', padding: 4, overflowX: 'auto', borderRadius: 12, background: 'var(--dsw-alias-bg-module-platform, #f4f6f8)' }}>
@@ -394,7 +425,7 @@ function SignedInTabs({ active, setActive, t }: {
           style={{ minHeight: 34, padding: '7px 14px', border: 0, borderRadius: 9, background: active === tab.id ? 'var(--dsw-alias-bg-layer-2, #fff)' : 'transparent', boxShadow: active === tab.id ? '0 1px 4px color-mix(in srgb, var(--dsw-alias-label-primary, #18202a) 12%, transparent)' : 'none', color: active === tab.id ? 'var(--dsw-alias-label-primary, #18202a)' : 'var(--dsw-alias-label-secondary, #667180)', cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: active === tab.id ? 650 : 500, whiteSpace: 'nowrap' }}
           type="button"
         >
-          {t(tab.label)}
+          {tab.label}
         </button>
       ))}
     </div>
@@ -940,14 +971,21 @@ function CqaiAccountLauncher({
   )
 }
 
-function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<AccountSettingsSectionProps, 't' | 'accountContext'> & { readonly clubView?: boolean }) {
+function AccountSettingsTab({ t, accountContext: ctx, clubView = false, renderSlot }: Pick<AccountSettingsSectionProps, 't' | 'accountContext'> & Partial<ClubRenderProps> & { readonly clubView?: boolean }) {
   const [snapshot, setSnapshot] = useState<DsnAccountSnapshot>()
   const [activeSection, setActiveSection] = useState<SignedInSection>('account')
+  const extensions = useClubExtensions(ctx, t)
+  const activeExtension = extensions.find(extension => activeSection === `extension:${extension.id}`)
+  const visibleSection = activeSection.startsWith('extension:') && activeExtension === undefined ? 'account' : activeSection
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const call = useCallback(async <T,>(endpoint: string, payload: unknown): Promise<T> => {
     return rpcCall<T>(ctx, endpoint, payload)
   }, [ctx])
+
+  useEffect(() => {
+    if (activeSection !== visibleSection) setActiveSection(visibleSection)
+  }, [activeSection, visibleSection])
 
   useEffect(() => {
     if (ctx === undefined) return
@@ -977,7 +1015,7 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<A
 
   useEffect(() => {
     if (identity !== undefined) {
-      setActiveSection('account')
+      setActiveSection(active => active.startsWith('extension:') ? active : 'account')
     }
   }, [identity])
 
@@ -1065,8 +1103,8 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<A
       {message !== undefined ? (
         <div role="status" style={{ padding: '11px 13px', borderRadius: 10, background: 'var(--dsw-alias-bg-module-platform, #f4f6f8)', color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 13, lineHeight: 1.5 }}>{message}</div>
       ) : null}
-      {signedIn !== undefined ? <SignedInTabs active={activeSection} setActive={setActiveSection} t={t} /> : null}
-      {snapshot?.state === 'authorizing' ? (
+      {signedIn !== undefined || (!clubView && snapshot !== undefined) ? <SignedInTabs active={visibleSection} setActive={setActiveSection} t={t} hasAccount={signedIn !== undefined} extensions={clubView ? [] : extensions} /> : null}
+      {activeExtension !== undefined && !clubView && renderSlot !== undefined ? renderClubExtension(activeExtension, renderSlot) : snapshot?.state === 'authorizing' ? (
         <div style={cardStyle}>
           <div style={{ display: 'grid', justifyItems: 'center', padding: '38px 30px 26px', textAlign: 'center' }}>
             <div style={{ display: 'grid', placeItems: 'center', width: 58, height: 58, marginBottom: 18, borderRadius: 18, background: 'color-mix(in srgb, var(--dsw-alias-state-business-primary, #2f6fda) 11%, transparent)', color: 'var(--dsw-alias-state-business-primary, #2f6fda)' }}><StateDot state="ongoing" size={22} /></div>
@@ -1079,7 +1117,7 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<A
             <Button variant="outline" disabled={busy} onClick={() => { void cancelLogin() }}>{t('cancel')}</Button>
           </div>
         </div>
-      ) : signedIn !== undefined && activeSection === 'account' ? (
+      ) : signedIn !== undefined && visibleSection === 'account' ? (
         <div style={cardStyle}>
           <div style={{ display: 'grid', gridTemplateColumns: clubView ? 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))' : 'minmax(0, 1fr) minmax(180px, .45fr)', gap: 20, alignItems: 'stretch', padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 15, minWidth: 0 }}>
@@ -1108,7 +1146,7 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<A
             <Button variant="ghost" disabled={busy} onClick={() => { void logout() }}>{t('logout')}</Button>
           </div>
         </div>
-      ) : signedIn !== undefined && activeSection === 'billing' ? (
+      ) : signedIn !== undefined && visibleSection === 'billing' ? (
         <BillingPanel ctx={ctx} t={t} account={signedIn.account} refreshAccount={refreshAccount} />
       ) : snapshot === undefined ? (
         <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 150, padding: 28 }} role="status">
@@ -1141,12 +1179,17 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false }: Pick<A
 
 function CqaiClubPage({ t, accountContext, viewState, onBack, renderSlot }: ClubPageProps) {
   const active = useSyncExternalStore(viewState.subscribe, viewState.getSnapshot, viewState.getSnapshot)
-  const sections: readonly { readonly id: ClubSection; readonly label: 'pointsInfo' | 'membershipInfo' | 'clubActivities' }[] = [
-    { id: 'points', label: 'pointsInfo' },
-    { id: 'membership', label: 'membershipInfo' },
-    { id: 'activities', label: 'clubActivities' },
+  const extensions = useClubExtensions(accountContext, t)
+  const sections: readonly { readonly id: ClubSection; readonly label: string }[] = [
+    { id: 'points', label: t('pointsInfo') },
+    { id: 'membership', label: t('membershipInfo') },
+    ...extensions.map(extension => ({ id: `extension:${extension.id}` as const, label: extension.label })),
   ]
-  const activeLabel = sections.find(section => section.id === active)!.label
+  const visibleSection = sections.find(section => section.id === active) ?? sections[0]!
+  const activeExtension = extensions.find(extension => visibleSection.id === `extension:${extension.id}`)
+  useEffect(() => {
+    if (active !== visibleSection.id) viewState.select(visibleSection.id)
+  }, [active, visibleSection.id, viewState])
 
   return (
     <div className="cqai-club-shell">
@@ -1157,17 +1200,17 @@ function CqaiClubPage({ t, accountContext, viewState, onBack, renderSlot }: Club
           {t('back')}
         </button>
         {sections.map(section => (
-          <button className="cqai-club-section" key={section.id} type="button" aria-current={active === section.id ? 'page' : undefined}
-            onClick={() => viewState.select(section.id)}>{t(section.label)}</button>
+          <button className="cqai-club-section" key={section.id} type="button" aria-current={visibleSection.id === section.id ? 'page' : undefined}
+            onClick={() => viewState.select(section.id)}>{section.label}</button>
         ))}
       </nav>
-      <section className="cqai-club-content" aria-label={t(activeLabel)}>
+      <section className="cqai-club-content" aria-label={visibleSection.label}>
         <div className="cqai-club-content-inner">
-          {active === 'points'
+          {visibleSection.id === 'points'
             ? <AccountSettingsTab t={t} accountContext={accountContext} clubView />
-            : active === 'activities'
-              ? renderSlot('cqaiclub.club.activities', {}, { fallback: <><h1 className="cqai-club-empty-title">{t(activeLabel)}</h1><p>{t('activityPluginDisabled')}</p></> })
-              : <h1 className="cqai-club-empty-title">{t(activeLabel)}</h1>}
+            : activeExtension !== undefined
+              ? renderClubExtension(activeExtension, renderSlot)
+              : <h1 className="cqai-club-empty-title">{visibleSection.label}</h1>}
         </div>
       </section>
     </div>
@@ -1188,7 +1231,10 @@ export function apply(ctx: ClientContext): void {
         key: CLUB_PANEL,
         locale: NS,
         inject: () => ({ accountContext: ctx, viewState, onBack: () => scope.layout.selectPanel(null) }),
-        children: { 'cqaiclub.club.activities': { kind: 'list', scope: 'root' } },
+        children: {
+          'cqaiclub.club.extension': { kind: 'list', scope: 'root' },
+          'cqaiclub.club.activities': { kind: 'list', scope: 'root' },
+        },
       }, (props) => <CqaiClubPage {...props} />))
       scope.slots.inject('settings.launcher', () => scope.slots.register({
         name: 'settings.launcher',
@@ -1208,6 +1254,10 @@ export function apply(ctx: ClientContext): void {
       label: () => t('tab'),
       locale: NS,
       inject: () => ({ accountContext: ctx }),
+      children: {
+        'cqaiclub.club.extension': { kind: 'list', scope: 'root' },
+        'cqaiclub.club.activities': { kind: 'list', scope: 'root' },
+      },
     }, (props) => <AccountSettingsTab {...props} />))
   }
 

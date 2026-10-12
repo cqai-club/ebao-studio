@@ -66,6 +66,20 @@ dsh plugin update
 
 显式 `--profile <name>` 始终优先。插件变更后需要重启 易宝工坊，才能让新的 bundle 进入 Loader 组合。
 
+## CQAI Club 官网工具
+
+先在插件管理中安装并启用 **CQAI Club 扩展插件**（`@cqaiclub/dsh-plugin-extension`）。这是一个可选插件，同时提供「俱乐部活动」和「MCP 服务」两个入口；停用或卸载扩展后，两项入口一起移除。账号、积分和会员仍由内置账号插件提供。
+
+从账号菜单打开 **CQAI Club → MCP 服务**，开启「官网 MCP」，即可使用现有登录账号连接官网工具。服务地址固定为 `https://cqaiclub.asia/mcp`，不需要填写地址、Client ID、令牌或环境变量，也不需要在终端单独登录。「俱乐部活动」也复用这个账号，可以浏览活动、报名和取消报名。
+
+未登录时，在该页面点击登录；已有账号尚未授权官网工具时，点击补充授权，在系统浏览器完成一次授权后返回应用。连接成功会显示可用工具数量，随后可在对话中查询活动、报名或取消报名、整理活动草稿、发布活动和提交插件。活动管理仍要求账号具有 `activity:publish` 权限；插件投稿需要真实的公开 npm 包，投稿成功并不代表已经上架。
+
+开关会保存在当前 Profile；开启后重新启动应用会自动连接，令牌由 Host 自动续期。网络失败时页面保留错误与重连入口；关闭开关或退出账号会移除对应对话工具。
+
+扩展要求内置账号提供 `extensionApiVersion: 1` 和资源授权接口，并支持动态扩展入口。目前该能力仅在 [PR #47](https://github.com/cqai-club/ebao-studio/pull/47) 的源码构建中验证，尚无已正式发布的最低 App 版本；现有正式版不能仅凭账号包号 `0.1.1` 判断兼容。请使用包含这项能力的新版构建，旧版账号插件会明确提示升级。未发布的版本可以在插件管理中填写本地 `.tgz` 文件的绝对路径安装。部署管理员须先在 Logto 注册独立的 MCP API 资源及角色权限。客户端复用现有 CQAI Club Native 应用和回调，配置说明见[账号插件说明](../cqai-dsh-plugins/cqai-dsh-plugin-account/README.md#扩展授权)。
+
+![安装 CQAI Club 扩展后的 MCP 设置：启用开关、登录授权及连接状态](assets/cqai-club-mcp.png)
+
 ## 打开终端
 
 可以从托盘、Desktop 设置或 Desktop frame 选择 **Open DSH Terminal**；设置中的旁边提供重启下拉菜单，可以普通重启或 **重启到恢复模式**，两种操作都必须确认。macOS 会打开 Terminal，Windows 会优先使用 Windows Terminal，找不到时回退到 PowerShell 或命令提示符。
