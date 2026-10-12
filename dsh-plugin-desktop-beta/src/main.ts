@@ -96,7 +96,8 @@ import { DesktopProfileService } from './profile-service.ts'
 import { createDesktopProfileBoot } from './profile-context.ts'
 import { logInactiveStartupEntries } from './startup-audit.ts'
 import { DesktopActionsService } from './desktop-actions.ts'
-import { clearDesktopProfilePluginState, DesktopPluginsService } from './desktop-plugins.ts'
+import { clearDesktopProfileDisabledBundleNames, clearDesktopProfilePluginState, DesktopPluginsService } from './desktop-plugins.ts'
+import { completeEjianbaoDisabledBundleMigration, pendingEjianbaoDisabledBundles } from './ejianbao-migration.ts'
 import {
   desktopMarketSnapshotWithEffective,
   readDesktopMarketStateForUserData,
@@ -1359,6 +1360,15 @@ async function start(): Promise<void> {
       marketSelection,
       preparationHooks,
     )
+    const ejianbaoLegacyDisabledBundles = pendingEjianbaoDisabledBundles(prepared.profile.dir)
+    if (ejianbaoLegacyDisabledBundles !== undefined) {
+      await clearDesktopProfileDisabledBundleNames(pluginManagementStatePath, activeProfileName, ejianbaoLegacyDisabledBundles)
+      completeEjianbaoDisabledBundleMigration(prepared.profile.dir)
+      prepared = prepareDesktopProfile(
+        process.env.DSH_TELEMETRY_DISABLED, homeDir, process.platform,
+        activeProfileName, pluginManagementStatePath, marketSelection, preparationHooks,
+      )
+    }
     let legacyPresetMigrated = false
     if (safeModePaths === undefined) {
       try {
@@ -1719,7 +1729,9 @@ async function start(): Promise<void> {
       }
       startupStage = 'host-boot'
       lifecycleRecorder.transitionStartupStage(startupStage)
-      const releasePackageResolver = installProfilePackageResolver(prepared.bareModuleBaseUrl)
+      const releasePackageResolver = installProfilePackageResolver(prepared.bareModuleBaseUrl, {
+        bundleNames: prepared.profile.layers.map(layer => layer.packageName),
+      })
       const profileBoot = createDesktopProfileBoot(prepared, desktopPnpmBootstrap)
       const ctx = await boot(
         BIN_NAME,

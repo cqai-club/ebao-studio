@@ -1,8 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
-import { python311 } from '../src/index.ts'
+import { afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { python311, uvExecutable } from '../src/index.ts'
 
 const probe = vi.hoisted(() => ({home: '', stderr: ''}))
 vi.mock('node:child_process', async importOriginal => {
@@ -17,6 +17,12 @@ vi.mock('node:child_process', async importOriginal => {
     },
     spawnSync: () => ({status: 1, stdout: ''}),
   }
+})
+
+// This source-only integration test owns its real uv execution prerequisite.
+// Yarn disables lifecycle scripts; Desktop no longer prepares the media runtime.
+beforeAll(async () => {
+  if (process.platform !== 'win32') await chmod(uvExecutable(), 0o755)
 })
 
 afterEach(async () => {if (probe.home) await rm(probe.home, {recursive: true, force: true}); probe.home = ''; probe.stderr = ''})

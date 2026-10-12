@@ -6,6 +6,8 @@ import type { ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import type { AppReady } from '@deepseek-ai/dsh-cmdline'
 import type { DesktopPnpmBootstrap } from './pnpm.ts'
 import { findOverlayPackage } from './package-overlay.ts'
+import { updateProfilePackageResolverBundles } from './module-resolution.ts'
+import { installEjianbaoEntryAdmission } from './ejianbao-admission.ts'
 import { withDesktopPnpmPolicy } from './pnpm-policy.ts'
 import { desktopInstallAnchor, prepareDesktopProfile, type PreparedDesktopProfile } from './profile.ts'
 
@@ -16,6 +18,7 @@ export function createDesktopProfileBoot(prepared: PreparedDesktopProfile, pnpm:
     || pnpm.homeDir !== prepared.homeDir) {
     throw new Error('Desktop Profile context and package-manager identity disagree')
   }
+  let bundleNames = prepared.profile.layers.map(layer => layer.packageName)
   const inheritedPath = Object.entries(process.env).find(([key]) => key.toUpperCase() === 'PATH')?.[1]
   const context: ProfileContext = {
     name: options.profileName,
@@ -27,6 +30,7 @@ export function createDesktopProfileBoot(prepared: PreparedDesktopProfile, pnpm:
     resolvePackageManifest: packageName => findOverlayPackage(packageName, {
       installPackageUrl: pathToFileURL(desktopInstallAnchor()).href,
       profilePackageUrl: pathToFileURL(join(prepared.profile.dir, 'package.json')).href,
+      profileBundleNames: bundleNames,
     })?.selected.manifestPath,
     cwd: process.cwd(),
     home: prepared.homeDir,
@@ -57,16 +61,21 @@ export function createDesktopProfileBoot(prepared: PreparedDesktopProfile, pnpm:
     // replaces only the profile layer; everything else above stays ours. When
     // absent (HMR, package operations) preparation reads the document from disk
     // as before.
-    readPatches: profilePatches => [...prepareDesktopProfile(
-      options.telemetryDisabled ?? '', prepared.homeDir, options.platform, options.profileName,
-      options.pluginStatePath, options.marketSelection,
-      {
-        aaEnabled: options.aaEnabled,
-        lanAddresses: prepared.lanAddresses,
-        generationMode: prepared.mode,
-        ...(profilePatches === undefined ? {} : { profilePatches }),
-      },
-    ).patches, ...context.overlays],
+    readPatches: profilePatches => {
+      const refreshed = prepareDesktopProfile(
+        options.telemetryDisabled ?? '', prepared.homeDir, options.platform, options.profileName,
+        options.pluginStatePath, options.marketSelection,
+        {
+          aaEnabled: options.aaEnabled,
+          lanAddresses: prepared.lanAddresses,
+          generationMode: prepared.mode,
+          ...(profilePatches === undefined ? {} : { profilePatches }),
+        },
+      )
+      bundleNames = refreshed.profile.layers.map(layer => layer.packageName)
+      updateProfilePackageResolverBundles(prepared.bareModuleBaseUrl, bundleNames)
+      return [...refreshed.patches, ...context.overlays]
+    },
   }
   let ready = false
   let disposed = false
@@ -81,6 +90,7 @@ export function createDesktopProfileBoot(prepared: PreparedDesktopProfile, pnpm:
   }
   return {
     prepare(ctx: Context): void {
+      installEjianbaoEntryAdmission(ctx, () => bundleNames.includes('cqai-dsh-plugin-ejianbao'))
       ctx.provide('profileContext', context)
       ctx.provide('appReady', readiness)
       ctx.effect(() => () => { disposed = true; listeners.clear() }, 'Desktop Profile readiness')

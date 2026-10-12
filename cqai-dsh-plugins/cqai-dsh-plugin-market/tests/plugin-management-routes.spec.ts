@@ -16,10 +16,14 @@ const bundles: Array<{
 }> = [
   { bundleId: 'bundle-activities', packageName: '@cqaiclub/dsh-plugin-activities', status: 'active', mutable: true, uninstallable: true },
   { bundleId: 'bundle-imagegen', packageName: 'cqai-dsh-plugin-imagegen', status: 'active', mutable: true, uninstallable: false },
-  { bundleId: 'bundle-video', packageName: 'cqai-dsh-plugin-video', status: 'disabled', mutable: true, uninstallable: false },
+  { bundleId: 'bundle-ppt', packageName: 'dsh-ppt-composer', status: 'disabled', mutable: true, uninstallable: false },
   { bundleId: 'bundle-theme', packageName: 'cqai-dsh-plugin-cqai-club-theme', status: 'active', mutable: true, uninstallable: false },
   { bundleId: 'bundle-protected', packageName: '@cqaiclub/dsn-account', status: 'active', mutable: false, uninstallable: false },
   { bundleId: 'bundle-external', packageName: 'third-party-plugin', status: 'active', mutable: true, uninstallable: true },
+  ...['ejianbao', 'video', 'short-video', 'talkcraft'].map(name => ({
+    bundleId: `bundle-${name}`, packageName: `cqai-dsh-plugin-${name}`,
+    status: 'active' as const, mutable: true, uninstallable: true,
+  })),
 ]
 
 function fixture() {
@@ -35,12 +39,14 @@ function fixture() {
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   }))
   const executeDisable = vi.fn(async (_previewId: string) => ({ action: 'disable', packageName: 'cqai-dsh-plugin-imagegen' }))
-  const executeEnable = vi.fn(async (_previewId: string) => ({ action: 'enable', packageName: 'cqai-dsh-plugin-video' }))
+  const executeEnable = vi.fn(async (_previewId: string) => ({ action: 'enable', packageName: 'dsh-ppt-composer' }))
   const plugins: DesktopPlugins = {
     list: () => current,
     loadedPackageNames: () => [
       '@cqaiclub/dsh-plugin-activities', 'cqai-dsh-plugin-imagegen', 'cqai-dsh-plugin-publisher',
       'cqai-dsh-plugin-cqai-club-theme', '@cqaiclub/dsn-account', 'third-party-plugin',
+      'cqai-dsh-plugin-ejianbao', 'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-short-video', 'cqai-dsh-plugin-talkcraft',
     ],
     previewDisable,
     executeDisable,
@@ -136,11 +142,11 @@ describe('CQAI plugin management Host routes', () => {
       expect(replay.status).toBe(400)
       expect(service.executeDisable).toHaveBeenCalledOnce()
 
-      const enable = await post(harness.baseUrl, '/preview', { action: 'enable', bundleId: 'bundle-video' })
+      const enable = await post(harness.baseUrl, '/preview', { action: 'enable', bundleId: 'bundle-ppt' })
       expect(enable.status).toBe(200)
       const enablePreview = await enable.json() as { previewId: string }
       expect(service.previewEnable).toHaveBeenCalledOnce()
-      expect(service.previewEnable).toHaveBeenCalledWith('bundle-video')
+      expect(service.previewEnable).toHaveBeenCalledWith('bundle-ppt')
       const enabled = await post(harness.baseUrl, '/execute', { action: 'enable', previewId: enablePreview.previewId })
       expect(enabled.status).toBe(200)
       expect(service.executeEnable).toHaveBeenCalledOnce()
@@ -154,14 +160,15 @@ describe('CQAI plugin management Host routes', () => {
     const service = fixture()
     service.current.push({
       bundleId: 'bundle-removable-product',
-      packageName: 'cqai-dsh-plugin-short-video',
+      packageName: 'cqai-dsh-plugin-publisher',
       status: 'active',
       mutable: true,
       uninstallable: true,
     })
     const harness = await startServer(service.plugins)
     try {
-      for (const bundleId of ['bundle-protected', 'bundle-external', 'missing', 'bundle-removable-product']) {
+      for (const bundleId of ['bundle-protected', 'bundle-external', 'missing', 'bundle-removable-product',
+        'bundle-ejianbao', 'bundle-video', 'bundle-short-video', 'bundle-talkcraft']) {
         const response = await post(harness.baseUrl, '/preview', { action: 'disable', bundleId })
         expect(response.status).toBe(400)
       }

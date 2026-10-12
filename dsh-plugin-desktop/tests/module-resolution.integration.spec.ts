@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { installProfilePackageResolver } from '../src/module-resolution.ts'
+import { installProfilePackageResolver, updateProfilePackageResolverBundles } from '../src/module-resolution.ts'
 
 const roots: string[] = []
 
@@ -120,6 +120,96 @@ describe('real Node Profile package hook', () => {
     } finally {
       release()
     }
+  })
+
+  it('resolves physical bundled engines, their clients, and shared host SDKs from the admitted generation', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-bundled-profile-resolver-'))
+    roots.push(root)
+    const profile = join(root, 'profile')
+    const profileManifest = join(profile, 'package.json')
+    const suite = join(profile, 'node_modules', 'dsh-bundled-suite-fixture')
+    const engine = join(suite, 'node_modules', 'dsh-bundled-engine-fixture')
+    const library = join(engine, 'node_modules', 'dsh-bundled-library-fixture')
+    writeManifest(profile, { name: 'bundle-profile-fixture', private: true, type: 'module' })
+    writeManifest(suite, { name: 'dsh-bundled-suite-fixture', version: '1.0.0',
+      dependencies: { 'dsh-bundled-engine-fixture': '1.0.0' }, bundledDependencies: ['dsh-bundled-engine-fixture'] })
+    writeManifest(engine, { name: 'dsh-bundled-engine-fixture', version: '1.0.0', type: 'module',
+      dependencies: { 'dsh-bundled-library-fixture': '1.0.0' }, peerDependencies: { '@deepseek-ai/cordis': '^4.0.0' },
+      exports: { '.': { import: './index.mjs', require: './index.cjs' }, './client': './client.mjs', './package.json': './package.json' },
+      dsh: { client: { platform: 'web', inject: [] } } })
+    writeManifest(library, { name: 'dsh-bundled-library-fixture', version: '1.0.0', type: 'commonjs', main: './index.cjs' })
+    writeFileSync(join(library, 'index.cjs'), "module.exports = require('@deepseek-ai/cordis')\n")
+    writeFileSync(join(engine, 'index.cjs'), "module.exports = require('dsh-bundled-library-fixture')\n")
+    writeFileSync(join(engine, 'index.mjs'), "import SDK from 'dsh-bundled-library-fixture'; export { SDK }\n")
+    writeFileSync(join(engine, 'client.mjs'), 'export const client = "bundled-client"\n')
+    writeFileSync(join(profile, 'load.cjs'), "module.exports = () => import('dsh-bundled-engine-fixture')\n")
+    const inactive = join(profile, 'node_modules', 'dsh-inactive-suite-fixture')
+    writeManifest(inactive, { name: 'dsh-inactive-suite-fixture', dependencies: { 'dsh-inactive-engine-fixture': '1.0.0' } })
+    writeManifest(join(inactive, 'node_modules', 'dsh-inactive-engine-fixture'), { name: 'dsh-inactive-engine-fixture', main: './index.cjs' })
+    const base = pathToFileURL(profileManifest).href
+    const release = installProfilePackageResolver(base, { bundleNames: ['dsh-bundled-suite-fixture'] })
+    try {
+      const profileRequire = createRequire(profileManifest)
+      const installRequire = createRequire(new URL('../package.json', import.meta.url))
+      expect(profileRequire('dsh-bundled-engine-fixture')).toBe(installRequire('@deepseek-ai/cordis'))
+      const engineUrl = profileRequire.resolve('dsh-bundled-engine-fixture/client')
+      expect(engineUrl).toBe(join(engine, 'client.mjs'))
+      expect(await import(pathToFileURL(engineUrl).href)).toMatchObject({ client: 'bundled-client' })
+      const loadEsm = profileRequire('./load.cjs') as () => Promise<{ SDK: unknown }>
+      const esm = await loadEsm()
+      expect(esm.SDK).toBe(installRequire('@deepseek-ai/cordis'))
+      expect(profileRequire('dsh-bundled-engine-fixture/package.json').dsh.client.platform).toBe('web')
+      expect(() => profileRequire.resolve('dsh-inactive-engine-fixture')).toThrow('cannot resolve package')
+      updateProfilePackageResolverBundles(base, [])
+      expect(() => profileRequire.resolve('dsh-bundled-engine-fixture/client')).toThrow('cannot resolve package')
+      updateProfilePackageResolverBundles(base, ['dsh-bundled-suite-fixture'])
+      expect(profileRequire.resolve('dsh-bundled-engine-fixture/client')).toBe(engineUrl)
+    } finally { release() }
+  })
+
+  it('rejects retired direct Host and Client paths until the external suite is admitted', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-retired-profile-resolver-'))
+    roots.push(root)
+    const profile = join(root, 'profile')
+    const profileManifest = join(profile, 'package.json')
+    writeManifest(profile, { name: 'retired-profile-fixture', private: true, type: 'module' })
+    const names = ['cqai-dsh-plugin-ejianbao', 'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-short-video', 'cqai-dsh-plugin-talkcraft']
+    for (const name of names) {
+      const directory = join(profile, 'node_modules', name)
+      writeManifest(directory, { name, version: '999.0.0', type: 'commonjs',
+        exports: { '.': './index.cjs', './client': './client.cjs' } })
+      writeFileSync(join(directory, 'index.cjs'), 'module.exports = "direct-host"\n')
+      writeFileSync(join(directory, 'client.cjs'), 'module.exports = "direct-client"\n')
+    }
+    const base = pathToFileURL(profileManifest).href
+    const suite = join(profile, 'node_modules', 'cqai-dsh-plugin-ejianbao')
+    writeManifest(suite, { name: names[0], version: '999.0.0', type: 'commonjs',
+      dependencies: Object.fromEntries(names.slice(1).map(name => [name, '0.1.0'])),
+      exports: { '.': './index.cjs', './client': './client.cjs' } })
+    for (const name of names.slice(1)) {
+      const directory = join(suite, 'node_modules', name)
+      writeManifest(directory, { name, version: '0.1.0', type: 'commonjs',
+        exports: { '.': './index.cjs', './client': './client.cjs' } })
+      writeFileSync(join(directory, 'index.cjs'), 'module.exports = "suite-host"\n')
+      writeFileSync(join(directory, 'client.cjs'), 'module.exports = "suite-client"\n')
+    }
+    const release = installProfilePackageResolver(base, { bundleNames: [] })
+    try {
+      const profileRequire = createRequire(profileManifest)
+      for (const name of names) {
+        expect(() => profileRequire.resolve(name)).toThrow('cannot resolve package')
+        expect(() => profileRequire.resolve(name + '/client')).toThrow('cannot resolve package')
+      }
+      updateProfilePackageResolverBundles(base, ['cqai-dsh-plugin-ejianbao'])
+      for (const name of names) {
+        const directory = name === 'cqai-dsh-plugin-ejianbao' ? suite : join(suite, 'node_modules', name)
+        expect(profileRequire.resolve(name)).toBe(join(directory, 'index.cjs'))
+        expect(profileRequire.resolve(name + '/client')).toBe(join(directory, 'client.cjs'))
+      }
+      updateProfilePackageResolverBundles(base, [])
+      expect(() => profileRequire.resolve('cqai-dsh-plugin-video/client')).toThrow('cannot resolve package')
+    } finally { release() }
   })
 
   it('does not treat DSH_HOME node_modules as part of the active Profile overlay', () => {
