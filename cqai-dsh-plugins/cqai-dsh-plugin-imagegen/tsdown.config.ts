@@ -58,10 +58,19 @@ const nodeConfig: UserConfig = {
   outputOptions: {
     entryFileNames: '[name].js',
   },
+  loader: { '.md': 'text' },
+  plugins: [{
+    name: 'imagegen-skill-markdown',
+    resolveId(source, importer) {
+      if (importer && source.endsWith('.md?raw')) return resolvePath(dirname(importer), source.slice(0, -4))
+    },
+  }],
   deps: {
     neverBundle: [
       '@deepseek-ai/cordis',
       '@deepseek-ai/dsh-settings',
+      '@deepseek-ai/dsh-scope',
+      '@deepseek-ai/dsh-skill',
       '@deepseek-ai/dsh-tools',
       '@deepseek-ai/dsh-attachment',
       '@deepseek-ai/dsh-credentials',

@@ -141,7 +141,7 @@ describe('publication confirmation in the official Turn tail', () => {
     expect(queryApi).toHaveBeenCalledOnce()
     expect(queryApi).toHaveBeenCalledWith('agent-publication/session-1/request-1')
     expect(current.nodes.turnDataSource).toHaveBeenCalledWith(1, 'tool-call')
-    expect(button('确认转存草稿').disabled).toBe(false)
+    expect(button('确认转存草稿 · 1 个账号').disabled).toBe(false)
   })
 
   it('subscribes to the owning Turn, handles settlement updates and avoids leaking other Turns', async () => {
@@ -201,9 +201,10 @@ describe('publication confirmation in the official Turn tail', () => {
       ? snapshot('request-1', 'session-1', 'cancelled') : snapshot()))
     await render(<AgentPublicationTurnTail {...tailProps(current)}/>)
     const selected = container.querySelector('input[value="account-2"]') as HTMLInputElement
+    await act(async () => { selected.closest('details')!.querySelector('summary')!.click() })
     await act(async () => { selected.click() })
     expect(queryApi).toHaveBeenCalledOnce()
-    await click('确认转存草稿')
+    await click('确认转存草稿 · 1 个账号')
     expect(queryApi).toHaveBeenCalledWith('agent-publication-confirm', {
       sessionId: 'session-1', requestId: 'request-1', accountIds: ['account-2'], mode: 'draft',
     })

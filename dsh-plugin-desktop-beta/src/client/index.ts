@@ -29,6 +29,7 @@ import { installDesktopLaunchWorkspaceBridge } from './launch-workspace.ts'
 import { DESKTOP_SETTINGS_FORMS_SERVICE } from './settings-bridge.ts'
 import { installSidebarFooterStyles } from './sidebar-footer-styles.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
+import { registerDesktopWorkspaceFolder } from './workspace-folder.tsx'
 
 export { applyAdvancedShell } from './advanced-shell.ts'
 export { applyDesktopBrand } from './desktop-brand.tsx'
@@ -135,6 +136,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(installUiDiagnostics, 'Desktop client failure diagnostics')
   applyDesktopBrand(ctx)
   registerDesktopComputerUse(ctx, environment.platform)
+  registerDesktopWorkspaceFolder(ctx)
   ctx.effect(
     () => provideDesktopWindow(ctx, desktopWindowService(environment)),
     'dsh-plugin-desktop: native window geometry service',

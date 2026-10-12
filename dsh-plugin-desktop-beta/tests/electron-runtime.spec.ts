@@ -896,7 +896,7 @@ describe('Electron desktop runtime', () => {
       await expect(handler({ sender: electron.webContents, senderFrame: frame })).resolves.toBe('/Users/test/Work')
       expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(
         electron.browserWindows[0],
-        { title: 'Select Workspace Directory', properties: ['openDirectory', 'dontAddToRecent'] },
+        { title: 'Select Workspace Directory', properties: ['openDirectory', 'createDirectory', 'dontAddToRecent'] },
       )
       await expect(handler({ sender: electron.webContents, senderFrame: { url: spec.url } }))
         .rejects.toThrow('untrusted directory picker sender')

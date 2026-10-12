@@ -3,7 +3,7 @@
  * with per-channel model catalogs on the host settings seam), the
  * /api/dsh-imagegen route family (loopback-only settings bridge + presets /
  * usage / image-generation proxy that keeps every API key host-side), and a
- * system-prompt announcement. The browser half (./client) renders the sidebar
+ * native on-demand image Skill. The browser half (./client) renders the sidebar
  * entry and the split-pane generation studio.
  */
 
@@ -18,15 +18,12 @@ import z from '@deepseek-ai/schemastery'
 import { migrateLegacyImageGenSettings } from './settings-legacy-migration.ts'
 // Type-only: pulls the webServer Context merge (route registration).
 import type {} from '@deepseek-ai/dsh-host-webserver'
-// Type-only: pulls the systemPrompt Context merge (announcement section).
+// Type-only: pulls the run-scoped canvas prompt composition seam.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 // Type-only: pulls the human slash-command registry Context merge.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-tools'
-// The skills + agents seams are reached through `ctx.inject` and read
-// structurally (see CanvasSkillServices): the host half must not import those
-// packages at runtime, and this deployment does not resolve them at
-// type-check time either.
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { IMAGEGEN_PROFILE_ENTRY_ID, IMAGEGEN_SETTINGS_NAMESPACE, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigPreviewRequest, type CanvasSkillConfigPreviewResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillConfigView, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type ChannelConfig, type ModelMapping } from './protocol.ts'
 import { makeRoutes, type SettingsSeam } from './routes.ts'
 import { disposeEcommerceRoutes } from './ecommerce-routes.ts'
@@ -113,7 +110,7 @@ interface CanvasSkillServices {
       meta?: { cwd?: string; origin?: 'subagent'; agentPreset?: string }
       agentOptions?: { provider: string; model: string }
       signal?: AbortSignal
-      setup?: (agentCtx: Context) => void | Promise<void>
+      setup?: (agentCtx: Context, agent?: Agent) => void | Promise<void>
     }) => Promise<{ agent: CanvasSkillAgent; dispose: () => Promise<void> }>
   }
 }
@@ -155,6 +152,8 @@ export interface CanvasSkillAgentOptions {
   signal?: AbortSignal
   /** Run-only bridge values; installed into shell env, never into a prompt. */
   imageProvider?: SkillImageProviderEnvironment
+  /** Trusted user-selected canvas run only; independent of chat Skill discovery. */
+  authorizeImageTools?: (agent: Agent) => void | (() => void) | Promise<void | (() => void)>
   /** Localizes a composition failure's copy key (the runner owns the language). */
   fail?: (key: string) => string
 }
@@ -195,10 +194,21 @@ export async function createCanvasSkillAgent(options: CanvasSkillAgentOptions): 
     },
     agentOptions: { provider, model },
     ...options.signal === undefined ? {} : { signal: options.signal },
-    setup: async (agentCtx: Context) => {
+    setup: async (agentCtx: Context, scopedAgent?: Agent) => {
       // Join the preset FIRST: its rows must exist before the skill body is
       // registered, so the body never shadows the composition it runs inside.
       if (options.presets !== undefined && presetId !== undefined) await options.presets.mount(agentCtx, presetId)
+      if (options.authorizeImageTools && scopedAgent) {
+        options.signal?.throwIfAborted()
+        const close = await options.authorizeImageTools(scopedAgent)
+        if (options.signal?.aborted) {
+          if (typeof close === 'function') close()
+          options.signal.throwIfAborted()
+        }
+        // Preparation can fail before agent/created; the prepared scope still
+        // disposes its effects, so run-only tools cannot outlive a failed setup.
+        if (typeof close === 'function') agentCtx.effect(() => close, 'dsh-imagegen: canvas image tools')
+      }
       if (options.imageProvider !== undefined) {
         const shellEnv = agentCtx.get('shellEnv') as unknown as CanvasShellEnvironment | undefined
         if (shellEnv?.register === undefined) {
@@ -330,7 +340,8 @@ function mimeOfPath(filePath: string): string {
   }
 }
 import { ImageGenerationRuntime, type ChannelsView, type RuntimeChannel } from './generation-runtime.ts'
-import { registerAgentImageTools } from './agent-image-tools.ts'
+import type { AgentImageToolConfig } from './agent-image-tools.ts'
+import { AgentImageSkills } from './agent-image-skills.ts'
 import { registerEditImageCommand } from './edit-image-command.ts'
 import { setImageDataRoot, imageDataRoot, requestedImageDataRoot, resolveImageDataRoot } from './image-storage-path.ts'
 import { presetById } from './presets.ts'
@@ -361,6 +372,8 @@ export { promptCharLimit } from './model-catalog.ts'
 export { analyzeLayers, normalizeLayerPlan, MAX_LAYER_IMAGE_BYTES } from './layer-analyzer.ts'
 export { ImageGenerationRuntime } from './generation-runtime.ts'
 export { registerAgentImageTools } from './agent-image-tools.ts'
+export { AgentImageSkills } from './agent-image-skills.ts'
+export { AGENT_IMAGE_SKILL } from './agent-image-skill.ts'
 export { latestSessionImage, registerEditImageCommand } from './edit-image-command.ts'
 export { appendGallery, clearGallery, listGallery, readGalleryImage, removeGallery, updateGalleryTags } from './gallery-store.ts'
 export { listTemplates, readTemplateImage, refreshTemplates, sampleTemplates, syncAllTemplates, clearTemplateMemo } from './templates-store.ts'
@@ -503,37 +516,8 @@ const DEFAULT_ENABLED = true
 const DEFAULT_ANNOUNCE = true
 const DEFAULT_ALLOW_AGENT_IMAGE_GENERATION = true
 
-/** Order of the announcement section within the tool-guidance band. */
+/** Order of the explicitly selected canvas Skill's run-scoped instructions. */
 const SECTION_ORDER = 150
-
-/** Model-facing announcement: plugin presence, capabilities, and limits. */
-export const IMAGEGEN_GUIDANCE = [
-  '已安装 e图宝插件，工作台位于主区“生图”，空会话也可以直接打开。',
-  'CQAI 是 generate_image、edit_image 和 /edit_image 的默认 Provider；省略 provider 时必须使用 cqai，CQAI 失败时不得自动切换第三方。',
-  'CQAI 模型省略时优先使用账号中有效的默认图像模型；只有一个可用模型时自动选择；多个模型且没有默认值时先询问用户。单次传入 model 只影响当前任务。',
-  '第三方渠道只能通过 provider: custom:<channelId> 显式选择。generate_image、edit_image、get_image_generation_task 与 cancel_image_generation_task 和工作台共用宿主任务队列。',
-  '完成结果进入本地历史，可加入图库和无限画布；“添加到会话”使用当前会话原生附件草稿，没有当前会话时应先创建或选择会话。',
-  'CQAI 登录、额度、模型目录和提示词增强由 dsnAccount 提供；凭据只保存在 Host 的 DSH Credentials 中，OAuth Token 和 Relay Key不会交给浏览器、画布技能或第三方脚本。',
-  '兼容 OpenAI 图像接口的本地画布技能使用短期单次环回凭据，只允许当前模型的图像生成/编辑端点；不兼容时明确失败。',
-  '图片生成和重任务技能可能消耗账号额度；任务可在队列中查询或取消，不要高频轮询。',
-].join(' ')
-
-/** Append the live channel × model table so an Agent can honor user choices. */
-function guidanceFor(channels: RuntimeChannel[], _defaultChannelId: string): string {
-  const cqai = channels.find(channel => channel.id === 'cqai')
-  const cqaiModels = cqai === undefined || cqai.models.length === 0
-    ? 'CQAI 图像模型目录会在登录后读取；当前尚无可用目录。'
-    : `CQAI 当前图像模型：${cqai.models.map(model => model.alias).join('、')}。`
-  const custom = channels.filter(channel => channel.id.startsWith('custom:'))
-  const customTable = custom.length === 0
-    ? '当前没有自定义第三方渠道。'
-    : `可显式选择的第三方渠道：${custom.map(channel => {
-        const models = channel.models.length === 0 ? '未配置模型' : channel.models.map(model => model.alias).join('、')
-        const state = channel.apiUrl.trim() !== '' && channel.apiKey.trim() !== '' ? '已配置' : '未配置完整'
-        return `${channel.id}（${channel.name}；${models}；${state}）`
-      }).join('；')}。`
-  return `${IMAGEGEN_GUIDANCE} ${cqaiModels} ${customTable}`
-}
 
 /** Normalize raw channel entries into the wire shape (schema-adjacent guard). */
 function normalizeChannels(value: unknown): ChannelConfig[] {
@@ -629,6 +613,8 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
   })
   const secretVault = new ImageGenSecretVault(ctx.credentials)
   const vaultReady = secretVault.ready()
+  let agentImageSkills: AgentImageSkills | undefined
+  let agentSkillsReady: Promise<void> = Promise.resolve()
   const readConfig = (): Config => (config && 'get' in config ? config.get() : config ?? {}) as Config
   setImageDataRoot(readConfig().localStoragePath)
 
@@ -1070,6 +1056,10 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
           systemPrompt: options.systemPrompt,
           ...options.signal === undefined ? {} : { signal: options.signal },
           ...options.imageProvider === undefined ? {} : { imageProvider: options.imageProvider },
+          authorizeImageTools: async agent => {
+            await agentSkillsReady
+            return agentImageSkills?.authorizeCanvas(agent)
+          },
           fail: options.fail,
         }),
       }
@@ -1232,57 +1222,50 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
     )
   })
 
-  ctx.inject(['tools', 'attachments', 'commands'], (tctx) => {
+  const resolveAgentConfig = (): AgentImageToolConfig => {
+    const value = resolve()
+    return {
+      enabled: value.enabled,
+      announceToAgent: value.announceToAgent,
+      allowAgentImageGeneration: value.allowAgentImageGeneration,
+      channels: value.channels,
+      defaultChannelId: value.defaultChannelId,
+      describeCqai: signal => cqai.describe({ refresh: true, signal }),
+      resolveCqaiRequest: (request, signal) => cqai.resolveRequest(request, signal),
+    }
+  }
+
+  // Explicit human command stays available independently of the native Skill loader.
+  ctx.inject(['tools', 'attachments', 'commands'], tctx => {
     tctx.effect(() => {
       let disposed = false
-      let disposeMounted: (() => void) | undefined
+      let close: (() => void) | undefined
       void (async () => {
         await vaultReady
         if (settingsStartup !== undefined) await settingsStartup
         resolve()
         await ensureImageDataMigration(imageDataRoot())
-        if (disposed) return
-        const resolveAgentConfig = () => {
-          const value = resolve()
-          return {
-            enabled: value.enabled,
-            allowAgentImageGeneration: value.allowAgentImageGeneration,
-            channels: value.channels,
-            defaultChannelId: value.defaultChannelId,
-            resolveCqaiRequest: (request: Parameters<CqaiImageProvider['resolveRequest']>[0], signal?: AbortSignal) => cqai.resolveRequest(request, signal),
-          }
-        }
-        const disposeTools = registerAgentImageTools(tctx, runtime, resolveAgentConfig)
-        const disposeCommand = registerEditImageCommand(tctx, runtime, resolveAgentConfig)
-        disposeMounted = () => {
-          disposeCommand()
-          disposeTools()
-        }
-      })().catch((error: unknown) => {
-        ctx.logger.error('cqai imagegen Agent tools failed to start: %s', messageOf(error))
-      })
-      return () => {
-        disposed = true
-        disposeMounted?.()
-      }
-    }, 'dsh-imagegen: agent image tools and commands')
+        if (!disposed) close = registerEditImageCommand(tctx, runtime, resolveAgentConfig)
+      })().catch(error => ctx.logger.error('cqai imagegen command failed to start: %s', messageOf(error)))
+      return () => { disposed = true; close?.() }
+    }, 'dsh-imagegen: edit image command')
   })
 
-  // System-prompt announcement (toggled by settings changes).
-  let disposeSection: (() => void) | undefined
-  const sync = (): void => {
-    if (disposeSection !== undefined) {
-      disposeSection()
-      disposeSection = undefined
-    }
-    const value = resolve()
-    if (!value.enabled || !value.announceToAgent) return
-    disposeSection = ctx.systemPrompt.section({
-      name: 'plugin:dsh-imagegen',
-      order: SECTION_ORDER,
-      text: guidanceFor(value.channels, value.defaultChannelId),
-    })
-  }
+  ctx.inject(['agents', 'tools', 'attachments', 'skills', 'systemPrompt'], tctx => {
+    tctx.effect(() => {
+      let disposed = false
+      agentSkillsReady = (async () => {
+        await vaultReady
+        if (settingsStartup !== undefined) await settingsStartup
+        resolve()
+        await ensureImageDataMigration(imageDataRoot())
+        if (!disposed) agentImageSkills = new AgentImageSkills(tctx, runtime, resolveAgentConfig)
+      })().catch(error => ctx.logger.error('cqai imagegen Skill failed to start: %s', messageOf(error)))
+      return () => { disposed = true; agentImageSkills?.dispose(); agentImageSkills = undefined }
+    }, 'dsh-imagegen: native image Skill')
+  })
+
+  const sync = (): void => { agentImageSkills?.sync() }
 
   ctx.inject(['settings'], (sctx) => {
     sctx.effect(() => sctx.settings.configure({ auto: false }, ctx.fiber))
@@ -1301,8 +1284,7 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
     void cqai.describeSnapshot(snapshot).then(sync, sync)
   })
 
-  // Initial registration from the composition entry (covers deployments with
-  // no settings service, whose installSettingsSection never fires its hooks).
+  // Native discovery also works on Hosts without a settings service.
   sync()
 
   return async () => {

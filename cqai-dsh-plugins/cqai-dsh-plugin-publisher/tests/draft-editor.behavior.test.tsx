@@ -21,7 +21,8 @@ vi.mock('../src/client/shared.tsx', () => ({
   errorMessage: (error: unknown) => error instanceof Error ? error.message : '操作失败',
   STATEMENT_LABELS: { none: '不声明' },
   uploadAsset: vi.fn(),
-  ConfirmDialog: ({ onCancel, onConfirm }: any) => <div role="dialog" aria-label="确认提交">
+  ConfirmDialog: ({ onCancel, onConfirm, targetSummaries, mode }: any) => <div role="dialog" aria-label="确认提交">
+    <span>{mode}</span><div data-testid="confirmed-summary">{Object.values(targetSummaries ?? {}).join('、')}</div>
     <div className="mock-modal-footer"><button type="button" onClick={onCancel}>返回修改</button><button type="button" onClick={onConfirm}>确认提交</button></div>
   </div>,
   PlatformAccountSelect: ({ idPrefix, platform, accounts, value, onChange }: any) => <select
@@ -139,6 +140,143 @@ afterEach(async () => {
 })
 
 describe('draft editor navigation', () => {
+  const dyAccount: PublisherAccount = { id: 'dy-1', platform: 'dy', displayName: '抖音文章账号', loginState: 'logged-in' }
+  const dyCapability: PublisherPlatformCapability = { platform: 'dy', contentTypes: ['article'],
+    modes: { article: ['draft', 'publish'] }, requiredFields: {} }
+  async function checkDouyin(content: PublisherContent) {
+    await render(<ContentEditor contentType="article" active selectedContentId={content.id} intendedPlatforms={['dy']} onBack={vi.fn()}/>)
+    await click('.pub-editor-actions > button:last-child')
+    await choose('#pub-target-article-dy', 'dy-1')
+    await click('.pub-publish-modal .pub-mode label:first-child input')
+    await click('.pub-publish-modal .mock-modal-footer button:last-child')
+  }
+
+  it('compresses the selected Douyin summary before confirmation and submits only the confirmed revision', async () => {
+    const content: PublisherContent = { ...draft('compressed-article'), summary: '这是一份超过三十个字的完整原摘要，需要用模型重新组织成适合抖音的简短摘要，不能直接截断。',
+      platformVariants: { dy: { title: '抖音标题' }, juejin: { summary: '掘金独立摘要' } } }
+    apiFor([content], [dyAccount], [dyCapability])
+    const base = queryApi.getMockImplementation()!
+    const summary = '用模型压缩摘要，保留原文要点。'
+    queryApi.mockImplementation(async (route, payload, signal) => {
+      if (route === 'summary-compress') {
+        expect(payload).toEqual({ id: content.id, revision: 1, platform: 'dy' })
+        expect(signal).toBeInstanceOf(AbortSignal)
+        return { generated: true, summary, content: { ...content, revision: 2,
+          platformVariants: { ...content.platformVariants, dy: { ...content.platformVariants?.dy, summary } } } }
+      }
+      return base(route, payload)
+    })
+    await checkDouyin(content)
+    expect(queryApi.mock.calls.some(([route]) => route === 'submissions')).toBe(false)
+    expect(container!.querySelector('[data-testid="confirmed-summary"]')?.textContent).toBe(summary)
+    expect(container!.querySelector('[aria-label="确认提交"]')?.textContent).toContain('publish')
+    expect(content.summary).toContain('不能直接截断')
+    expect(content.platformVariants?.dy?.summary).toBeUndefined()
+    await click('[aria-label="确认提交"] .mock-modal-footer button:last-child')
+    expect(queryApi).toHaveBeenCalledWith('submissions', expect.objectContaining({ contentId: content.id, revision: 2, mode: 'publish' }))
+  })
+
+  it('keeps the original draft and publishing settings when summary generation fails', async () => {
+    const content = { ...draft('summary-failed'), summary: '摘要'.repeat(30) }
+    apiFor([content], [dyAccount], [dyCapability])
+    const base = queryApi.getMockImplementation()!
+    queryApi.mockImplementation(async (route, payload) => {
+      if (route === 'summary-compress') throw new Error('摘要模型暂不可用')
+      return base(route, payload)
+    })
+    await checkDouyin(content)
+    expect(container!.querySelector('[aria-label="确认提交"]')).toBeNull()
+    expect(container!.querySelector('[aria-label="发布设置"]')).not.toBeNull()
+    expect(container!.textContent).toContain('摘要模型暂不可用')
+    expect(queryApi.mock.calls.some(([route]) => route === 'submissions' || route === 'content-save')).toBe(false)
+    expect(content.summary).toBe('摘要'.repeat(30))
+  })
+
+  it('does not call the model for a Douyin summary already within the platform limit', async () => {
+    const content = { ...draft('short-summary'), summary: '已有的简短摘要' }
+    apiFor([content], [dyAccount], [dyCapability])
+    await checkDouyin(content)
+    expect(queryApi.mock.calls.some(([route]) => route === 'summary-compress' || route === 'submissions')).toBe(false)
+    expect(container!.querySelector('[data-testid="confirmed-summary"]')?.textContent).toBe(content.summary)
+  })
+
+  it.each(['over-limit', 'old-revision', 'invalid-format'])('blocks an invalid compression response: %s', async issue => {
+    const content = { ...draft('invalid-summary'), summary: '摘要'.repeat(30) }
+    apiFor([content], [dyAccount], [dyCapability])
+    const base = queryApi.getMockImplementation()!
+    queryApi.mockImplementation(async (route, payload) => {
+      if (route === 'summary-compress') {
+        const summary = issue === 'over-limit' ? '摘'.repeat(31) : '简短摘要'
+        return issue === 'invalid-format' ? { generated: true } : { generated: true, summary, content: { ...content,
+          revision: issue === 'old-revision' ? 1 : 2, platformVariants: { dy: { summary } } } }
+      }
+      return base(route, payload)
+    })
+    await checkDouyin(content)
+    expect(container!.querySelector('[aria-label="确认提交"]')).toBeNull()
+    expect(container!.textContent).toContain('压缩后的抖音摘要未通过校验')
+    expect(queryApi.mock.calls.some(([route]) => route === 'submissions')).toBe(false)
+    expect(content.summary).toBe('摘要'.repeat(30))
+  })
+
+  it('aborts a late compression result after a handoff and never confirms the wrong article', async () => {
+    const first = { ...draft('summary-first'), summary: '摘要'.repeat(30) }
+    const second = draft('summary-second')
+    apiFor([first, second], [dyAccount], [dyCapability])
+    const base = queryApi.getMockImplementation()!
+    const pending = deferred<unknown>()
+    let compressionSignal: AbortSignal | undefined
+    queryApi.mockImplementation(async (route, payload, signal) => {
+      if (route === 'summary-compress') { compressionSignal = signal; return pending.promise }
+      return base(route, payload)
+    })
+    await checkDouyin(first)
+    expect(container!.textContent).toContain('正在压缩抖音摘要')
+    expect(container!.querySelector<HTMLButtonElement>('.pub-publish-modal .mock-modal-footer button:last-child')?.disabled).toBe(true)
+    await render(<ContentEditor contentType="article" active selectedContentId={second.id} onBack={vi.fn()}/>)
+    expect(compressionSignal?.aborted).toBe(true)
+    await act(async () => { pending.resolve({ generated: true, summary: '压缩摘要', content: { ...first, revision: 2, platformVariants: { dy: { summary: '压缩摘要' } } } }) })
+    expect(container!.querySelector('[aria-label="确认提交"]')).toBeNull()
+    expect(container!.querySelector<HTMLInputElement>('#pub-article-title')?.value).toBe(second.title)
+    expect(queryApi.mock.calls.some(([route]) => route === 'submissions')).toBe(false)
+  })
+
+  it('offers Douyin article editing and confirms image adjustments as a platform draft', async () => {
+    const imageId = '33333333-3333-4333-8333-333333333333'
+    const content: PublisherContent = { ...draft('douyin-article'), body: `正文 ![配图](ebao-asset://${imageId})`,
+      tags: ['标签'], assets: [{ id: imageId, name: '配图.png', mime: 'image/png', bytes: 12 }], coverAssetId: imageId }
+    const account: PublisherAccount = { id: 'dy-1', platform: 'dy', displayName: '抖音文章账号', loginState: 'logged-in' }
+    const capability: PublisherPlatformCapability = { platform: 'dy', contentTypes: ['article'],
+      modes: { article: ['draft', 'publish'] }, requiredFields: {} }
+    apiFor([content], [account], [capability])
+    await render(<ContentEditor contentType="article" active selectedContentId={content.id} intendedPlatforms={['dy']} onBack={vi.fn()}/>)
+    const dyVersion = Array.from(container!.querySelectorAll<HTMLButtonElement>('.pub-version-tab')).find(item => item.textContent === '抖音')!
+    await act(async () => { dyVersion.click() })
+    expect(container!.textContent).toContain('正文图片和封面不自动上传')
+    expect(container!.textContent).toContain('抖音文章正文（含内容声明）最多 20000 字')
+    expect(container!.textContent).toContain('独立摘要最多 30 字')
+    expect(container!.querySelector<HTMLTextAreaElement>('#pub-article-summary')?.value).toBe(content.summary)
+    await enter('#pub-article-summary', '抖音独立摘要')
+    await click('.pub-editor-view-switch > button:last-child')
+    expect(container!.textContent).toContain('独立摘要字段：抖音独立摘要')
+    await click('.pub-editor-view-switch > button:first-child')
+    expect(container!.querySelector<HTMLTextAreaElement>('#pub-article-summary')?.value).toBe('抖音独立摘要')
+    expect(content.summary).toBe('douyin-article summary')
+    await click('.pub-editor-actions > button:last-child')
+    await choose('#pub-target-article-dy', 'dy-1')
+    await click('.pub-publish-modal .pub-mode label:first-child input')
+    expect(container!.textContent).toContain('抖音草稿手动补图')
+    expect(container!.textContent).toContain('本次将转存平台草稿供核对')
+    await click('.pub-publish-modal .mock-modal-footer button:last-child')
+    expect(queryApi.mock.calls.some(([route]) => route === 'submissions')).toBe(false)
+    await click('[role="dialog"][aria-label="确认提交"] .mock-modal-footer button:last-child')
+    expect(queryApi).toHaveBeenCalledWith('submissions', expect.objectContaining({
+      contentType: 'article', contentId: content.id, mode: 'draft', accountIds: ['dy-1'],
+    }))
+    expect(content.body).toContain(`ebao-asset://${imageId}`)
+    expect(content.tags).toEqual(['标签'])
+  })
+
   it('opens the exact requested article and reloads a later handoff by ID without listing drafts', async () => {
     apiFor([draft('first'), draft('handoff')])
     const onBack = vi.fn()

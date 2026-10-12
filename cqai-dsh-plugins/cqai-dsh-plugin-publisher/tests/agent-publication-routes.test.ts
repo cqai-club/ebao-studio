@@ -1,8 +1,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
+import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import { PUBLISHING_SKILL } from '../src/agent-skills.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -22,12 +27,9 @@ async function fixture() {
   const previousHome = process.env.DSH_HOME
   process.env.DSH_HOME = home
   const ctx = new Context()
-  const agentCtx = new Context()
   const sessionId = 'publication-session'
   const otherSessionId = 'other-publication-session'
   const archivedSessionIds: string[] = []
-  const definitions = new Map<string, ToolDefinition>()
-  const agentDefinitions = new Map<string, ToolDefinition>()
   const dispatched: Record<string, unknown>[] = []
   const submissions: PublisherSubmission[] = []
   const account: PublisherAccount = {
@@ -62,7 +64,6 @@ async function fixture() {
   }
   const dispose = async () => {
     await ctx.fiber.dispose()
-    await agentCtx.fiber.dispose()
     if (previousHome === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = previousHome
   }
@@ -72,34 +73,29 @@ async function fixture() {
       return () => { handler = undefined }
     } } as never)
     ctx.provide('desktopRuntime', { publisher: runtime } as never)
-    ctx.provide('tools', { register: (tool: ToolDefinition) => {
-      definitions.set(tool.name, tool)
-      return () => definitions.delete(tool.name)
-    } } as never)
+    await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
+    await ctx.plugin(ToolRuntime, { mode: 'native' })
+    await ctx.plugin(SkillRegistry)
     ctx.provide('attachments', {} as never)
-    ctx.provide('systemPrompt', { section: () => () => undefined } as never)
-    agentCtx.provide('tools', { register: (tool: ToolDefinition) => {
-      agentDefinitions.set(tool.name, tool)
-      return () => agentDefinitions.delete(tool.name)
-    } } as never)
-    agentCtx.provide('attachments', {} as never)
-    agentCtx.provide('systemPrompt', { section: () => () => undefined } as never)
     ctx.provide('sessionController', { list: async () => ({
       items: [{ sessionId }, { sessionId: otherSessionId }],
     }) } as never)
     ctx.provide('workspaceRegistry', { archivedSessionIds } as never)
     await ctx.plugin(SessionStore)
     const agent = {
-      id: SessionId(sessionId), ctx: agentCtx, status: 'running',
+      id: SessionId(sessionId), status: 'running',
       session: ctx.sessions.create(SessionId(sessionId)),
     } as unknown as Agent
     ctx.provide('agents', {
       get: (id: SessionId) => id === agent.id ? agent : undefined,
       list: () => [agent],
     } as never)
+    await ctx.plugin(Object.assign((scopeCtx: Context) => {
+      Object.assign(agent, { ctx: createScope(scopeCtx, agent).ctx })
+    }, { inject: ['tools', 'systemPrompt', 'attachments', 'skills'] }))
+    await ctx.plugin(ToolSkill)
     await ctx.plugin(plugin)
-    expect([...definitions.keys()]).toEqual(['publisher_enable'])
-    expect(agentDefinitions.has('publisher_request_publication')).toBe(false)
+    expect(ctx.tools.schemas(agent).some(tool => tool.name.startsWith('publisher_'))).toBe(false)
 
     const request = async (
       method: 'GET' | 'POST', action: string, body: unknown = {},
@@ -132,18 +128,15 @@ async function fixture() {
         source: { kind: 'user' }, content: [{ type: 'text', text: userRequest }],
       })
       ctx.emit('agent/inbox/claimed', { agent, message, turn: 1 })
-      const activation = definitions.get('publisher_enable')
-      if (!activation) throw new Error('Agent publishing activation tool was not registered by Publisher')
-      const exec = { agent, callId, signal: new AbortController().signal } as unknown as ToolRunContext
-      expect(await activation.execute({ user_request: userRequest }, exec))
-        .toMatchObject({ enabled: true, requires_user_confirmation: true })
-      expect(definitions.has('publisher_request_publication')).toBe(false)
-      const tool = agentDefinitions.get('publisher_request_publication')
-      if (!tool) throw new Error('Agent publication tool was not loaded into the requesting conversation')
-      return await tool.execute({
-        content_id: content.id, binding_token: bound.body.bindingToken,
+      const loaded = await ctx.tools.execute({ agent, name: 'skill', arguments: { name: PUBLISHING_SKILL.name },
+        callId: ToolCallId('load-publish-skill'), signal: new AbortController().signal })
+      expect(loaded.isError).toBe(false)
+      const result = await ctx.tools.execute({ agent, name: 'publisher_request_publication', arguments: {
+        source: 'current-draft', content_id: content.id, binding_token: bound.body.bindingToken,
         expected_revision: content.revision, platforms: ['bjh'], account_ids: [account.id], mode: 'draft',
-      }, exec) as {
+      }, callId: ToolCallId(callId), signal: new AbortController().signal })
+      if (result.isError) throw new Error(JSON.stringify(result.content))
+      return result.value as unknown as {
         request_id: string; state: string; requires_user_confirmation: boolean
       }
     }

@@ -6,6 +6,24 @@ e图宝是 CQAI 的 DSH 生图工作台，提供文生图、图生图、Agent �
 
 第三方 API Key、提示词增强 Key、S3 Access Key / Secret Key 和画布技能密钥统一保存在 DSH Credentials；设置界面只读取“已配置/未配置”状态。升级时先写入 Credentials，再清理旧 settings 字段，写入失败不会删除旧值。
 
+## Agent 按需生图
+
+原生 Skill `ebao-imagegen` 只在用户明确要求生成/编辑图片、查询/取消任务或查看生图模型时使用，也可通过 `/ebao-imagegen` 显式调用。普通对话仅提供简短的技能目录入口，不附加完整流程或模型表。流程见 [SKILL.md](./skills/ebao-imagegen/SKILL.md)。
+
+成功读取 Skill 后，当前用户回合才提供 `list_image_generation_models`、`generate_image`、`edit_image`、`get_image_generation_task`、`cancel_image_generation_task`；回合结束、切换用户请求或关闭设置后收回。模型目录按需实时查询，默认 CQAI，不自动切换第三方。普通子 Agent 不继承生图能力；用户显式运行的画布技能单独授权，并继续共用队列。
+
+设置「在 Agent 技能目录中提供 e图宝」沿用 `announceToAgent` 字段，控制 Skill 发现，不再向系统提示词追加播报。工作台、画布及 `/edit_image` 的直接操作入口保留。
+
+## 图片编辑
+
+Agent 回复正文中的图片、聊天图片附件、轨迹和 `read_image` 工具中的图片，点击后仍可查看原图，并在预览中选择「编辑图片」。图片附件通过官方图片 slots 接入；Agent 正文图片通过工坊维护的 Markdown 预览兼容接口接入。生图工具与图片编辑命令结果也可直接点击图片打开编辑器，工作台大图预览提供「编辑图片」入口。编辑器提供编号标记与修改说明、涂抹选区、纯色背景本地抠图，以及尺寸调整。尺寸可选择裁切填满、完整放入或拉伸。
+
+仅调整尺寸或本地抠图时，点击「另存图片」保存；添加编号修改或涂抹后，点击「生成新版」使用当前图片模型、渠道和共享任务队列完成编辑，需要所选模型支持图生图。成功后直接回显成图，并另存到 e图库，原图继续保留。
+
+本地抠图只适合纯色或近色背景，不提供复杂场景的智能主体分割。涂抹区域使用 AI 重绘，笔刷范围外的像素从编辑底图保留；同时使用编号标记与涂抹时，标记需要位于涂抹范围内。AI 任务的原始生成结果继续保存在任务历史中，选区合成后的图片另存到图库。
+
+本地输出单边最多 4096 像素；纯色背景抠图最多处理 600 万像素，超出时需先缩小尺寸。改变裁切或完整放入的布局后，需要重新标注修改位置。编辑器选择性复用 MIT 开源项目 `Dogwind221/img2img-studio` 的界面与栅格操作，来源和适配范围见 [UPSTREAM.md](./UPSTREAM.md)。
+
 ## 开发
 
 从仓库根目录运行：
@@ -39,3 +57,5 @@ corepack yarn workspace cqai-dsh-plugin-imagegen build
 完整功能迁移自 `@dickpy/dsh-imagegen` v1.5.12。具体版本、修改边界和许可证信息见 [UPSTREAM.md](./UPSTREAM.md) 与 [LICENSE](./LICENSE)。
 
 已选择性集成上游至 2026-10-01 的 PNG、轻量任务队列、Dock、模型检测、画布收藏与图片缩放、电商提示词更新，并加入 Handraw、Prompt Signal、EvoLink 共 1,480 个社区模板。三个社区来源随插件版本更新，参考图片按需下载并缓存；原有模板刷新、收藏和数据目录继续兼容。社区数据来源与许可证见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+
+2026-10-09 选择性引入 `Dogwind221/img2img-studio` 的图片编辑组件，固定提交为 `ff2b2bb4e4ddeefec36c577d23359ecd48e39065`。只复用客户端编辑、栅格操作和清单结构；未导入该项目的 Provider、环境配置或技能执行链。完整 MIT 许可随包保留在 [docs/licenses/dsh-img2img-config-MIT.txt](./docs/licenses/dsh-img2img-config-MIT.txt)。

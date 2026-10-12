@@ -161,6 +161,7 @@ export type Catalog = {
   warning?: string
   defaultText?: string
   defaultImage?: string
+  defaultVideo?: string
 }
 
 export const VIDEO_MODEL_UNAVAILABLE = '该模型未声明可用的视频生成服务，暂不可选；请刷新模型列表，或联系管理员确认服务配置'
@@ -179,7 +180,8 @@ export function defaultVideoModel(catalog: Catalog | undefined, current = ''): s
   // videoModelIssue blocks new submissions if that selection is no longer callable.
   if (current) return current
   if (!catalog?.signedIn) return ''
-  return catalog.video?.find(model => model.callable === true)?.id || ''
+  const preferred = catalog.video?.find(model => model.id === catalog.defaultVideo && model.callable === true)
+  return preferred?.id || catalog.video?.find(model => model.callable === true)?.id || ''
 }
 export type Settings = {
   pexelsConfigured: boolean

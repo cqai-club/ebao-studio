@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { AgentDraftBindings } from '../src/agent-draft-binding.ts'
-import { registerAgentDraftTools, AGENT_DRAFT_GUIDANCE } from '../src/agent-draft-tools.ts'
+import { registerAgentDraftTools } from '../src/agent-draft-tools.ts'
 import { createContent, readAsset, readContent, saveContent } from '../src/contents.ts'
 import { worksRoot } from '../src/works.ts'
 
@@ -25,7 +25,6 @@ function setup() {
     width: 1, height: 1, name: '插图.png',
   }
   const definitions = new Map<string, ToolDefinition>()
-  let guidance = ''
   let onReadImage: (() => void) | undefined
   const ctx = {
     tools: { register: (tool: ToolDefinition) => { definitions.set(tool.name, tool); return () => definitions.delete(tool.name) } },
@@ -36,7 +35,6 @@ function setup() {
         bytes: attachment.bytes, width: 1, height: 1, name: attachment.name,
       }, data: png }
     } },
-    systemPrompt: { section: (section: { text: string }) => { guidance = section.text; return () => { guidance = '' } } },
   } as unknown as Context
   const bindings = new AgentDraftBindings()
   const exec = { agent: { id: 'conversation-1' }, signal: new AbortController().signal } as unknown as ToolRunContext
@@ -50,7 +48,7 @@ function setup() {
   }
   return { home, env, article, png, attachment, definitions, bindings, exec, cleanup,
     duringImageRead: (callback: () => void) => { onReadImage = callback },
-    get guidance() { return guidance } }
+    }
 }
 
 describe('current Publisher draft Agent tools', () => {
@@ -69,7 +67,6 @@ describe('current Publisher draft Agent tools', () => {
   it('requires an explicit live article binding and preserves non-editable fields', async () => {
     const test = setup()
     try {
-      expect(test.guidance).toBe(AGENT_DRAFT_GUIDANCE)
       expect([...test.definitions.keys()]).toEqual([
         'publisher_get_current_draft', 'publisher_update_current_draft', 'publisher_insert_current_draft_image',
         'publisher_add_current_draft_image', 'publisher_remove_current_draft_image',

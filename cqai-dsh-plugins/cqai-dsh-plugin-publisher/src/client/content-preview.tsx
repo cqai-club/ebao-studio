@@ -114,6 +114,6 @@ export function PublisherContentPreview({ content, platform, device, videoSource
       <div className="pub-content-preview-note-images" aria-label="尚未插入正文的图片素材">{remainingAssets.map(asset =>
         <AssetPreviewImage className="pub-content-preview-image" src={assetUrl(asset.id)} alt={asset.name} key={asset.id}/>)}</div>
     </details>}
-    {content.tags.length > 0 && (imageNote || !platform || !['wxmp', 'tt', 'bjh'].includes(platform)) && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
+    {content.tags.length > 0 && (imageNote || !platform || !['wxmp', 'tt', 'bjh', 'dy'].includes(platform)) && <p className="pub-content-preview-tags">{content.tags.map(tag => <span key={tag}>#{tag}</span>)}</p>}
   </div>
 }

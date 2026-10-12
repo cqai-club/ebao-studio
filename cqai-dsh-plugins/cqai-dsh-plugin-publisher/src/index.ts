@@ -38,6 +38,7 @@ import { readPublicationCandidate, validPublicationCandidate } from './publicati
 import { openPublicationFromSource } from './publication-preparation.ts'
 import { listWorks } from './works.ts'
 import { serveVideoPreview, VideoPreviewError, type LocalVideoReader } from './video-preview.ts'
+import { compressDouyinSummary, summaryCompressionRequest, type SummaryCompressionRequest, type SummaryCompressionServices } from './summary-compression.ts'
 
 export const name = 'cqai-publisher'
 export const inject = ['webServer', 'desktopRuntime']
@@ -414,9 +415,41 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
 
 export function apply(ctx: Context): void {
   const runtime = (ctx as PublisherContext).desktopRuntime.publisher
+  let summaryServices: SummaryCompressionServices = {}
+  const summaryAborts = new Set<AbortController>()
+  ctx.inject(['llm', 'agentDefaultModel'], (modelCtx) => {
+    summaryServices = {
+      llm: modelCtx.get('llm') as SummaryCompressionServices['llm'],
+      defaultModel: modelCtx.get('agentDefaultModel') as SummaryCompressionServices['defaultModel'],
+    }
+    return () => {
+      summaryServices = {}
+      for (const controller of summaryAborts) controller.abort()
+    }
+  })
+  ctx.effect(() => () => { for (const controller of summaryAborts) controller.abort() }, '多平台摘要压缩取消')
+  const compressSummary = async (input: SummaryCompressionRequest, signal?: AbortSignal, beforeSave?: () => void) => {
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) controller.abort()
+    summaryAborts.add(controller)
+    try {
+      const result = await compressDouyinSummary(input, summaryServices, { signal: controller.signal, beforeSave })
+      controller.signal.throwIfAborted()
+      return result
+    } finally {
+      summaryAborts.delete(controller)
+      signal?.removeEventListener('abort', abort)
+    }
+  }
   const draftBindings = new AgentDraftBindings()
   let agentTools: PublisherAgentTools | undefined
-  const publications = new AgentPublications(runtime, draftBindings)
+  const publications = new AgentPublications(runtime, draftBindings, {
+    compressSummary: async (content, signal, beforeSave) => (await compressSummary({
+      id: content.id, revision: content.revision, platform: 'dy',
+    }, signal, beforeSave)).content,
+  })
   let liveSession: (id: string) => boolean = () => false
   const listedSession = async (id: string): Promise<boolean> => {
     // The Session Store only contains activated conversations. The Session
@@ -448,7 +481,7 @@ export function apply(ctx: Context): void {
     })
     return () => { disposeSession(); liveSession = () => false; draftBindings.clear() }
   })
-  ctx.inject(['agents', 'tools', 'attachments', 'systemPrompt'], (agentCtx) => {
+  ctx.inject(['agents', 'tools', 'attachments', 'skills', 'systemPrompt'], (agentCtx) => {
     const tools = new PublisherAgentTools(agentCtx, draftBindings, publications,
       async id => await listedSession(id) && !archivedSession(id))
     agentTools = tools
@@ -464,6 +497,23 @@ export function apply(ctx: Context): void {
         const prefix = `${API}/`
         if (!url.pathname.startsWith(prefix) || url.search !== '') { json(res, 404, { error: '接口不存在' }); return }
         const action = url.pathname.slice(prefix.length)
+        if (req.method === 'POST' && action === 'summary-compress') {
+          const input = summaryCompressionRequest(await readJson(req))
+          const controller = new AbortController()
+          const disconnected = () => controller.abort()
+          req.once('aborted', disconnected)
+          res.once('close', disconnected)
+          if (req.aborted || res.destroyed) controller.abort()
+          try {
+            const result = await compressSummary(input, controller.signal)
+            controller.signal.throwIfAborted()
+            json(res, 200, result)
+          } finally {
+            req.off('aborted', disconnected)
+            res.off('close', disconnected)
+          }
+          return
+        }
         if (req.method === 'GET' && action.startsWith('agent-publication/')) {
           const segments = action.split('/')
           if (segments.length !== 3) throw new Error('发布确认请求地址无效')

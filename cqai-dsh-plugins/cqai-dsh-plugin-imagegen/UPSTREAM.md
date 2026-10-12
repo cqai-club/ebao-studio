@@ -51,3 +51,53 @@ existing guarded downloader and cached under `imageDataRoot()`. See
 Upstream subscription login, self-update, alternate client mounting, full-URL
 generation transport, and optional settings/favorites redesign are not part
 of this selective integration.
+
+## Selective image-editor integration - 2026-10-09
+
+The image editor selectively adapts the client-side editor from
+[`Dogwind221/img2img-studio`](https://github.com/Dogwind221/img2img-studio), pinned
+to commit `ff2b2bb4e4ddeefec36c577d23359ecd48e39065` (MIT):
+
+| Upstream path | Product path |
+| --- | --- |
+| `plugins/dsh-img2img-config/src/client/EditorModal.tsx` | `src/client/image-editor/EditorModal.tsx` |
+| `plugins/dsh-img2img-config/src/client/raster.ts` | `src/client/image-editor/raster.ts` |
+| `plugins/dsh-img2img-config/src/client/manifest.ts` | `src/client/image-editor/manifest.ts` |
+
+The numbered change markers, brush selection, local flat-background cutout,
+resize rules, and edit-manifest structure are adapted to the existing e图宝
+image storage and CQAI generation path. Product integration and
+`src/client/image-editor/editor.module.css` are maintained here. The original
+image is retained; saved edits and generated results are separate images.
+
+The upstream providers, environment/configuration readers, skill scripts,
+composer docking, locale registration, and host bootstrap are not imported.
+In particular, the local cutout does not imply that an upstream cloud-matting
+script is installed. This integration does not add a second generation runtime
+or credential store. The original fork baseline and previous selective updates
+above remain unchanged.
+
+The upstream copyright and full MIT notice are distributed in
+[`docs/licenses/dsh-img2img-config-MIT.txt`](./docs/licenses/dsh-img2img-config-MIT.txt).
+
+The native Chat, Trajectory, and Tool image-gallery adapters use the public
+DSH image slots and retain the admitted attachment loader. Their thumbnail
+geometry, retry behavior, and preview focus/dismissal behavior are adapted
+from DeepSeek Harness `MessageImage` and `ImageLightbox` at the repository's
+pinned commit `639ed015397290b3745d163aafe02ffee4aa3f84` (MIT). The product-owned
+preview adds an edit action and opens the same editor, without modifying the
+upstream checkout. The original DeepSeek notice is distributed in
+[`docs/licenses/deepseek-harness-MIT.txt`](./docs/licenses/deepseek-harness-MIT.txt).
+
+Agent reply images also use the official Markdown file-image renderer, which is
+separate from those image slots. The repository-owned runtime compatibility
+patches `patches/dsh-client-ui-primitives@0.2.0-rc.2.patch` and
+`patches/dsh-web-frontend@0.2.0-rc.2.patch` add a lifecycle-aware
+`registerMarkdownImagePreview` extension to the public primitives package and
+the published frontend's static primitives namespace. This is an e宝工坊
+extension, not an existing upstream API. `scripts/markdown-image-preview-compat.mjs`
+generates and checks both patches against the unchanged vendored tarballs.
+`src/client/markdown-image-editor.tsx` registers the product preview and reuses
+the same editor. Without a registered extension, or after plugin disposal,
+the original Markdown lightbox remains active. The admitted file-image URL,
+streaming rules, linked-image navigation, and lazy loading stay upstream-owned.

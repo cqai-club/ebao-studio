@@ -1494,7 +1494,7 @@ await check('C9 Agent tools wait for results, keep images in the UI view, edit, 
       tools.get('generate_image').execute({ prompt: 'cancel this' }, { signal: aborted.signal }),
       /test cancellation/,
     )
-    assert.equal(runtime.queue.list().find(task => task.request.prompt === 'cancel this')?.status, 'cancelled')
+    assert.equal(runtime.queue.list().some(task => task.request.prompt === 'cancel this'), false, 'an already cancelled request must never enter the queue')
 
     enabled = false
     await assert.rejects(
@@ -2036,19 +2036,18 @@ await check('C11h a heavy run composes its agent with the preset roster and a mo
     agents: {
       async create(options) {
         seen.options = options
-        // The real factory runs setup before it publishes the agent.
+        // The real factory supplies the actual Agent before publishing it.
+        const agent = {
+          session: { deriveMessages: () => [] },
+          followup() { seen.delivered = true },
+          async whenIdle() {},
+          cancel(cause) { seen.cancelled = cause },
+        }
+        seen.agent = agent
         await options.setup({
           systemPrompt: { section: input => seen.sections.push(input) },
-        })
-        return {
-          agent: {
-            session: { deriveMessages: () => [] },
-            followup() { seen.delivered = true },
-            async whenIdle() {},
-            cancel(cause) { seen.cancelled = cause },
-          },
-          async dispose() {},
-        }
+        }, agent)
+        return { agent, async dispose() {} }
       },
     },
     presets: {
@@ -2057,6 +2056,10 @@ await check('C11h a heavy run composes its agent with the preset roster and a mo
     },
     defaultModel: { currentSelection: () => ({ provider: 'packyapi', model: 'deepseek-flash' }) },
     agentPreset: '',
+    authorizeImageTools: agent => {
+      assert.equal(seen.mounted, 'standard', 'authorize image tools after joining the preset')
+      seen.authorizedAgent = agent
+    },
     sessionId: 'skillagent-smoke',
     cwd: 'C:/runs/smoke',
     systemPrompt: 'SKILL BODY',
@@ -2068,6 +2071,7 @@ await check('C11h a heavy run composes its agent with the preset roster and a mo
   assert.equal(seen.options.meta.origin, 'subagent')
   assert.equal(seen.options.meta.cwd, 'C:/runs/smoke')
   assert.equal(seen.mounted, 'standard', 'the agent must join the preset, or it runs tool-less')
+  assert.equal(seen.authorizedAgent, seen.agent, 'canvas authorization targets the actual run Agent')
   assert.equal(seen.sections.length, 1)
   assert.equal(seen.sections[0].text, 'SKILL BODY')
   assert.equal(seen.sections[0].name, 'plugin:dsh-imagegen:canvas-skill')
@@ -3323,6 +3327,7 @@ await check('E1 client apply registers and renders the official image studio (js
   assert.ok(handoff !== undefined)
 
   const registered = []
+  const markdownPreviews = []
   // Locale runtime stub: register/addLanguage/subscribe + a snapshot, mirroring
   // the dsh-client-locale face the plugin bridges into.
   const localeListeners = new Set()
@@ -3374,6 +3379,13 @@ await check('E1 client apply registers and renders the official image studio (js
     // Minimal functional stubs for the system primitives (the real GUI loads
     // the genuine platform module from the module table).
     '@deepseek-ai/dsh-client-ui-primitives': {
+      registerMarkdownImagePreview: (renderer) => {
+        markdownPreviews.push(renderer)
+        return () => {
+          const index = markdownPreviews.indexOf(renderer)
+          if (index !== -1) markdownPreviews.splice(index, 1)
+        }
+      },
       Button: ({ variant, size, className, children, ...rest }) =>
         react.createElement('button', { type: 'button', className, ...rest }, children),
       Pill: ({ active, className, children, onClick, ...rest }) =>
@@ -3419,6 +3431,19 @@ await check('E1 client apply registers and renders the official image studio (js
   })
 
   exportsOf.apply(ctx)
+  // Agent text blocks use MarkdownText's public preview extension, independently
+  // of native image-attachment slots. Check the complete built entry consumes it.
+  assert.equal(markdownPreviews.length, 1, 'built apply registers one Markdown image editor')
+  assert.equal(typeof markdownPreviews[0], 'function', 'Markdown preview renderer is callable')
+  // Native Chat/Trajectory/read_image use these galleries rather than the
+  // imagegen-specific toolviews. Verify the built entry wires all three.
+  for (const name of ['conversation.message.images', 'conversation.trajectory.images', 'tool.call.images']) {
+    const entry = registered.find(row => row.options.name === name)
+    assert.ok(entry !== undefined, `native editable image gallery is registered: ${name}`)
+    assert.ok(entry.options.priority < 0, `${name} replaces the default image presentation`)
+    assert.equal(typeof entry.component, 'function')
+    assert.equal(entry.options.inject('smoke-image-session').sessionId, 'smoke-image-session')
+  }
   const mainEntry = registered.find(entry => entry.options.name === 'main' && entry.options.key === 'cqai-imagegen')
   const studioEntry = registered.find(entry => entry.options.name === 'cqai-imagegen.session')
   const sidebarEntry = registered.find(entry => entry.options.name === 'sidebar.panellist' && entry.options.id === 'cqai-imagegen')

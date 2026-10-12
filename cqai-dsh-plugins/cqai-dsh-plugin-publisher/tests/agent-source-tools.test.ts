@@ -5,7 +5,8 @@ import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { registerAgentSourceTools, AGENT_SOURCE_GUIDANCE, isAgentWorkspacePath } from '../src/agent-source-tools.ts'
+import { registerAgentSourceTools, isAgentWorkspacePath } from '../src/agent-source-tools.ts'
+import { validPublicationCandidate } from '../src/publication-candidates.ts'
 import { listContents } from '../src/contents.ts'
 
 const roots: string[] = []
@@ -33,18 +34,16 @@ describe('Agent Markdown source tools', () => {
     const attachmentId = `sha256:${createHash('sha256').update(png).digest('hex')}`
     const ref = { attachmentId, mediaType: 'image/png', bytes: png.length, width: 1, height: 1 }
     const tools = new Map<string, ToolDefinition>()
-    let prompt = ''
     const ctx = {
       tools: { register: (tool: ToolDefinition) => { tools.set(tool.name, tool); return () => tools.delete(tool.name) } },
       attachments: { readImage: async () => ({ ref, data: png }) },
-      systemPrompt: { section: (section: { text: string }) => { prompt = section.text; return () => { prompt = '' } } },
     } as unknown as Context
     const exec = { agent: { id: 'conversation-1', session: { header: { cwd: root } } },
       signal: new AbortController().signal } as unknown as ToolRunContext
     const dispose = registerAgentSourceTools(ctx)
     try {
       expect([...tools.keys()]).toEqual(['publisher_export_image', 'publisher_register_source', 'publisher_get_source', 'publisher_prepare_preview'])
-      expect(prompt).toBe(AGENT_SOURCE_GUIDANCE)
+      for (const tool of tools.values()) expect(tool.description.length).toBeLessThan(240)
       const exported = await tools.get('publisher_export_image')!.execute({ markdown_path: md, source_image: {
         attachment_id: attachmentId, media_type: 'image/png', bytes: png.length, width: 1, height: 1,
       } }, exec) as { relative_path: string }
@@ -55,11 +54,26 @@ describe('Agent Markdown source tools', () => {
       expect(await tools.get('publisher_get_source')!.execute({}, exec)).toMatchObject({
         id: source.id, markdown_path: realpathSync.native(md),
       })
-      const candidate = await tools.get('publisher_prepare_preview')!.execute({
+      const preview = tools.get('publisher_prepare_preview')!
+      const args = {
         source_revision: source.revision, content_type: 'article', platforms: ['wxmp'],
         platform_variants: [{ platform: 'wxmp', title: '公众号标题' }],
-      }, exec) as { id: string; platformVariants: Record<string, { title: string }> }
+      }
+      const candidate = await preview.execute(args, exec) as { id: string; platformVariants: Record<string, { title: string }> }
       expect(candidate.platformVariants.wxmp?.title).toBe('公众号标题')
+      expect(candidate).toMatchObject({ candidate_id: candidate.id, state: 'preview-ready', submitted: false,
+        next_action: { tool: 'publisher_request_publication', arguments: { source: 'prepared-preview', candidate_id: candidate.id } } })
+      const next = await preview.execute(args, exec) as { id: string; candidate_id: string }
+      expect(next.id).not.toBe(candidate.id)
+      expect(next.candidate_id).toBe(next.id)
+      expect(() => validPublicationCandidate('conversation-1', candidate.id)).toThrow('已失效')
+      expect(validPublicationCandidate('conversation-1', next.id).id).toBe(next.id)
+      await expect(preview.execute({ ...args, platform_variants: [...args.platform_variants, ...args.platform_variants] }, exec))
+        .rejects.toThrow('同一平台只能有一个候选版本')
+      expect(validPublicationCandidate('conversation-1', next.id).id).toBe(next.id)
+      writeFileSync(md, '# 更新标题\n\n更新正文')
+      await tools.get('publisher_register_source')!.execute({ markdown_path: md }, exec)
+      await expect(preview.execute(args, exec)).rejects.toThrow('原稿已变化')
       expect(listContents({ DSH_HOME: process.env.DSH_HOME })).toEqual([])
     } finally {
       dispose()
@@ -67,7 +81,6 @@ describe('Agent Markdown source tools', () => {
       else process.env.DSH_HOME = previousHome
     }
     expect(tools.size).toBe(0)
-    expect(prompt).toBe('')
   })
 
   it('keeps Host file reads inside the Agent workspace', async () => {
@@ -80,7 +93,6 @@ describe('Agent Markdown source tools', () => {
     const definitions = new Map<string, ToolDefinition>()
     const ctx = {
       tools: { register: (tool: ToolDefinition) => { definitions.set(tool.name, tool); return () => definitions.delete(tool.name) } },
-      systemPrompt: { section: () => () => undefined },
     } as unknown as Context
     const dispose = registerAgentSourceTools(ctx)
     try {

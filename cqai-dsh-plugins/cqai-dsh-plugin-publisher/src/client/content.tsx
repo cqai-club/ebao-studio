@@ -60,6 +60,8 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
   const contentViewRef = useRef<ContentView>('master')
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
+  const compressionRequest = useRef<AbortController>()
+  const [compressingSummary, setCompressingSummary] = useState(false)
   const [publishOpen, setPublishOpen] = useState(false)
   const [confirm, setConfirm] = useState<PublisherConfirmation & { revision: number }>()
   const [deleteDraftId, setDeleteDraftId] = useState<string>()
@@ -75,6 +77,8 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
   selectedIdRef.current = selectedContentId
   activeRef.current = active
   useEffect(() => { editorAlive.current = true; return () => { editorAlive.current = false } }, [])
+  useEffect(() => () => { compressionRequest.current?.abort() }, [])
+  useEffect(() => { compressionRequest.current?.abort() }, [selectedContentId, active])
   useEffect(() => { setImagegenPickerDraftId(undefined) }, [selectedContentId, active])
 
   useEffect(() => { setConfirm(undefined); setPublishOpen(false) }, [selectedContentId, active])
@@ -487,6 +491,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     : capabilities.find(item => item.platform === contentView)?.maxTitleLength?.[contentType] ?? TITLE_MAX
   const titleLength = contentType === 'image-note' && contentView === 'wxmp'
     ? Array.from(visibleDraft?.title ?? '').length : visibleDraft?.title.length ?? 0
+  const manualArticleImages = contentType === 'article' && (contentView === 'tt' || contentView === 'dy')
   const assetLimit = contentView === 'master' ? 20
     : capabilities.find(item => item.platform === contentView)?.maxAssets?.[contentType] ?? 20
   const enteredTags = [...new Set(tagsInput.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))]
@@ -494,12 +499,45 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     ? selectedAccounts.filter(account => account.platform === 'wxmp' || account.platform === 'bjh') : []
   const validationError = draft && selectedAccounts.length > 0 && !capabilitiesPending && !capabilitiesError
     ? contentSubmissionError(draft, selectedAccounts, capabilities, submissionMode) : undefined
+  const summaryNeedsCompression = contentType === 'article' && draft && selectedAccounts.some(account => account.platform === 'dy')
+    && projectContentForPlatform(draft, 'dy').summary.trim().length > 30
   const requestConfirm = () => void act(async () => {
-    const current = await flush()
-    if (!current) throw new Error('请先创建草稿')
+    const original = await flush()
+    if (!original) throw new Error('请先创建草稿')
+    let current = original
+    if (!editorAlive.current || !activeRef.current || draftRef.current?.id !== current.id
+      || (selectedIdRef.current && selectedIdRef.current !== current.id)) return
     if ((selectedContentId && current.id !== selectedContentId) || handoffError) throw new Error('指定草稿尚未打开，请先确认当前草稿')
     if (missingRequestedPlatforms.length > 0) {
       throw new Error(`请先为本次目标平台选择账号：${missingRequestedPlatforms.map(platform => PLATFORM_LABELS[platform]).join('、')}`)
+    }
+    if (contentType === 'article' && selectedAccounts.some(account => account.platform === 'dy')
+      && projectContentForPlatform(current, 'dy').summary.trim().length > 30) {
+      const controller = new AbortController()
+      compressionRequest.current = controller
+      setCompressingSummary(true)
+      try {
+        const compressed = await api<{ content: PublisherContent; generated: boolean; summary: string }>('summary-compress', {
+          id: current.id, revision: current.revision, platform: 'dy',
+        }, controller.signal)
+        controller.signal.throwIfAborted()
+        if (!editorAlive.current || !activeRef.current || draftRef.current?.id !== current.id
+          || (selectedIdRef.current && selectedIdRef.current !== current.id)) return
+        if (!compressed || typeof compressed.summary !== 'string' || !compressed.content || compressed.generated !== true
+          || compressed.content.id !== current.id || compressed.content.contentType !== 'article'
+          || !Number.isSafeInteger(compressed.content.revision) || compressed.content.revision <= current.revision || !compressed.summary.trim()
+          || compressed.summary.length > 30 || projectContentForPlatform(compressed.content, 'dy').summary !== compressed.summary) {
+          throw new Error('压缩后的抖音摘要未通过校验，请重新检查')
+        }
+        setServerDraft(compressed.content)
+        current = compressed.content
+      } catch (cause) {
+        if (controller.signal.aborted) return
+        throw cause
+      } finally {
+        if (compressionRequest.current === controller) compressionRequest.current = undefined
+        setCompressingSummary(false)
+      }
     }
     const warnings = articleSubmissionWarnings(current, selectedAccounts, capabilities)
     const confirmedMode = contentType === 'article' && warnings.length > 0 ? 'draft' : mode
@@ -510,6 +548,8 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     setPublishOpen(false)
     setConfirm({ contentId: current.id, revision: current.revision, title: displayTitle, mode: confirmedMode, accounts: selectedAccounts, warnings,
       targetTitles: Object.fromEntries(selectedAccounts.map(account => [account.id, projectContentForPlatform(current, account.platform).title])),
+      targetSummaries: Object.fromEntries(selectedAccounts.filter(account => account.platform === 'dy')
+        .map(account => [account.id, projectContentForPlatform(current, account.platform).summary])),
     })
   })
   const submit = () => void act(async () => {
@@ -604,7 +644,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
           <p className="pub-muted">{contentView === 'wxmp' && contentType === 'image-note' ? '公众号图片消息按当前图片顺序展示，第一张为封面；正文和标签以纯文本发布。'
             : contentView === 'wxmp' ? '公众号正文按所选主题预览；封面和摘要是独立字段。平台后台的最终呈现请以实际草稿为准。'
             : contentView === 'master' ? '主稿展示阅读排版；公众号会采用所选主题，其他平台的实际样式仍需在后台草稿核对。'
-              : contentView === 'tt' && contentType === 'article' ? '这里展示本地原图，提交到头条时正文改为图片占位，请从发布历史打开草稿手动补图并核对。'
+              : manualArticleImages ? `这里展示本地原图，提交到${PLATFORM_LABELS[contentView as Platform]}时正文改为图片占位，请从发布历史打开草稿手动补图并核对。`
               : contentView === 'ks' && contentType === 'image-note' ? '快手图文没有独立标题字段，适配器会把标题放在作品描述首段；草稿状态仍需在快手后台核对。'
               : '这里展示当前平台版本的内容结构和图片顺序；实际样式由平台编辑器决定，请在后台草稿核对。'}</p></div> : <>
         <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>
@@ -619,8 +659,9 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
             <textarea ref={bodyInputRef} className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={visibleDraft!.body} onChange={event => updateTextField('body', event.target.value)}/>
             {hasOverride('body') && <Button variant="outline" size="sm" onClick={() => resetVariantField('body')}>正文恢复主稿</Button>}
           </div>
-          {contentType === 'article' && contentView === 'tt' && <p className="pub-muted">正文图片和封面不自动上传，有图片的文章会转存草稿；请从发布历史打开草稿手动补图和设置封面。</p>}
-          {contentType === 'article' && contentView !== 'tt' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要{hasOverride('summary') && ' · 此平台已单独修改'}</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={visibleDraft!.summary} onChange={event => updateTextField('summary', event.target.value)}/>{hasOverride('summary') && <Button variant="outline" size="sm" onClick={() => resetVariantField('summary')}>摘要恢复主稿</Button>}</div>}
+          {manualArticleImages && <p className="pub-muted">正文图片和封面不自动上传，有图片的文章会转存草稿；请从发布历史打开草稿手动补图和设置封面。</p>}
+          {contentType === 'article' && contentView === 'dy' && <p className="pub-muted">抖音文章正文（含内容声明）最多 20000 字；独立摘要最多 30 字。提交前会用模型压缩超长摘要，在确认页核对后提交；完整原摘要和标签仍保留在本地。</p>}
+          {contentType === 'article' && contentView !== 'tt' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要{contentView === 'dy' && <span className={visibleDraft!.summary.length > 30 ? 'pub-warn' : 'pub-muted'}>（{visibleDraft!.summary.length}/30 字）</span>}{hasOverride('summary') && ' · 此平台已单独修改'}</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={visibleDraft!.summary} onChange={event => updateTextField('summary', event.target.value)}/>{hasOverride('summary') && <Button variant="outline" size="sm" onClick={() => resetVariantField('summary')}>摘要恢复主稿</Button>}</div>}
           <div className="pub-field"><label htmlFor={`pub-${contentType}-tags`}>标签（{visibleDraft!.tags.length}/{MAX_TAGS} 个，用空格或逗号分隔）{hasOverride('tags') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-tags`} value={tagsInput} onChange={event => { setTagsInput(event.target.value); const tags = [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS); if (contentView === 'master') update({ tags }); else updateVariant({ tags }) }}/>{hasOverride('tags') && <Button variant="outline" size="sm" onClick={() => resetVariantField('tags')}>标签恢复主稿</Button>}</div>
           {visibleDraft!.tags.length > 0 && skippedArticleTagTargets.length > 0 && <p className="pub-muted">{skippedArticleTagTargets.map(account => PLATFORM_LABELS[account.platform]).join('、')}文章暂不写入标签；草稿标签仍保留供其他平台使用。</p>}
           {enteredTags.length > MAX_TAGS && <p className="pub-warn">超过 {MAX_TAGS} 个标签，超出的标签不会保存。</p>}
@@ -656,7 +697,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
       onClose={() => { if (!busyRef.current) setPublishOpen(false) }}
       footer={<>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => setPublishOpen(false)}>取消</Button>
-        <Button size="sm" variant="primary" disabled={busy || !submitReady} onClick={requestConfirm}>检查并提交</Button>
+        <Button size="sm" variant="primary" disabled={busy || !submitReady} onClick={requestConfirm}>{compressingSummary ? '正在压缩抖音摘要…' : '检查并提交'}</Button>
       </>}>
       <fieldset disabled={editorLocked} className="pub-publish-fields">
         <h3>选择平台账号</h3>
@@ -693,14 +734,17 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
         </div>
         {missingRequestedPlatforms.length > 0 && <p className="pub-warn" role="status">本次目标尚未选账号：{missingRequestedPlatforms.map(platform => PLATFORM_LABELS[platform]).join('、')}。选择全部目标账号后才能提交。</p>}
         {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">当前发布引擎尚未开放所选平台的提交方式；本地草稿仍会保存。若刚更新 Helper，请完全退出并重启应用后重试。</p>
-          : validationError && <p className="pub-warn" role="status">提交前请处理：{validationError}</p>}
+          : validationError && <p className="pub-warn" role="status">{summaryNeedsCompression && validationError.includes('摘要不能超过 30 字')
+            ? '点击“检查并提交”后会用模型压缩抖音摘要，在确认页核对生成结果；完整原摘要保留。'
+            : `提交前请处理：${validationError}`}</p>}
+        {compressingSummary && <p className="pub-muted" role="status">正在用当前文字模型压缩摘要，请稍候…</p>}
         {articleWarnings.length > 0 && <p className="pub-muted">以上调整只影响提交给平台的文章副本，原始 MD 和本地编辑稿保留；本次将转存平台草稿供核对。</p>}
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </fieldset>
     </PublisherModal>}
     {imagegenPickerDraftId && draft?.id === imagegenPickerDraftId && <ImagegenPicker remaining={20 - draft.assets.length}
       onCancel={() => { if (!busyRef.current) setImagegenPickerDraftId(undefined) }} onImport={importImagegenImages}/>}
-    {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} targetTitles={confirm.targetTitles} warnings={confirm.warnings} busy={busy} onCancel={() => { setConfirm(undefined); setPublishOpen(true) }} onConfirm={submit}/>}
+    {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} targetTitles={confirm.targetTitles} targetSummaries={confirm.targetSummaries} warnings={confirm.warnings} busy={busy} onCancel={() => { setConfirm(undefined); setPublishOpen(true) }} onConfirm={submit}/>}
     <PublisherModal open={deleteDraftId !== undefined} title="删除本地草稿" closeLabel="关闭删除草稿确认" description="删除这份本地草稿？已经提交的内容快照不受影响。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button size="sm" variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button size="sm" variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/>
   </div>
 }

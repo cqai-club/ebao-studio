@@ -1,8 +1,9 @@
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CanvasDocument } from '../src/protocol.ts'
 import {
   DSH_IMAGEGEN_API_KEY,
@@ -327,5 +328,28 @@ describe('createCanvasSkillAgent image environment', () => {
         model: 'cqai-image-model',
       },
     })).rejects.not.toThrow(secret)
+  })
+
+  it('releases the actual canvas Agent grant when preparation fails before publication', async () => {
+    const prepared = new Context()
+    const agent = {} as Agent
+    const close = vi.fn()
+    const authorize = vi.fn((actual: Agent) => { expect(actual).toBe(agent); return close })
+    const agents: CanvasSkillAgentOptions['agents'] = {
+      create: async options => {
+        try {
+          await options.setup?.(prepared, agent)
+          throw new Error('unexpected publication')
+        } finally { await prepared.fiber.dispose() }
+      },
+    }
+    await expect(createCanvasSkillAgent({
+      agents, authorizeImageTools: authorize,
+      defaultModel: { currentSelection: () => ({ provider: 'chat-provider', model: 'chat-model' }) },
+      agentPreset: '', sessionId: 'failed-canvas', cwd: '/tmp/failed-canvas', systemPrompt: 'selected Skill',
+      imageProvider: { baseUrl: 'http://127.0.0.1:9876', apiKey: 'temporary-key', model: 'image-model' },
+    })).rejects.toThrow('shellEnv')
+    expect(authorize).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
   })
 })

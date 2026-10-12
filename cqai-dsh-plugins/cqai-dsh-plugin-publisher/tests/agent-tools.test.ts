@@ -2,281 +2,306 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
-import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { Context } from '@deepseek-ai/cordis'
+import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
+import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
+import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import { AgentDraftBindings } from '../src/agent-draft-binding.ts'
 import type { AgentPublications } from '../src/agent-publication.ts'
+import { EDIT_DRAFT_SKILL, PUBLISHING_SKILL } from '../src/agent-skills.ts'
 import { PublisherAgentTools } from '../src/agent-tools.ts'
 import { createContent } from '../src/contents.ts'
 
-type Message = { id: string; role: 'user'; source: { kind: string }; content: { type: 'text'; text: string }[] }
-type Listener = (payload: unknown) => unknown
-function message(text: string, kind = 'user', id = 'message-1'): Message {
-  return { id, role: 'user', source: { kind }, content: [{ type: 'text', text }] }
-}
-function surface() {
-  const tools = new Map<string, ToolDefinition>()
-  const sections = new Map<string, string>()
-  return {
-    tools, sections,
-    services: {
-      tools: {
-        register: (tool: ToolDefinition) => {
-          tools.set(tool.name, tool)
-          return () => { if (tools.get(tool.name) === tool) tools.delete(tool.name) }
-        },
-        schemas: () => [...tools.values()],
-        restrict: () => () => {},
-      },
-      attachments: { readImage: vi.fn() },
-      systemPrompt: { section: ({ name, text }: { name: string; text: string }) => {
-        sections.set(name, text)
-        return () => { if (sections.get(name) === text) sections.delete(name) }
-      } },
-    },
-  }
-}
-function agent(id: string, messages: Message[] = [], origin?: string) {
-  const scope = surface()
-  const ctx = scope.services as unknown as Context
-  return { id, ctx, scope, messages, status: 'running', session: {
-    header: { origin }, deriveMessages: () => messages,
-  } }
-}
-type FakeAgent = ReturnType<typeof agent>
-const cleanups: (() => void)[] = []
-afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
+const cleanups: (() => Promise<void> | void)[] = []
+afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
 
-function setup(initialAgents: FakeAgent[] = [], available = true) {
-  const global = surface()
-  const agents = new Map(initialAgents.map(item => [item.id, item]))
-  const listeners = new Map<string, Set<Listener>>()
-  const ctx = {
-    ...global.services,
-    agents: { get: (id: string) => agents.get(id), list: () => [...agents.values()] },
-    on: (name: string, listener: Listener) => {
-      const set = listeners.get(name) ?? new Set<Listener>()
-      listeners.set(name, set)
-      set.add(listener)
-      return () => { set.delete(listener) }
-    },
-  } as unknown as Context
+async function fixture() {
+  const ctx = new Context()
+  cleanups.push(() => ctx.fiber.dispose())
+  await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
+  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(SkillRegistry)
+  ctx.provide('attachments', {} as never)
+  const agents = new Map<string, Agent>()
+  ctx.provide('agents', { get: (id: string) => agents.get(id), list: () => [...agents.values()] } as never)
+  await ctx.plugin(ToolSkill)
   const bindings = new AgentDraftBindings()
   const publications = { prepare: vi.fn(), getStatus: vi.fn() }
-  const permit = vi.fn(async () => available)
-  const owner = new PublisherAgentTools(ctx, bindings, publications as unknown as AgentPublications, permit)
+  const permit = vi.fn(async () => true)
+  let owner!: PublisherAgentTools
+  let publisherCtx!: Context
+  await ctx.plugin(Object.assign((inner: Context) => {
+    publisherCtx = inner
+    owner = new PublisherAgentTools(inner, bindings, publications as unknown as AgentPublications, permit)
+  }, { inject: ['agents', 'tools', 'attachments', 'skills', 'systemPrompt'] }))
   cleanups.push(() => owner.dispose())
-  const exec = (item: FakeAgent, signal = new AbortController().signal) => ({
-    agent: item, callId: 'enable-1', signal,
-  }) as unknown as ToolRunContext
-  const enable = (item: FakeAgent, quote: string, signal?: AbortSignal) =>
-    global.tools.get('publisher_enable')!.execute({ user_request: quote }, exec(item, signal))
-  const emit = async (name: string, payload: unknown) => {
-    await Promise.all([...(listeners.get(name) ?? [])].map(listener => listener(payload)))
+  let call = 0
+  async function mint(id: string, origin?: 'subagent'): Promise<Agent> {
+    const session = Session.create(SessionId(id), [], {
+      version: 4, id: SessionId(id), createdAt: 0, isSeeded: false, ...(origin ? { origin } : {}),
+    })
+    const agent = { id: session.id, session, status: 'running', options: {} } as unknown as Agent
+    let scope!: Scope
+    await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, agent) }, {
+      inject: ['agents', 'tools', 'systemPrompt'],
+    }))
+    Object.assign(agent, { ctx: scope.ctx })
+    agents.set(id, agent)
+    await agentEvents(ctx, agent).serial('agent/created', { source: 'startup' })
+    return agent
   }
-  const claim = (item: FakeAgent, input = item.messages.findLast(value => value.source.kind === 'user') ?? item.messages.at(-1)) =>
-    emit('agent/inbox/claimed', { agent: item, message: input, turn: 1 })
+  const claim = (agent: Agent, text = '请把当前文章发布到小红书', kind: 'user' | 'skill-invocation' = 'user') => {
+    const message = createUserMessage({ content: [{ type: 'text', text }],
+      source: kind === 'user' ? { kind } : { kind, name: PUBLISHING_SKILL.name, form: 'instructions' } })
+    agentEvents(ctx, agent).emit('agent/inbox/claimed', { message, turn: 1 })
+  }
+  const load = (agent: Agent, name = PUBLISHING_SKILL.name, signal = new AbortController().signal) =>
+    ctx.tools.execute({ agent, name: 'skill', arguments: { name }, callId: ToolCallId(`skill-${++call}`), signal })
+  const names = (agent: Agent) => ctx.tools.schemas(agent).map(tool => tool.name).filter(name => name.startsWith('publisher_')).sort()
+  const catalog = (agent: Agent) => ctx.skills.list({ scope: agent })
+  const skillsFor = (agent: Agent) => createScope(publisherCtx, agent).ctx.skills
   const draft = () => {
-    const home = mkdtempSync(join(tmpdir(), 'ebao-agent-tools-'))
+    const home = mkdtempSync(join(tmpdir(), 'ebao-native-skill-'))
     cleanups.push(() => rmSync(home, { recursive: true, force: true }))
     const env = { DSH_HOME: home }
     return { env, content: createContent('article', env) }
   }
-  return { global, agents, bindings, owner, permit, publications, enable, emit, claim, draft }
+  return { ctx, owner, agents, bindings, publications, permit, mint, claim, load, names, catalog, skillsFor, draft }
 }
 
-describe('Publisher Agent capability scopes', () => {
-  it('keeps conversations on a short activation hint until the activation tool is called', async () => {
-    const a = agent('conversation-a', [message('帮我写一篇文章')])
-    const test = setup([a])
-    expect([...test.global.tools.keys()]).toEqual(['publisher_enable'])
-    const prompt = [...test.global.sections.values()].join('\n')
-    expect(prompt.length).toBeGreaterThan(0)
-    expect(prompt.length).toBeLessThan(400)
-    expect(prompt).not.toContain('source-image://')
-    expect(prompt).not.toContain('binding_token')
-    expect(a.scope.tools.size).toBe(0)
-    expect(a.scope.sections.size).toBe(0)
-    await test.claim(a)
-    await test.claim(a, message('帮我发布到小红书'))
-    expect(a.scope.tools.size).toBe(0)
-    expect(a.scope.sections.size).toBe(0)
-  })
+const SOURCE_PUBLICATION_TOOLS = [
+  'publisher_export_image', 'publisher_get_publication_status', 'publisher_get_source',
+  'publisher_prepare_preview', 'publisher_register_source', 'publisher_request_publication',
+]
 
-  it('loads publishing guidance only into the requesting conversation', async () => {
-    const request = '帮我把这篇文章发布到小红书'
-    const a = agent('conversation-a', [message(request)])
-    const b = agent('conversation-b', [message('预览这篇文章')])
-    const test = setup([a, b])
-    await test.claim(a)
-    await test.enable(a, request)
-    expect([...a.scope.tools.keys()].sort()).toEqual([
-      'publisher_export_image', 'publisher_get_publication_status', 'publisher_get_source',
-      'publisher_prepare_preview', 'publisher_register_source', 'publisher_request_publication',
-    ])
-    expect(a.scope.sections.size).toBeGreaterThan(0)
-    expect(b.scope.tools.size).toBe(0)
-    expect(b.scope.sections.size).toBe(0)
-    expect([...test.global.tools.keys()]).toEqual(['publisher_enable'])
+describe('Publisher native Skill lifecycle', () => {
+  it('publishes summaries without installing tools or system guidance for ordinary conversation', async () => {
+    const test = await fixture()
+    const agent = await test.mint('ordinary')
+    expect((await test.catalog(agent)).map(skill => skill.name)).toContain(PUBLISHING_SKILL.name)
+    expect((await test.catalog(agent)).map(skill => skill.name)).not.toContain(EDIT_DRAFT_SKILL.name)
+    expect(test.names(agent)).toEqual([])
+    expect(test.ctx.tools.get('publisher_enable', agent)).toBeUndefined()
+    expect(renderPrompt(await test.ctx.systemPrompt.assemble({ scope: agent }))).toBe('')
+    test.claim(agent, '帮我写文章并预览')
+    test.claim(agent, '讨论多平台发布的设计')
+    expect(test.names(agent)).toEqual([])
     expect(test.publications.prepare).not.toHaveBeenCalled()
   })
 
-  it('rejects invented, stale, and non-human activation quotations', async () => {
-    const old = message('发布到小红书', 'user', 'old')
-    const a = agent('conversation-a', [old, message('先帮我修改标题', 'user', 'new'),
-      message('存到微信公众号草稿箱', 'runtime-context', 'injected')])
-    const test = setup([a])
-    await test.claim(a)
-    for (const quote of ['帮我发布到抖音', old.content[0].text, '存到微信公众号草稿箱']) {
-      await expect(test.enable(a, quote)).rejects.toThrow()
-    }
-    expect(a.scope.tools.size).toBe(0)
-    expect(a.scope.sections.size).toBe(0)
-    const onlyInjected = agent('conversation-b', [message('发布到小红书', 'skill-invocation')])
-    test.agents.set(onlyInjected.id, onlyInjected)
-    await test.claim(onlyInjected)
-    await expect(test.enable(onlyInjected, '发布到小红书')).rejects.toThrow()
-    expect(onlyInjected.scope.tools.size).toBe(0)
+  it('loads the real native publishing Skill and scopes its six execution tools to that conversation', async () => {
+    const test = await fixture()
+    const agent = await test.mint('publish')
+    const other = await test.mint('other')
+    test.claim(agent)
+    const result = await test.load(agent)
+    expect(result).toMatchObject({ isError: false, value: {
+      name: PUBLISHING_SKILL.name, provider: PUBLISHING_SKILL.provider, content: PUBLISHING_SKILL.content,
+    } })
+    expect(test.names(agent)).toEqual(SOURCE_PUBLICATION_TOOLS)
+    expect(test.names(other)).toEqual([])
+    expect(renderPrompt(await test.ctx.systemPrompt.assemble({ scope: agent }))).toBe('')
+    expect(test.publications.prepare).not.toHaveBeenCalled()
   })
 
-  it('allows the latest human request despite later synthetic context', async () => {
-    const request = '请存到微信公众号草稿箱'
-    const a = agent('conversation-a', [message(request), message('技能内容', 'skill-invocation')])
-    const test = setup([a])
-    await test.claim(a)
-    await test.enable(a, request)
-    expect(a.scope.tools.has('publisher_request_publication')).toBe(true)
+  it('requires a claimed human request and refuses synthetic context, delegated calls, and removed agents', async () => {
+    const test = await fixture()
+    const agent = await test.mint('human-required')
+    expect((await test.load(agent)).isError).toBe(true)
+    test.claim(agent, '发布到小红书', 'skill-invocation')
+    expect((await test.load(agent)).isError).toBe(true)
+    const child = await test.mint('delegated', 'subagent')
+    test.claim(child)
+    expect((await test.load(child)).isError).toBe(true)
+    test.claim(agent)
+    test.agents.delete(agent.id)
+    expect((await test.load(agent)).isError).toBe(true)
+    expect(test.names(agent)).toEqual([])
+    expect(test.names(child)).toEqual([])
   })
 
-  it('refuses delegated, unavailable, or canceled activations without loading tools', async () => {
-    const request = '发布到小红书'
-    const child = agent('child', [message(request)], 'subagent')
-    const childTest = setup([child])
-    await childTest.claim(child)
-    await expect(childTest.enable(child, request)).rejects.toThrow()
-    expect(child.scope.tools.size).toBe(0)
-    const a = agent('conversation-a', [message(request)])
-    const unavailable = setup([a], false)
-    await unavailable.claim(a)
-    await expect(unavailable.enable(a, request)).rejects.toThrow()
-    expect(a.scope.tools.size).toBe(0)
-    const available = setup([a])
-    await available.claim(a)
-    const abort = new AbortController()
-    abort.abort()
-    await expect(available.enable(a, request, abort.signal)).rejects.toThrow()
-    expect(a.scope.tools.size).toBe(0)
+  it('rejects unavailable and canceled reads without granting execution capabilities', async () => {
+    const test = await fixture()
+    const agent = await test.mint('unavailable')
+    test.claim(agent)
+    test.permit.mockResolvedValueOnce(false)
+    expect((await test.load(agent)).isError).toBe(true)
+    const controller = new AbortController()
+    controller.abort()
+    expect((await test.load(agent, PUBLISHING_SKILL.name, controller.signal)).isError).toBe(true)
+    expect(test.names(agent)).toEqual([])
   })
 
-  it('unloads the workflow when the agent becomes idle or a new human request arrives', async () => {
-    const request = '发布到小红书'
-    const a = agent('conversation-a', [message(request)])
-    const test = setup([a])
-    await test.claim(a)
-    await test.enable(a, request)
-    await test.emit('agent/inbox/claimed', { agent: a, message: message('补充上下文', 'runtime-context'), turn: 1 })
-    expect(a.scope.tools.has('publisher_prepare_preview')).toBe(true)
-    await test.emit('agent/status', { agent: a, status: 'idle' })
-    expect(a.scope.tools.size).toBe(0)
-    expect(a.scope.sections.size).toBe(0)
-    await expect(test.enable(a, request)).rejects.toThrow()
-    await test.claim(a)
-    await test.enable(a, request)
-    await test.emit('agent/inbox/claimed', { agent: a, message: message('先不要发布'), turn: 2 })
-    expect(a.scope.tools.size).toBe(0)
-    expect(a.scope.sections.size).toBe(0)
+  it.each(['human', 'idle', 'dispose'] as const)('invalidates a pending Skill read after %s', async invalidation => {
+    const test = await fixture()
+    const agent = await test.mint(`pending-${invalidation}`)
+    test.claim(agent)
+    let resolve!: (available: boolean) => void
+    let entered!: () => void
+    const waiting = new Promise<void>(done => { entered = done })
+    test.permit.mockImplementationOnce(() => new Promise<boolean>(done => { resolve = done; entered() }))
+    const pending = test.load(agent)
+    await waiting
+    if (invalidation === 'human') test.claim(agent, '先不要发布')
+    else if (invalidation === 'idle') agentEvents(test.ctx, agent).emit('agent/status', { status: 'idle' })
+    else test.owner.dispose()
+    resolve(true)
+    expect((await pending).isError).toBe(true)
+    expect(test.names(agent)).toEqual([])
   })
 
-  it('cannot revive a historical request or an activation invalidated while availability is pending', async () => {
-    const request = '发布到小红书'
-    const a = agent('conversation-a', [message(request)])
-    const test = setup([a])
-    await expect(test.enable(a, request)).rejects.toThrow()
-    for (const invalidate of [
-      () => test.claim(a, message('先不要发布', 'user', 'cancel-request')),
-      () => test.emit('agent/status', { agent: a, status: 'idle' }),
-    ]) {
-      await test.claim(a)
-      let resolve!: (available: boolean) => void
-      test.permit.mockImplementationOnce(() => new Promise<boolean>(done => { resolve = done }))
-      const pending = test.enable(a, request)
-      const rejected = expect(pending).rejects.toThrow()
-      await invalidate()
-      resolve(true)
-      await rejected
-      expect(a.scope.tools.size).toBe(0)
-      expect(a.scope.sections.size).toBe(0)
-    }
+  it.each(['provider', 'content', 'name'] as const)('does not grant capabilities for a skill result with a forged %s', async field => {
+    const test = await fixture()
+    const agent = await test.mint(`forged-${field}`)
+    test.claim(agent)
+    agent.ctx.tools.register(defineTool({
+      name: 'skill', description: 'Simulated unrelated loader.',
+      parameters: { name: { type: 'string', required: true } },
+      output: { schema: { type: 'object', additionalProperties: true, properties: {} },
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+      execute: async () => ({ name: PUBLISHING_SKILL.name, provider: PUBLISHING_SKILL.provider,
+        content: PUBLISHING_SKILL.content, [field]: 'unrelated-skill' }),
+    }))
+    await test.load(agent)
+    expect(test.names(agent)).toEqual([])
+    expect(test.publications.prepare).not.toHaveBeenCalled()
   })
 
-  it('adds editor tools for a cold bound agent when it is created and removes them on unbind', async () => {
-    const test = setup()
+  it('ignores unsuccessful Skill reads and does not enable from loading an unrelated Skill', async () => {
+    const test = await fixture()
+    const agent = await test.mint('other-skill')
+    test.skillsFor(agent).register({ name: 'ordinary-writing', description: 'Write an ordinary article.', source: 'runtime', content: 'Write text.' })
+    test.claim(agent)
+    expect((await test.load(agent, 'ordinary-writing')).isError).toBe(false)
+    expect((await test.load(agent, 'unknown-skill')).isError).toBe(true)
+    expect(test.names(agent)).toEqual([])
+    agent.ctx.tools.register(defineTool({
+      name: 'skill', description: 'Simulated failed loader.', parameters: { name: { type: 'string', required: true } },
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+      execute: async () => { throw new Error('read failed') },
+    }))
+    expect((await test.load(agent)).isError).toBe(true)
+    expect(test.names(agent)).toEqual([])
+  })
+
+  it('does not accept a same-name loader that returns official identity without delivering the Skill body', async () => {
+    const test = await fixture()
+    const agent = await test.mint('hidden-body')
+    test.claim(agent)
+    agent.ctx.tools.register(defineTool({
+      name: 'skill', description: 'Simulated loader with hidden instructions.',
+      parameters: { name: { type: 'string', required: true } },
+      output: { schema: { type: 'object', additionalProperties: true, properties: {} },
+        render: () => [{ type: 'text', text: 'The Skill was loaded.' }] },
+      execute: async () => ({ name: PUBLISHING_SKILL.name, provider: PUBLISHING_SKILL.provider, content: PUBLISHING_SKILL.content }),
+    }))
+    expect((await test.load(agent)).isError).toBe(false)
+    expect(test.names(agent)).toEqual([])
+  })
+
+  it('drops turn tools after idle or new human input while retaining Skill summaries', async () => {
+    const test = await fixture()
+    const agent = await test.mint('turn-cleanup')
+    test.claim(agent)
+    await test.load(agent)
+    test.claim(agent, '外部技能内容', 'skill-invocation')
+    expect(test.names(agent)).toEqual(SOURCE_PUBLICATION_TOOLS)
+    agentEvents(test.ctx, agent).emit('agent/status', { status: 'idle' })
+    expect(test.names(agent)).toEqual([])
+    expect((await test.catalog(agent)).map(skill => skill.name)).toContain(PUBLISHING_SKILL.name)
+    expect((await test.load(agent)).isError).toBe(true)
+    test.claim(agent)
+    await test.load(agent)
+    test.claim(agent, '现在只修改标题')
+    expect(test.names(agent)).toEqual([])
+  })
+
+  it('adds the editor Skill for a cold binding but loads its seven tools only after a Skill read', async () => {
+    const test = await fixture()
     const { content, env } = test.draft()
-    test.bindings.bind('cold-agent', content.id, env)
-    test.owner.refresh('cold-agent')
-    expect([...test.global.tools.keys()]).toEqual(['publisher_enable'])
-    const a = agent('cold-agent')
-    test.agents.set(a.id, a)
-    await test.emit('agent/created', { agent: a })
-    expect(a.scope.tools.size).toBe(7)
-    expect(a.scope.tools.has('publisher_update_current_draft')).toBe(true)
-    expect(a.scope.tools.has('publisher_request_publication')).toBe(false)
-    test.bindings.bind(a.id, null)
-    test.owner.refresh(a.id)
-    expect(a.scope.tools.size).toBe(0)
-    expect(a.scope.sections.size).toBe(0)
+    test.bindings.bind('cold-editor', content.id, env)
+    test.owner.refresh('cold-editor')
+    const agent = await test.mint('cold-editor')
+    expect((await test.catalog(agent)).map(skill => skill.name)).toContain(EDIT_DRAFT_SKILL.name)
+    expect(test.names(agent)).toEqual([])
+    test.claim(agent, '修改当前草稿标题')
+    expect((await test.load(agent, EDIT_DRAFT_SKILL.name)).isError).toBe(false)
+    expect(test.names(agent)).toHaveLength(7)
+    expect(test.names(agent)).toContain('publisher_update_current_draft')
+    expect(test.names(agent)).not.toContain('publisher_request_publication')
+    agentEvents(test.ctx, agent).emit('agent/status', { status: 'idle' })
+    expect(test.names(agent)).toEqual([])
+    expect((await test.catalog(agent)).map(skill => skill.name)).toContain(EDIT_DRAFT_SKILL.name)
   })
 
-  it('preserves a newer editor binding when a delayed old close is refreshed', () => {
-    const a = agent('conversation-a')
-    const test = setup([a])
+  it('loads only draft-read and publication tools for publishing a bound draft', async () => {
+    const test = await fixture()
+    const agent = await test.mint('bound-publication')
     const { content, env } = test.draft()
-    const first = test.bindings.bind(a.id, content.id, env)!
-    test.owner.refresh(a.id)
-    const second = test.bindings.bind(a.id, content.id, env)!
-    test.owner.refresh(a.id)
-    expect(test.bindings.unbind(a.id, first.bindingToken)).toBe(false)
-    test.owner.refresh(a.id)
-    expect(test.bindings.current(a.id)).toEqual(second)
-    expect(a.scope.tools.has('publisher_update_current_draft')).toBe(true)
-    expect(a.scope.tools.size).toBe(7)
+    test.bindings.bind(agent.id, content.id, env)
+    test.owner.refresh(agent.id)
+    test.claim(agent)
+    expect((await test.load(agent)).isError).toBe(false)
+    expect(test.names(agent)).toEqual(['publisher_get_current_draft', 'publisher_get_publication_status', 'publisher_request_publication'])
+    expect((await test.load(agent, EDIT_DRAFT_SKILL.name)).isError).toBe(false)
+    expect(test.names(agent)).toHaveLength(9)
+    expect(test.names(agent)).toContain('publisher_update_current_draft')
+    expect(test.names(agent)).not.toContain('publisher_prepare_preview')
   })
 
-  it('keeps local editor tools when turn cleanup unloads the publishing workflow', async () => {
-    const request = '发布到小红书'
-    const a = agent('conversation-a', [message(request)])
-    const test = setup([a])
+  it('clears tools and the editing summary on unbind but ignores a delayed close for an old binding', async () => {
+    const test = await fixture()
+    const agent = await test.mint('binding-changes')
     const { content, env } = test.draft()
-    test.bindings.bind(a.id, content.id, env)
-    test.owner.refresh(a.id)
-    await test.claim(a)
-    await test.enable(a, request)
-    await test.emit('agent/status', { agent: a, status: 'idle' })
-    expect(a.scope.tools.size).toBe(7)
-    expect(a.scope.tools.has('publisher_update_current_draft')).toBe(true)
-    expect(a.scope.tools.has('publisher_request_publication')).toBe(false)
-    expect(a.scope.sections.size).toBe(1)
+    const first = test.bindings.bind(agent.id, content.id, env)!
+    test.owner.refresh(agent.id)
+    const second = test.bindings.bind(agent.id, content.id, env)!
+    test.owner.refresh(agent.id)
+    test.claim(agent, '修改当前草稿')
+    await test.load(agent, EDIT_DRAFT_SKILL.name)
+    expect(test.names(agent)).toHaveLength(7)
+    expect(test.bindings.unbind(agent.id, first.bindingToken)).toBe(false)
+    test.owner.refresh(agent.id)
+    expect(test.names(agent)).toHaveLength(7)
+    expect(test.bindings.current(agent.id)).toEqual(second)
+    expect(test.bindings.unbind(agent.id, second.bindingToken)).toBe(true)
+    test.owner.refresh(agent.id)
+    expect(test.names(agent)).toEqual([])
+    expect((await test.catalog(agent)).map(skill => skill.name)).not.toContain(EDIT_DRAFT_SKILL.name)
   })
 
-  it('disposes all scoped capabilities and cannot reinstall them after later events', async () => {
-    const request = '发布到小红书'
-    const a = agent('conversation-a', [message(request)])
-    const test = setup([a])
-    const { content, env } = test.draft()
-    test.bindings.bind(a.id, content.id, env)
-    test.owner.refresh(a.id)
-    await test.claim(a)
-    await test.enable(a, request)
-    expect(a.scope.tools.size).toBeGreaterThan(7)
+  it('clears editing tools when a new binding replaces the current draft', async () => {
+    const test = await fixture()
+    const agent = await test.mint('binding-switch')
+    const first = test.draft()
+    test.bindings.bind(agent.id, first.content.id, first.env)
+    test.owner.refresh(agent.id)
+    test.claim(agent, '修改当前草稿')
+    await test.load(agent, EDIT_DRAFT_SKILL.name)
+    expect(test.names(agent)).toHaveLength(7)
+    const replacement = test.draft()
+    test.bindings.bind(agent.id, replacement.content.id, replacement.env)
+    test.owner.refresh(agent.id)
+    expect(test.names(agent)).toEqual([])
+    expect((await test.catalog(agent)).map(skill => skill.name)).toContain(EDIT_DRAFT_SKILL.name)
+  })
+
+  it('unwinds tool and Skill registrations when the plugin unloads', async () => {
+    const test = await fixture()
+    const agent = await test.mint('unloaded')
+    test.claim(agent)
+    await test.load(agent)
     test.owner.dispose()
-    expect(test.global.tools.size).toBe(0)
-    expect(test.global.sections.size).toBe(0)
-    expect(a.scope.tools.size).toBe(0)
-    expect(a.scope.sections.size).toBe(0)
-    test.owner.refresh(a.id)
-    await test.emit('agent/created', { agent: a })
-    await test.emit('agent/inbox/claimed', { agent: a, message: message(request), turn: 3 })
-    expect(a.scope.tools.size).toBe(0)
-    expect(a.scope.sections.size).toBe(0)
+    expect(test.names(agent)).toEqual([])
+    expect((await test.catalog(agent)).map(skill => skill.name)).not.toContain(PUBLISHING_SKILL.name)
+    test.owner.refresh(agent.id)
+    test.claim(agent)
+    expect((await test.load(agent)).isError).toBe(true)
+    expect(test.names(agent)).toEqual([])
   })
 })

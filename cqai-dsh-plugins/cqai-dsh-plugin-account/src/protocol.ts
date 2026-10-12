@@ -3,6 +3,7 @@ export const DEFAULT_RESOURCE = 'https://account.cqaiclub.asia'
 export const DEFAULT_ACCOUNT_SERVICE_URL = 'https://account.cqaiclub.asia'
 export const DEFAULT_CLUB_PORTAL_RESOURCE = 'https://cqaiclub.asia/'
 export const DEFAULT_CLUB_PORTAL_URL = 'https://cqaiclub.asia'
+export const DEFAULT_CLUB_MCP_URL = 'https://cqaiclub.asia/mcp'
 export const DEFAULT_SCOPES = [
   'openid',
   'offline_access',
@@ -23,15 +24,18 @@ export type DsnModelCategory =
   | 'text'
   | 'text-multimodal'
   | 'audio'
+  | 'embedding'
+  | 'rerank'
   | 'other'
 
-export type DsnDefaultModelCategory = 'image' | 'text-multimodal' | 'video' | 'audio' | 'other'
+export type DsnDefaultModelCategory = 'image' | 'text-multimodal' | 'video' | 'audio' | 'embedding' | 'other'
 
 export const DSN_DEFAULT_MODEL_CATEGORY_ORDER = [
   'image',
   'text-multimodal',
   'video',
   'audio',
+  'embedding',
   'other',
 ] as const satisfies readonly DsnDefaultModelCategory[]
 
@@ -41,10 +45,16 @@ export const DSN_MODEL_CATEGORY_ORDER = [
   'text-multimodal',
   'text',
   'audio',
+  'embedding',
+  'rerank',
   'other',
 ] as const satisfies readonly DsnModelCategory[]
 
 const AUDIO_MODALITIES = new Set(['audio', 'speech', 'transcription'])
+const GENERATIVE_ENDPOINT_TYPES = new Set([
+  'openai', 'openai-response', 'openai-response-compact', 'anthropic', 'gemini',
+  'image-generation', 'openai-video',
+])
 
 export type DsnModelArchitecture = {
   modality?: string
@@ -114,6 +124,52 @@ export function isAudioModel(model: DsnModel): boolean {
     || model.architecture.outputModalities.some(modality => AUDIO_MODALITIES.has(modality))
 }
 
+/** Whether a catalog entry declares the dedicated vector-embedding endpoint. */
+export function isEmbeddingModel(model: DsnModel): boolean {
+  return model.supportedEndpointTypes.includes('embeddings')
+}
+
+/** Whether a catalog entry declares the dedicated reranking endpoint. */
+export function isRerankModel(model: DsnModel): boolean {
+  return model.supportedEndpointTypes.includes('jina-rerank')
+}
+
+/** Catalog identities for display and filtering, independent of default eligibility. */
+export function modelCatalogCategories(model: DsnModel): readonly DsnModelCategory[] {
+  const categories = new Set<DsnModelCategory>()
+  const embedding = isEmbeddingModel(model)
+  const rerank = isRerankModel(model)
+  const specializedOnly = (embedding || rerank)
+    && !model.supportedEndpointTypes.some(endpoint => GENERATIVE_ENDPOINT_TYPES.has(endpoint))
+
+  // Specialized endpoints can expose text or image modalities without generating them.
+  if (!specializedOnly) {
+    const architecture = model.architecture
+    if (architecture === undefined) {
+      for (const category of model.categories) categories.add(category)
+    } else {
+      if (architecture.outputModalities.includes('image')) categories.add('image')
+      // Transcription outputs text but does not make an audio-only model a text generator.
+      if (architecture.inputModalities.includes('text') && architecture.outputModalities.includes('text')) {
+        categories.add(architecture.inputModalities.some(modality => modality !== 'text')
+          ? 'text-multimodal'
+          : 'text')
+      }
+      if (architecture.outputModalities.some(modality => modality === 'embedding' || modality === 'embeddings')) {
+        categories.add('embedding')
+      }
+    }
+    if (architecture?.outputModalities.length
+      ? architecture.outputModalities.includes('video')
+      : isVideoCatalogEntry(model)) categories.add('video')
+    if (isAudioModel(model)) categories.add('audio')
+  }
+  if (embedding) categories.add('embedding')
+  if (rerank) categories.add('rerank')
+  categories.delete('other')
+  return categories.size > 0 ? DSN_MODEL_CATEGORY_ORDER.filter(category => categories.has(category)) : ['other']
+}
+
 /** Apply the shared model-capability rules used by defaults and business plugins. */
 export function isModelInCategory(model: DsnModel, category: DsnDefaultModelCategory): boolean {
   switch (category) {
@@ -121,7 +177,9 @@ export function isModelInCategory(model: DsnModel, category: DsnDefaultModelCate
     case 'text-multimodal': return isVisionChatModel(model)
     case 'video': return isVideoModel(model)
     case 'audio': return isAudioModel(model)
+    case 'embedding': return isEmbeddingModel(model)
     case 'other':
+      if (isEmbeddingModel(model) || isRerankModel(model)) return false
       if (model.architecture === undefined) return model.categories.includes('other')
       return !isChatModel(model)
         && !isImageGenerationModel(model)
@@ -281,6 +339,7 @@ export type DsnAccountConfig = {
   accountServiceUrl: string
   clubPortalResource: string
   clubPortalUrl: string
+  clubMcpEnabled: boolean
   scopes: readonly string[]
   requestTimeoutMs: number
   modelCatalogCacheTtlMs: number
@@ -298,17 +357,38 @@ type AccountGrantPayload = {
   accountFetchedAt: number
 }
 
+type ClubPortalGrant = {
+  clubPortalResource: string
+  clubPortalAccessToken?: string
+  clubPortalAccessTokenExpiresAt?: number
+}
+
 export type GrantPayload = AccountGrantPayload & (
   | { version: 1 }
-  | {
-      version: 2
-      clubPortalResource: string
-      clubPortalAccessToken?: string
-      clubPortalAccessTokenExpiresAt?: number
-    }
+  | ({ version: 2 } & ClubPortalGrant)
+  | ({
+      version: 3
+      clubMcpResource: string
+      clubMcpAccessToken?: string
+      clubMcpAccessTokenExpiresAt?: number
+    } & ClubPortalGrant)
 )
 
 export type ClubPortalAuthorization = 'signed-out' | 'reauth-required' | 'ready'
+
+export type DsnResourceDefinition = { resource: string; enabled: boolean }
+export type DsnResourceAuthorization = { state: ClubPortalAuthorization; generation: number }
+export type DsnResourceEvent = { type: 'authorized' | 'invalidated'; generation: number }
+/** Host-only lease: credential values are never returned to extensions or RPC. */
+export type DsnResourceSession = {
+  readonly legacyEnabled: boolean
+  authorization(): Promise<DsnResourceAuthorization>
+  authorize(signal?: AbortSignal): Promise<DsnAccountSnapshot>
+  fetch(init?: RequestInit, signal?: AbortSignal): Promise<Response>
+  setActive(enabled: boolean): void
+  subscribe(listener: (event: DsnResourceEvent) => void): () => void
+  dispose(): void
+}
 
 export type DsnAccountService = {
   getStatus(options?: { refreshAccount?: boolean; signal?: AbortSignal }): Promise<DsnAccountSnapshot>
@@ -326,6 +406,8 @@ export type DsnAccountService = {
   getClubPortalAuthorization(): Promise<ClubPortalAuthorization>
   beginClubPortalAuthorization(signal?: AbortSignal): Promise<DsnAccountSnapshot>
   fetchClubPortal(path: `/api/v1/${string}`, init?: RequestInit, signal?: AbortSignal): Promise<Response>
+  readonly extensionApiVersion: 1
+  useResource(owner: import('@deepseek-ai/cordis').Context, definition: DsnResourceDefinition): DsnResourceSession
 }
 
 export type LogoutResult = {
@@ -506,6 +588,8 @@ export function isDsnModelCategory(value: unknown): value is DsnModelCategory {
     || value === 'text'
     || value === 'text-multimodal'
     || value === 'audio'
+    || value === 'embedding'
+    || value === 'rerank'
     || value === 'other'
 }
 
@@ -514,5 +598,6 @@ export function isDsnDefaultModelCategory(value: unknown): value is DsnDefaultMo
     || value === 'text-multimodal'
     || value === 'video'
     || value === 'audio'
+    || value === 'embedding'
     || value === 'other'
 }

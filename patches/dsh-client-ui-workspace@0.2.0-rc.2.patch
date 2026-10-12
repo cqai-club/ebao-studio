@@ -1,0 +1,157 @@
+diff --git a/lib/client.js b/lib/client.js
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -1267,11 +1267,18 @@
+ 		* @param props.t - the browser root's locale seat.
+ 		* @returns the row element.
+ 		*/
+-		function ProjectRowItem({ group, containsCurrentDescendant = false, onToggle, onCreate, actions, drag, home, newShortcut, t }) {
++		function ProjectRowItem({ group, containsCurrentDescendant = false, onToggle, onCreate, actions, drag, home, newShortcut, renderSlot, t }) {
+ 			const row = group;
+ 			const label = row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
+ 			const active = containsCurrentDescendant || group.expanded && group.containsCurrent;
+-			const [menuOpen, setMenuOpen] = (0, react.useState)(false);
++			const menuOpenState = (0, react.useState)(false);
++			const [menuOpen, setMenuOpen] = menuOpenState;
++			const selectWorkspaceAction = (id) => {
++				setMenuOpen(false);
++				if (id !== "rename" && id !== "delete") return;
++				if (id === "rename") actions?.rename();
++				else actions?.delete();
++			};
+ 			const workspaceMenuItems = [{
+ 				id: "rename",
+ 				label: t("rename"),
+@@ -1318,14 +1325,19 @@
+ 							onClose: () => {
+ 								setMenuOpen(false);
+ 							},
+-							items: workspaceMenuItems,
+-							onSelect: (id) => {
+-								setMenuOpen(false);
+-								/* v8 ignore next -- Menu can emit only the rename and delete rows supplied above. */
+-								if (id !== "rename" && id !== "delete") return;
+-								if (id === "rename") actions.rename();
+-								else actions.delete();
+-							},
++							children: [
++								row.workspaceId !== void 0 && row.cwd !== void 0 && renderSlot("sidebar.workspaces.workspace.menu.item", {
++									workspaceId: row.workspaceId,
++									path: row.cwd,
++									displayTitle: row.label
++								}, { hookContext: menuOpenState }),
++								workspaceMenuItems.map((item) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
++									icon: item.icon,
++									danger: item.danger,
++									onSelect: () => selectWorkspaceAction(item.id),
++									children: item.label
++								}, item.id))
++							],
+ 							portal: true,
+ 							closeOnPointerLeave: true,
+ 							anchor: (0, react_jsx_runtime.jsx)("button", {
+@@ -2507,6 +2519,7 @@
+ 					},
+ 					children: [
+ 						(0, react_jsx_runtime.jsx)(ProjectRowItem, {
++							renderSlot,
+ 							newShortcut: shortcuts.find((row) => row.id === "session.new"),
+ 							group,
+ 							containsCurrentDescendant: currentAncestors.has(group.key),
+@@ -4303,6 +4316,11 @@
+ 						kind: "single",
+ 						scope: "root"
+ 					},
++					"sidebar.workspaces.workspace.menu.item": {
++						kind: "list",
++						scope: "root",
++						inject: { hooks: { menuOpenState: menuOpenStateFactory } }
++					},
+ 					"sidebar.workspaces.session.menu.item": {
+ 						kind: "list",
+ 						scope: "root",
+diff --git a/lib/types/client/contract/slots.d.ts b/lib/types/client/contract/slots.d.ts
+--- a/lib/types/client/contract/slots.d.ts
++++ b/lib/types/client/contract/slots.d.ts
+@@ -70,6 +70,15 @@
+     /** Row display title: persisted title, or empty when the Session has none. */
+     displayTitle: string;
+ }
++/** Owner share of one real Workspace row's menu; no Session is activated. */
++export interface WorkspaceRowOwnerProps {
++    /** Registered Workspace the row shows. */
++    workspaceId: WorkspaceId;
++    /** Absolute directory path reported by the Host registry. */
++    path: string;
++    /** Workspace display title reported by the Host registry. */
++    displayTitle: string;
++}
+ /** The row menu's open state as its owner holds it: the `useState` pair. */
+ export type MenuOpenState = readonly [open: boolean, setOpen: (open: boolean) => void];
+ /**
+@@ -132,6 +141,23 @@
+             kind: 'list';
+             scope: 'root';
+             owner: SessionRowScheduleOwnerProps;
++        };
++        /**
++         * Additional rows in one real Workspace's "..." menu, in ascending
++         * `order`, before the built-in rename and delete actions. Each entry
++         * renders a MenuItemButton and dismisses its owner menu through the
++         * injected useMenuOpenState hook. Ungrouped has no Workspace menu.
++         */
++        'sidebar.workspaces.workspace.menu.item': {
++            kind: 'list';
++            scope: 'root';
++            owner: WorkspaceRowOwnerProps;
++            hookContext: MenuOpenState;
++            inject: {
++                hooks: {
++                    menuOpenState: SlotHookFactory<'sidebar.workspaces.workspace.menu.item', UseMenuOpenState>;
++                };
++            };
+         };
+         /**
+          * The rows of one Session's "..." menu, in ascending `order`. ui-workspace
+@@ -430,7 +456,7 @@
+  */
+ export type RowToastProps = PropsRuntime<'shell.overlay'> & PropsLocale<'workspace'> & PropsStore<WorkspaceViewStoreHandle> & Omit<RowToastInjected, 'hooks'> & PropsHooks<RowToastInjected['hooks']>;
+ /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
+-export type WorkspaceBrowserProps = PropsRuntime<'sidebar.workspaces'> & PropsRenderSlots<'sidebar.workspaces.directoryFlow' | 'sidebar.workspaces.session.menu.item' | 'sidebar.workspaces.session.row.action' | 'sidebar.session.row.leading' | 'sidebar.session.row.hover'> & PropsStore<WorkspaceViewStoreHandle> & Omit<WorkspaceBrowserInjected, 'hooks'> & PropsHooks<WorkspaceBrowserInjected['hooks']> & PropsLocale<'workspace'>;
++export type WorkspaceBrowserProps = PropsRuntime<'sidebar.workspaces'> & PropsRenderSlots<'sidebar.workspaces.directoryFlow' | 'sidebar.workspaces.workspace.menu.item' | 'sidebar.workspaces.session.menu.item' | 'sidebar.workspaces.session.row.action' | 'sidebar.session.row.leading' | 'sidebar.session.row.hover'> & PropsStore<WorkspaceViewStoreHandle> & Omit<WorkspaceBrowserInjected, 'hooks'> & PropsHooks<WorkspaceBrowserInjected['hooks']> & PropsLocale<'workspace'>;
+ /**
+  * Picker-private injected share. Pick semantics remain in the owner's onPick
+  * callback; this callback creates only the real Host Workspace. A type alias
+diff --git a/lib/types/client/index.d.ts b/lib/types/client/index.d.ts
+--- a/lib/types/client/index.d.ts
++++ b/lib/types/client/index.d.ts
+@@ -3,7 +3,7 @@
+ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots';
+ import { type WorkspaceKey } from './locales.ts';
+ export type { UiWorkspace } from './navigation.ts';
+-export type { DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected, MenuOpenState, RowToast, SessionRenameTarget, SessionRowOwnerProps, UseMenuOpenState, WorkspaceBrowserInjected, SessionRowScheduleOwnerProps, WorkspaceBrowserProps, WorkspacePickerInjected, WorkspacePickerProps, } from './contract/slots.ts';
++export type { DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected, MenuOpenState, WorkspaceRowOwnerProps, RowToast, SessionRenameTarget, SessionRowOwnerProps, UseMenuOpenState, WorkspaceBrowserInjected, SessionRowScheduleOwnerProps, WorkspaceBrowserProps, WorkspacePickerInjected, WorkspacePickerProps, } from './contract/slots.ts';
+ export type { WorkspaceKey } from './locales.ts';
+ declare module '@deepseek-ai/dsh-client-ui-slots' {
+     interface GlobalStandardProps {
+diff --git a/lib/types/client/rows/Rows.d.ts b/lib/types/client/rows/Rows.d.ts
+--- a/lib/types/client/rows/Rows.d.ts
++++ b/lib/types/client/rows/Rows.d.ts
+@@ -39,7 +39,7 @@
+  * @param props.t - the browser root's locale seat.
+  * @returns the row element.
+  */
+-export declare function ProjectRowItem({ group, containsCurrentDescendant, onToggle, onCreate, actions, drag, home, newShortcut, t }: {
++export declare function ProjectRowItem({ group, containsCurrentDescendant, onToggle, onCreate, actions, drag, home, newShortcut, renderSlot, t }: {
+     group: GroupNode;
+     newShortcut?: ShortcutCatalogEntry | undefined;
+     containsCurrentDescendant?: boolean;
+@@ -55,7 +55,7 @@
+     /** Host account home; POSIX home-rooted hover paths display as `~`. */
+     home?: string | undefined;
+     t: RowTranslate;
+-}): import("react").JSX.Element;
++} & PropsRenderSlots<'sidebar.workspaces.workspace.menu.item'>): import("react").JSX.Element;
+ /**
+  * One flat search result: title, Workspace context, and optional content
+  * excerpt. Search navigation opens the session only; it does not address an

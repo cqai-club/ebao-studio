@@ -1,8 +1,41 @@
 # Third-Party Notices
 
-The bundled prompt snapshots under `src/templates/` include material from the
-following projects. Image assets are not bundled; they are fetched on demand
-from the pinned upstream revisions recorded in the snapshot metadata.
+This package includes selectively adapted image-editor code and bundled prompt
+snapshots. Prompt image assets are not bundled; they are fetched on demand from
+the pinned upstream revisions recorded in the snapshot metadata.
+
+## Dogwind221/img2img-studio
+
+- Source: https://github.com/Dogwind221/img2img-studio
+- Pinned commit: `ff2b2bb4e4ddeefec36c577d23359ecd48e39065`
+- Upstream directory: `plugins/dsh-img2img-config/src/client/`
+- Adapted files: `EditorModal.tsx`, `raster.ts`, and `manifest.ts`, under
+  `src/client/image-editor/` in this package.
+- License: MIT
+- Copyright (c) 2026 img2img-studio contributors
+- Full upstream notice:
+  [docs/licenses/dsh-img2img-config-MIT.txt](./docs/licenses/dsh-img2img-config-MIT.txt)
+
+The adaptation reuses the editor surface, raster operations, and edit manifest;
+it does not import the upstream provider engines, environment files, or skills.
+
+## DeepSeek Harness image presentation
+
+- Source: https://github.com/deepseek-ai/deepseek-harness
+- Upstream files: `packages/client/ui-attachment/src/MessageImage.tsx` and
+  `MessageImage.module.css`, plus `packages/client/ui-primitives/src/ImageLightbox.tsx`
+  and `ImageLightbox.module.css`, and its Markdown file-image renderer in
+  `packages/client/ui-primitives/src/markdown/render.tsx`.
+- Adapted behavior and styles: native image dimensions, retryable attachment
+  loading, preview dismissal, focus restoration, and thumbnail presentation in
+  `src/client/chat-image-editor.tsx` and `chat-image-editor.module.css`.
+- Agent Markdown preview integration: repository-owned compatibility patches to
+  the vendored `dsh-client-ui-primitives` and published `dsh-web-frontend` runtime;
+  the original vendored tarballs and upstream checkout are retained unchanged.
+- License: MIT
+- Copyright (c) 2026 DeepSeek
+- Full upstream notice:
+  [docs/licenses/deepseek-harness-MIT.txt](./docs/licenses/deepseek-harness-MIT.txt)
 
 ## yang0/handraw-style
 

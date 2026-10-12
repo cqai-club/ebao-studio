@@ -53,11 +53,15 @@
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
+  padding: 0;
+  cursor: pointer;
 }
 
 .imageLink:hover {
   border-color: var(--dsw-alias-brand-primary);
 }
+
+.imageLink:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 3px; }
 
 .image {
   display: block;

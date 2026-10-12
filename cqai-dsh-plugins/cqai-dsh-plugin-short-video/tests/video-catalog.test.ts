@@ -26,6 +26,17 @@ describe('video catalog submission boundary', () => {
     expect(videoModelIssue(undefined, 'supported-video')).toContain('登录')
     expect(videoModelIssue({ ...catalog, signedIn: false }, 'supported-video')).toContain('登录')
   })
+  it('uses the saved video category default only when callable without replacing explicit selections', () => {
+    const available = { ...catalog, defaultVideo: 'preferred-video', video: [
+      ...catalog.video!, { id: 'preferred-video', name: 'Preferred', callable: true },
+    ] }
+    expect(defaultVideoModel(available)).toBe('preferred-video')
+    expect(defaultVideoModel(available, 'supported-video')).toBe('supported-video')
+    expect(defaultVideoModel(available, 'removed-model')).toBe('removed-model')
+    expect(defaultVideoModel({ ...available, defaultVideo: 'wan3.0-video' })).toBe('supported-video')
+    expect(defaultVideoModel({ ...available, defaultVideo: 'removed-model' })).toBe('supported-video')
+    expect(defaultVideoModel({ ...available, signedIn: false })).toBe('')
+  })
   it('keeps catalog-only Wan visible but rejects it before creating a material job', async () => {
     const home = await mkdtemp(join(tmpdir(), 'short-video-catalog-'))
     const jobsRoot = join(home, 'short-video', 'jobs')
@@ -42,7 +53,7 @@ describe('video catalog submission boundary', () => {
           { id: 'wan3.0-video', categories: ['video'], supportedEndpointTypes: [] },
           { id: 'supported-video', categories: ['video'], supportedEndpointTypes: ['openai-video'] },
         ] }),
-        getCategoryDefaultModels: async () => ({ global: {}, categories: {} }),
+        getCategoryDefaultModels: async () => ({ global: {}, categories: { video: { provider: 'cqaiclub', model: 'supported-video' } } }),
         fetchAi,
       },
       webServer: { register: (route: { handler: typeof handler }) => { handler = route.handler; return () => {} } },
@@ -65,6 +76,7 @@ describe('video catalog submission boundary', () => {
         { id: 'wan3.0-video', name: 'wan3.0-video', callable: false },
         { id: 'supported-video', name: 'supported-video', callable: true },
       ])
+      expect(catalog.data.defaultVideo).toBe('supported-video')
       const draft = { textModel: '', imageModel: '', videoModel: 'wan3.0-video', stopAt: 'materials',
         params: { ...defaultParams, video_script: '城市故事', video_terms: '城市', video_source: 'cqai_video' } }
       const rejected = await request('jobs', draft)

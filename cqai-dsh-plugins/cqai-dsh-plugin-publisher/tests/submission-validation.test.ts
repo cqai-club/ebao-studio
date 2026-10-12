@@ -98,6 +98,31 @@ describe('article and image-note preflight', () => {
     expect(draft.tags).toEqual(['旅行'])
   })
 
+  it('rejects a long Douyin summary until a model-compressed platform version is ready', () => {
+    const draft: PublisherContent = { ...content('article'), summary: '摘要'.repeat(20), tags: ['旅行'] }
+    const capabilities: PublisherPlatformCapability[] = [{
+      platform: 'dy', contentTypes: ['article'], modes: { article: ['draft', 'publish'] }, requiredFields: {},
+    }]
+    const original = JSON.stringify(draft)
+    for (const mode of ['publish', 'draft'] as const) {
+      expect(contentSubmissionError(draft, [account('dy')], capabilities, mode)).toContain('请先用模型压缩至30字以内')
+    }
+    expect(articleSubmissionWarnings(draft, [account('dy')], capabilities)).toEqual([])
+    expect(JSON.stringify(draft)).toBe(original)
+    for (const summary of ['', '摘要内容', '字'.repeat(30), `${'字'.repeat(28)}😀`]) {
+      expect(articleSubmissionWarnings({ ...draft, summary }, [account('dy')], capabilities)).toEqual([])
+      expect(contentSubmissionError({ ...draft, summary }, [account('dy')], capabilities, 'publish')).toBeUndefined()
+    }
+    expect(contentSubmissionError({ ...draft, summary: `${'字'.repeat(29)}😀` }, [account('dy')], capabilities, 'publish'))
+      .toContain('请先用模型压缩至30字以内')
+    draft.platformVariants = { dy: { summary: '抖音平台摘要' } }
+    expect(articleSubmissionWarnings(draft, [account('dy')], capabilities)).toEqual([])
+    expect(contentSubmissionError(draft, [account('dy')], capabilities, 'publish')).toBeUndefined()
+    draft.summary = '主稿短摘要'
+    draft.platformVariants.dy!.summary = '平台摘要'.repeat(8)
+    expect(contentSubmissionError(draft, [account('dy')], capabilities, 'publish')).toContain('请先用模型压缩至30字以内')
+  })
+
   it('requires manual Toutiao body images and cover even for selected local assets without changing the draft', () => {
     const draft = content('article')
     draft.assets = [

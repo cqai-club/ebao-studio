@@ -9,6 +9,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { parseEditImageCommandResult } from '../edit-image-command-result.ts'
 import { AGENT_IMAGE_API } from '../protocol.ts'
 import { CHAT_IMAGE_EVENT } from './conversation-sync.ts'
+import type { ImageGenApi } from './api.ts'
+import type { ImageGenScope } from './settings-scope.ts'
+import { ImageEditorDialog } from './ImageEditorDialog.tsx'
 import css from './image-toolview.module.css'
 
 /** Owner props supplied by the host's keyed tool-call slot. */
@@ -32,6 +35,40 @@ interface LoadedImage {
   src: string
 }
 
+export interface ImageToolviewEditorServices {
+  api: ImageGenApi
+  scope: ImageGenScope
+}
+
+/** Keep the durable original visible; edited versions are separate gallery images. */
+function EditableImageResults({ images, editor }: { images: LoadedImage[]; editor?: ImageToolviewEditorServices }): React.JSX.Element {
+  const [selected, setSelected] = useState<{ previewUrl: string; name: string } | null>(null)
+  const [edited, setEdited] = useState<{ previewUrl: string; name: string } | null>(null)
+  return <>
+    <div className={css.images}>
+      {images.map(image => editor === undefined ? <a className={css.imageLink} href={image.src} key={String(image.ref.attachmentId)} rel="noreferrer" target="_blank" title="打开原图">
+        <img className={css.image} src={image.src} alt={image.ref.name ?? '生成图片'} />
+      </a> : <button className={css.imageLink} type="button" key={String(image.ref.attachmentId)} title="编辑图片" aria-label={`编辑图片：${image.ref.name ?? '生成图片'}`} onClick={() => { setSelected({ previewUrl: image.src, name: image.ref.name ?? '生成图片.png' }) }}>
+        <img className={css.image} src={image.src} alt={image.ref.name ?? '生成图片'} />
+      </button>)}
+    </div>
+    {edited !== null && <div>
+      <p className={css.message} role="status">编辑结果已另存到 e图库</p>
+      <button className={css.imageLink} type="button" title="继续编辑" aria-label="继续编辑图片" onClick={() => { setSelected(edited) }}>
+        <img className={css.image} src={edited.previewUrl} alt="编辑后的新版图片" />
+      </button>
+    </div>}
+    {selected !== null && editor !== undefined && <ImageEditorDialog
+      key={selected.previewUrl}
+      source={selected}
+      api={editor.api}
+      scope={editor.scope}
+      onClose={() => { setSelected(null) }}
+      onComplete={result => { setEdited({ previewUrl: `data:${result.image.mime};base64,${result.image.b64}`, name: '编辑后的图片.png' }) }}
+    />}
+  </>
+}
+
 interface ImageToolViewProps extends ImageToolViewOwnerProps {
   sessionId: SessionId
 }
@@ -40,6 +77,7 @@ export interface ImageEditCommandViewProps extends ImageCommandViewOwnerProps {
   sessionId: SessionId
   /** Test seam; production reads the same durable attachment route as Tool results. */
   loadImage?: (sessionId: SessionId, ref: ImageAttachmentRef) => Promise<string>
+  editor?: ImageToolviewEditorServices
 }
 
 const NO_IMAGE_REFS: readonly ImageAttachmentRef[] = Object.freeze([])
@@ -148,6 +186,7 @@ export function ImageEditCommandView({
   node,
   sessionId,
   loadImage = loadAgentImage,
+  editor,
 }: ImageEditCommandViewProps): React.JSX.Element {
   const parsed = useMemo(
     () => node.outcome?.kind === 'success' ? parseEditImageCommandResult(node.outcome.text) : undefined,
@@ -174,25 +213,14 @@ export function ImageEditCommandView({
       <span className={css.status}>{statusLabel(status)}</span>
     </header>
     {message !== '' && <p className={status === 'failed' ? css.error : css.message}>{message}</p>}
-    {images.length > 0 && <div className={css.images}>
-      {images.map(image => <a
-        className={css.imageLink}
-        href={image.src}
-        key={String(image.ref.attachmentId)}
-        rel="noreferrer"
-        target="_blank"
-        title="打开原图"
-      >
-        <img className={css.image} src={image.src} alt={image.ref.name ?? '编辑后的图片'} />
-      </a>)}
-    </div>}
+    {images.length > 0 && <EditableImageResults key={String(sessionId)} images={images} editor={editor} />}
     {refs.length > 0 && images.length === 0 && error === null && <p className={css.loading}>正在加载图片…</p>}
     {error !== null && <p className={css.error}>{error}</p>}
   </section>
 }
 
 /** Register inline image result views for Agent tools and `/edit_image`. */
-export function registerImageToolviews(ctx: ClientContext): void {
+export function registerImageToolviews(ctx: ClientContext, editor?: ImageToolviewEditorServices): void {
   const ImageToolView = (props: ImageToolViewProps): React.JSX.Element => {
     const refs = useMemo(() => imageRefsOf(props.block), [props.block])
     const { status, message } = resultInfo(props.block)
@@ -215,18 +243,7 @@ export function registerImageToolviews(ctx: ClientContext): void {
         <span className={css.status}>{statusLabel(status)}</span>
       </header>
       {message !== '' && <p className={css.message}>{message}</p>}
-      {images.length > 0 && <div className={css.images}>
-        {images.map(image => <a
-          className={css.imageLink}
-          href={image.src}
-          key={String(image.ref.attachmentId)}
-          rel="noreferrer"
-          target="_blank"
-          title="打开原图"
-        >
-          <img className={css.image} src={image.src} alt={image.ref.name ?? '生成图片'} />
-        </a>)}
-      </div>}
+      {images.length > 0 && <EditableImageResults key={String(props.sessionId)} images={images} editor={editor} />}
       {refs.length > 0 && images.length === 0 && error === null && <p className={css.loading}>正在加载图片…</p>}
       {error !== null && <p className={css.error}>{error}</p>}
     </section>
@@ -244,6 +261,6 @@ export function registerImageToolviews(ctx: ClientContext): void {
   ctx.slots.inject('conversation.chat.commandview', () => ctx.slots.register({
     name: 'conversation.chat.commandview',
     key: 'edit_image',
-    inject: (sessionId: string) => ({ sessionId: sessionId as SessionId }),
+    inject: (sessionId: string) => ({ sessionId: sessionId as SessionId, editor }),
   }, ImageEditCommandView))
 }

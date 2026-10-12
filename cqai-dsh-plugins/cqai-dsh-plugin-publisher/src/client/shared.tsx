@@ -22,11 +22,12 @@ export const CONTENT_LABELS: Record<PublisherContentType, string> = {
   article: '文章', 'image-note': '图文', video: '视频',
 }
 
-export async function api<T>(action: string, data?: unknown): Promise<T> {
-  const response = await fetch(`${API}/${action}`, data === undefined ? {} : {
+export async function api<T>(action: string, data?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`${API}/${action}`, data === undefined ? { signal } : {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-ejianbao': '1' },
     body: JSON.stringify(data),
+    signal,
   })
   if (!response.headers.get('content-type')?.includes('application/json')) {
     throw new Error('多平台发布服务暂未就绪，请稍候或重启应用')
@@ -63,7 +64,7 @@ export function errorMessage(cause: unknown): string {
 }
 
 export function ConfirmDialog({
-  contentType, title, sourceName, mode, accounts, targetTitles, warnings, onCancel, onConfirm, busy,
+  contentType, title, sourceName, mode, accounts, targetTitles, targetSummaries, warnings, onCancel, onConfirm, busy,
 }: {
   contentType: PublisherContentType
   title: string
@@ -71,6 +72,7 @@ export function ConfirmDialog({
   mode: 'publish' | 'draft'
   accounts: PublisherAccount[]
   targetTitles?: Record<string, string>
+  targetSummaries?: Record<string, string>
   warnings?: string[]
   onCancel(): void
   onConfirm(): void
@@ -81,14 +83,14 @@ export function ConfirmDialog({
   useEffect(() => { if (!busy) submitting.current = false }, [busy])
   const close = () => { if (!busy && !submitting.current) onCancel() }
   const submit = () => {
-    if (busy || submitting.current) return
+    if (busy || submitting.current || accounts.length === 0) return
     submitting.current = true
     onConfirm()
   }
-  return <PublisherModal open title="确认提交" closeLabel="关闭" onClose={close} className="pub-modal" contentClassName="pub-modal-content"
+  return <PublisherModal open title={mode === 'publish' ? '确认发布' : '确认转存草稿'} closeLabel="关闭" onClose={close} className="pub-modal" contentClassName="pub-modal-content"
     footer={<>
       <Button variant="outline" size="sm" data-pub-initial-focus disabled={busy} onClick={close}>返回修改</Button>
-      <Button variant="primary" size="sm" disabled={busy} onClick={submit}>{busy ? '正在校验并提交…' : '确认提交'}</Button>
+      <Button variant="primary" size="sm" disabled={busy || accounts.length === 0} onClick={submit}>{busy ? '正在校验并提交…' : `确认${mode === 'publish' ? '发布' : '转存草稿'} · ${accounts.length} 个账号`}</Button>
     </>}>
     <dl className="pub-modal-summary">
       <div><dt>内容类型</dt><dd>{CONTENT_LABELS[contentType]}</dd></div>
@@ -96,10 +98,14 @@ export function ConfirmDialog({
       {sourceName && <div><dt>视频来源</dt><dd>{sourceName}</dd></div>}
       <div><dt>提交方式</dt><dd>{mode === 'publish' ? '立即发布' : '转存草稿'}</dd></div>
     </dl>
-    <div className="pub-modal-target-title">目标账号</div>
+    <div className="pub-modal-target-title">目标账号 · {accounts.length} 个</div>
     <ul className="pub-modal-accounts">{accounts.map(account => <li key={account.id}><Tag tone="neutral">{PLATFORM_LABELS[account.platform]}</Tag><span>{account.displayName}{targetTitles?.[account.id] && targetTitles[account.id] !== title ? ` · ${targetTitles[account.id]}` : ''}</span></li>)}</ul>
-    {!!visibleWarnings.length && <><p className="pub-modal-copy">提交时会自动调整以下平台副本，并转存平台草稿供你核对；原始 MD 和本地编辑稿保留：</p>
-      <ul className="pub-modal-accounts">{visibleWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></>}
+    {accounts.some(account => targetSummaries?.[account.id]) && <dl className="pub-modal-summary" style={{ marginTop: 16 }}>
+      {accounts.filter(account => targetSummaries?.[account.id]).map(account => <div key={account.id}><dt>{PLATFORM_LABELS[account.platform]}摘要</dt><dd>{targetSummaries![account.id]}</dd></div>)}
+    </dl>}
+    {!!visibleWarnings.length && <details className="pub-modal-copy"><summary>平台调整说明 · {visibleWarnings.length} 项</summary>
+      <p>平台稿件将按以下说明调整，转存草稿后请核对：</p>
+      <ul className="pub-modal-accounts">{visibleWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
     <p className="pub-modal-copy">提交后请自行前往各平台后台确认结果。</p>
   </PublisherModal>
 }
@@ -110,6 +116,7 @@ export interface PublisherConfirmation {
   mode: 'publish' | 'draft'
   accounts: PublisherAccount[]
   targetTitles?: Record<string, string>
+  targetSummaries?: Record<string, string>
   warnings?: string[]
   sourceName?: string
 }
