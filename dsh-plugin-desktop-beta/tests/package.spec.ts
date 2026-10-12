@@ -91,7 +91,19 @@ const dshResolution = (name: string): unknown =>
 describe('published package surface', () => {
   it('keeps the private workspace version-neutral and versions the Beta package', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.13-beta.1')
+    expect(manifest.version).toBe('0.0.14-beta.1')
+  })
+
+  it('ships E剪宝 only through a separately installed plugin', () => {
+    for (const name of [
+      'cqai-dsh-plugin-ejianbao', 'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-short-video', 'cqai-dsh-plugin-talkcraft',
+      'cqai-dsh-media-settings', 'cqai-dsh-plugin-media-runtime',
+    ]) {
+      expect(manifest.dependencies).not.toHaveProperty(name)
+      expect(manifest.scripts?.build).not.toContain(`yarn workspace ${name} build`)
+    }
+    expect(manifest.dependencies).toHaveProperty('@cqaiclub/dsn-account')
   })
 
   it('runs all desktop editions and community market typechecks from the root command', () => {
@@ -867,7 +879,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.13-beta.1')
+    expect(manifest.version).toBe('0.0.14-beta.1')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
@@ -894,7 +906,6 @@ describe('published package surface', () => {
     expect(manifest.build).not.toHaveProperty('asarUnpack')
     const uvExecutables = [
       'node_modules/@dataiku/uv-*/bin/**',
-      'node_modules/cqai-dsh-plugin-media-runtime/node_modules/@dataiku/uv-*/bin/**',
     ]
     const computerUseNativeLibraries = ['node_modules/@trycua/cua-driver-*/**']
     expect(manifest.build?.mac?.asarUnpack).toEqual([
@@ -902,7 +913,6 @@ describe('published package surface', () => {
       'build/tray-iconTemplate.png',
       'build/tray-iconTemplate@2x.png',
       'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**',
-      'node_modules/cqai-dsh-plugin-short-video/runtime/**', 'node_modules/cqai-dsh-plugin-video/runtime/**',
       ...uvExecutables, ...computerUseNativeLibraries,
     ])
     const windowsIcons = [
@@ -919,8 +929,8 @@ describe('published package surface', () => {
       'build/tray-icon-blue@1.5x.png',
       'build/tray-icon-blue@2x.png',
     ]
-    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', 'node_modules/cqai-dsh-plugin-video/runtime/**', ...uvExecutables, ...computerUseNativeLibraries])
-    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', 'node_modules/cqai-dsh-plugin-short-video/runtime/**', 'node_modules/cqai-dsh-plugin-video/runtime/**', ...uvExecutables, ...computerUseNativeLibraries])
+    expect(manifest.build?.win?.asarUnpack).toEqual([...windowsIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', ...uvExecutables, ...computerUseNativeLibraries])
+    expect(manifest.build?.linux?.asarUnpack).toEqual([...linuxIcons, 'node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**', ...uvExecutables, ...computerUseNativeLibraries])
     expect(manifest.build?.electronFuses).toEqual({
       enableEmbeddedAsarIntegrityValidation: true,
       onlyLoadAppFromAsar: true,
@@ -957,9 +967,6 @@ describe('published package surface', () => {
       },
       '!node_modules/node-pty/build/**',
       '!node_modules/fs-ext/build/**',
-      '!node_modules/cqai-dsh-plugin-talkcraft/upstream/runtime/.venv/**',
-      '!node_modules/cqai-dsh-plugin-talkcraft/upstream/runtime/node_modules/**',
-      '!node_modules/cqai-dsh-plugin-talkcraft/upstream/runtime/models/**',
     ])
     expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
     expect(manifest.build?.mac?.artifactName).toBe('e宝工坊-Beta-${version}-${arch}.${ext}')

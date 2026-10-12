@@ -17,6 +17,7 @@ import {
   afterPack,
   formatUnpackedRuntimeSummary,
   FORBIDDEN_UNPACKED_RUNTIME_ENTRIES,
+  EXCLUDED_EJIANBAO_PACKAGE_NAMES,
   indexPackagedAsarHeader,
   listDesktopRuntimeEntries,
   MAX_DATAIKU_UV_SMART_UNPACK_BYTES,
@@ -581,6 +582,35 @@ describe('packaged desktop runtime verification', () => {
       () => files)).toThrow('unexpectedly contains app.asar')
   })
 
+  it.each(EXCLUDED_EJIANBAO_PACKAGE_NAMES)('rejects archived or nested E剪宝 package %s', name => {
+    const runtimeContext = context('/build', 'win32')
+    const fixture = physicalFixture(runtimeContext)
+    for (const path of [
+      `node_modules/${name}/package.json`,
+      `node_modules/another-package/node_modules/${name}/lib/index.js`,
+    ]) {
+      expect(() => verifyPackagedRuntime(
+        runtimeContext, headerReader([...completeArchiveEntries(), path], fixture.paths),
+        fixture.exists, () => fixture.files,
+      )).toThrow(`contains separately installed E剪宝 packages: ${path}`)
+    }
+  })
+
+  it.each(EXCLUDED_EJIANBAO_PACKAGE_NAMES)('rejects physical E剪宝 package %s in either layout', name => {
+    for (const asar of [true, false]) {
+      const base = context('/build', 'win32')
+      const runtimeContext: PackagedRuntimeContext = {
+        ...base, packager: { ...base.packager, platformSpecificBuildOptions: { asar } },
+      }
+      const path = `node_modules/${name}/package.json`
+      expect(() => verifyPackagedRuntime(
+        runtimeContext, headerReader(completeArchiveEntries()),
+        filename => filename !== resolvePackagedAsarPath(runtimeContext),
+        () => [{ path, bytes: 1 }],
+      )).toThrow(`contains separately installed E剪宝 packages: ${path}`)
+    }
+  })
+
   it('uses LinuxPackager executableName instead of appInfo.productFilename', () => {
     const runtimeContext = context('/build', 'linux', 1, 'dsh-plugin-desktop-beta')
     const expectedPath = join('/build', 'resources', 'app.asar')
@@ -938,8 +968,8 @@ describe('packaged desktop runtime verification', () => {
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-arm64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-darwin-x64')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/@dataiku/uv-win32-x64')
-    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/cqai-dsh-plugin-short-video')
-    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/cqai-dsh-plugin-video')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).not.toContain('node_modules/cqai-dsh-plugin-short-video')
+    expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).not.toContain('node_modules/cqai-dsh-plugin-video')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/fs-ext')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/node-pty')
     expect(ALLOWED_SMART_UNPACK_PACKAGE_ROOTS).toContain('node_modules/pnpm')
@@ -1098,7 +1128,6 @@ describe('packaged desktop runtime verification', () => {
   it.each([
     'build/app-icon.png',
     'build/tray-icon-white@2x.png',
-    'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
     'node_modules/@vscode/ripgrep-win32-x64/bin/rg.exe',
     'node_modules/node-pty/prebuilds/win32-x64/conpty.node',
   ])('fails loud when selective physical entry %s is absent', (missing) => {

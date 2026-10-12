@@ -175,6 +175,122 @@ describe('Desktop package overlay', () => {
     expect(resolveOverlayPackage('plugin', installVersion.options).selected.source).toBe('install')
   })
 
+  it('finds only declared physical dependencies of admitted Profile bundles', () => {
+    const state = fixture()
+    const suite = installPackage(state.profile, 'suite-fixture', '1.0.0')
+    writeFileSync(join(suite, 'package.json'), JSON.stringify({
+      name: 'suite-fixture', version: '1.0.0',
+      dependencies: { 'engine-fixture': '1.0.0' },
+      bundledDependencies: ['engine-fixture'],
+    }))
+    const engine = installPackage(suite, 'engine-fixture', '1.0.0')
+    writeFileSync(join(engine, 'package.json'), JSON.stringify({
+      name: 'engine-fixture', version: '1.0.0', optionalDependencies: { 'engine-library': '1.0.0' },
+    }))
+    const library = installPackage(engine, 'engine-library', '1.0.0')
+    installPackage(suite, 'undeclared-private-package', '1.0.0')
+    const inactive = installPackage(state.profile, 'inactive-suite', '1.0.0')
+    writeFileSync(join(inactive, 'package.json'), JSON.stringify({
+      name: 'inactive-suite', version: '1.0.0', dependencies: { 'inactive-engine': '1.0.0' },
+    }))
+    installPackage(inactive, 'inactive-engine', '1.0.0')
+    const options = { ...state.options, profileBundleNames: ['suite-fixture'] }
+    expect(findOverlayPackage('engine-fixture', state.options)).toBeUndefined()
+    expect(findOverlayPackage('engine-fixture', { ...options, profileBundleNames: [] })).toBeUndefined()
+    expect(resolveOverlayPackage('engine-fixture', options).selected).toMatchObject({
+      packageDir: engine, source: 'profile', bundlePackageName: 'suite-fixture',
+      resolutionAnchorUrl: pathToFileURL(join(suite, 'package.json')).href,
+    })
+    expect(resolveOverlayPackage('engine-library', options).selected.packageDir).toBe(library)
+    expect(findOverlayPackage('undeclared-private-package', options)).toBeUndefined()
+    expect(findOverlayPackage('inactive-engine', options)).toBeUndefined()
+  })
+
+  it('uses the admitted bundle rather than undeclared hoisted leftovers while retaining installation SDKs', () => {
+    const state = fixture()
+    const suite = installPackage(state.profile, 'suite-fixture', '1.0.0')
+    writeFileSync(join(suite, 'package.json'), JSON.stringify({
+      name: 'suite-fixture', version: '1.0.0', dependencies: { 'engine-fixture': '1.0.0', 'host-sdk': '1.0.0' },
+    }))
+    const engine = installPackage(suite, 'engine-fixture', '1.0.0')
+    installPackage(suite, 'host-sdk', '99.0.0')
+    installPackage(state.root, 'engine-fixture', '99.0.0')
+    const sdk = installPackage(state.install, 'host-sdk', '1.0.0')
+    writeFileSync(join(state.install, 'package.json'), JSON.stringify({
+      name: 'install-root', dependencies: { 'host-sdk': '1.0.0' },
+    }))
+    const options = { ...state.options, profileBundleNames: ['suite-fixture'] }
+    expect(resolveOverlayPackage('engine-fixture', options).selected.packageDir).toBe(engine)
+    expect(resolveOverlayPackage('host-sdk', options).selected.packageDir).toBe(sdk)
+  })
+
+  it('prefers an admitted physical bundle root over an equal undeclared installation ancestor', () => {
+    const state = fixture()
+    const name = 'cqai-dsh-plugin-ejianbao'
+    const oldAncestor = installPackage(state.root, name, '0.1.0')
+    const externalRoot = installPackage(state.profile, name, '0.1.0')
+    expect(resolveOverlayPackage(name, state.options).selected.packageDir).toBe(oldAncestor)
+    const options = { ...state.options, profileBundleNames: [name] }
+    expect(resolveOverlayPackage(name, options).selected.packageDir).toBe(externalRoot)
+    writeFileSync(join(state.install, 'package.json'), JSON.stringify({
+      name: 'install-root', dependencies: { [name]: '0.1.0' },
+    }))
+    expect(resolveOverlayPackage(name, options).selected.packageDir).toBe(oldAncestor)
+  })
+
+  it.each(['0.1.0', '99.0.0'])('keeps suite engines when preserved direct engines have version %s', version => {
+    const state = fixture()
+    const rootName = 'cqai-dsh-plugin-ejianbao'
+    const engineNames = ['cqai-dsh-plugin-video', 'cqai-dsh-plugin-short-video', 'cqai-dsh-plugin-talkcraft']
+    const suite = installPackage(state.profile, rootName, '0.1.0')
+    writeFileSync(join(suite, 'package.json'), JSON.stringify({
+      name: rootName, version: '0.1.0', dependencies: Object.fromEntries(engineNames.map(name => [name, '0.1.0'])),
+      bundledDependencies: engineNames, dsh: { ejianbao: { distribution: 'external', version: 1 } },
+    }))
+    const anotherSuite = installPackage(state.profile, 'another-admitted-suite', '1.0.0')
+    writeFileSync(join(anotherSuite, 'package.json'), JSON.stringify({
+      name: 'another-admitted-suite', version: '1.0.0',
+      dependencies: Object.fromEntries(engineNames.map(name => [name, '99.0.0'])),
+    }))
+    const options = { ...state.options, profileBundleNames: [rootName, 'another-admitted-suite'] }
+    for (const name of engineNames) {
+      installPackage(state.install, name, version)
+      installPackage(state.profile, name, version)
+      installPackage(anotherSuite, name, '99.0.0')
+      installPackage(suite, name, '0.1.0')
+    }
+    for (const name of engineNames) {
+      expect(resolveOverlayPackage(name, options).selected).toMatchObject({
+        packageDir: join(suite, 'node_modules', name), version: '0.1.0', source: 'profile', bundlePackageName: rootName,
+      })
+    }
+  })
+
+  it('requires the admitted external suite before resolving retired direct payloads', () => {
+    const state = fixture()
+    const names = ['cqai-dsh-plugin-ejianbao', 'cqai-dsh-plugin-video',
+      'cqai-dsh-plugin-short-video', 'cqai-dsh-plugin-talkcraft']
+    for (const name of names) {
+      installPackage(state.install, name, '1.0.0')
+      installPackage(state.profile, name, '2.0.0')
+      // The migration still inspects old product links before live admission exists.
+      expect(resolveOverlayPackage(name, state.options).selected.source).toBe('profile')
+      expect(findOverlayPackage(name, { ...state.options, profileBundleNames: [] })).toBeUndefined()
+      expect(findOverlayPackage(name, { ...state.options, profileBundleNames: ['unrelated-suite'] })).toBeUndefined()
+      const admitted = { ...state.options, profileBundleNames: ['cqai-dsh-plugin-ejianbao'] }
+      if (name === 'cqai-dsh-plugin-ejianbao') {
+        expect(resolveOverlayPackage(name, admitted).selected.source).toBe('profile')
+      } else {
+        // An incomplete suite cannot borrow engines from preserved standalone installs.
+        expect(findOverlayPackage(name, admitted)).toBeUndefined()
+      }
+    }
+    installPackage(state.install, 'cqai-dsh-plugin-account', '1.0.0')
+    expect(resolveOverlayPackage('cqai-dsh-plugin-account', {
+      ...state.options, profileBundleNames: [],
+    }).selected.source).toBe('install')
+  })
+
   it('extracts scoped and unscoped roots without treating URLs as packages', () => {
     expect(packageNameFromSpecifier('@scope/plugin/subpath')).toBe('@scope/plugin')
     expect(packageNameFromSpecifier('plugin/subpath')).toBe('plugin')

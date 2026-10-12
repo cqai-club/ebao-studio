@@ -39,6 +39,7 @@ interface ProfileResolverRegistration {
   readonly overlayCandidates: Map<string, PackageOverlayCandidate>
   readonly activeSequences: Set<number>
   readonly profileRequire: NodeJS.Require
+  bundleNames: readonly string[]
   references: number
   sequence: number
 }
@@ -132,6 +133,9 @@ function refreshCanonicalProfilePath(registration: ProfileResolverRegistration):
 /** Package presence and symlink targets may have changed; already loaded modules keep their URLs. */
 function invalidatePackageSelections(registration: ProfileResolverRegistration): void {
   registration.overlayCandidates.clear()
+  // The admitted dependency graph uses this array's identity as its generation.
+  // Package operations must refresh it even when the admitted names stay equal.
+  registration.bundleNames = [...registration.bundleNames]
   refreshCanonicalProfilePath(registration)
 }
 
@@ -368,6 +372,7 @@ function selectedOverlayCandidate(
   const overlay = findOverlayPackage(packageName, {
     installPackageUrl: DESKTOP_PACKAGE_URL,
     profilePackageUrl: registration.profileBaseUrl,
+    profileBundleNames: registration.bundleNames,
   })
   // Missing packages are intentionally not cached: Market/HMR can publish one
   // while this process is alive.
@@ -416,11 +421,12 @@ function resolveFromAnchor(
   source: ModuleSource,
   context: Parameters<ResolveHookSync>[1],
   nextResolve: Parameters<ResolveHookSync>[2],
+  candidate?: PackageOverlayCandidate,
 ): ReturnType<ResolveHookSync> {
   if (!context.conditions?.includes('require')) {
     return nextResolve(specifier, {
       ...context,
-      parentURL: source === 'profile' ? registration.profileBaseUrl : DESKTOP_ENTRY_URL,
+      parentURL: candidate?.resolutionAnchorUrl ?? (source === 'profile' ? registration.profileBaseUrl : DESKTOP_ENTRY_URL),
     })
   }
   // Node's synchronous hook observes require/createRequire, but its CJS
@@ -430,7 +436,9 @@ function resolveFromAnchor(
   // the nested require.resolve call from re-entering our own policy.
   state.bypassDepth += 1
   try {
-    const require = source === 'profile' ? registration.profileRequire : DESKTOP_REQUIRE
+    const require = candidate?.resolutionAnchorUrl !== undefined
+      ? createRequire(candidate.resolutionAnchorUrl)
+      : source === 'profile' ? registration.profileRequire : DESKTOP_REQUIRE
     return {
       url: pathToFileURL(require.resolve(specifier)).href,
       shortCircuit: true,
@@ -445,10 +453,13 @@ function resolveCommonJsFromAnchor(
   registration: ProfileResolverRegistration,
   request: string,
   source: ModuleSource,
+  candidate?: PackageOverlayCandidate,
 ): string {
   state.bypassDepth += 1
   try {
-    const require = source === 'profile' ? registration.profileRequire : DESKTOP_REQUIRE
+    const require = candidate?.resolutionAnchorUrl !== undefined
+      ? createRequire(candidate.resolutionAnchorUrl)
+      : source === 'profile' ? registration.profileRequire : DESKTOP_REQUIRE
     return require.resolve(request)
   } finally {
     state.bypassDepth -= 1
@@ -501,7 +512,7 @@ function resolveFilenameWithState(
   }
   if (boundary) {
     const selected = selectedOverlayCandidate(registration, packageName)
-    const resolved = resolveCommonJsFromAnchor(state, registration, request, selected.source)
+    const resolved = resolveCommonJsFromAnchor(state, registration, request, selected.source, selected)
     if (selected.source === 'profile' && isObsoleteProfileFallbackPath(registration, resolved)) {
       throw new PackageOverlayNotFoundError(packageName)
     }
@@ -554,7 +565,7 @@ function resolveForRegistration(
   if (packageName !== undefined) {
     const selected = selectedOverlayCandidate(registration, packageName)
     const source = selected.source
-    const resolved = resolveFromAnchor(state, registration, specifier, source, context, nextResolve)
+    const resolved = resolveFromAnchor(state, registration, specifier, source, context, nextResolve, selected)
     if (source === 'profile' && isObsoleteProfileFallbackUrl(registration, resolved.url)) {
       throw new PackageOverlayNotFoundError(packageName)
     }
@@ -627,6 +638,7 @@ function migrateResolverState(state: ProcessResolverState): void {
       canonicalPaths?: Map<string, string>
       canonicalModuleKeys?: Map<string, string>
       overlayCandidates?: Map<string, PackageOverlayCandidate>
+      bundleNames?: readonly string[]
     }
     // v1 is intentionally retained as the process symbol because an earlier
     // HMR generation already owns the live Node hooks. Upgrade its objects in
@@ -634,6 +646,7 @@ function migrateResolverState(state: ProcessResolverState): void {
     mutable.canonicalPaths = new Map()
     mutable.canonicalModuleKeys = new Map()
     mutable.overlayCandidates = new Map()
+    mutable.bundleNames ??= []
     if (!(mutable.activeSequences instanceof Set)) {
       mutable.activeSequences = new Set(
         registration.references > 0 ? [registration.sequence] : [],
@@ -703,7 +716,23 @@ function ensureResolverState(): ProcessResolverState {
  * @param profileBaseUrl - file URL for the Profile package.json.
  * @returns an idempotent registration disposer.
  */
-export function installProfilePackageResolver(profileBaseUrl: string): () => void {
+export interface ProfilePackageResolverOptions {
+  /** Bundle layers admitted to this generation, after Desktop disable filtering. */
+  readonly bundleNames?: readonly string[]
+}
+
+/** Refresh the physical dependency graph after admitted Profile layers change through HMR. */
+export function updateProfilePackageResolverBundles(profileBaseUrl: string, bundleNames: readonly string[]): void {
+  const registration = currentResolverState()?.registrations.get(profileBaseUrl)
+  if (registration === undefined) return
+  registration.bundleNames = [...bundleNames]
+  invalidatePackageSelections(registration)
+}
+
+export function installProfilePackageResolver(
+  profileBaseUrl: string,
+  options: ProfilePackageResolverOptions = {},
+): () => void {
   const parsed = new URL(profileBaseUrl)
   if (parsed.protocol !== 'file:' || parsed.search.length > 0 || parsed.hash.length > 0) {
     throw new Error('dsh-plugin-desktop: Profile package resolver requires a plain file URL')
@@ -727,13 +756,16 @@ export function installProfilePackageResolver(profileBaseUrl: string): () => voi
       overlayCandidates: new Map(),
       activeSequences: new Set(),
       profileRequire: createRequire(normalizedBaseUrl),
+      bundleNames: [...options.bundleNames ?? []],
       references: 0,
       sequence: 0,
     }
     state.registrations.set(normalizedBaseUrl, registration)
     refreshCanonicalProfilePath(registration)
   } else {
-    // A retain denotes a new Loader/HMR generation.
+    // A retain denotes a new Loader/HMR generation. Package presence and
+    // symlink targets may have changed since the preceding generation.
+    registration.bundleNames = [...options.bundleNames ?? []]
     invalidatePackageSelections(registration)
   }
   const retainSequence = ++state.nextSequence
