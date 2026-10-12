@@ -1,6 +1,6 @@
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it, vi } from 'vitest'
 import { composeEntries, loadOverlayPatches, loadProfileDirectory, OPTIONAL_BUNDLES } from '@deepseek-ai/dsh-app-boot'
@@ -56,6 +56,40 @@ it('opens an existing Web Profile without recording a Next bundle for other laun
   expect(readdirSync(manager.home)).not.toContain('recovery')
   manager.ensure('work')
   expect(readFileSync(path, 'utf8')).toBe(bytes)
+})
+it('retires legacy Profile junction projections while preserving their installation targets and installed plugins', () => {
+  const manager = profiles()
+  const dir = manager.ensure('desktop')
+  const directoryLink = process.platform === 'win32' ? 'junction' : 'dir'
+  const files: string[] = []
+  const links: string[] = []
+  for (const packageName of ['@deepseek-ai/dsh-scope', '@deepseek-ai/dsh-persona']) {
+    const target = join(manager.home, 'old-desktop', 'node_modules', packageName)
+    mkdirSync(target, { recursive: true })
+    const file = join(target, 'index.js')
+    writeFileSync(file, 'old installation must survive')
+    files.push(file)
+    const owned = join(dir, '.dsh-module-fallback', 'node_modules', packageName)
+    mkdirSync(dirname(owned), { recursive: true })
+    symlinkSync(target, owned, directoryLink)
+    const link = join(dir, 'node_modules', packageName)
+    mkdirSync(dirname(link), { recursive: true })
+    symlinkSync(owned, link, directoryLink)
+    links.push(link)
+  }
+  const installed = join(dir, 'node_modules', 'community-plugin')
+  mkdirSync(installed)
+  writeFileSync(join(installed, 'package.json'), '{"name":"community-plugin"}')
+  const profileManifest = readFileSync(join(dir, 'package.json'), 'utf8')
+
+  loadNextProfile(dir, manager.home)
+  loadNextProfile(dir, manager.home)
+
+  for (const link of links) expect(lstatSync(link, { throwIfNoEntry: false })).toBeUndefined()
+  expect(existsSync(join(dir, '.dsh-module-fallback'))).toBe(false)
+  for (const file of files) expect(readFileSync(file, 'utf8')).toBe('old installation must survive')
+  expect(readFileSync(join(installed, 'package.json'), 'utf8')).toBe('{"name":"community-plugin"}')
+  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(profileManifest)
 })
 it('isolates profile configuration and preserves existing files on ensure', () => {
   const manager = profiles()

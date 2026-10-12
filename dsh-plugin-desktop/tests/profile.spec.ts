@@ -1036,6 +1036,7 @@ virtualStoreDirMaxLength: 60
       openBrowser: true,
       networkExposure: 'lan',
       logLevel: 'debug',
+      developerLogging: true,
     } as const
     writeDesktopShellPreferences(home, Object.entries(edited).map(([key, value]) => `${key}: ${value}`))
 
@@ -1257,7 +1258,7 @@ virtualStoreDirMaxLength: 60
     writeDesktopShellPreferences(home, ['mode: compatibility', 'port: 43189'])
     const settingsPath = join(home, 'settings.yaml')
     const patchPath = join(ensureDesktopProfile(home), 'cordis.patch.yml')
-    writeFileSync(settingsPath, ['dsh-desktop:', '  mode: extended', 'agent-presets:', '  default: minimal', ''].join('\n'))
+    writeFileSync(settingsPath, ['dsh-desktop:', '  mode: extended', '  developerLogging: true', 'agent-presets:', '  default: minimal', ''].join('\n'))
 
     const first = prepareDesktopProfile(undefined, home, 'win32')
     const rows = composeEntries([first.patches])
@@ -1267,11 +1268,11 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'ui-layout')?.disabled).toBe(true)
     expect(rows.find(row => row.id === 'ui-sidebar')?.disabled).toBe(false)
     expect(rows.find(row => row.id === 'desktop-shell')?.config)
-      .toEqual(expect.objectContaining({ mode: 'extended', port: 43_189 }))
+      .toEqual(expect.objectContaining({ mode: 'extended', port: 43_189, developerLogging: true }))
     // Persisted in the profile's own row, where the config editor edits it later;
     // the launcher pins nothing, so those edits are never shadowed.
     expect(readFileSync(patchPath, 'utf8'))
-      .toBe(['- id: desktop-shell', '  config:', '    mode: extended', '    port: 43189', ''].join('\n'))
+      .toBe(['- id: desktop-shell', '  config:', '    mode: extended', '    port: 43189', '    developerLogging: true', ''].join('\n'))
     expect(first.patches.findLast(patch => patch.id === 'desktop-shell')).toEqual({ id: 'desktop-shell', disabled: false })
     // Only Desktop's shell section leaves the document; the import still merges the rest.
     expect(readFileSync(settingsPath, 'utf8')).toBe(['agent-preset-registry:', '  selectedDefault: minimal', ''].join('\n'))

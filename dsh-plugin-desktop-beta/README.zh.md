@@ -22,6 +22,8 @@ Launcher 会在 Loader entry 挂载前注册作用于当前 generation 的 `ctx.
 
 Cordis 的裸插件导入从持久化 profile 解析。一个范围受限的 Node resolve hook 只处理由 `@deepseek-ai/cordis-plugin-loader` 发起的导入，因此即使打包后的 Electron 不暴露 Node 内部 ESM Loader，profile 本地第三方包与修复后的 launcher fallback 仍使用同一条解析路径。
 
+Desktop 也会在 Loader entry 挂载前注册官方 `pluginPackages` service。包版本、标题、说明、本地化文件与图标使用与实际导入相同的 Profile resolver，支持本地包和安装目录 fallback。`refresh()` 只使后续查找重新选择解析路径，不更新 npm 包，也不重新加载正在运行的插件树。启动时会先解除旧 `.dsh-module-fallback` 中的 symlink 与 junction，再删除临时树，保留它们指向的安装文件。
+
 在 profile 准备与 Cordis boot 之前，打包后的 macOS 或 Linux 启动会以交互式 login 模式运行用户账户配置的 shell，并恢复其导出的 `PATH`。这样可补全 Finder、LaunchServices 等图形启动方式通常传入的精简 `PATH`。除 `PATH` 外，只会从固定 allowlist 补充当前启动环境尚未定义的 locale、工具链、package manager 与虚拟环境变量；只有 `PATH` 始终采用 shell 值。该流程只支持绝对路径的 `zsh`、`bash` 与 `fish`。Bash 遵循标准 login 行为，只有 login profile 主动 source `.bashrc` 时，该文件才会参与。Windows 以及未打包或开发运行会跳过恢复；shell 不存在或不受支持、捕获超时或失败、没有可用 `PATH` 时，会静默保留原有进程环境。
 
 捕获过程以 `@deepseek-ai/dsh-subprocess` 的 `scrubbedParentEnv()` 作为输入；捕获到的变量名还必须通过同一套 `SENSITIVE_ENV_PATTERN` 与 `DSH_ENV_PREFIX` 检查，之后才进入固定 allowlist。因此，只在 shell rc 中出现的凭据、`DSH_*` 值、代理与 SSH agent 设置，以及进程启动 hook 都不会被导入 Electron。该恢复流程不会删除 Electron 显式启动环境中已经存在的值。普通 DSH subprocess 会再次应用官方 scrub；显式 child environment 仍可有意补回某项值。
@@ -187,7 +189,7 @@ Desktop 的确认、警告、错误与结果统一使用基于 shadcn 的 `Deskt
 
 启动健康后，主进程每五秒检查一次可见应用内容。连续两次页面为空或探测无响应，即使渲染进程未退出，也会触发有次数上限的自动恢复；无响应的渲染进程会被终止并在新进程中重载。可见窗口恢复成功还要求视口中存在有效内容，不能仅凭插件激活就判定成功。隐藏、最小化、页面导航以及恢复时页面或 Loader 尚未就绪期间暂停检查。每次探测限时十秒，并丢弃过期导航结果和长时间休眠后的超时结果。探测检查 DOM 可见性，不检查截图像素，不能诊断仅发生在 GPU 显示链路中的故障。
 
-启动健康后，如果界面进程意外退出（包括内存不足），应用会静默重载现有窗口，不重启 Host、不弹窗，也不唤起已隐藏的窗口。只有页面加载完成且客户端 Loader 上报健康，才算恢复成功；恢复尝试在 30 秒内未完成则视为超时。最多自动尝试三次：首次不延迟，后续分别等待一秒、三秒；恢复后保持健康满一分钟才重置重试次数。连续失败时暂停自动恢复，并打开系统原生兜底提示：**再次尝试恢复** 授权新一轮有次数上限的恢复，**暂不处理** 则保留后台服务运行。可从托盘选择 **打开 e宝工坊** 再次打开提示，或选择 **导出诊断信息…** 继续调查。重载期间画面可能短暂中断，未发送的输入可能丢失；此机制不修复崩溃或内存增长的根因。启动失败仍使用既有恢复流程；主动终止 renderer 和应用退出期间不会发起自动恢复。
+启动健康后，如果界面进程意外退出（包括内存不足），应用会静默重载现有窗口，不重启 Host、不弹窗，也不唤起已隐藏的窗口。只有页面加载完成且客户端 Loader 上报健康，才算恢复成功；恢复尝试在 120 秒内未完成则视为超时。最多自动尝试三次：首次不延迟，后续分别等待一秒、三秒；恢复后保持健康满一分钟才重置重试次数。连续失败时暂停自动恢复，并打开系统原生兜底提示：**再次尝试恢复** 授权新一轮有次数上限的恢复，**暂不处理** 则保留后台服务运行。可从托盘选择 **打开 e宝工坊** 再次打开提示，或选择 **导出诊断信息…** 继续调查。重载期间画面可能短暂中断，未发送的输入可能丢失；此机制不修复崩溃或内存增长的根因。启动失败仍使用既有恢复流程；主动终止 renderer 和应用退出期间不会发起自动恢复。
 
 e宝工坊 Beta 将 UTF-8 日志写入独立的 Electron 用户数据目录：Windows 位于 `%APPDATA%\易宝工坊 Beta\logs`，macOS 位于 `~/Library/Application Support/易宝工坊 Beta/logs`。完整日志使用 `dsh-YYYY-MM-DD.log`，warning 与 error 还会写入 `dsh-YYYY-MM-DD.error.log`。单文件达到 10 MiB 后轮转，启动时删除七天前的文件，整个目录保持在 200 MiB 以下。`dsh-desktop.logLevel` 设置控制详细程度，默认为 `info`。
 
@@ -196,6 +198,8 @@ e宝工坊 Beta 将 UTF-8 日志写入独立的 Electron 用户数据目录：Wi
 macOS 的实际应用包仍为 `易宝工坊 Beta.app`，可执行文件仍为 `Contents/MacOS/易宝工坊 Beta`，以便更新器能够重新启动已有安装。英文与简体中文的 `InfoPlist.strings` 将显示名称本地化为 e宝工坊 Beta；原始 `CFBundleDisplayName` 保留 易宝工坊 Beta，与应用包文件名对应，`CFBundleName` 使用 e宝工坊 Beta。Windows 的可执行文件名称为 `e宝工坊 Beta.exe`。
 
 在 macOS 与 Windows 上，从托盘选择 **导出诊断信息…**，应用会在相邻的 `diagnostics` 目录创建 ZIP，并在系统文件管理器中定位它。导出在 Electron 主线程之外执行，会在共享的 50 MiB evidence cap 内收集最近的自有日志和本地 Crashpad `.dmp`，并在存在时包含 `crash-evidence/active-run.json` 标记，同时加入 `system-info.txt`，只保留最新三份 ZIP。创建任何文件前，确认对话框会说明隐私边界。系统会脱敏可识别的凭据，但日志仍可能包含本地路径、工作区 ID、会话 ID、提示词、工具输出或第三方插件消息；crash dump 可能包含进程内存片段。分享诊断包前应先检查内容，公开上传时尤其如此。
+
+桌面设置 → 日志 → **开发者日志** 可即时开启元数据追踪，默认关闭。记录插件生命周期、Agent turn/step、模型耗时与分块数、工具状态、重试决策、Host/Electron IPC 名称和 HTTP 路由、状态与耗时；不会主动采集提示词、模型输出、工具参数或结果、请求头及消息正文。控制台和进程文本仍可能包含第三方输出，记录会脱敏并限制长度；关闭追踪时仍保留错误。Electron 与独立 Host 日志使用相同 run ID，沿用现有轮转与诊断 ZIP 导出。
 
 ## 原生生命周期
 
@@ -276,5 +280,5 @@ corepack.cmd yarn dist:win-portable
 - `dshmarket@1.2.3` 仍是用户可选安装的第三方 package，而不是内置 marketplace。只有重新审计的版本同时消费可选 Desktop service、保留普通 DSH fallback，并包含再分发所需的完整 license notice 后，才会重新评估预装。
 - Beta 没有对应的 GitHub Release 更新构件，不会在应用内暂存或替换自身；请手动下载新版 Beta。仅稳定版的 Electron Updater 暂存还要受发布者身份、macOS Developer ID 签名与公证、Windows Authenticode/SmartScreen 策略以及原生升级测试共同约束。
 - 共享 carrier 使用 HTTP 与 WebSocket，而不是 Electron IPC；默认只绑定 loopback，并支持经过明确确认的全接口局域网监听。替换 carrier 需要上游 DSH 提供 transport 扩展点，不属于该独立包的范围。
-- Beta 使用固定官方 release 源码构建的 DSH `0.1.6-alpha.2` 运行时分发包；桌面构建解析这些包接口，不直接链接源码 checkout。历史会话由上游迁移到 V3，自动转换旧 PTC 事件和 `code` 预设引用并保留原日志，桌面端不再生成预设别名。旧运行时无法读取 V3 会话。扩展和增强模式接入右侧 Sidebar 的文档预览、分栏和全屏，并通过 keyed `main` 槽位支持独立于会话选择的全局插件面板。
+- Stable 与 Beta 保持官方 DSH `0.2.0-rc.2` 运行时及其源码 pin，Desktop 修复独立选择性移植；桌面构建解析这些包接口，不直接链接源码 checkout。历史会话由上游迁移到 V3，自动转换旧 PTC 事件和 `code` 预设引用并保留原日志，桌面端不再生成预设别名。旧运行时无法读取 V3 会话。扩展和增强模式接入右侧 Sidebar 的文档预览、分栏和全屏，并通过 keyed `main` 槽位支持独立于会话选择的全局插件面板。
 - `package:dir` 是用于 smoke 的未封装产物。`dist:win` 会额外生成未签名的 NSIS 测试安装包，但不会建立 Authenticode 身份或 SmartScreen 信誉。安装与升级行为、原生通知与终端、Windows ACL sandbox，以及每台目标机器上的原生材质外观仍属于目标平台验证边界。

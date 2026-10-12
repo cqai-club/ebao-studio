@@ -775,6 +775,7 @@ describe('Desktop settings Slot registration', () => {
       platform: 'darwin',
       initialMode: 'compatibility',
       setMode: expect.any(Function),
+      capabilities: { logging: true },
     })
     expect(component).toBe(DesktopSettingsSection)
 

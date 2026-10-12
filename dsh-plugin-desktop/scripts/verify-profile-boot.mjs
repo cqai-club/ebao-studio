@@ -16,6 +16,7 @@ import {
 } from '@deepseek-ai/dsh-launch-environment'
 import { installDesktopPnpmRuntime } from '../lib/desktop-runtime-environment.js'
 import { installProfilePackageResolver } from '../lib/module-resolution.js'
+import { DesktopPluginPackages } from '../lib/plugin-packages.js'
 import { prepareDesktopProfile } from '../lib/profile.js'
 import { DesktopProfileService } from '../lib/profile-service.js'
 import { createDesktopProfileBoot } from '../lib/profile-context.js'
@@ -247,6 +248,7 @@ try {
         profileBoot.prepare(host)
         // Match the public resolver path used by packaged Electron.
         host.loader.internal = undefined
+        await host.plugin(DesktopPluginPackages)
         host.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([]))
         host.provide('desktopBrowserAccess', BROWSER_ACCESS)
         host.provide('desktopLanHttps', LAN_HTTPS)
@@ -360,6 +362,13 @@ try {
   if ((await ctx.get('pluginManager').listPlugins()).length === 0) {
     throw new Error('Official plugin manager cannot inspect the Desktop composition')
   }
+  // The official metadata reader must reach installation packages through the Desktop resolver.
+  const metadataModule = '@deepseek-ai/dsh-client-ui-plugin-manager'
+  const officialMeta = ctx.get('pluginPackages')?.metaOf(metadataModule, ctx.baseUrl)
+  if (officialMeta?.title !== metadataModule || officialMeta.error !== undefined) {
+    throw new Error(`Official plugin metadata is unavailable to the Desktop Host: ${JSON.stringify(officialMeta)}`)
+  }
+  assert.equal(ctx.get('pluginPackages').packageOf(metadataModule, ctx.baseUrl)?.version, '0.2.0-rc.2')
   // Exercise the actual Profile watcher twice, rather than invoking our reader
   // directly. Both generations must preserve the Desktop layers and fixture.
   const reloadProbePath = join(home, 'reload-probe.mjs')

@@ -1,4 +1,5 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { installUiDiagnostics } from './ui-diagnostics.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -131,6 +132,7 @@ export const inject = [
 export function apply(ctx: ClientContext): void {
   const environment = parseDesktopClientEnvironment(window.location.search)
   if (!environment) return
+  ctx.effect(installUiDiagnostics, 'Desktop client failure diagnostics')
   applyDesktopBrand(ctx)
   registerDesktopComputerUse(ctx, environment.platform)
   ctx.effect(

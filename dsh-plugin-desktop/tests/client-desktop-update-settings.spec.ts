@@ -15,7 +15,8 @@ function scope(value: unknown) {
 
 async function mount(
   checkForUpdates: () => Promise<void>,
-  capabilities?: { updates?: boolean },
+  capabilities?: { updates?: boolean; logging?: boolean },
+  setSetting = vi.fn(async (_key: string, _value: unknown) => {}),
 ): Promise<HTMLDivElement> {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   container = document.createElement('div')
@@ -32,7 +33,7 @@ async function mount(
       checkForUpdates,
     },
     platform: 'darwin', version: '2.0.3', initialMode: 'compatibility', setMode: async () => {},
-    desktopSettings: scope({ mode: 'compatibility', openBrowser: false, networkExposure: 'loopback', macosMaterial: 'off', windowsMaterial: 'off' }),
+    desktopSettings: { ...scope({ mode: 'compatibility', openBrowser: false, networkExposure: 'loopback', macosMaterial: 'off', windowsMaterial: 'off', developerLogging: false, logLevel: 'info' }), set: setSetting },
     notificationSettings: scope({ enabled: false }),
     ...(capabilities === undefined ? {} : { capabilities }),
   } as unknown as DesktopSettingsSectionProps
@@ -53,6 +54,25 @@ afterEach(async () => {
   root = undefined
   container?.remove()
   vi.unstubAllGlobals()
+})
+
+describe('Desktop settings logging capability', () => {
+  it.each([undefined, { logging: false }])('omits developer logging unless the Host declares support (%j)', async capabilities => {
+    const node = await mount(async () => {}, capabilities)
+    expect(node.querySelector('[aria-labelledby="dsh-desktop-logging-title"]')).toBeNull()
+    expect(node.textContent).not.toContain(zh.developerLogging)
+  })
+
+  it('shows the opt-in toggle for a supported Host and persists its choice without restarting', async () => {
+    const setSetting = vi.fn(async (_key: string, _value: unknown) => {})
+    const node = await mount(async () => {}, { logging: true }, setSetting)
+    const section = node.querySelector('[aria-labelledby="dsh-desktop-logging-title"]')!
+    const toggle = section.querySelector<HTMLButtonElement>('[role="switch"]')!
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    await act(async () => { toggle.click() })
+    expect(setSetting).toHaveBeenCalledExactlyOnceWith('developerLogging', true)
+    expect(node.querySelector('[role="alert"]')).toBeNull()
+  })
 })
 
 describe('Desktop settings update controls', () => {

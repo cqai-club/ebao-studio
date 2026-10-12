@@ -1,6 +1,7 @@
 /** Electron implementation of the launcher-provided desktop runtime capability. */
 
 import { spawn } from 'node:child_process'
+import { configureDeveloperLogging, type DiagnosticPreferences } from './developer-logging.ts'
 import {
   app,
   dialog,
@@ -101,10 +102,12 @@ const PRODUCT_VERSION = desktopProductVersion()
 const AUTO_UPDATE_RELEASE_CHANNEL = DESKTOP_RELEASE_CHANNEL as DesktopReleaseChannel
 
 /** Main-process deadline for one Renderer generation to settle its client Loader. */
-export const RENDERER_BOOT_TIMEOUT_MS = 30_000
+export const RENDERER_BOOT_TIMEOUT_MS = 120_000
 
 /** Native adapter used by the e宝工坊 launcher and owned by its Cordis shell plugin. */
 export class ElectronDesktopRuntime implements DesktopRuntime {
+  configureDeveloperLogging(preferences: DiagnosticPreferences): void { configureDeveloperLogging(preferences) }
+
   setupOnboarding?: import('./setup-onboarding-bridge.ts').DesktopOnboardingBridge
   readonly platform: DesktopPlatform
   readonly loginCompletionUrl = DESKTOP_LOGIN_COMPLETION_URL

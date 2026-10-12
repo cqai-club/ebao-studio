@@ -58,6 +58,9 @@ import type {
 } from './lifecycle-events.ts'
 import { FileExporter } from './file-exporter.ts'
 import { installAgentErrorLogging } from './agent-error-logging.ts'
+import { initializeDeveloperLogging, diagnosticRunId } from './developer-logging.ts'
+import { installHostDeveloperLogging } from './host-developer-logging.ts'
+import { DesktopPluginPackages } from './plugin-packages.ts'
 import { observeDesktopPreferenceSettings } from './settings-bridge.ts'
 import {
   desktopLanBrowserUrls,
@@ -544,6 +547,7 @@ async function start(): Promise<void> {
     process.stderr.write(`${BIN_NAME}: file logging unavailable: ${maskSecrets(detail)}\n`)
     logSink = undefined
   }
+  initializeDeveloperLogging((level, line) => logSink?.writeRecord(level, JSON.parse(line)))
   const electronLogger = new ElectronStderrLogger(logSink)
   if (safeModeRequested) {
     safeModePaths = ensureDesktopSafeModeEnvironment(desktopUserDataDir)
@@ -1665,7 +1669,7 @@ async function start(): Promise<void> {
         host: { prepared, profilePreferences, homeDir, activeProfileName, pluginManagementStatePath,
           selectionStatePath, marketUserDataDir, releaseUserDataLocations, desktopLaunchEnvironment,
           desktopProxyOverlay: proxyResolution.overlay,
-          desktopPnpmBootstrap, logDirectory: join(desktopUserDataDir, 'logs', 'host') },
+          desktopPnpmBootstrap, diagnosticRunId: diagnosticRunId(), logDirectory: join(desktopUserDataDir, 'logs', 'host') },
         runtime, rendererToken: browserAccess.rendererHeader.value,
         prepareCertificate: prepareHostCertificate,
         bindHost: host => generation.bindHost(host), requestQuit,
@@ -1749,6 +1753,8 @@ async function start(): Promise<void> {
             () => releasePackageResolver,
             'dsh-plugin-desktop: profile package resolution',
           )
+          installHostDeveloperLogging(hostCtx)
+          await hostCtx.plugin(DesktopPluginPackages)
           hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, desktopLaunchEnvironment)
           hostCtx.provide('desktopBrowserAccess', browserAccess)
           hostCtx.provide('desktopLanHttps', lanHttps)

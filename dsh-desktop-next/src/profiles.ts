@@ -8,6 +8,7 @@ import { atomicJson, atomicText, readPrivateFile } from './private-files.ts'
 import { NextRecovery } from './recovery.ts'
 import { DEFAULT_PROFILE } from './desktop-contract.ts'
 import { computerUsePatch } from './profile-computer-use.ts'
+import { removeLinkProjectionsSafely } from '../../dsh-plugin-desktop-beta/src/link-projections.ts'
 
 export const NEXT_PACKAGE = fileURLToPath(new URL('../package.json', import.meta.url))
 export const WEB_BUNDLES = [...PROFILE_TEMPLATES.web!.bundles]
@@ -239,11 +240,23 @@ function nextCapabilityPatches(profile: Profile, installAnchor: string): Profile
   return patches
 }
 
+/** Retire legacy shared-Profile links without following junctions into the old installation. */
+function retireLinkProjections(projectDir: string): void {
+  try {
+    removeLinkProjectionsSafely(projectDir)
+  } catch (cause) {
+    // A locked link must not block Host startup; the next launch retries the sweep.
+    process.stderr.write(`dsh-desktop-next: could not remove dsh 0.1.5 link projections from ${projectDir}: ${String(cause)}\n`)
+  }
+}
+
 /** Add product capabilities without replacing the upstream Web presentation. */
 export function loadNextProfile(projectDir: string, home: string, installAnchor = NEXT_PACKAGE): Profile {
   const manager = new NextProfiles(home)
   if (manager.directory(basename(projectDir)) !== resolve(projectDir)) throw new Error('Profile must belong to Next home')
   manager.ensure(basename(projectDir))
+  // loadProfileDirectory bypasses the upstream loadProfile projection sweep.
+  retireLinkProjections(projectDir)
   // Upstream bundle discovery walks physical node_modules before installing its
   // runtime resolver. Project only this application's bundle, not its dependency
   // tree; the alpha.2 runtime resolver owns all other package fallbacks.

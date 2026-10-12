@@ -7,6 +7,7 @@ import { DESKTOP_FRAME_HEIGHT } from '../src/window-chrome.ts'
 import { DESKTOP_RELEASE_CHANNEL } from '../src/product-identity.ts'
 import type { DesktopReleaseChannel } from '../src/update-checker.ts'
 import type { DesktopPublisherRuntime } from '../src/publisher-runtime.ts'
+import { configureDeveloperLogging, initializeDeveloperLogging } from '../src/developer-logging.ts'
 
 const terminal = vi.hoisted(() => ({ open: vi.fn() }))
 const diagnostics = vi.hoisted(() => ({ export: vi.fn() }))
@@ -750,6 +751,31 @@ describe('Electron desktop runtime', () => {
     expect(electron.browserWindows[0]?.destroy).toHaveBeenCalledOnce()
   })
 
+  it('retains a correlated authentication failure before logging is enabled without recording access URLs', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const records: any[] = []
+    initializeDeveloperLogging((_level, line) => records.push(JSON.parse(line)), 'startup-test')
+    configureDeveloperLogging({ developerLogging: false, logLevel: 'error' })
+    try {
+      electron.sessionFetch.mockResolvedValueOnce(new Response(null, { status: 401 }))
+      const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+      const runtime = new ElectronDesktopRuntime(async () => {})
+      runtime.schedule(spec)
+      await expect(runtime.mountScheduled()).rejects.toThrow('browser authentication failed with HTTP 401')
+      const start = records.find(record => record.event === 'authenticate.start')
+      const failed = records.find(record => record.event === 'authenticate.failed')
+      expect(failed).toMatchObject({ source: 'renderer.boot', operationId: start.operationId,
+        error: { message: 'dsh-plugin-desktop: browser authentication failed with HTTP 401' } })
+      expect(JSON.stringify(records)).not.toContain(spec.authenticationUrl)
+      expect(JSON.stringify(records)).not.toContain(spec.rendererAccessHeader.value)
+      expect(electron.loadURL).not.toHaveBeenCalled()
+      expect(electron.browserWindows[0]?.destroy).toHaveBeenCalledOnce()
+    } finally {
+      initializeDeveloperLogging(() => {})
+      configureDeveloperLogging({ developerLogging: false, logLevel: 'info' })
+    }
+  })
+
   it('fails closed when the authenticated redirect chain does not reach the Web root', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     electron.sessionFetch.mockResolvedValueOnce(new Response(null, { status: 503 }))
@@ -1069,7 +1095,10 @@ describe('Electron desktop runtime', () => {
     const rendererBoot = runtime.beginRendererBootMonitoring({ commitHealthy: async () => {} })
     await runtime.mountScheduled()
 
-    await vi.advanceTimersByTimeAsync(RENDERER_BOOT_TIMEOUT_MS)
+    expect(RENDERER_BOOT_TIMEOUT_MS).toBe(120_000)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(onRendererBoot).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(RENDERER_BOOT_TIMEOUT_MS - 30_000)
     await rendererBoot
 
     expect(runtime.rendererBootFailureReason).toBe('renderer-timeout')
