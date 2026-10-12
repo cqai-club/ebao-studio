@@ -106,7 +106,9 @@ export async function bootDesktopHost(options: DesktopHostOptions, runtime: Desk
       profilePreferencesStopping = true
       await profilePreferencesWriteTail
     }
-    const releasePackageResolver = installProfilePackageResolver(prepared.bareModuleBaseUrl)
+    const releasePackageResolver = installProfilePackageResolver(prepared.bareModuleBaseUrl, {
+      bundleNames: prepared.profile.layers.map(layer => layer.packageName),
+    })
     const profileBoot = createDesktopProfileBoot(prepared, desktopPnpmBootstrap)
     const ctx = await boot(
       BIN_NAME,

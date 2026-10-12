@@ -117,3 +117,26 @@ it('checks the selected artifact while still denying incompatible active Profile
   }))
   expect(prepareProfileEntries(ctx, [{ id: 'incompatible', name: 'incompatible-plugin' }], base)[0]?.disabled).toBe(true)
 })
+
+it('preflights a nested engine from the same admitted bundle as the module loader', () => {
+  const { prepared, pnpm } = fixture()
+  const suite = join(prepared.profile.dir, 'node_modules', 'context-suite-fixture')
+  const engine = join(suite, 'node_modules', 'context-engine-fixture')
+  mkdirSync(engine, { recursive: true })
+  writeFileSync(join(suite, 'package.json'), JSON.stringify({
+    name: 'context-suite-fixture', version: '1.0.0', dependencies: { 'context-engine-fixture': '1.0.0' },
+  }))
+  const engineManifest = join(engine, 'package.json')
+  writeFileSync(engineManifest, JSON.stringify({
+    name: 'context-engine-fixture', version: '1.0.0', peerDependencies: { '@deepseek-ai/dsh-llm': '0.1.5-rc.2' },
+  }))
+  const admitted = { ...prepared, profile: { ...prepared.profile, layers: [...prepared.profile.layers, {
+    packageName: 'context-suite-fixture', packageDir: suite, patchPaths: [], patches: [],
+  }] } }
+  const ctx = new Context()
+  contexts.push(ctx)
+  createDesktopProfileBoot(admitted, pnpm).prepare(ctx)
+  expect(ctx.profileContext.resolvePackageManifest?.('context-engine-fixture')).toBe(engineManifest)
+  expect(prepareProfileEntries(ctx, [{ id: 'nested-engine', name: 'context-engine-fixture' }],
+    pathToFileURL(join(prepared.profile.dir, 'package.json')).href)[0]?.disabled).toBe(true)
+})

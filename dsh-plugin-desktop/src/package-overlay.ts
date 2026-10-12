@@ -1,14 +1,19 @@
 /** Deterministic package selection between the Desktop installation and one Profile. */
 
 import { findPackageJSON } from 'node:module'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { compare, valid } from 'semver'
 
 const BIN_NAME = 'dsh-plugin-desktop'
 const MAX_MANIFEST_BYTES = 1024 * 1024
 const MAX_VERSION_LENGTH = 128
+const EJIANBAO_ROOT = 'cqai-dsh-plugin-ejianbao'
+const EJIANBAO_ENGINE_PACKAGES: ReadonlySet<string> = new Set([
+  'cqai-dsh-plugin-video', 'cqai-dsh-plugin-short-video', 'cqai-dsh-plugin-talkcraft',
+])
+const RETIRED_EJIANBAO_PACKAGES: ReadonlySet<string> = new Set([EJIANBAO_ROOT, ...EJIANBAO_ENGINE_PACKAGES])
 
 export type PackageOverlaySource = 'install' | 'profile'
 
@@ -18,6 +23,9 @@ export interface PackageOverlayCandidate {
   readonly manifestPath: string
   readonly version?: string
   readonly source: PackageOverlaySource
+  /** Declaring package anchor for a dependency carried inside an admitted bundle. */
+  readonly resolutionAnchorUrl?: string
+  readonly bundlePackageName?: string
 }
 
 export interface PackageOverlaySelection {
@@ -32,6 +40,8 @@ export interface PackageOverlayOptions {
   readonly installPackageUrl: string
   /** File URL for the active Profile package.json. */
   readonly profilePackageUrl: string
+  /** Only bundle layers admitted to this live generation may expose nested packages. */
+  readonly profileBundleNames?: readonly string[]
 }
 
 export class PackageOverlayNotFoundError extends Error {
@@ -60,6 +70,7 @@ function readCandidate(
   packageName: string,
   packageUrl: string,
   source: PackageOverlaySource,
+  profileModulesBoundary?: string,
 ): PackageOverlayCandidate | undefined {
   let manifestPath: string | undefined
   try {
@@ -72,7 +83,7 @@ function readCandidate(
   if (source === 'profile') {
     // Only the active Profile owns overrides. Node's ancestor walk can find
     // projections left by older Desktop installs in profiles/node_modules.
-    const modules = join(dirname(fileURLToPath(packageUrl)), 'node_modules')
+    const modules = profileModulesBoundary ?? join(dirname(fileURLToPath(packageUrl)), 'node_modules')
     const offset = relative(modules, manifestPath)
     if (offset === '..' || offset.startsWith(`..${sep}`) || isAbsolute(offset)) return undefined
   }
@@ -125,6 +136,94 @@ export function packageNameFromSpecifier(specifier: string): string | undefined 
   return parts[0]?.length === 0 ? undefined : parts[0]
 }
 
+/** Array identity denotes a generation; a new admitted list invalidates the physical graph. */
+interface BundleDependencyIndex {
+  readonly packages: ReadonlyMap<string, PackageOverlayCandidate>
+  readonly conflicts: ReadonlySet<string>
+}
+const bundleDependencyIndexes = new WeakMap<readonly string[], Map<string, BundleDependencyIndex>>()
+
+function indexedBundleCandidate(packageName: string, index: BundleDependencyIndex): PackageOverlayCandidate | undefined {
+  if (index.conflicts.has(packageName)) throw new Error(`${BIN_NAME}: admitted bundles provide conflicting package ${packageName}`)
+  return index.packages.get(packageName)
+}
+
+/** Follow only declared dependencies inside the physical tree of admitted bundles. */
+function bundledProfileCandidate(
+  packageName: string,
+  options: PackageOverlayOptions,
+  onlyBundleName?: string,
+): PackageOverlayCandidate | undefined {
+  const bundleNames = options.profileBundleNames
+  if (bundleNames === undefined || bundleNames.length === 0) return
+  const graphKey = `${options.profilePackageUrl}\n${onlyBundleName ?? ''}`
+  const existing = bundleDependencyIndexes.get(bundleNames)?.get(graphKey)
+  if (existing !== undefined) return indexedBundleCandidate(packageName, existing)
+  const candidates = new Map<string, PackageOverlayCandidate>()
+  const conflicts = new Set<string>()
+  for (const bundleName of bundleNames) {
+    if (onlyBundleName !== undefined && bundleName !== onlyBundleName) continue
+    if (packageNameFromSpecifier(bundleName) !== bundleName) continue
+    const bundle = readCandidate(bundleName, options.profilePackageUrl, 'profile')
+    if (bundle === undefined) continue
+    const boundary = join(bundle.packageDir, 'node_modules')
+    const pending = [bundle]
+    const seen = new Set<string>()
+    for (let index = 0; index < pending.length; index += 1) {
+      const parent = pending[index]!
+      const identity = realpathSync(parent.manifestPath)
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      if (seen.size > 1024) throw new Error(`${BIN_NAME}: bundle dependency graph is too large for ${bundleName}`)
+      const manifest = JSON.parse(readFileSync(parent.manifestPath, 'utf8')) as {
+        dependencies?: Record<string, unknown>
+        optionalDependencies?: Record<string, unknown>
+        bundledDependencies?: unknown
+        bundleDependencies?: unknown
+      }
+      const names = new Set([
+        ...Object.keys(manifest.dependencies ?? {}),
+        ...Object.keys(manifest.optionalDependencies ?? {}),
+      ])
+      const bundled = manifest.bundledDependencies ?? manifest.bundleDependencies
+      if (Array.isArray(bundled)) {
+        for (const name of bundled) if (typeof name === 'string') names.add(name)
+      }
+      const anchor = pathToFileURL(parent.manifestPath).href
+      for (const name of names) {
+        if (packageNameFromSpecifier(name) !== name) continue
+        const dependency = readCandidate(name, anchor, 'profile', boundary)
+        if (dependency === undefined) continue
+        pending.push(dependency)
+        const candidate = { ...dependency, resolutionAnchorUrl: anchor, bundlePackageName: bundleName }
+        const previous = candidates.get(name)
+        if (previous !== undefined && realpathSync(previous.manifestPath) !== realpathSync(candidate.manifestPath)) {
+          conflicts.add(name)
+        }
+        candidates.set(name, candidate)
+      }
+    }
+  }
+  let profiles = bundleDependencyIndexes.get(bundleNames)
+  if (profiles === undefined) {
+    profiles = new Map()
+    bundleDependencyIndexes.set(bundleNames, profiles)
+  }
+  const index = { packages: candidates, conflicts }
+  profiles.set(graphKey, index)
+  return indexedBundleCandidate(packageName, index)
+}
+
+/** Installation-owned SDKs retain their existing identity when a bundle carries a copy. */
+function installationDeclaresPackage(packageName: string, options: PackageOverlayOptions): boolean {
+  const manifestPath = join(dirname(fileURLToPath(options.installPackageUrl)), 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+    dependencies?: Record<string, unknown>, optionalDependencies?: Record<string, unknown>
+  }
+  return Object.hasOwn(manifest.dependencies ?? {}, packageName)
+    || Object.hasOwn(manifest.optionalDependencies ?? {}, packageName)
+}
+
 /** Find one package root using the Desktop/Profile overlay rule. */
 export function findOverlayPackage(
   packageName: string,
@@ -132,6 +231,16 @@ export function findOverlayPackage(
 ): PackageOverlaySelection | undefined {
   if (packageNameFromSpecifier(packageName) !== packageName) {
     throw new Error(`${BIN_NAME}: package overlay requires one exact npm package name`)
+  }
+  // A live generation must admit the separately installed suite before any old
+  // direct payload can load. Preparation's migration lookup omits this list.
+  if (options.profileBundleNames !== undefined && RETIRED_EJIANBAO_PACKAGES.has(packageName)
+    && !options.profileBundleNames.includes(EJIANBAO_ROOT)) return
+  // The suite's three engines form one release unit. Preserved old standalone
+  // engine installations must never replace its matching bundled implementation.
+  if (options.profileBundleNames !== undefined && EJIANBAO_ENGINE_PACKAGES.has(packageName)) {
+    const profile = bundledProfileCandidate(packageName, options, EJIANBAO_ROOT)
+    return profile === undefined ? undefined : { packageName, selected: profile, profile }
   }
   const install = readCandidate(packageName, options.installPackageUrl, 'install')
   let profile: PackageOverlayCandidate | undefined
@@ -143,6 +252,20 @@ export function findOverlayPackage(
     // fails before this branch and is never hidden by the Profile.
     if (install === undefined) throw cause
     return { packageName, selected: install, install }
+  }
+  // Admitted external bundle roots must also beat undeclared ancestor leftovers.
+  // Only packages declared by Desktop participate in its SemVer overlay policy.
+  if (profile !== undefined && install !== undefined
+    && options.profileBundleNames?.includes(packageName)
+    && !installationDeclaresPackage(packageName, options)) {
+    return { packageName, selected: profile, install, profile }
+  }
+  if (profile === undefined && options.profileBundleNames !== undefined
+    && (install === undefined || !installationDeclaresPackage(packageName, options))) {
+    const bundled = bundledProfileCandidate(packageName, options)
+    if (bundled !== undefined) {
+      return { packageName, selected: bundled, profile: bundled, ...(install === undefined ? {} : { install }) }
+    }
   }
   if (install === undefined && profile === undefined) return
   const selected = install === undefined

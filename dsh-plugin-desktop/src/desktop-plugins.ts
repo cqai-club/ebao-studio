@@ -49,12 +49,8 @@ const DESELECTED_BUNDLES_KEY = 'desktopDeselectedBundles'
 export const DESKTOP_FEATURE_BUNDLES = new Set([
   'cqai-dsh-plugin-cqai-club-theme',
   'cqai-dsh-plugin-imagegen',
-  'cqai-dsh-plugin-video',
-  'cqai-dsh-plugin-ejianbao',
   'cqai-dsh-plugin-publisher',
   '@xmanrui/dsh-im',
-  'cqai-dsh-plugin-talkcraft',
-  'cqai-dsh-plugin-short-video',
   'dsh-ppt-composer',
 ])
 const IMMUTABLE_BUNDLES = new Set([
@@ -481,6 +477,39 @@ export async function clearDesktopProfilePluginState(
     const next = parseState({
       version: STATE_VERSION,
       profiles: state.profiles.filter(profile => profile.profileName !== profileName),
+    })
+    await writeFileAtomic(statePath, renderState(next), {
+      mode: STATE_FILE_MODE,
+      dirMode: STATE_DIRECTORY_MODE,
+    })
+  })
+}
+
+/** Retire named feature disables once during a product-to-plugin migration. */
+export async function clearDesktopProfileDisabledBundleNames(
+  statePath: string,
+  profileName: string,
+  names: readonly string[],
+): Promise<void> {
+  assertDesktopProfileName(profileName)
+  if (!isAbsolute(statePath) || statePath.includes('\0')) {
+    throw new Error(`${BIN_NAME}: plugin-management state path must be absolute and contain no NUL`)
+  }
+  if (names.some(name => !safePackageName(name))) {
+    throw new Error(`${BIN_NAME}: retired bundle names must be valid package names`)
+  }
+  const retired = new Set(names)
+  if (![...readDesktopDisabledBundles(statePath, profileName)].some(name => retired.has(name))) return
+  await ensurePrivateStateDirectory(statePath)
+  await withFileLock(statePath, async () => {
+    const state = readState(statePath)
+    const profile = state.profiles.find(candidate => candidate.profileName === profileName)
+    if (profile === undefined || !profile.disabledBundles.some(name => retired.has(name))) return
+    const next = parseState({
+      version: STATE_VERSION,
+      profiles: state.profiles.map(candidate => candidate.profileName === profileName
+        ? { ...candidate, disabledBundles: candidate.disabledBundles.filter(name => !retired.has(name)) }
+        : candidate),
     })
     await writeFileAtomic(statePath, renderState(next), {
       mode: STATE_FILE_MODE,

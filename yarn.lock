@@ -12243,7 +12243,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"cqai-dsh-plugin-ejianbao@npm:0.1.0, cqai-dsh-plugin-ejianbao@workspace:cqai-dsh-plugins/cqai-dsh-plugin-ejianbao":
+"cqai-dsh-plugin-ejianbao@workspace:cqai-dsh-plugins/cqai-dsh-plugin-ejianbao":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-ejianbao@workspace:cqai-dsh-plugins/cqai-dsh-plugin-ejianbao"
   dependencies:
@@ -12519,7 +12519,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"cqai-dsh-plugin-short-video@npm:0.1.0, cqai-dsh-plugin-short-video@npm:^0.1.0, cqai-dsh-plugin-short-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-short-video":
+"cqai-dsh-plugin-short-video@npm:0.1.0, cqai-dsh-plugin-short-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-short-video":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-short-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-short-video"
   dependencies:
@@ -12602,7 +12602,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"cqai-dsh-plugin-video@npm:0.1.0, cqai-dsh-plugin-video@npm:^0.1.0, cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video":
+"cqai-dsh-plugin-video@npm:0.1.0, cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video":
   version: 0.0.0-use.local
   resolution: "cqai-dsh-plugin-video@workspace:cqai-dsh-plugins/cqai-dsh-plugin-video"
   dependencies:
@@ -14159,13 +14159,9 @@ __metadata:
     clsx: "npm:^2.1.1"
     cqai-dsh-plugin-cqai-club-theme: "npm:0.1.0"
     cqai-dsh-plugin-desktop-presentation: "npm:0.1.0"
-    cqai-dsh-plugin-ejianbao: "npm:0.1.0"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     cqai-dsh-plugin-publisher: "npm:0.1.0"
-    cqai-dsh-plugin-short-video: "npm:^0.1.0"
-    cqai-dsh-plugin-talkcraft: "npm:0.1.0"
-    cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dsh-ppt: "npm:0.1.1-rc.2"
     dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz"
@@ -14395,13 +14391,9 @@ __metadata:
     clsx: "npm:^2.1.1"
     cqai-dsh-plugin-cqai-club-theme: "npm:0.1.0"
     cqai-dsh-plugin-desktop-presentation: "npm:0.1.0"
-    cqai-dsh-plugin-ejianbao: "npm:0.1.0"
     cqai-dsh-plugin-imagegen: "npm:0.1.0"
     cqai-dsh-plugin-market: "npm:0.1.0"
     cqai-dsh-plugin-publisher: "npm:0.1.0"
-    cqai-dsh-plugin-short-video: "npm:^0.1.0"
-    cqai-dsh-plugin-talkcraft: "npm:0.1.0"
-    cqai-dsh-plugin-video: "npm:^0.1.0"
     dsh-community-market: "npm:0.1.0-dev.0"
     dsh-ppt: "npm:0.1.1-rc.2"
     dsh-ppt-composer: "file:../vendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz"

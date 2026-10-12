@@ -190,10 +190,7 @@ describe('CQAI plugin management Client', () => {
           { bundleId: 'imagegen', packageName: 'cqai-dsh-plugin-imagegen', status, mutable: true, uninstallable: false },
           { bundleId: 'ppt', packageName: 'dsh-ppt-composer', status: 'disabled', mutable: true, uninstallable: false },
           { bundleId: 'theme', packageName: 'cqai-dsh-plugin-cqai-club-theme', status: 'disabled', mutable: false, uninstallable: false },
-          { bundleId: 'video', packageName: 'cqai-dsh-plugin-video', status: 'disabled', mutable: false, uninstallable: false },
           { bundleId: 'publisher', packageName: 'cqai-dsh-plugin-publisher', status: 'disabled', mutable: false, uninstallable: false },
-          { bundleId: 'talkcraft', packageName: 'cqai-dsh-plugin-talkcraft', status: 'disabled', mutable: false, uninstallable: false },
-          { bundleId: 'short-video', packageName: 'cqai-dsh-plugin-short-video', status: 'disabled', mutable: false, uninstallable: false },
         ],
         loadedPackageNames: ['cqai-dsh-plugin-imagegen'],
       }), { headers: { 'content-type': 'application/json' } })
@@ -215,7 +212,7 @@ describe('CQAI plugin management Client', () => {
     const invoke = vi.fn(async (_action: 'restart') => {})
     vi.stubGlobal('dshDesktopActions', { invoke })
     const productPackages = ['cqai-dsh-plugin-imagegen', 'dsh-ppt-composer', 'cqai-dsh-plugin-cqai-club-theme',
-      'cqai-dsh-plugin-video', 'cqai-dsh-plugin-publisher', 'cqai-dsh-plugin-talkcraft', 'cqai-dsh-plugin-short-video']
+      'cqai-dsh-plugin-publisher']
     const test = testContext(productPackages.map((name, index) => ({
       name, meta: { icon: `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><title>${index}</title></svg>`).toString('base64')}` },
     })))
@@ -228,11 +225,11 @@ describe('CQAI plugin management Client', () => {
     try {
       await act(async () => { root.render(createElement('ul', null, createElement(cards!.component, { reportCount }))) })
       const productCards = [...container.querySelectorAll('[data-product-bundle]')]
-      expect(productCards).toHaveLength(7)
-      expect(reportCount).toHaveBeenCalledWith(7)
+      expect(productCards).toHaveLength(4)
+      expect(reportCount).toHaveBeenCalledWith(4)
       const icons = productCards.map(card => card.querySelector('.cqpm-product-icon img'))
       expect(icons.every(icon => icon?.getAttribute('alt') === '')).toBe(true)
-      expect(new Set(icons.map(icon => icon?.getAttribute('src'))).size).toBe(7)
+      expect(new Set(icons.map(icon => icon?.getAttribute('src'))).size).toBe(4)
       expect(container.querySelector('[data-product-bundle="@cqaiclub/dsh-plugin-activities"]')).toBeNull()
       const image = container.querySelector('[data-product-bundle="cqai-dsh-plugin-imagegen"]')
       expect(image?.querySelector('.cqpm-product-title')?.textContent).toBe('e图宝')
