@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { parseRemoteRefs, plannedSourceUpdates, sourceSyncConfig } from './sync-gitcode-source.mjs'
 
 const first = 'a'.repeat(40)
@@ -21,7 +22,7 @@ test('source configuration requires credentials before accepting only official s
 })
 
 test('source CLI refuses missing credentials before making remote Git requests', () => {
-  assert.throws(() => execFileSync(process.execPath, [new URL('./sync-gitcode-source.mjs', import.meta.url).pathname], {
+  assert.throws(() => execFileSync(process.execPath, [fileURLToPath(new URL('./sync-gitcode-source.mjs', import.meta.url))], {
     env: { ...process.env, GITCODE_TOKEN: '' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   }), error => /GITCODE_TOKEN/u.test(error.stderr?.toString() ?? ''))
 })

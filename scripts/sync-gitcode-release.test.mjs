@@ -5,6 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import {
   anonymousAssetDigest, assertSourceProvenance, createGitcodeApi, gitcodeConfig,
   mirrorMarker, mirrorVerifiedRelease, uploadGitcodeAsset, validateMirrorSource,
@@ -65,7 +66,7 @@ test('GitCode configuration requires credentials first and constrains repository
 
 test('CLI refuses missing GitCode credentials before invoking GitHub or reading assets', () => {
   const env = { ...process.env, RELEASE_TAG: tag, GITCODE_TOKEN: '' }
-  assert.throws(() => execFileSync(process.execPath, [new URL('./sync-gitcode-release.mjs', import.meta.url).pathname], {
+  assert.throws(() => execFileSync(process.execPath, [fileURLToPath(new URL('./sync-gitcode-release.mjs', import.meta.url))], {
     env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   }), error => /GITCODE_TOKEN/u.test(error.stderr?.toString() ?? ''))
 })
