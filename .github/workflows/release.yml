@@ -298,3 +298,16 @@ jobs:
           trap 'rm -rf "$downloaded"' EXIT
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$downloaded"
           node scripts/verify-release-assets.mjs --directory "$downloaded" --version "${RELEASE_TAG#v}"
+
+  mirror-gitcode:
+    needs: publish
+    if: vars.GITCODE_SYNC_ENABLED == 'true'
+    uses: ./.github/workflows/sync-gitcode.yml
+    permissions:
+      contents: read
+    with:
+      mode: release
+      release_tag: ${{ inputs.release_tag }}
+      source_ref: ${{ github.sha }}
+    secrets:
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}

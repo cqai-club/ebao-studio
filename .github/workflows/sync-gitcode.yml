@@ -1,0 +1,95 @@
+name: Sync GitCode mirror
+
+on:
+  push:
+    branches: [dev, master]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Mirror an existing verified Release, or synchronize source branches only
+        required: true
+        default: release
+        type: choice
+        options: [release, source]
+      release_tag:
+        description: Existing GitHub vMAJOR.MINOR.PATCH Release; required in release mode
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+      source_ref:
+        description: Trusted caller SHA, which must equal github.sha
+        required: true
+        type: string
+      mode:
+        required: false
+        default: release
+        type: string
+    secrets:
+      GITCODE_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+# Source pushes, release publication and manual recovery share one writer.
+concurrency:
+  group: gitcode-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: >-
+      vars.GITCODE_SYNC_ENABLED == 'true' &&
+      (github.ref == 'refs/heads/master' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/dev'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SYNC_MODE: ${{ github.event_name == 'push' && 'source' || inputs.mode || 'release' }}
+      SOURCE_REF: ${{ inputs.source_ref || github.sha }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      GITCODE_REPOSITORY: ${{ vars.GITCODE_REPOSITORY || 'g-dxw/ebao-studio' }}
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate trusted execution source and mirror mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_REF" =~ ^[a-f0-9]{40}$ || "$SOURCE_REF" != "$GITHUB_SHA" ]]; then
+            echo 'Mirror scripts must execute from the trusted caller SHA.' >&2
+            exit 1
+          fi
+          if [[ "$SYNC_MODE" != 'source' && "$SYNC_MODE" != 'release' ]]; then
+            echo 'Mirror mode must be source or release.' >&2
+            exit 1
+          fi
+          if [[ "$SYNC_MODE" == 'release' && -z "$RELEASE_TAG" ]]; then
+            echo 'Release mode requires an existing GitHub Release tag.' >&2
+            exit 1
+          fi
+          if [[ -n "$RELEASE_TAG" && ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Release tag must be canonical vMAJOR.MINOR.PATCH.' >&2
+            exit 1
+          fi
+          if [[ -z "$GITCODE_TOKEN" ]]; then
+            echo 'Configure the GITCODE_TOKEN repository secret before enabling synchronization.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.source_ref || github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - name: Synchronize dev, master and the optional verified release tag
+        run: node scripts/sync-gitcode-source.mjs
+      - name: Mirror and verify GitHub Release assets
+        if: env.SYNC_MODE == 'release'
+        run: node scripts/sync-gitcode-release.mjs

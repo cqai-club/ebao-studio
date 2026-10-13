@@ -15,6 +15,8 @@ export const frontendAsset = 'dist/assets/index-5SrrfWpU.js'
 const primitivesPatch = 'patches/dsh-client-ui-primitives@0.2.0-rc.2.patch'
 const frontendPatch = 'patches/dsh-web-frontend@0.2.0-rc.2.patch'
 const ownedLibraryFiles = ['lib/index.js', 'lib/types/index.d.ts', 'lib/types/markdown/MarkdownDelegate.d.ts']
+// Published artifacts use LF; inherited Git settings must not change replay bytes.
+const gitLFConfig = ['-c', 'core.autocrlf=false', '-c', 'core.eol=lf']
 export const markdownPreviewRegistrySource = `/* ebao-markdown-image-preview-registry:start */
 const ebaoMarkdownImagePreviews = [];
 const ebaoMarkdownImagePreviewListeners = new Set();
@@ -103,7 +105,7 @@ function retainedPrimitivesPatch(source) {
 }
 
 function fileDiff(directory, file) {
-  const result = spawnSync('git', ['diff', '--no-index', '--', `a/${file}`, `b/${file}`], { cwd: directory, encoding: 'utf8' })
+  const result = spawnSync('git', [...gitLFConfig, 'diff', '--no-index', '--', `a/${file}`, `b/${file}`], { cwd: directory, encoding: 'utf8' })
   if (result.status !== 1) throw new Error(`Expected modified ${file}: ${result.stderr || result.error || result.status}`)
   return result.stdout.replace(/^diff --git a\/a\/(\S+) b\/b\/(\S+)$/gm, 'diff --git a/$1 b/$2').replace(/^--- a\/a\//gm, '--- a/').replace(/^\+\+\+ b\/b\//gm, '+++ b/')
 }
@@ -113,8 +115,8 @@ function verifyReplay(directory, patch, files) {
   cpSync(join(directory, 'a'), replay, { recursive: true })
   const patchPath = join(directory, 'replay.patch')
   writeFileSync(patchPath, patch)
-  execFileSync('git', ['apply', '--check', patchPath], { cwd: replay, stdio: 'pipe' })
-  execFileSync('git', ['apply', patchPath], { cwd: replay, stdio: 'pipe' })
+  execFileSync('git', [...gitLFConfig, 'apply', '--check', patchPath], { cwd: replay, stdio: 'pipe' })
+  execFileSync('git', [...gitLFConfig, 'apply', patchPath], { cwd: replay, stdio: 'pipe' })
   for (const file of files) {
     if (!readFileSync(join(replay, file)).equals(readFileSync(join(directory, 'b', file)))) throw new Error(`Patch replay differs for ${file}`)
   }
@@ -135,7 +137,7 @@ export function generateMarkdownPreviewPatches() {
       if (kind === 'primitives') {
         const cssPatchPath = join(directory, 'css.patch')
         writeFileSync(cssPatchPath, retained)
-        execFileSync('git', ['apply', cssPatchPath], { cwd: join(directory, 'b'), stdio: 'pipe' })
+        execFileSync('git', [...gitLFConfig, 'apply', cssPatchPath], { cwd: join(directory, 'b'), stdio: 'pipe' })
         for (const [file, transform] of [[files[0], patchPrimitivesRuntime], [files[1], patchPublicTypes], [files[2], patchDelegateTypes]]) {
           writeFileSync(join(directory, 'b', file), transform(readFileSync(join(directory, 'a', file), 'utf8')))
         }

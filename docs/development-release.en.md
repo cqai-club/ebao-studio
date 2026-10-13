@@ -11,6 +11,7 @@ Development changes → `dev` → `master` → successful packaging → version 
 | Promotion | Open a same-repository dev PR targeting master; CI rejects other sources | Reviewed PR passes CI and merges; use a merge commit to preserve branch history |
 | Master packaging | After master CI succeeds, manually dispatch Release on master with a version tag that does not exist yet and a macOS mode | verify, Windows and macOS packaging/checks succeed for the same dispatch SHA; aggregate SHA-256 and Updater SHA-512 checks pass |
 | Tagging and publishing | Automatic after successful packaging | Retain verified artifacts and provenance, create an annotated tag, upload and verify Release files, then publish a prerelease |
+| GitCode mirror | When enabled, automatic after GitHub public-download verification | Synchronize source and the version tag, reuse all seven original Release assets, and confirm domestic downloads only after anonymous download and integrity verification |
 
 CI automatically covers PRs targeting dev/master and pushes to both branches, with manual dispatch also available. Administrators should require `changes` and `check` on both branches and prohibit bypasses. CI rejects noncompliant PRs; Release separately rejects commits without a merged dev-to-master PR. Direct master pushes do not qualify for release.
 
@@ -30,6 +31,29 @@ CI automatically covers PRs targeting dev/master and pushes to both branches, wi
 5. Every job checks out the dispatch `github.sha`, never a moving master/tag. Release verifies that SHA is on master and exactly the merged dev PR commit. Later master advancement does not change the packaged/tagged SHA.
 6. After all packaging and checks pass, retain `release-validated-<run_id>-<attempt>` before creating an annotated tag carrying provenance JSON. It records SHA, version, macOS mode, run URL and SHA-256 of every release file; the same record appears in `release-provenance.json` and the Release body. Actions artifacts are retained for 30 days; tag and Release provenance persists.
 7. Create a draft, upload missing files, and compare GitHub asset digests with the verified bytes before publishing a prerelease. Download public assets afterward and verify SHA256SUMS and Updater metadata again. Merge master back into dev to keep history synchronized.
+8. When GitCode synchronization is enabled, `mirror-gitcode` runs after GitHub publication and public-download verification succeed. It executes trusted scripts from the same dispatch SHA, synchronizes source and the existing tag, then mirrors the verified Release. A failed mirror can be retried separately; the published GitHub Release is retained.
+
+## GitCode source and Release mirror
+
+GitHub remains the development and packaging source, with [`g-dxw/ebao-studio`](https://gitcode.com/g-dxw/ebao-studio) as the GitCode target. Importing a repository into GitCode does not migrate GitHub Release assets; source and Release synchronization run separately. GitHub Actions still packages on native Windows/macOS runners, and GitCode reuses those original artifacts. Independent GitCode packaging requires separately provisioned native Windows/macOS execution hosts and signing environments.
+
+Synchronization is disabled by default. Add the `GITCODE_TOKEN` GitHub repository secret with write access to the target repository, then set the repository variable `GITCODE_SYNC_ENABLED` to the string `true`. The optional `GITCODE_REPOSITORY` variable overrides the default target, `g-dxw/ebao-studio`. Keep the token in Actions secrets; never include it in source, command arguments or download URLs.
+
+Once enabled, pushes to `dev` and `master` synchronize those two branches in one direction. Successful releases also synchronize the corresponding existing annotated tag. Source synchronization does not force-push, mirror every ref or delete unrelated branches/tags; target history conflicts stop synchronization and are reported. All synchronization uses the shared `gitcode-mirror` concurrency group so source pushes, releases and manual recovery do not write to the target simultaneously.
+
+To recover an existing mirror, manually run **Sync GitCode mirror** in Actions. Select `master` to execute trusted scripts; scripts never execute from the release tag being mirrored. `release` mode requires an existing GitHub Release tag. `source` mode synchronizes source and may optionally include an existing version tag:
+
+```sh
+gh workflow run sync-gitcode.yml --repo cqai-club/ebao-studio --ref master \
+  -f mode=source
+
+gh workflow run sync-gitcode.yml --repo cqai-club/ebao-studio --ref master \
+  -f mode=release -f release_tag=vX.Y.Z
+```
+
+The Release mirror preserves the version, notes, signing/prerelease status and provenance, and uploads seven original files: the four installers/archives, `latest.yml`, `latest-mac.yml` and `SHA256SUMS`. File names and bytes are retained without rebuilding, splitting or rewriting checksum files. Per-asset, total-capacity and traffic limits require testing with the current large installers; an accepted upload is not download acceptance. Verify actual anonymously downloaded bytes, SHA-256 and Updater SHA-512 before confirming that domestic users can obtain complete packages, and record the live result separately.
+
+This mirror does not switch installed applications to a new update source. Version checks, Electron Updater and the existing download service retain their configured sources. GitCode provides a manual installer-download entry point. Any in-app update-source change needs Beta adaptation and validation before synchronization into Stable.
 
 ## Failures and retries
 
@@ -39,7 +63,14 @@ CI automatically covers PRs targeting dev/master and pushes to both branches, wi
 - A new run for an existing version, another commit/mode/byte set, or a historical lightweight tag is rejected. For source/workflow changes or inconsistent rebuilds, fix in dev, promote again and use a new version. Never delete, move or force-push an existing tag.
 - If the final public-download check fails, the tag still represents previously successful, verified packaging. Preserve it, investigate the download/publication problem and rerun the failed job. Incomplete uploads remain draft.
 - If Actions artifacts expire and cannot be recovered, the original process cannot prove identical files; prepare a new version/run.
+- If GitCode synchronization fails, check the secret, target write permissions, source history conflicts and platform asset limits, then retry `mirror-gitcode` alone or manually mirror the existing version. Do not rebuild Windows/macOS artifacts to repair a mirror or overwrite target files with conflicting checksums. Retain the original GitHub tag, Release and artifacts.
 
 ## Validation scope
 
 `node --test scripts/release-flow.test.mjs scripts/verify-release-assets.test.mjs` covers successful packaging before tagging, failed/cancelled/incomplete packaging without tagging, retries, partial-upload recovery, duplicate runs, commit/run/file conflicts and artifact retention before tagging. API tests use in-memory substitutes and create no real version tags. CI runs these tests and the branch-entry check each time. Real Windows/macOS packaging and Release API uploads remain acceptance gates for the next master release with a version change; testing this workflow does not create an extra product version. Packaging duration and stability remain tracked in issue #23.
+
+GitCode integration adds `scripts/sync-gitcode-source.test.mjs` and `scripts/sync-gitcode-release.test.mjs`. All 41 local checks passed: 28 from `corepack yarn test:release-assets` and 13 from `node --test scripts/release-flow.test.mjs`. They cover trusted source and credential boundaries, synchronization of selected branches/tags, idempotent missing-asset uploads, conflict rejection, provenance consistency, anonymous streamed/ranged download verification and workflow ordering after successful publication. Tests use in-memory substitutes and temporary local services; they do not establish live platform uploads or complete installer acceptance. Existing native Windows/macOS packaging gates remain unchanged.
+
+On 2026-10-13, the existing `v0.0.14` was mirrored to its [GitCode Release](https://gitcode.com/g-dxw/ebao-studio/releases/tag/v0.0.14). The seven original assets total **2,535,484,234 bytes (approximately 2.54 GB)**, and all 7/7 passed anonymous GET download and SHA-256 verification. The Release body preserves the original GitHub notes, unsigned-test/prerelease status and provenance; the source commit and annotated tag remain unchanged. This record confirms large-asset capacity and anonymous downloads for this version only, without promising future platform quotas or traffic policies.
+
+The GitHub `GITCODE_TOKEN` secret, `GITCODE_REPOSITORY=g-dxw/ebao-studio` and `GITCODE_SYNC_ENABLED=true` are configured and confirmed by readback. The automatic synchronization workflow remains on a feature branch and takes effect after PR review and integration into `dev`, followed by promotion to `master`. This acceptance reused existing artifacts without rerunning native Windows/macOS packaging. The code remains opt-in, and other environments must configure their own credentials and variables.

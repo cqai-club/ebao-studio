@@ -6,7 +6,7 @@ The home page with the E宝 robot and digital employee entries. Available featur
 
 # e宝工坊
 
-[中文](README.md) · [Download](https://github.com/cqai-club/ebao-studio/releases) · [User guide](docs/user-guide.en.md)
+[中文](README.md) · [Download in China (GitCode)](https://gitcode.com/g-dxw/ebao-studio/releases) · [GitHub downloads](https://github.com/cqai-club/ebao-studio/releases) · [User guide](docs/user-guide.en.md)
 
 e宝工坊 is an open-source desktop app for Windows and macOS built around [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It brings the upstream local Web client, Host service, and plugin system into a native window, with a system tray, Profile management, a terminal, recovery, and plugin management. Installed builds include the required runtime.
 
@@ -20,7 +20,7 @@ The e剪宝 form for producing a video from existing talking footage, with media
 
 ## Use
 
-Choose a build from [Releases](https://github.com/cqai-club/ebao-studio/releases). Check its Release page for supported platforms and installation notes. For first-run steps, Profiles, plugins, and updates, see the [user guide](docs/user-guide.en.md) and [FAQ](docs/faq.en.md).
+Choose a build from [GitCode downloads for China](https://gitcode.com/g-dxw/ebao-studio/releases) or [GitHub Releases](https://github.com/cqai-club/ebao-studio/releases). Check its Release page for supported platforms and installation notes. For first-run steps, Profiles, plugins, and updates, see the [user guide](docs/user-guide.en.md) and [FAQ](docs/faq.en.md).
 
 - **Desktop experience:** Start and manage DSH locally, with a native window, tray, browser access, and terminal.
 - **Work Profiles:** Compose plugins and settings per Profile, with startup recovery for configuration problems.

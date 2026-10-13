@@ -703,7 +703,8 @@
     "check:bilingual-docs": "yarn test:bilingual-docs && node scripts/verify-bilingual-docs.mjs",
     "test:architecture-gates": "node --test scripts/market-dependency-direction.test.mjs",
     "check:architecture": "yarn test:architecture-gates && node scripts/verify-market-dependency-direction.mjs",
-    "check:vendored-runtime": "node scripts/sync-vendored-runtime.mjs --check --channel stable && node scripts/sync-vendored-runtime.mjs --check --channel beta && node scripts/markdown-image-preview-compat.mjs --check",
+    "test:markdown-preview-compat": "node --test scripts/markdown-image-preview-compat.test.mjs",
+    "check:vendored-runtime": "yarn test:markdown-preview-compat && node scripts/sync-vendored-runtime.mjs --check --channel stable && node scripts/sync-vendored-runtime.mjs --check --channel beta && node scripts/markdown-image-preview-compat.mjs --check",
     "check:desktop-variants": "node scripts/verify-desktop-variants.mjs",
     "check:layout": "yarn test:market-release && yarn test:aa-release && yarn check:bilingual-docs && yarn test:release-assets && yarn test:plugin-publish && yarn check:architecture && yarn check:vendored-runtime && yarn check:desktop-variants && yarn icons:check && node scripts/verify-layout.mjs",
     "check": "yarn check:layout && yarn test:aa-connector && yarn workspace dsh-community-fabric check && yarn workspace dsh-community-market check && yarn build:cqai-plugins && yarn workspace dsh-plugin-desktop check && yarn workspace dsh-plugin-desktop-beta check && yarn workspace dsh-desktop-next check && yarn typecheck:cqai-plugins && yarn test:cqai-plugins",
@@ -749,7 +750,7 @@
     "build:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run build",
     "typecheck:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run typecheck",
     "test:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run test",
-    "test:release-assets": "node --test scripts/verify-release-assets.test.mjs",
+    "test:release-assets": "node --test scripts/verify-release-assets.test.mjs scripts/sync-gitcode-release.test.mjs scripts/sync-gitcode-source.test.mjs",
     "dev:beta:wechat-debug": "yarn dev:beta:publisher-debug",
     "dev:beta:publisher-tabs": "EBAO_PUBLISHER_WORKER=\"$PWD/matrixmedia-publisher/build/publisher-worker-account-name/mac-universal/MatrixMedia Publisher Worker.app\" yarn dev:beta",
     "dev:beta:publisher-debug": "EBAO_PUBLISHER_ACCOUNT_DEVTOOLS=1 yarn dev:beta:publisher-tabs"

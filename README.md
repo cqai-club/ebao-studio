@@ -6,7 +6,7 @@
 
 # e宝工坊
 
-[English](README.en.md) · [下载](https://github.com/cqai-club/ebao-studio/releases) · [用户指南](docs/user-guide.md)
+[English](README.en.md) · [国内下载（GitCode）](https://gitcode.com/g-dxw/ebao-studio/releases) · [GitHub 下载](https://github.com/cqai-club/ebao-studio/releases) · [用户指南](docs/user-guide.md)
 
 e宝工坊是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的开源桌面应用，面向 Windows 和 macOS。它把上游的本地 Web 客户端、Host 服务和插件系统带进原生窗口，并提供系统托盘、Profile 管理、终端、恢复和插件管理。安装版自带所需运行环境。
 
@@ -20,7 +20,7 @@ e剪宝的已有口播视频制作表单，可选择素材、填写文案并调�
 
 ## 使用
 
-从 [Releases](https://github.com/cqai-club/ebao-studio/releases) 选择适合系统的安装包；具体支持平台和安装提示以对应 Release 为准。首次使用及 Profile、插件、更新说明见[用户指南](docs/user-guide.md)和[常见问题](docs/faq.md)。
+从 [GitCode 国内下载](https://gitcode.com/g-dxw/ebao-studio/releases)或 [GitHub Releases](https://github.com/cqai-club/ebao-studio/releases) 选择适合系统的安装包；具体支持平台和安装提示以对应 Release 为准。首次使用及 Profile、插件、更新说明见[用户指南](docs/user-guide.md)和[常见问题](docs/faq.md)。
 
 - **桌面体验：** 本地启动和管理 DSH，提供窗口、托盘、浏览器访问与原生终端。
 - **工作配置：** 用 Profile 组合插件和设置，并通过启动恢复功能处理配置问题。
