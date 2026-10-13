@@ -749,7 +749,7 @@
     "build:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run build",
     "typecheck:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run typecheck",
     "test:cqai-plugins": "yarn workspaces foreach -A --include 'cqai-dsh-plugins/*' run test",
-    "test:release-assets": "node --test scripts/verify-release-assets.test.mjs",
+    "test:release-assets": "node --test scripts/verify-release-assets.test.mjs scripts/sync-gitcode-release.test.mjs scripts/sync-gitcode-source.test.mjs",
     "dev:beta:wechat-debug": "yarn dev:beta:publisher-debug",
     "dev:beta:publisher-tabs": "EBAO_PUBLISHER_WORKER=\"$PWD/matrixmedia-publisher/build/publisher-worker-account-name/mac-universal/MatrixMedia Publisher Worker.app\" yarn dev:beta",
     "dev:beta:publisher-debug": "EBAO_PUBLISHER_ACCOUNT_DEVTOOLS=1 yarn dev:beta:publisher-tabs"
