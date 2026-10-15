@@ -37,6 +37,7 @@ vi.mock('../src/client/api.js', () => ({
   readMarketInstallations: vi.fn(),
   readMoreMarketCatalog: vi.fn(),
   readMarketState: vi.fn(),
+  readMarketUpdates: vi.fn(),
   requestMarketRestart: vi.fn(),
 }))
 

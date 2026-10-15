@@ -127,6 +127,105 @@ const css = `
   min-width: 0;
 }
 
+.dshMarketUpdateActions,
+.dshMarketUpdateSummaryText,
+.dshMarketUpdateNotice > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dshMarketUpdateSummaryText {
+  min-width: 0;
+  flex: 1;
+}
+
+.dshMarketUpdateSummary,
+.dshMarketUpdateCompleted {
+  flex-wrap: wrap;
+}
+
+.dshMarketUpdateCompleted > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.dshMarketUpdateStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.dshMarketUpdateFailure,
+.dshMarketUpdateCompleted {
+  align-items: flex-start;
+}
+
+.dshMarketUpdateFailure p,
+.dshMarketUpdateCompleted p {
+  margin: 4px 0 0;
+}
+
+.dshMarketUpdateCompleted ul {
+  margin: 6px 0;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+
+.dshMarketUpdateReview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dshMarketUpdateReview li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.dshMarketUpdateReview span {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+
+.dshMarketUpdateNotice {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  max-width: min(560px, calc(100vw - 40px));
+  padding: 14px 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.dshMarketUpdateNotice > div {
+  min-width: 0;
+  flex: 1;
+}
+
 .dshMarketGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -56,7 +56,7 @@ function copy(locale: string) {
   }
 }
 
-type ShellProps = PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market' | 'cqai.pluginManagement.skills' | 'cqai.pluginManagement.mcp'> & {
+type ShellProps = PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market' | 'cqai.pluginManagement.updates' | 'cqai.pluginManagement.skills' | 'cqai.pluginManagement.mcp'> & {
   ctx: Context
   viewState: ViewState
 }
@@ -81,6 +81,7 @@ export function PluginManagementShell({ ctx, viewState, content, nativeView, sho
   }, [nativeView.kind, viewState])
 
   const openInstalled = () => { showList(); viewState.select('installed') }
+  const openUpdates = () => { window.dispatchEvent(new window.Event('cqai-plugin-market-open-updates')) }
   return <div className="cqpm-shell">
     <style>{styles}</style>
     <nav className="cqpm-nav" aria-label={t.title}>
@@ -93,7 +94,10 @@ export function PluginManagementShell({ ctx, viewState, content, nativeView, sho
       <button type="button" aria-current={view === 'skills' ? 'page' : undefined} onClick={() => viewState.select('skills')}>{t.skills}</button>
       <button type="button" aria-current={view === 'mcp' ? 'page' : undefined} onClick={() => viewState.select('mcp')}>{t.mcp}</button>
     </nav>
-    <div className="cqpm-native" hidden={view !== 'installed'}>{content}</div>
+    <div className="cqpm-native" hidden={view !== 'installed'}>
+      {renderSlot('cqai.pluginManagement.updates', { onOpenUpdates: openUpdates })}
+      {content}
+    </div>
     {view === 'market' && <div className="cqpm-market">
       <header className="cqpm-market-head" data-window-drag><h1>{t.market}</h1><p>{t.marketIntro}</p></header>
       {renderSlot('cqai.pluginManagement.market', { onOpenInstalled: openInstalled }, {

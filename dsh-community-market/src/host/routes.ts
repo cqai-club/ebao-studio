@@ -13,6 +13,7 @@ import type {
   MarketCatalogSourceResult,
   MarketInstallationView,
   MarketManualInstallHint,
+  MarketOperationPreviewRequest,
   MarketSourceMutation,
   MarketStateResponse,
 } from '../api-types.js'
@@ -47,6 +48,7 @@ const ROUTE_CATALOG = '/api/community-market/catalog'
 const ROUTE_INSTALLABLE = '/api/community-market/installable'
 const ROUTE_ASSETS = '/api/community-market/assets'
 const ROUTE_INSTALLATIONS = '/api/community-market/installations'
+const ROUTE_UPDATES = '/api/community-market/updates'
 const ROUTE_OPEN_TERMINAL = '/api/community-market/desktop/open-terminal'
 const ROUTE_REQUEST_RESTART = '/api/community-market/desktop/request-restart'
 const ROUTE_OPERATION_PREVIEW = '/api/community-market/operations/preview'
@@ -373,10 +375,6 @@ function asMutation(value: unknown): MarketSourceMutation {
   throw new Error('unsupported mutation')
 }
 
-type MarketOperationPreviewRequest =
-  | { readonly action: 'install'; readonly sourceRecordId: string; readonly itemId: string }
-  | { readonly action: 'uninstall'; readonly bundleId: string }
-
 function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const actual = Object.keys(value).sort()
   return actual.length === keys.length && actual.every((key, index) => key === [...keys].sort()[index])
@@ -398,10 +396,10 @@ function asOperationPreview(value: unknown): MarketOperationPreviewRequest {
     && boundedIdentifier(request.itemId)
   ) return { action: 'install', sourceRecordId: request.sourceRecordId, itemId: request.itemId }
   if (
-    request.action === 'uninstall'
+    (request.action === 'uninstall' || request.action === 'update')
     && exactKeys(request, ['action', 'bundleId'])
     && boundedIdentifier(request.bundleId)
-  ) return { action: 'uninstall', bundleId: request.bundleId }
+  ) return { action: request.action, bundleId: request.bundleId }
   throw new MarketInstallError('invalid-request', 'Invalid package operation preview request.')
 }
 
@@ -987,6 +985,39 @@ export function registerMarketRoutes(
   }
   if (installProvider !== undefined) {
     routes.push(
+      ctx.webServer.register({ kind: 'exact', path: ROUTE_UPDATES, handler: async (req, res) => {
+        if (req.method !== 'GET' || !requestAllowed(req, expectedPort)) {
+          sendJson(res, 405, { error: 'market update checks require a local GET' })
+          return
+        }
+        const install = installProvider.get()
+        const plugins = desktopPluginsProvider?.get()
+        if (install === undefined || plugins === undefined) {
+          sendJson(res, 503, { error: 'market package operations are unavailable' })
+          return
+        }
+        const controller = new AbortController()
+        const signal = AbortSignal.any([controller.signal, generationController.signal])
+        const stopWatching = abortOnDisconnect(req, res, controller)
+        try {
+          const query = new URL(req.url ?? '/', 'http://localhost').searchParams
+          if ([...query.keys()].some(key => key !== 'force')
+            || query.getAll('force').length > 1
+            || query.has('force') && query.get('force') !== '1') {
+            throw new MarketInstallError('invalid-request', 'The update check query was invalid.')
+          }
+          const bundles = plugins.list()
+          reconcileInstallations(bundles)
+          const targets = bundles.filter(bundle => bundle.mutable && bundle.uninstallable)
+            .map(({ bundleId, packageName }) => ({ bundleId, packageName }))
+          const response = await install.checkUpdates(targets, signal, query.has('force'))
+          if (!signal.aborted && !res.destroyed) sendJson(res, 200, response)
+        } catch (cause) {
+          if (!signal.aborted && !res.destroyed) sendInstallError(res, cause)
+        } finally {
+          stopWatching()
+        }
+      }}),
       ctx.webServer.register({ kind: 'exact', path: ROUTE_INSTALLABLE, handler: async (req, res) => {
         if (req.method !== 'GET' || !requestAllowed(req, expectedPort)) {
           sendJson(res, 405, { error: 'market installable catalog requires a local GET' })
@@ -1108,11 +1139,15 @@ export function registerMarketRoutes(
             preview = await install.previewInstall(request.sourceRecordId, request.itemId, signal)
           } else {
             const desktopPlugins = desktopPluginsProvider?.get()
-            const target = desktopPlugins?.list().find(bundle => bundle.bundleId === request.bundleId)
-            if (target === undefined || !target.uninstallable) {
-              throw new MarketInstallError('not-available', 'The selected Profile plugin can no longer be uninstalled.')
+            const bundles = desktopPlugins?.list() ?? []
+            reconcileInstallations(bundles)
+            const target = bundles.find(bundle => bundle.bundleId === request.bundleId)
+            if (target === undefined || !target.uninstallable || request.action === 'update' && !target.mutable) {
+              throw new MarketInstallError('not-available', 'The selected Profile plugin can no longer be changed.')
             }
-            preview = await install.previewUninstallPackage(target.packageName, signal)
+            preview = request.action === 'update'
+              ? await install.previewUpdatePackage(target.packageName, signal)
+              : await install.previewUninstallPackage(target.packageName, signal)
           }
           const { intent, ...summary } = preview
           if (!signal.aborted && !res.destroyed) sendJson(res, 200, { ...summary, previewId: intent })
@@ -1205,6 +1240,7 @@ export const marketRoutes = {
   installable: ROUTE_INSTALLABLE,
   assets: ROUTE_ASSETS,
   installations: ROUTE_INSTALLATIONS,
+  updates: ROUTE_UPDATES,
   openTerminal: ROUTE_OPEN_TERMINAL,
   requestRestart: ROUTE_REQUEST_RESTART,
   operationPreview: ROUTE_OPERATION_PREVIEW,

@@ -10,15 +10,18 @@
 
 ## Package 操作边界
 
-- 只有用户明确确认后才开始安装。
-- 确认框展示 Host 解析出的 npm package、npm `latest` 稳定版本和当前 Profile。
+- 安装、更新和卸载只有在用户明确确认后才开始。定时检查和更新提醒不会授权 package 修改。
+- 确认框展示 Host 解析出的 npm package、npm `latest` 稳定版本和当前 Profile；更新确认还展示已经验证的真实安装版本。
 - 不接受目录数据提供的命令、脚本、HTML、header、凭据或 package-manager argv。
 - 自动安装要求唯一合法的 npm package 身份，并要求 npm 官方 `latest` manifest 声明合法的 `dsh.bundle.patch`。
 - 来源提供的版本和验证结论不构成安装权限。
 - Market package 修改只使用 `desktopPnpm.run(argv)`，同一时间只执行一个。
-- Renderer 在安装时提交来源/条目身份，在卸载时提交 Desktop 返回的不透明 `bundleId`；执行时不能自行选择任意 package name。
-- 已安装清单来自当前 Profile 的直接依赖，因此其他市场或 DSH CLI 安装的 package 也会显示。可移除的直接依赖只提供卸载；Market 不暴露启用或禁用操作。
-- Market 不创建安装 receipt、安装专用快照、重试、清理或回滚。恢复统一由 Desktop 的三个健康启动 checkpoint 槽位负责。
+- Renderer 在安装时提交来源/条目身份，在更新和卸载时提交 Desktop 返回的不透明 `bundleId`；执行时不能自行选择任意 package name。
+- 已安装清单来自当前 Profile 的直接依赖，因此其他市场或 DSH CLI 安装的 package 也会显示。可移除的直接依赖提供卸载，符合条件且允许修改的直接 npm bundle 提供更新；Market 不暴露启用或禁用操作。
+- 更新目标来自 Host 拥有的清单及真实安装版本。跳过产品自有核心 bundle、本地或 Git 依赖；未知安装版本会显示错误，不能更新。npm 稳定 `latest` 和 semver 比较排除降级及预发布版本。
+- 更新 preview 用短时一次性 token 绑定当前 Profile、package 和精确的新旧版本。Host 在执行前重新检查这些事实，并保留 bundle 引用和配置。
+- Market 不创建安装 receipt、安装专用快照、重试、清理或回滚。更新失败会尝试重新安装旧的精确版本；如果该尝试也失败，提示用户使用 Desktop 的三个健康启动 checkpoint 槽位。Checkpoint 恢复仍需明确操作。
+- 全部更新逐项执行用户已确认的更新，不是原子事务。首次失败即停止，保留成功项，并列出失败项及未执行项；重试前需要重新查看确认。
 - 修改成功后可以签发短时、一次性重启许可，但重启始终需要用户明确操作。
 - **打开 DSH 终端**使用空 body，只负责打开 Desktop 终端，不会粘贴或执行界面中的命令。
 

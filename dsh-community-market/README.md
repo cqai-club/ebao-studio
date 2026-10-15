@@ -10,12 +10,13 @@ The package declares a standard `dsh.bundle.patch`. Desktop Next exposes it in t
 
 ## Product behavior
 
-The Market has four views:
+The Market has five views:
 
 1. **Discover** browses the selected source, with search, category filters, details, and source attribution.
 2. **Installable** shows normalized entries that expose one unambiguous npm package identity. It does not trust a source-provided version.
-3. **Installed** reads direct plugin dependencies from the active Profile. It includes plugins installed by this Market, another market, or the DSH CLI. Removable plugins offer **Uninstall** only; core bundles remain read-only.
-4. **Sources** saves, orders, and selects catalog sources. Exactly one source is active for browsing.
+3. **Installed** reads direct plugin dependencies from the active Profile. It includes plugins installed by this Market, another market, or the DSH CLI. Removable plugins offer **Uninstall**, while core bundles remain read-only.
+4. **Updates** compares installed npm plugin versions with npm `latest` and offers individual or all-package review and update.
+5. **Sources** saves, orders, and selects catalog sources. Exactly one source is active for browsing.
 
 The Renderer never sends a package name or package-manager command for an installation. It submits the selected source and item identity, then the Host resolves the normalized package identity it previously observed.
 
@@ -31,6 +32,16 @@ Automatic installation deliberately has a small qualification boundary:
 Source versions, verification badges, repository equality, deprecation metadata, lifecycle scripts, engine ranges, tarball integrity metadata, and build-allowance claims do not decide Market eligibility. pnpm remains responsible for resolving and installing the requested exact npm version.
 
 After confirmation, the Host calls only `desktopPnpm.run(argv)`, adds the exact npm version, and reconciles the package into `dsh.profile.bundles`. The Market creates no install receipt, snapshot, retry, cleanup, or rollback path. Recovery is handled by Desktop's unified three-slot healthy-start checkpoints.
+
+## Plugin updates
+
+The Client checks installed plugins after startup and every 30 minutes. The Market also offers **Check for updates**. Checks use a bounded Host cache, and the manual action refreshes the registry result. Available updates show the installed and latest versions and an update notice; checking never installs a version automatically.
+
+The Host derives each target from the active Profile's opaque inventory `bundleId`, reads the actual installed version, and compares it with the official npm registry's stable `latest` version using semver. Checks cover direct npm plugin bundles, including ones installed by another market or the DSH CLI. Product-owned core bundles and local or Git dependencies are skipped. Packages whose installed version cannot be verified show a check error and cannot be updated. Updates never downgrade or select a prerelease.
+
+The user may review and confirm one update or **Update all**. A short-lived, one-shot preview binds the active Profile, package, and exact old and new versions. The Host rechecks these facts, updates one package at a time through `desktopPnpm.run(argv)`, and retains its bundle reference and configuration. Changes take effect after an explicit restart.
+
+If an update fails, the Host attempts to reinstall the previous exact version. The failure is shown for that package; if restoration also fails, the message directs the user to Desktop Recovery. **Update all** is a sequence of individual updates, not an atomic transaction. It stops at the first failure, retains successful updates, and lists the failed and remaining unattempted packages so they can be reviewed and retried. This feature uses Community Market's own services and does not depend on DSH Market.
 
 ## Uninstall and cross-market compatibility
 
@@ -58,7 +69,7 @@ If an automatic installation starts but pnpm fails, Desktop keeps a bounded tail
 
 ## Documentation
 
-- [Install and uninstall](docs/install-and-uninstall.md)
+- [Install, update, and uninstall](docs/install-and-uninstall.md)
 - [Market shell](docs/market-shell.md)
 - [Catalog provider contract](docs/catalog-provider-contract.md)
 - [Catalog adapter guide](docs/catalog-adapter-guide.md)

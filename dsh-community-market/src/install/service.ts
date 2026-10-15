@@ -1,12 +1,16 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { lstat, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { chmod, lstat, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { isAbsolute, join, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
-import { prerelease, valid } from 'semver'
+import { isDeepStrictEqual } from 'node:util'
+import { gt, prerelease, satisfies, valid, validRange } from 'semver'
 import type {
   MarketCatalogMetadata,
   MarketInstallableResponse,
+  MarketPluginUpdate,
   MarketSourceView,
+  MarketUpdatesResponse,
 } from '../api-types.js'
 import type { CatalogHttpClient } from '../contracts/types.js'
 import {
@@ -31,11 +35,16 @@ const MAX_INTENTS = 256
 const MAX_CANDIDATES = 10_000
 const MAX_PNPM_STREAM_OUTPUT_BYTES = 32 * 1024
 const MAX_FAILURE_CAUSE_LENGTH = 4 * 1024
+const UPDATE_CHECK_TTL_MS = 30 * 60 * 1000
+const MAX_UPDATE_CHECK_CONCURRENCY = 4
+const hostRequire = createRequire(import.meta.url)
 const BLOCKED_PRODUCT_PACKAGES = new Set([
   'dsh-plugin-desktop',
   'dsh-plugin-desktop-beta',
   'dsh-desktop-next',
   'dsh-community-market',
+  'dshmarket',
+  'cqai-dsh-plugin-market',
 ])
 
 export interface MarketDesktopProfile {
@@ -79,6 +88,17 @@ export interface MarketUninstallPreview {
   readonly expiresAt: string
 }
 
+export interface MarketUpdatePreview {
+  readonly intent: string
+  readonly action: 'update'
+  readonly profileName: string
+  readonly packageName: string
+  readonly currentVersion: string
+  readonly version: string
+  readonly displayName: string
+  readonly expiresAt: string
+}
+
 export interface MarketInstallResult {
   readonly packageName: string
   readonly version: string
@@ -90,6 +110,7 @@ export interface MarketUninstallResult {
 
 export type MarketOperationResult =
   | ({ readonly action: 'install'; readonly restartToken: string } & MarketInstallResult)
+  | ({ readonly action: 'update'; readonly restartToken: string } & MarketInstallResult)
   | ({ readonly action: 'uninstall'; readonly restartToken: string } & MarketUninstallResult)
 
 export type MarketInstallErrorCode =
@@ -202,7 +223,17 @@ interface UninstallIntent {
   readonly expiresAt: number
 }
 
-type MarketIntent = InstallIntent | UninstallIntent
+interface UpdateIntent {
+  readonly kind: 'update'
+  readonly packageName: string
+  readonly previousSpec: string
+  readonly currentVersion: string
+  readonly verification: MarketPackageVerification
+  readonly profile: MarketDesktopProfile
+  readonly expiresAt: number
+}
+
+type MarketIntent = InstallIntent | UninstallIntent | UpdateIntent
 
 interface RestartIntent {
   readonly profile: MarketDesktopProfile
@@ -218,6 +249,7 @@ export interface MarketNpmPackageVerifier {
 
 export interface MarketNpmPackageVerification {
   readonly version: string
+  readonly peerDependencies?: Readonly<Record<string, string>>
 }
 
 export interface MarketPackageVerification extends MarketNpmPackageVerification {
@@ -318,7 +350,14 @@ export function createNpmRegistryVerifier(http: CatalogHttpClient): MarketNpmPac
       if (!safeBundlePatch(patch)) {
         throw new MarketInstallError('verification-failed', 'The npm package does not declare a valid DSH bundle.')
       }
-      return { version: manifest.version }
+      const peers = record(manifest.peerDependencies)
+      const peerDependencies = peers === undefined ? undefined : Object.fromEntries(
+        Object.entries(peers).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      )
+      return {
+        version: manifest.version,
+        ...(peerDependencies === undefined ? {} : { peerDependencies }),
+      }
     },
   }
 }
@@ -367,7 +406,10 @@ function record(value: unknown): UnknownRecord | undefined {
 }
 
 async function readManifest(path: string): Promise<JsonManifest> {
-  const body = await readFile(path)
+  return manifestFromBuffer(await readFile(path))
+}
+
+function manifestFromBuffer(body: Buffer): JsonManifest {
   if (body.byteLength > MAX_MANIFEST_BYTES) throw new Error('manifest too large')
   const value = JSON.parse(body.toString('utf8')) as unknown
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid manifest')
@@ -461,6 +503,127 @@ async function directProfilePluginVersion(
   return version
 }
 
+interface DirectNpmPlugin {
+  readonly spec: string
+  readonly version: string
+}
+
+/** Special-source dependencies stay owned by their original installation workflow. */
+function updateableNpmPackage(packageName: string, spec: string | undefined): spec is string {
+  return safePackageName(packageName)
+    && marketManagedPackage(packageName)
+    && !packageName.startsWith('@deepseek-ai/')
+    && spec !== undefined
+    && (spec === 'latest' || validRange(spec, { loose: false }) !== null)
+}
+
+async function installedPackageVersion(profile: MarketDesktopProfile, packageName: string): Promise<string> {
+  const manifest = await readManifest(join(profile.dir, 'node_modules', packageName, 'package.json'))
+  if (manifest.name !== packageName || typeof manifest.version !== 'string' || valid(manifest.version) !== manifest.version) {
+    throw new MarketInstallError('verification-failed', 'The installed plugin package identity or version could not be verified.')
+  }
+  return manifest.version
+}
+
+async function directNpmPlugin(profile: MarketDesktopProfile, packageName: string): Promise<DirectNpmPlugin | undefined> {
+  const manifest = await readManifest(join(profile.dir, 'package.json'))
+  const spec = profileDependency(manifest, packageName)
+  if (!updateableNpmPackage(packageName, spec) || !profileBundles(manifest).includes(packageName)) return undefined
+  const version = await installedPackageVersion(profile, packageName)
+  return { spec, version }
+}
+
+/** A known incompatible official DSH peer must be resolved before package mutation. */
+async function assertCompatiblePeers(profile: MarketDesktopProfile, verification: MarketPackageVerification): Promise<void> {
+  for (const [packageName, range] of Object.entries(verification.peerDependencies ?? {})) {
+    if (!packageName.startsWith('@deepseek-ai/') || !safePackageName(packageName)) continue
+    let manifest: JsonManifest
+    try { manifest = await readManifest(join(profile.dir, 'node_modules', packageName, 'package.json')) }
+    catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new MarketInstallError('verification-failed', `The installed DSH peer ${packageName} could not be verified.`)
+      }
+      // Profiles often inherit official runtime packages from the Desktop tree.
+      try { manifest = await readManifest(hostRequire.resolve(`${packageName}/package.json`)) }
+      catch (fallbackCause) {
+        if ((fallbackCause as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND') continue
+        throw new MarketInstallError('verification-failed', `The installed DSH peer ${packageName} could not be verified.`)
+      }
+    }
+    if (manifest.name !== packageName || typeof manifest.version !== 'string' || valid(manifest.version) === null || validRange(range) === null) {
+      throw new MarketInstallError('verification-failed', `The required DSH peer ${packageName} could not be verified.`)
+    }
+    if (!satisfies(manifest.version, range, { includePrerelease: true })) {
+      throw new MarketInstallError('verification-failed', `This update requires ${packageName} ${range}; the current Profile has ${manifest.version}.`)
+    }
+  }
+}
+
+interface UpdateCacheEntry {
+  readonly verification: MarketPackageVerification
+  readonly checkedAt: number
+}
+
+interface PendingUpdateCheck {
+  readonly controller: AbortController
+  readonly promise: Promise<UpdateCacheEntry>
+  users: number
+}
+
+function awaitWithAbort<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted()
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    void pending.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
+
+interface ProfileFileBackup {
+  readonly body: Buffer
+  readonly mode: number
+}
+
+async function restoreProfileFile(profile: MarketDesktopProfile, file: string, backup: ProfileFileBackup | undefined): Promise<void> {
+  const destination = join(profile.dir, file)
+  const existing = await lstat(destination).catch(cause => {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw cause
+  })
+  if (existing !== undefined && (!existing.isFile() || existing.isSymbolicLink())) throw new Error('unsafe Profile restore destination')
+  if (backup === undefined) {
+    await unlink(destination).catch(cause => { if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause })
+    return
+  }
+  const temporary = join(profile.dir, `.${file}.${process.pid}.${randomUUID()}.tmp`)
+  try {
+    await writeFile(temporary, backup.body, { flag: 'wx', mode: backup.mode })
+    await chmod(temporary, backup.mode)
+    await rename(temporary, destination)
+  } finally {
+    await unlink(temporary).catch(cause => { if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause })
+  }
+}
+
+async function optionalProfileFile(profile: MarketDesktopProfile, file: string): Promise<ProfileFileBackup | undefined> {
+  try {
+    const path = join(profile.dir, file)
+    const item = await lstat(path)
+    if (!item.isFile() || item.isSymbolicLink()) throw new Error('unsafe Profile backup source')
+    return { body: await readFile(path), mode: item.mode & 0o777 }
+  }
+  catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw cause
+  }
+}
+
+function withoutUpdatedDependency(manifest: JsonManifest, packageName: string): UnknownRecord {
+  const dependencies = { ...record(manifest.dependencies) }
+  delete dependencies[packageName]
+  return { ...manifest, dependencies }
+}
+
 /** Host-owned install workflow. No provider command or Renderer package spec crosses this boundary. */
 export class MarketInstallService {
   private readonly candidates = new Map<string, InstallCandidate>()
@@ -473,6 +636,11 @@ export class MarketInstallService {
   private readonly maxCandidates: number
   private readonly logFailure: ((message: string) => void) | undefined
   private readonly generation = new AbortController()
+  private readonly updateCache = new Map<string, UpdateCacheEntry>()
+  private readonly pendingUpdateChecks = new Map<string, PendingUpdateCheck>()
+  private readonly updateWaiters = new Set<() => void>()
+  private activeUpdateChecks = 0
+  private updateGeneration = 0
   private operationActive = false
   private closed = false
 
@@ -575,6 +743,165 @@ export class MarketInstallService {
     }
   }
 
+  async checkUpdates(
+    targets: readonly { bundleId: string; packageName: string }[],
+    signal: AbortSignal,
+    force = false,
+  ): Promise<MarketUpdatesResponse> {
+    const operationSignal = this.operationSignal(signal)
+    const profile = this.profile()
+    let checkedAt: number | undefined
+    const unique = [...new Map(targets.map(target => [target.bundleId, target])).values()]
+    const updates = await Promise.all(unique.map(async (target): Promise<MarketPluginUpdate | undefined> => {
+      operationSignal.throwIfAborted()
+      let currentVersion = ''
+      try {
+        const installed = await directNpmPlugin(profile, target.packageName)
+        if (installed === undefined) return undefined
+        currentVersion = installed.version
+        const checked = await this.lookupUpdate(profile, target.packageName, installed, operationSignal, force)
+        checkedAt = checkedAt === undefined ? checked.checkedAt : Math.min(checkedAt, checked.checkedAt)
+        operationSignal.throwIfAborted()
+        this.sameProfile(profile)
+        const latestVersion = checked.verification.version
+        const current = await directNpmPlugin(profile, target.packageName)
+        if (current?.spec !== installed.spec || current.version !== installed.version) {
+          throw new MarketInstallError('conflict', 'The installed plugin changed during the update check. Check again after the operation completes.')
+        }
+        if (gt(latestVersion, currentVersion)) await assertCompatiblePeers(profile, checked.verification)
+        return {
+          ...target,
+          currentVersion,
+          latestVersion,
+          updateAvailable: gt(latestVersion, currentVersion),
+        }
+      } catch (cause) {
+        operationSignal.throwIfAborted()
+        this.sameProfile(profile)
+        return {
+          ...target,
+          currentVersion,
+          updateAvailable: false,
+          error: cause instanceof MarketInstallError
+            ? cause.message
+            : 'The installed plugin or npm latest version could not be checked.',
+        }
+      }
+    }))
+    operationSignal.throwIfAborted()
+    this.sameProfile(profile)
+    return { updates: updates.filter((item): item is MarketPluginUpdate => item !== undefined), checkedAt: new Date(checkedAt ?? this.now()).toISOString() }
+  }
+
+  async previewUpdatePackage(packageName: string, signal: AbortSignal): Promise<MarketUpdatePreview> {
+    const operationSignal = this.operationSignal(signal)
+    const profile = this.profile()
+    if (!safePackageName(packageName)) throw new MarketInstallError('invalid-request', 'The Profile plugin package name is invalid.')
+    const installed = await directNpmPlugin(profile, packageName)
+    if (installed === undefined) throw new MarketInstallError('not-available', 'Only direct npm plugin bundles can be updated by this market.')
+    // Preview binds a fresh exact version, even when the update badge came from cache.
+    const { verification } = await this.lookupUpdate(profile, packageName, installed, operationSignal, true)
+    operationSignal.throwIfAborted()
+    if (!gt(verification.version, installed.version)) throw new MarketInstallError('not-available', 'There is no newer stable npm release for this plugin.')
+    await assertCompatiblePeers(profile, verification)
+    this.sameProfile(profile)
+    const current = await directNpmPlugin(profile, packageName)
+    if (current?.spec !== installed.spec || current.version !== installed.version) {
+      throw new MarketInstallError('conflict', 'The installed plugin changed during update verification. Preview the update again.')
+    }
+    operationSignal.throwIfAborted()
+    const expiresAt = this.now() + this.intentTtlMs
+    const intent = this.issueIntent({
+      kind: 'update', packageName, previousSpec: installed.spec, currentVersion: installed.version,
+      verification, profile, expiresAt,
+    })
+    return {
+      intent, action: 'update', profileName: profile.name, packageName,
+      currentVersion: installed.version, version: verification.version, displayName: packageName,
+      expiresAt: new Date(expiresAt).toISOString(),
+    }
+  }
+
+  async executeUpdate(token: string, signal: AbortSignal): Promise<MarketInstallResult> {
+    return await this.runExclusive(async () => {
+      const operationSignal = this.operationSignal(signal)
+      const intent = this.consumeIntent(token, 'update')
+      const profile = this.sameProfile(intent.profile)
+      const installed = await directNpmPlugin(profile, intent.packageName)
+      if (installed?.spec !== intent.previousSpec || installed.version !== intent.currentVersion) {
+        throw new MarketInstallError('conflict', 'The installed plugin changed after preview. Preview the update again.')
+      }
+      await assertCompatiblePeers(profile, intent.verification)
+      const originalManifest = await optionalProfileFile(profile, 'package.json')
+      if (originalManifest === undefined) throw new MarketInstallError('conflict', 'The active Profile manifest is unavailable.')
+      const originalLock = await optionalProfileFile(profile, 'pnpm-lock.yaml')
+      const originalDocument = manifestFromBuffer(originalManifest.body)
+      const beforeMutation = await directNpmPlugin(profile, intent.packageName)
+      if (beforeMutation?.spec !== intent.previousSpec || beforeMutation.version !== intent.currentVersion) {
+        throw new MarketInstallError('conflict', 'The installed plugin changed after preview. Preview the update again.')
+      }
+      if (!isDeepStrictEqual(await readManifest(join(profile.dir, 'package.json')), originalDocument)) {
+        throw new MarketInstallError('conflict', 'The active Profile changed before the update could start. Preview the update again.')
+      }
+      operationSignal.throwIfAborted()
+      this.sameProfile(profile)
+      this.invalidateUpdateChecks()
+      try {
+        await this.runPnpm(['add', ...this.installOptions(intent.packageName), `${intent.packageName}@${intent.verification.version}`], operationSignal)
+        const current = await directNpmPlugin(profile, intent.packageName)
+        const currentDocument = await readManifest(join(profile.dir, 'package.json'))
+        if (current?.spec !== intent.verification.version || current.version !== intent.verification.version) {
+          throw new MarketInstallError('verification-failed', 'The package manager finished, but the installed update version did not match the confirmed version.')
+        }
+        if (!isDeepStrictEqual(withoutUpdatedDependency(currentDocument, intent.packageName), withoutUpdatedDependency(originalDocument, intent.packageName))) {
+          throw new MarketInstallError('verification-failed', 'The package manager changed unrelated Profile configuration during the update.')
+        }
+        operationSignal.throwIfAborted()
+        this.sameProfile(profile)
+      } catch (cause) {
+        // Cancellation can happen after pnpm changed dependencies. Recovery must
+        // finish independently of the cancelled HTTP request before releasing the lock.
+        let recoveryError: unknown
+        let unrelatedChanges = false
+        try {
+          try {
+            const afterFailure = await readManifest(join(profile.dir, 'package.json'))
+            unrelatedChanges = !isDeepStrictEqual(withoutUpdatedDependency(afterFailure, intent.packageName), withoutUpdatedDependency(originalDocument, intent.packageName))
+          } catch { unrelatedChanges = true }
+          await this.runPnpm(['add', ...this.installOptions(intent.packageName), `${intent.packageName}@${intent.currentVersion}`], this.generation.signal)
+          if (await installedPackageVersion(profile, intent.packageName) !== intent.currentVersion) throw new Error('restored version mismatch')
+          const afterRollback = await readManifest(join(profile.dir, 'package.json'))
+          unrelatedChanges ||= !isDeepStrictEqual(withoutUpdatedDependency(afterRollback, intent.packageName), withoutUpdatedDependency(originalDocument, intent.packageName))
+          // Native Profile editors do not share the market's mutation lock. A
+          // concurrent bundle/dependency/configuration edit must survive failure.
+          if (!unrelatedChanges) {
+            await restoreProfileFile(profile, 'package.json', originalManifest)
+            await restoreProfileFile(profile, 'pnpm-lock.yaml', originalLock)
+            if (originalLock !== undefined) {
+              await this.runPnpm(['install', '--frozen-lockfile', `--registry=${NPM_REGISTRY}`], this.generation.signal)
+            }
+            const restored = await directNpmPlugin(profile, intent.packageName)
+            if (restored?.spec !== intent.previousSpec || restored.version !== intent.currentVersion) throw new Error('restored Profile mismatch')
+            if (!isDeepStrictEqual(await readManifest(join(profile.dir, 'package.json')), originalDocument)) throw new Error('restored Profile configuration mismatch')
+          }
+        } catch (failure) { recoveryError = failure }
+        const details = [
+          cause instanceof MarketInstallError ? cause.details ?? cause.message : failureCause(cause),
+          ...(recoveryError === undefined ? [] : [`Recovery failure:\n${recoveryError instanceof MarketInstallError ? `${recoveryError.message}\n${recoveryError.details ?? ''}` : failureCause(recoveryError)}`]),
+        ].filter(Boolean).join('\n\n')
+        const message = recoveryError !== undefined
+          ? 'The plugin update failed, and restoring the previously installed version also failed. Use a Recovery checkpoint before continuing.'
+          : unrelatedChanges
+            ? 'The plugin update failed. The previously installed plugin version was restored, and unrelated Profile changes were preserved. The original Profile configuration and lockfile could not be safely restored; review the current Profile or use a Recovery checkpoint.'
+            : 'The plugin update failed. The previously installed version and Profile configuration were restored.'
+        try { this.logFailure?.(`dsh-community-market: ${message}\n${details}`) } catch {}
+        if (operationSignal.aborted && recoveryError === undefined && !unrelatedChanges) operationSignal.throwIfAborted()
+        throw new MarketInstallError('operation-failed', message, details)
+      } finally { this.invalidateUpdateChecks() }
+      return { packageName: intent.packageName, version: intent.verification.version }
+    })
+  }
+
   async previewInstall(
     sourceRecordId: string,
     itemId: string,
@@ -645,6 +972,7 @@ export class MarketInstallService {
       const target = candidate.source === undefined
         ? `${packageName}@${verification.version}`
         : githubPackageTarget(candidate.source)
+      this.invalidateUpdateChecks()
       await this.runPnpm([
         'add',
         ...(candidate.source === undefined ? this.installOptions(packageName) : ['--save-exact']),
@@ -674,7 +1002,9 @@ export class MarketInstallService {
     }
     const result: MarketOperationResult = intent.kind === 'install'
       ? { action: 'install', ...await this.executeInstall(token, signal), restartToken: this.issueRestartToken() }
-      : { action: 'uninstall', ...await this.executeUninstall(token, signal), restartToken: this.issueRestartToken() }
+      : intent.kind === 'update'
+        ? { action: 'update', ...await this.executeUpdate(token, signal), restartToken: this.issueRestartToken() }
+        : { action: 'uninstall', ...await this.executeUninstall(token, signal), restartToken: this.issueRestartToken() }
     return result
   }
 
@@ -725,6 +1055,7 @@ export class MarketInstallService {
       const profile = this.sameProfile(intent.profile)
       await directProfilePluginVersion(profile, intent.packageName)
       operationSignal.throwIfAborted()
+      this.invalidateUpdateChecks()
       await this.runPnpm(['remove', intent.packageName], operationSignal)
       try { await setProfileBundle(profile, intent.packageName, false) }
       catch {
@@ -746,6 +1077,7 @@ export class MarketInstallService {
     this.candidates.clear()
     this.intents.clear()
     this.restartIntents.clear()
+    this.invalidateUpdateChecks()
   }
 
   private profile(): MarketDesktopProfile {
@@ -754,6 +1086,84 @@ export class MarketInstallService {
       throw new MarketInstallError('operation-failed', 'The active desktop profile is unavailable.')
     }
     return Object.freeze({ name: profile.name, dir: resolve(profile.dir) })
+  }
+
+  private invalidateUpdateChecks(): void {
+    this.updateGeneration += 1
+    this.updateCache.clear()
+  }
+
+  private async updateCheckSlot(signal: AbortSignal): Promise<() => void> {
+    while (this.activeUpdateChecks >= MAX_UPDATE_CHECK_CONCURRENCY) {
+      signal.throwIfAborted()
+      await new Promise<void>((resolve, reject) => {
+        const ready = () => { cleanup(); resolve() }
+        const abort = () => { cleanup(); reject(signal.reason) }
+        const cleanup = () => {
+          this.updateWaiters.delete(ready)
+          signal.removeEventListener('abort', abort)
+        }
+        this.updateWaiters.add(ready)
+        signal.addEventListener('abort', abort, { once: true })
+      })
+    }
+    signal.throwIfAborted()
+    this.activeUpdateChecks += 1
+    return () => {
+      this.activeUpdateChecks -= 1
+      this.updateWaiters.values().next().value?.()
+    }
+  }
+
+  private async lookupUpdate(
+    profile: MarketDesktopProfile,
+    packageName: string,
+    installed: DirectNpmPlugin,
+    signal: AbortSignal,
+    force: boolean,
+  ): Promise<UpdateCacheEntry> {
+    signal.throwIfAborted()
+    const key = JSON.stringify([profile.name, profile.dir, packageName, installed.spec, installed.version, this.updateGeneration])
+    const cached = this.updateCache.get(key)
+    if (!force && cached !== undefined && this.now() - cached.checkedAt < UPDATE_CHECK_TTL_MS) return cached
+    this.updateCache.delete(key)
+    let pending = this.pendingUpdateChecks.get(key)
+    if (pending === undefined || pending.controller.signal.aborted) {
+      const controller = new AbortController()
+      const sharedSignal = AbortSignal.any([controller.signal, this.generation.signal])
+      const generation = this.updateGeneration
+      const promise = (async (): Promise<UpdateCacheEntry> => {
+        const release = await this.updateCheckSlot(sharedSignal)
+        try {
+          const verification = await this.verifier.verify({ packageName }, sharedSignal)
+          sharedSignal.throwIfAborted()
+          if (!stableExactVersion(verification.version)) {
+            throw new MarketInstallError('verification-failed', 'npm latest did not declare a stable exact plugin version.')
+          }
+          if (verification.source !== undefined || (verification.packageName !== undefined && verification.packageName !== packageName)) {
+            throw new MarketInstallError('verification-failed', 'The npm update verification returned a different package identity or source.')
+          }
+          const entry = { verification, checkedAt: this.now() }
+          if (generation === this.updateGeneration) {
+            this.updateCache.set(key, entry)
+            this.trim(this.updateCache, MAX_CANDIDATES)
+          }
+          return entry
+        } finally { release() }
+      })()
+      pending = { controller, promise, users: 0 }
+      const current = pending
+      this.pendingUpdateChecks.set(key, current)
+      void promise.then(() => {}, () => {}).finally(() => {
+        if (this.pendingUpdateChecks.get(key) === current) this.pendingUpdateChecks.delete(key)
+      })
+    }
+    pending.users += 1
+    try { return await awaitWithAbort(pending.promise, signal) }
+    finally {
+      pending.users -= 1
+      if (pending.users === 0 && this.pendingUpdateChecks.get(key) === pending) pending.controller.abort(new DOMException('The update check was cancelled', 'AbortError'))
+    }
   }
 
   private sameProfile(expected: MarketDesktopProfile): MarketDesktopProfile {

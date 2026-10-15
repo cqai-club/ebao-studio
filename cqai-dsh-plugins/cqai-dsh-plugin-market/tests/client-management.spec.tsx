@@ -37,6 +37,7 @@ function testContext(bundleIcons: readonly { name: string; meta: { icon: string 
   const selectPanel = vi.fn()
   const listBundles = vi.fn(async () => ({ ok: true as const, value: bundleIcons }))
   const ctx = {
+    effect: () => {},
     inject: (_names: readonly string[], callback: (scope: Context) => void) => { callback(ctx as unknown as Context) },
     locale: {
       getLocale: () => ({ active: 'zh-CN' }),
@@ -95,6 +96,7 @@ describe('CQAI plugin management Client', () => {
     const cards = registrations.find(entry => entry.options.name === 'plugins.installed.cards')
     expect(shell).toBeDefined()
     expect(shell?.options.children).toHaveProperty('cqai.pluginManagement.market')
+    expect(shell?.options.children).toHaveProperty('cqai.pluginManagement.updates')
     expect(shell?.options.children).toHaveProperty('cqai.pluginManagement.skills')
     expect(shell?.options.children).toHaveProperty('cqai.pluginManagement.mcp')
     expect(account).toBeDefined()
@@ -108,7 +110,8 @@ describe('CQAI plugin management Client', () => {
     const showList = vi.fn()
     let action: { id: string; label: () => string; onSelect: () => void } | undefined
     const nativeContent = createElement('div', { 'data-native-manager': true }, '原生插件页面 · 添加插件')
-    const market = (name: string, owner: { onOpenInstalled: () => void }) => {
+    const market = (name: string, owner: { onOpenInstalled: () => void; onOpenUpdates?: () => void }) => {
+      if (name === 'cqai.pluginManagement.updates') return createElement('button', { onClick: owner.onOpenUpdates }, '查看插件更新')
       if (name === 'cqai.pluginManagement.skills') return createElement('div', { 'data-skills-panel': true }, '技能内容')
       if (name === 'cqai.pluginManagement.mcp') return createElement('div', { 'data-mcp-panel': true }, 'MCP 内容')
       return createElement('button', { onClick: owner.onOpenInstalled }, '市场返回已安装')
@@ -169,6 +172,16 @@ describe('CQAI plugin management Client', () => {
       })
       expect(showList).toHaveBeenCalled()
       expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('已安装插件')
+      await act(async () => {
+        [...container.querySelectorAll<HTMLButtonElement>('.cqpm-native button')]
+          .find(button => button.textContent === '查看插件更新')?.click()
+      })
+      expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('插件市场')
+      await act(async () => { action?.onSelect() })
+      await act(async () => { dom.window.dispatchEvent(new dom.window.Event('cqai-plugin-market-open-updates')) })
+      expect(selectPanel).toHaveBeenLastCalledWith('plugins')
+      expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('插件市场')
+      expect(container.textContent).toContain('市场返回已安装')
     } finally {
       await act(async () => { root.unmount() })
       await ctx.fiber.dispose()
@@ -277,6 +290,7 @@ describe('CQAI plugin management Client', () => {
     const registrations: string[] = []
     let activateServices: (() => void) | undefined
     const ctx = {
+      effect: () => {},
       inject: (_names: readonly string[], callback: (scope: Context) => void) => {
         activateServices = () => { callback(ctx as unknown as Context) }
       },

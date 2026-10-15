@@ -10,12 +10,13 @@ DSH Community Market 是 [易宝工坊](../README.md) 内置的开放插件市�
 
 ## 产品行为
 
-Market 包含四个视图：
+Market 包含五个视图：
 
 1. **发现**：浏览当前来源，支持搜索、分类筛选、详情和来源归属信息。
 2. **可安装**：显示能够提供唯一 npm package 身份的标准化条目，不信任来源提供的版本。
-3. **已安装**：读取当前 Profile 的直接插件依赖。无论插件由本 Market、其他市场还是 DSH CLI 安装，都会显示；可移除插件只提供**卸载**，核心 bundle 保持只读。
-4. **来源**：保存、排序和选择目录来源；同一时间只选择一个来源浏览。
+3. **已安装**：读取当前 Profile 的直接插件依赖。无论插件由本 Market、其他市场还是 DSH CLI 安装，都会显示；可移除插件提供**卸载**，核心 bundle 保持只读。
+4. **更新**：比较已安装 npm 插件版本与 npm `latest`，支持查看确认和执行单个或全部更新。
+5. **来源**：保存、排序和选择目录来源；同一时间只选择一个来源浏览。
 
 Renderer 在安装时不会提交 package name 或 package-manager 命令，只提交被选中的来源和条目身份。Host 再解析自己此前观察到的标准化 package 身份。
 
@@ -31,6 +32,16 @@ Renderer 在安装时不会提交 package name 或 package-manager 命令，只�
 来源版本、验证徽章、仓库是否一致、deprecated metadata、lifecycle script、engine 范围、tarball integrity metadata 和 build-allowance 声明，都不决定 Market 是否允许安装。pnpm 负责解析并安装用户确认的精确 npm 版本。
 
 用户确认后，Host 只调用 `desktopPnpm.run(argv)`，添加精确 npm 版本，并把 package 写入 `dsh.profile.bundles`。Market 不创建安装 receipt、快照、重试、清理或回滚路径；恢复统一交给 Desktop 的三个健康启动 checkpoint 槽位。
+
+## 插件更新
+
+Client 在启动后及每隔 30 分钟检查已安装插件，Market 也提供**检查更新**。检查使用 Host 的有界缓存，手动检查会刷新 registry 结果。发现更新时显示已安装版本、最新版本和更新提醒；检查不会自动安装新版本。
+
+Host 从当前 Profile 的不透明清单 `bundleId` 解析目标，读取真实安装版本，并通过 semver 与 npm 官方 registry 的稳定 `latest` 版本比较。检查覆盖直接 npm 插件 bundle，包括其他市场或 DSH CLI 安装的插件；跳过产品自有核心 bundle、本地或 Git 依赖。无法验证真实安装版本的 package 会显示检查错误，不能更新。更新不会降级，也不会选择预发布版本。
+
+用户可以查看并确认单个更新或**全部更新**。短时一次性 preview 绑定当前 Profile、package 和精确的新旧版本。Host 会再次检查这些事实，通过 `desktopPnpm.run(argv)` 逐个更新，并保留 bundle 引用和配置。修改在用户明确重启后生效。
+
+更新失败时，Host 尝试重新安装旧的精确版本，并显示该 package 的失败结果；如果恢复也失败，提示用户使用 Desktop 恢复页面。**全部更新**是逐项执行而非原子事务：首次失败即停止，成功项保留，并列出失败项和剩余未执行项，供重新查看确认和重试。该功能使用 Community Market 自身服务，不依赖 DSH Market。
 
 ## 卸载与其他市场兼容
 
@@ -58,7 +69,7 @@ Renderer 在安装时不会提交 package name 或 package-manager 命令，只�
 
 ## 文档
 
-- [安装与卸载](docs/install-and-uninstall.zh.md)
+- [安装、更新与卸载](docs/install-and-uninstall.zh.md)
 - [Market shell](docs/market-shell.zh.md)
 - [目录提供方合同](docs/catalog-provider-contract.zh.md)
 - [目录适配器指南](docs/catalog-adapter-guide.zh.md)

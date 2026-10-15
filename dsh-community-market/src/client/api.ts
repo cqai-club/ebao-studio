@@ -8,6 +8,7 @@ import type {
   MarketOperationPreviewResponse,
   MarketSourceMutation,
   MarketStateResponse,
+  MarketUpdatesResponse,
 } from '../api-types.js'
 
 const CATALOG_PAGE_LIMIT = 50
@@ -99,6 +100,13 @@ export async function mutateMarketSource(mutation: MarketSourceMutation, signal?
 
 export async function readMarketInstallations(signal?: AbortSignal): Promise<MarketInstallationsResponse> {
   return await readJson(await fetch('/api/community-market/installations', {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+export async function readMarketUpdates(signal?: AbortSignal, force = false): Promise<MarketUpdatesResponse> {
+  return await readJson(await fetch(`/api/community-market/updates${force ? '?force=1' : ''}`, {
     cache: 'no-store',
     ...(signal === undefined ? {} : { signal }),
   }))

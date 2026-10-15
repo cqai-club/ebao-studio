@@ -114,6 +114,22 @@ export interface MarketInstallationsResponse {
   readonly installations: readonly MarketInstallationView[]
 }
 
+/** Registry checks for direct npm plugin bundles in the current Profile. */
+export interface MarketPluginUpdate {
+  readonly bundleId: string
+  readonly packageName: string
+  readonly currentVersion: string
+  readonly latestVersion?: string
+  readonly updateAvailable: boolean
+  /** A failed check must never look like a successful up-to-date result. */
+  readonly error?: string
+}
+
+export interface MarketUpdatesResponse {
+  readonly updates: readonly MarketPluginUpdate[]
+  readonly checkedAt: string
+}
+
 /** One Host-filtered provider page; local install state never changes catalog membership. */
 export interface MarketInstallableResponse {
   readonly source: MarketSourceView
@@ -133,17 +149,18 @@ export type MarketOperationPreviewRequest =
       readonly itemId: string
     }
   | {
-      readonly action: 'uninstall'
+      readonly action: 'uninstall' | 'update'
       /** Opaque exact target obtained from the current Profile inventory. */
       readonly bundleId: string
     }
 
 /** Host-verified facts shown before the user confirms a package mutation. */
 export interface MarketOperationPreviewResponse {
-  readonly action: 'install' | 'uninstall'
+  readonly action: 'install' | 'uninstall' | 'update'
   readonly profileName: string
   readonly packageName: string
   readonly version?: string
+  readonly currentVersion?: string
   readonly displayName: string
   readonly expiresAt: string
   readonly previewId: string
@@ -151,7 +168,7 @@ export interface MarketOperationPreviewResponse {
 
 export type MarketOperationExecuteResponse =
   | {
-      readonly action: 'install'
+      readonly action: 'install' | 'update'
       readonly packageName: string
       readonly version: string
       readonly restartToken: string
