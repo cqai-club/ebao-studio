@@ -1,0 +1,47 @@
+# Temporary recovery control; retain on its audit branch, never promote to dev/master.
+# Copies the existing verified release bytes. It does not build or create tags.
+name: Recover verified GitCode v0.0.15
+
+on:
+  push:
+    branches: [codex/gitcode-recovery-v0.0.15]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitcode-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: >-
+      github.repository == 'cqai-club/ebao-studio' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/codex/gitcode-recovery-v0.0.15' &&
+      vars.GITCODE_SYNC_ENABLED == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: cqai-club/ebao-studio
+          ref: d5a9fa00f091e54f1c64f9641831b85c00e5bd0d
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify immutable execution source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = d5a9fa00f091e54f1c64f9641831b85c00e5bd0d
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - name: Supplement existing verified release and anonymously verify every asset
+        env:
+          SOURCE_REPOSITORY: cqai-club/ebao-studio
+          GITCODE_REPOSITORY: g-dxw/ebao-studio
+          RELEASE_TAG: v0.0.15
+          GH_TOKEN: ${{ github.token }}
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+        run: node scripts/sync-gitcode-release.mjs
