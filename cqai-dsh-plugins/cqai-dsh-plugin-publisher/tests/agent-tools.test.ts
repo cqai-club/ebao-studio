@@ -47,7 +47,7 @@ async function fixture(trustedRequest?: ConstructorParameters<typeof PublisherAg
   let call = 0
   async function mint(id: string, origin?: 'subagent', publisherOwned = true): Promise<Agent> {
     const session = Session.create(SessionId(id), [], {
-      version: 4, id: SessionId(id), createdAt: 0, isSeeded: false, cwd: 'C:/publisher-shared', ...(origin ? { origin } : {}),
+      version: 4, id: SessionId(id), createdAt: 0, isSeeded: false, cwd: join(tmpdir(), 'publisher-shared'), ...(origin ? { origin } : {}),
     })
     const agent = { id: session.id, session, status: 'running', options: {} } as unknown as Agent
     let scope!: Scope

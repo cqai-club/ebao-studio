@@ -68,7 +68,7 @@ async function fixture(mountLoader = true, attachments: object = {}) {
   async function mint(id: string, options: { parent?: Agent; scopeParent?: object; publisherOwned?: boolean; cwd?: string } = {}) {
     const session = Session.create(SessionId(id), [], {
       version: 4, id: SessionId(id), createdAt: 0, isSeeded: false,
-      cwd: options.cwd ?? 'C:/publisher-shared',
+      cwd: options.cwd ?? join(tmpdir(), 'publisher-shared'),
       ...(options.parent ? { origin: 'subagent' as const, parentSession: options.parent.id } : {}),
     })
     const agent = { id: session.id, session, status: 'running', options: {} } as unknown as Agent
@@ -196,7 +196,7 @@ describe('Publisher article illustration through the real native runtime', () =>
   it('keeps illustration unavailable to ordinary, unowned, unbound and delegated conversations', async () => {
     const test = await fixture()
     const parent = await test.mint('illustration-owner')
-    const ordinary = await test.mint('illustration-ordinary', { publisherOwned: false, cwd: 'C:/ordinary' })
+    const ordinary = await test.mint('illustration-ordinary', { publisherOwned: false, cwd: join(tmpdir(), 'ordinary') })
     const unowned = await test.mint('illustration-unowned', { publisherOwned: false })
     test.bind(unowned)
     const unbound = await test.mint('illustration-unbound')
@@ -373,7 +373,7 @@ describe('Publisher writing Skills through the real native runtime', () => {
   it('keeps ordinary, same-directory unowned and delegated conversations outside the writing catalog and tools', async () => {
     const test = await fixture()
     const parent = await test.mint('catalog-owner')
-    const ordinary = await test.mint('ordinary', { publisherOwned: false, cwd: 'C:/ordinary' })
+    const ordinary = await test.mint('ordinary', { publisherOwned: false, cwd: join(tmpdir(), 'ordinary') })
     const manual = await test.mint('same-directory', { publisherOwned: false })
     const earlyChild = await test.mint('early-child', { parent })
     expect(manual.session.header.cwd).toBe(parent.session.header.cwd)
