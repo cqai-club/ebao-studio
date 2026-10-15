@@ -14,6 +14,10 @@ e图宝是 CQAI 的 DSH 生图工作台，提供文生图、图生图、Agent �
 
 设置「在 Agent 技能目录中提供 e图宝」沿用 `announceToAgent` 字段，控制 Skill 发现，不再向系统提示词追加播报。工作台、画布及 `/edit_image` 的直接操作入口保留。
 
+CQAI 的显式 `size: "3:4"` 请求使用精确比例的标准 `size` 值，不再映射成 `1024x1536`（2:3）。GPT Image 2/2.5 和通用模型发送 `1152x1536`；Qwen、Seedream、MiniMax 和 Imagen 使用各自兼容的尺寸值。CQAI 中固定尺寸的 GPT Image 1/1.5 和 DALL·E 会明确提示不支持 3:4。未识别模型及渠道映射由实际服务校验，错误直接返回；不自动换比例、渠道或裁切图片，输出仍以返回图片的真实宽高为准。第三方 OpenAI 兼容渠道的 GPT Image 2/2.5 同样使用精确的 `1152x1536`；默认 `auto`、其他比例及其他第三方参数保持原有行为。
+
+尺寸依据：[OpenAI 图像接口](https://developers.openai.com/api/reference/resources/images/methods/generate)、[Qwen 图像接口](https://www.alibabacloud.com/help/en/model-studio/qwen-image-api)、[Seedream 图像接口](https://docs.volcengine.com/docs/ark/image-generation-api?lang=zh&redirect=1)。CQAI 继续使用 Relay 的 `/v1/images/generations` 和 `/v1/images/edits`，不发送无法统一映射的原生 `aspect_ratio` 字段。
+
 ## 图片编辑
 
 Agent 回复正文中的图片、聊天图片附件、轨迹和 `read_image` 工具中的图片，点击后仍可查看原图，并在预览中选择「编辑图片」。图片附件通过官方图片 slots 接入；Agent 正文图片通过工坊维护的 Markdown 预览兼容接口接入。生图工具与图片编辑命令结果也可直接点击图片打开编辑器，工作台大图预览提供「编辑图片」入口。编辑器提供编号标记与修改说明、涂抹选区、纯色背景本地抠图，以及尺寸调整。尺寸可选择裁切填满、完整放入或拉伸。

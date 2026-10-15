@@ -137,6 +137,9 @@ describe('public Desktop version check', () => {
     })
 
     expect(calls).toHaveLength(1)
+    expect(DESKTOP_VERSION_ENDPOINT).toBe(
+      'https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json',
+    )
     expect(calls[0]?.url).toBe(DESKTOP_VERSION_ENDPOINT)
     expect(calls[0]?.url).not.toContain('/api/downloads/')
     expect(calls[0]?.init).toMatchObject({

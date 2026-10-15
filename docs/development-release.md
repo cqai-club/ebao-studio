@@ -53,7 +53,11 @@ gh workflow run sync-gitcode.yml --repo cqai-club/ebao-studio --ref master \
 
 Release 镜像保持原版本、发布说明、签名/预发布标记及来源记录，上传四个安装包/压缩包、`latest.yml`、`latest-mac.yml` 和 `SHA256SUMS` 共七个原始文件。保留各文件名和字节，不重建、分卷或改写校验文件。平台单附件、总容量及流量限制需要用当前大安装包实测；上传受理成功不代表下载验收通过。必须以匿名下载返回的实际字节、SHA-256 和 Updater SHA-512 校验结果确认国内用户能获取完整包，真实结果另行记录。
 
-本次镜像没有切换已安装应用的更新源：版本检查、Electron Updater 和既有下载服务仍沿用原配置。GitCode 提供用户手动下载安装包的入口；若要切换应用内更新源，应在 Beta 先适配并验证，再同步 Stable。
+更新源按实际网络出口 IP 选择。Stable 与 Beta 先请求自有路由接口 `https://cqaiclub.asia/api/ebao-studio/download?platform=windows|macos`（按系统选择 `windows` 或 `macos`），不传 `source`，不跟随 302 跳转，仅读取 `X-Download-Source`。服务端使用本地 `geoip-country` 识别 IP，仅 `CN` 使用 GitCode；其他地区（包括 HK/MO/TW）、无法识别，以及客户端探测失败、超时或无效响应，均使用 GitHub。此判断不使用语言或时区。成功的来源判断仅在当前进程缓存五分钟，不写入磁盘；缓存过期后在下次判断时重新探测，网络出口变化最多沿用五分钟内的成功判断。
+
+GitHub 版本清单为 `https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json`，中国大陆来源使用 `https://api.gitcode.com/api/v5/repos/g-dxw/ebao-studio/raw/release%2Fdesktop-version.json?ref=master`。Stable 确认下载后，以已确认版本的所选来源目录为 Electron Updater generic 源：GitHub 为 `https://github.com/cqai-club/ebao-studio/releases/download/v<version>/`，GitCode 为 `https://gitcode.com/g-dxw/ebao-studio/releases/download/v<version>/`。读取 `latest.yml`（Windows）或 `latest-mac.yml`（macOS），并从同一目录下载元数据引用的相对文件。目标版本必须匹配确认值，完整 NSIS 安装器或 macOS ZIP 必须通过 SHA-512 校验。所选版本清单或下载源本身失败后可重试，不自动跨源回退；路由探测失败时默认 GitHub 的规则与此不同。Beta 保留版本检查与手动检查结果，不提供应用内安装；Next 继续使用其上游更新源。
+
+按 IP 选择更新源须随包含这些代码的下一版应用发布后生效，现有已安装应用不会因镜像或仓库配置改变而自动切换。GitHub 仍是开发、打包和原始发布源。发布必须启用上述 GitCode 同步，并确保版本清单、对应 tag 和七个原始 Release 附件均已同步且通过匿名下载校验。源码和清单可能先于附件完成同步；这段时间内中国大陆用户确认下载可能失败，待镜像完成后可重试。
 
 ## 失败与重试
 

@@ -16,11 +16,14 @@ import type { AgentPublications } from '../src/agent-publication.ts'
 import { EDIT_DRAFT_SKILL, PUBLISHING_SKILL } from '../src/agent-skills.ts'
 import { PublisherAgentTools } from '../src/agent-tools.ts'
 import { createContent } from '../src/contents.ts'
+import { PublisherDelegations } from '../src/publisher-delegation.ts'
+import type { UserMessage } from '@deepseek-ai/dsh-session'
+import { randomUUID } from 'node:crypto'
 
 const cleanups: (() => Promise<void> | void)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
 
-async function fixture() {
+async function fixture(trustedRequest?: ConstructorParameters<typeof PublisherAgentTools>[5]) {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
@@ -30,20 +33,21 @@ async function fixture() {
   const agents = new Map<string, Agent>()
   ctx.provide('agents', { get: (id: string) => agents.get(id), list: () => [...agents.values()] } as never)
   await ctx.plugin(ToolSkill)
-  const bindings = new AgentDraftBindings()
+  const bindings = new AgentDraftBindings(() => true)
+  const owned = new Set<string>()
   const publications = { prepare: vi.fn(), getStatus: vi.fn() }
   const permit = vi.fn(async () => true)
   let owner!: PublisherAgentTools
   let publisherCtx!: Context
   await ctx.plugin(Object.assign((inner: Context) => {
     publisherCtx = inner
-    owner = new PublisherAgentTools(inner, bindings, publications as unknown as AgentPublications, permit)
+    owner = new PublisherAgentTools(inner, bindings, publications as unknown as AgentPublications, permit, id => owned.has(id), trustedRequest)
   }, { inject: ['agents', 'tools', 'attachments', 'skills', 'systemPrompt'] }))
   cleanups.push(() => owner.dispose())
   let call = 0
-  async function mint(id: string, origin?: 'subagent'): Promise<Agent> {
+  async function mint(id: string, origin?: 'subagent', publisherOwned = true): Promise<Agent> {
     const session = Session.create(SessionId(id), [], {
-      version: 4, id: SessionId(id), createdAt: 0, isSeeded: false, ...(origin ? { origin } : {}),
+      version: 4, id: SessionId(id), createdAt: 0, isSeeded: false, cwd: 'C:/publisher-shared', ...(origin ? { origin } : {}),
     })
     const agent = { id: session.id, session, status: 'running', options: {} } as unknown as Agent
     let scope!: Scope
@@ -51,6 +55,13 @@ async function fixture() {
       inject: ['agents', 'tools', 'systemPrompt'],
     }))
     Object.assign(agent, { ctx: scope.ctx })
+    if (publisherOwned && origin !== 'subagent') {
+      owned.add(id)
+      if (!bindings.current(id)) {
+        const { content, env } = draft()
+        bindings.bind(id, content.id, env)
+      }
+    }
     agents.set(id, agent)
     await agentEvents(ctx, agent).serial('agent/created', { source: 'startup' })
     return agent
@@ -71,33 +82,33 @@ async function fixture() {
     const env = { DSH_HOME: home }
     return { env, content: createContent('article', env) }
   }
-  return { ctx, owner, agents, bindings, publications, permit, mint, claim, load, names, catalog, skillsFor, draft }
+  return { ctx, owner, agents, bindings, owned, publications, permit, mint, claim, load, names, catalog, skillsFor, draft }
 }
 
 const SOURCE_PUBLICATION_TOOLS = [
-  'publisher_export_image', 'publisher_get_publication_status', 'publisher_get_source',
-  'publisher_prepare_preview', 'publisher_register_source', 'publisher_request_publication',
+  'publisher_get_current_draft', 'publisher_get_publication_status', 'publisher_request_publication',
 ]
 
 describe('Publisher native Skill lifecycle', () => {
-  it('publishes summaries without installing tools or system guidance for ordinary conversation', async () => {
+  it('keeps Publisher Skills and tools absent from ordinary and source conversations', async () => {
     const test = await fixture()
-    const agent = await test.mint('ordinary')
-    expect((await test.catalog(agent)).map(skill => skill.name)).toContain(PUBLISHING_SKILL.name)
+    const agent = await test.mint('ordinary', undefined, false)
+    expect((await test.catalog(agent)).map(skill => skill.name)).not.toContain(PUBLISHING_SKILL.name)
     expect((await test.catalog(agent)).map(skill => skill.name)).not.toContain(EDIT_DRAFT_SKILL.name)
     expect(test.names(agent)).toEqual([])
     expect(test.ctx.tools.get('publisher_enable', agent)).toBeUndefined()
     expect(renderPrompt(await test.ctx.systemPrompt.assemble({ scope: agent }))).toBe('')
     test.claim(agent, '帮我写文章并预览')
     test.claim(agent, '讨论多平台发布的设计')
+    expect((await test.load(agent)).isError).toBe(true)
     expect(test.names(agent)).toEqual([])
     expect(test.publications.prepare).not.toHaveBeenCalled()
   })
 
-  it('loads the real native publishing Skill and scopes its six execution tools to that conversation', async () => {
+  it('loads the real native publishing Skill only for its bound dedicated conversation', async () => {
     const test = await fixture()
     const agent = await test.mint('publish')
-    const other = await test.mint('other')
+    const other = await test.mint('other', undefined, false)
     test.claim(agent)
     const result = await test.load(agent)
     expect(result).toMatchObject({ isError: false, value: {
@@ -107,6 +118,21 @@ describe('Publisher native Skill lifecycle', () => {
     expect(test.names(other)).toEqual([])
     expect(renderPrompt(await test.ctx.systemPrompt.assemble({ scope: agent }))).toBe('')
     expect(test.publications.prepare).not.toHaveBeenCalled()
+  })
+
+  it('does not infer ownership from a shared cwd or a synthetic editor binding', async () => {
+    const test = await fixture()
+    const dedicated = await test.mint('dedicated')
+    const manual = await test.mint('same-workspace-manual', undefined, false)
+    expect(manual.session.header.cwd).toBe(dedicated.session.header.cwd)
+    const { content, env } = test.draft()
+    test.bindings.bind(manual.id, content.id, env)
+    test.owner.refresh(manual.id)
+    test.claim(manual)
+    expect((await test.catalog(manual)).map(skill => skill.name)).not.toContain(PUBLISHING_SKILL.name)
+    expect((await test.catalog(manual)).map(skill => skill.name)).not.toContain(EDIT_DRAFT_SKILL.name)
+    expect((await test.load(manual)).isError).toBe(true)
+    expect(test.names(manual)).toEqual([])
   })
 
   it('requires a claimed human request and refuses synthetic context, delegated calls, and removed agents', async () => {
@@ -123,6 +149,34 @@ describe('Publisher native Skill lifecycle', () => {
     expect((await test.load(agent)).isError).toBe(true)
     expect(test.names(agent)).toEqual([])
     expect(test.names(child)).toEqual([])
+  })
+
+  it('authorizes native Skill loading from the runtime-verified Publisher delegation and rejects tampered provenance', async () => {
+    let runtime!: PublisherDelegations
+    const test = await fixture((agent, message) => runtime?.trustedRequest(agent, message))
+    const agent = await test.mint('trusted-publisher-task')
+    const { content, env } = test.draft()
+    const binding = test.bindings.bind(agent.id, content.id, env)!
+    const inbox = { nextTurn: [] as UserMessage[], nextStep: [] as UserMessage[], remove: () => false }
+    Object.assign(agent, { status: 'idle', inbox, send(message: UserMessage) { inbox.nextTurn.push(message); Object.assign(agent, { status: 'running' }) } })
+    runtime = new PublisherDelegations(test.ctx, test.bindings, { owns: id => test.owned.has(id), available: test.permit }, env)
+    cleanups.push(() => runtime.dispose())
+    const task = runtime.enqueue({ handoffId: randomUUID(), sourceSessionId: 'ordinary-source', requestId: 'verified-human-message',
+      contentId: content.id, publisherSessionId: agent.id, requestText: '整理成公众号文章', platforms: ['wxmp'],
+      contentType: content.contentType, contentRevision: content.revision })
+    await runtime.start({ taskId: task.taskId, sessionId: agent.id, bindingToken: binding.bindingToken })
+    const delegated = inbox.nextTurn.shift()!
+    agentEvents(test.ctx, agent).emit('agent/inbox/claimed', {
+      message: { ...delegated, content: [{ type: 'text', text: '篡改发布要求' }] }, turn: 1,
+    })
+    expect((await test.load(agent, EDIT_DRAFT_SKILL.name)).isError).toBe(true)
+    agentEvents(test.ctx, agent).emit('agent/inbox/claimed', { message: delegated, turn: 1 })
+    expect((await test.load(agent, EDIT_DRAFT_SKILL.name)).isError).toBe(false)
+    expect(test.names(agent)).toContain('publisher_get_current_draft')
+    expect(test.names(agent)).toContain('publisher_update_current_draft')
+    expect(test.names(agent)).not.toContain('publisher_request_publication')
+    test.claim(agent, '先不要继续修改')
+    expect(test.names(agent)).toEqual([])
   })
 
   it('rejects unavailable and canceled reads without granting execution capabilities', async () => {
@@ -273,6 +327,38 @@ describe('Publisher native Skill lifecycle', () => {
     test.owner.refresh(agent.id)
     expect(test.names(agent)).toEqual([])
     expect((await test.catalog(agent)).map(skill => skill.name)).not.toContain(EDIT_DRAFT_SKILL.name)
+    expect((await test.catalog(agent)).map(skill => skill.name)).not.toContain(PUBLISHING_SKILL.name)
+  })
+
+  it('revokes both catalogs and refuses stale tool execution after ownership is retired', async () => {
+    const test = await fixture()
+    const agent = await test.mint('retired-owner')
+    test.claim(agent)
+    await test.load(agent)
+    expect(test.names(agent)).toContain('publisher_request_publication')
+    test.owned.delete(agent.id)
+    const result = await test.ctx.tools.execute({ agent, name: 'publisher_get_current_draft', arguments: {},
+      callId: ToolCallId('late-draft-read'), signal: new AbortController().signal })
+    expect(result.isError).toBe(true)
+    test.owner.refresh(agent.id)
+    expect(test.names(agent)).toEqual([])
+    expect((await test.catalog(agent)).map(skill => skill.name)).not.toContain(PUBLISHING_SKILL.name)
+    expect((await test.catalog(agent)).map(skill => skill.name)).not.toContain(EDIT_DRAFT_SKILL.name)
+  })
+
+  it('rotates the binding token and tool grants when the selected platform target changes', async () => {
+    const test = await fixture()
+    const agent = await test.mint('target-switch')
+    const { content, env } = test.draft()
+    const first = test.bindings.bind(agent.id, content.id, env)!
+    test.owner.refresh(agent.id)
+    test.claim(agent)
+    await test.load(agent, EDIT_DRAFT_SKILL.name)
+    const next = test.bindings.bind(agent.id, content.id, env, { kind: 'platform', platform: 'xhs' })!
+    test.owner.refresh(agent.id)
+    expect(next.bindingToken).not.toBe(first.bindingToken)
+    expect(test.names(agent)).toEqual([])
+    expect(() => test.bindings.require(agent.id, content.id, first.bindingToken)).toThrow('草稿已切换')
   })
 
   it('clears editing tools when a new binding replaces the current draft', async () => {

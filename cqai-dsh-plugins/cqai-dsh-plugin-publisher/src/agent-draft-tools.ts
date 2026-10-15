@@ -4,10 +4,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-attachment'
-import { AgentDraftBindings } from './agent-draft-binding.ts'
-import { addAsset, insertArticleImage, readContent, removeAsset, saveContent } from './contents.ts'
+import { AgentDraftBindings, normalizeAgentDraftTarget, sameAgentDraftTarget, type AgentDraftTarget } from './agent-draft-binding.ts'
+import { addAsset, insertArticleImage, patchContent, readContent, removeAsset } from './contents.ts'
 import { listWorks, resolveWork } from './works.ts'
-import { CREATIVE_STATEMENTS } from './protocol.ts'
+import { readPublisherArticleOrigin } from './article-handoff.ts'
+import { CREATIVE_STATEMENTS, PLATFORMS, projectContentForPlatform } from './protocol.ts'
 import type { PublisherAsset, PublisherContent } from './protocol.ts'
 
 const resultSchema = { type: 'object', additionalProperties: true, properties: {} } as const
@@ -24,6 +25,24 @@ const imageRefSchema = {
   },
 } as const
 
+const targetSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    kind: { type: 'string', required: true, enum: ['main', 'platform'] },
+    platform: { type: 'string', enum: [...PLATFORMS] },
+  },
+} as const
+
+function selectedTarget(value: unknown, bound: AgentDraftTarget, fallback: AgentDraftTarget = bound): AgentDraftTarget {
+  const target = normalizeAgentDraftTarget(value ?? fallback)
+  if (!sameAgentDraftTarget(target, bound)) throw new Error('草稿编辑目标已切换，请重新读取当前版本')
+  return target
+}
+
+function requireMainTarget(target: AgentDraftTarget): void {
+  if (target.kind !== 'main') throw new Error('图片素材操作只支持通用正文，请先切换到通用正文')
+}
+
 
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
@@ -36,12 +55,17 @@ function sessionIdOf(agent: { id: string } | undefined): string {
   return agent.id
 }
 
-function snapshot(content: PublisherContent, bindingToken: string) {
+function snapshot(source: PublisherContent, bindingToken: string, target: AgentDraftTarget = { kind: 'main' }) {
+  const content = target.kind === 'platform' ? projectContentForPlatform(source, target.platform) : source
+  const origin = content.contentType !== 'video' ? readPublisherArticleOrigin(content.id) : null
   return {
     content_id: content.id,
     content_type: content.contentType,
+    ...(content.contentType === 'image-note' ? { image_generation_defaults: { size: '3:4' } } : {}),
     binding_token: bindingToken,
     revision: content.revision,
+    target,
+    ...(origin ? { article_source: origin } : {}),
     title: content.title,
     tags: content.tags,
     creative_statement: content.creativeStatement,
@@ -95,13 +119,14 @@ function currentDraftTool(bindings: AgentDraftBindings) {
   return defineTool({
       name: 'publisher_get_current_draft',
       description: 'Read this conversation’s bound editor draft, binding token and current revision. Returns null when the editor is unbound.',
-      parameters: {},
+      parameters: { target: targetSchema },
       output: { schema: { oneOf: [resultSchema, { type: 'null' }] } as const, render },
-      async execute(_args, exec) {
+      async execute(args, exec) {
         exec.signal.throwIfAborted()
         const binding = bindings.current(sessionIdOf(exec.agent))
         if (!binding) return null
-        return asToolResult(snapshot(requireContent(binding.contentId), binding.bindingToken))
+        const target = selectedTarget(args.target, binding.target)
+        return asToolResult(snapshot(requireContent(binding.contentId), binding.bindingToken, target))
       },
     })
 }
@@ -115,11 +140,12 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
     registerAgentDraftReadTool(ctx, bindings),
     ctx.tools.register(defineTool({
       name: 'publisher_update_current_draft',
-      description: 'Save requested main fields in the bound local draft using its exact ID, binding token and latest revision. Does not submit to a platform.',
+      description: 'Patch only requested fields in the current main draft or selected platform version. Pass the target returned by publisher_get_current_draft, the binding token and observed revision. Merge into the latest saved draft; unrelated fields stay unchanged and the last successful save wins for a field. Does not publish.',
       parameters: {
         content_id: { type: 'string', required: true },
         binding_token: { type: 'string', required: true },
         expected_revision: { type: 'integer', required: true },
+        target: targetSchema,
         title: { type: 'string' },
         body: { type: 'string' },
         summary: { type: 'string' },
@@ -127,7 +153,7 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
         description: { type: 'string' },
         short_title: { type: 'string' },
         creative_statement: { type: 'string', enum: [...CREATIVE_STATEMENTS] },
-        cover_asset_id: { type: 'string' },
+        cover_asset_id: { oneOf: [{ type: 'string' }, { type: 'null' }] },
         asset_order: { type: 'array', items: { type: 'string' } },
       },
       output: { schema: resultSchema, render },
@@ -135,7 +161,7 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
         exec.signal.throwIfAborted()
         const binding = bindings.require(sessionIdOf(exec.agent), args.content_id, args.binding_token)
         const current = requireContent(binding.contentId)
-        if (current.revision !== args.expected_revision) throw new Error('草稿已在其他页面更新，请重新读取后再保存')
+        const target = selectedTarget(args.target, binding.target, { kind: 'main' })
         if (args.title === undefined && args.body === undefined && args.summary === undefined && args.tags === undefined
           && args.description === undefined && args.short_title === undefined && args.creative_statement === undefined
           && args.cover_asset_id === undefined && args.asset_order === undefined) {
@@ -148,26 +174,26 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
         if (current.contentType !== 'video' && (args.description !== undefined || args.short_title !== undefined)) {
           throw new Error('文章和图文草稿不能修改视频简介或短标题')
         }
-        const saved = saveContent(current.id, {
-          revision: args.expected_revision,
-          title: args.title ?? current.title,
-          body: current.contentType === 'video' ? '' : args.body ?? current.body,
-          summary: current.contentType === 'video' ? '' : args.summary ?? current.summary,
-          tags: args.tags ?? current.tags,
-          creativeStatement: args.creative_statement ?? current.creativeStatement,
-          ...(current.articleTheme === undefined ? {} : { articleTheme: current.articleTheme }),
-          ...((args.cover_asset_id ?? current.coverAssetId) === undefined
-            ? {} : { coverAssetId: args.cover_asset_id ?? current.coverAssetId }),
-          assetOrder: args.asset_order ?? current.assets.map(asset => asset.id),
-          platformFields: current.platformFields,
-          platformVariants: current.platformVariants,
-          ...(current.contentType === 'video' ? {
-            description: args.description ?? current.description ?? '',
-            shortTitle: args.short_title ?? current.shortTitle ?? '',
-            ...(current.videoSource ? { videoSource: current.videoSource } : {}),
-          } : {}),
-        })
-        return asToolResult(snapshot(saved, binding.bindingToken))
+        const textPatch = {
+          ...(args.title === undefined ? {} : { title: args.title }),
+          ...(args.body === undefined ? {} : { body: args.body }),
+          ...(args.summary === undefined ? {} : { summary: args.summary }),
+          ...(args.tags === undefined ? {} : { tags: args.tags }),
+          ...(args.cover_asset_id === undefined ? {} : { coverAssetId: args.cover_asset_id }),
+          ...(args.asset_order === undefined ? {} : { assetOrder: args.asset_order }),
+        }
+        if (target.kind === 'platform' && args.creative_statement !== undefined) {
+          throw new Error('内容声明属于通用正文，请切换到通用正文后修改')
+        }
+        const patch = target.kind === 'platform'
+          ? { platformVariants: { [target.platform]: textPatch } }
+          : { ...textPatch,
+              ...(args.creative_statement === undefined ? {} : { creativeStatement: args.creative_statement }),
+              ...(args.description === undefined ? {} : { description: args.description }),
+              ...(args.short_title === undefined ? {} : { shortTitle: args.short_title }),
+            }
+        const saved = patchContent(current.id, { revision: args.expected_revision, patch })
+        return asToolResult(snapshot(saved, binding.bindingToken, target))
       },
     })),
     ctx.tools.register(defineTool({
@@ -185,15 +211,17 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
       async execute(args, exec) {
         exec.signal.throwIfAborted()
         const initial = bindings.require(sessionIdOf(exec.agent), args.content_id, args.binding_token)
+        requireMainTarget(initial.target)
         requireContent(initial.contentId, 'article')
         const { ref, bytes, digest } = await verifiedImage(ctx, args.source_image, exec.signal)
         const binding = bindings.require(sessionIdOf(exec.agent), args.content_id, args.binding_token)
+        requireMainTarget(binding.target)
         requireContent(binding.contentId, 'article')
         const extension = ref.mediaType === 'image/jpeg' ? 'jpg' : ref.mediaType === 'image/png' ? 'png' : 'webp'
         const saved = insertArticleImage(binding.contentId, args.expected_revision,
           ref.name ?? `agent-image-${digest.slice(0, 12)}.${extension}`, bytes, ref.mediaType as PublisherAsset['mime'],
           args.body_with_image_marker, args.alt)
-        return asToolResult(snapshot(saved, binding.bindingToken))
+        return asToolResult(snapshot(saved, binding.bindingToken, binding.target))
       },
     })),
     ctx.tools.register(defineTool({
@@ -209,14 +237,16 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
       async execute(args, exec) {
         exec.signal.throwIfAborted()
         const initial = bindings.require(sessionIdOf(exec.agent), args.content_id, args.binding_token)
+        requireMainTarget(initial.target)
         requireContent(initial.contentId, 'image-note')
         const { ref, bytes, digest } = await verifiedImage(ctx, args.source_image, exec.signal)
         const binding = bindings.require(sessionIdOf(exec.agent), args.content_id, args.binding_token)
+        requireMainTarget(binding.target)
         requireContent(binding.contentId, 'image-note')
         const extension = ref.mediaType === 'image/jpeg' ? 'jpg' : ref.mediaType === 'image/png' ? 'png' : 'webp'
         const saved = addAsset(binding.contentId, ref.name ?? `agent-image-${digest.slice(0, 12)}.${extension}`,
           bytes, process.env, { expectedRevision: args.expected_revision })
-        return asToolResult(snapshot(saved, binding.bindingToken))
+        return asToolResult(snapshot(saved, binding.bindingToken, binding.target))
       },
     })),
     ctx.tools.register(defineTool({
@@ -232,10 +262,11 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
       async execute(args, exec) {
         exec.signal.throwIfAborted()
         const binding = bindings.require(sessionIdOf(exec.agent), args.content_id, args.binding_token)
+        requireMainTarget(binding.target)
         requireContent(binding.contentId, 'image-note')
         const saved = removeAsset(binding.contentId, args.asset_id, process.env,
           { expectedRevision: args.expected_revision })
-        return asToolResult(snapshot(saved, binding.bindingToken))
+        return asToolResult(snapshot(saved, binding.bindingToken, binding.target))
       },
     })),
     ctx.tools.register(defineTool({
@@ -266,15 +297,11 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
         exec.signal.throwIfAborted()
         const binding = bindings.require(sessionIdOf(exec.agent), args.content_id, args.binding_token)
         const current = requireContent(binding.contentId, 'video')
-        if (current.revision !== args.expected_revision) throw new Error('草稿已在其他页面更新，请重新读取后再保存')
         const work = resolveWork(args.work_id)
-        const saved = saveContent(current.id, {
-          revision: args.expected_revision, title: current.title, body: '', summary: '', tags: current.tags,
-          creativeStatement: current.creativeStatement, description: current.description ?? '',
-          shortTitle: current.shortTitle ?? '', videoSource: { kind: 'work', workId: work.id },
-          platformFields: current.platformFields, platformVariants: current.platformVariants,
+        const saved = patchContent(current.id, { revision: args.expected_revision,
+          patch: { videoSource: { kind: 'work', workId: work.id } },
         })
-        return asToolResult(snapshot(saved, binding.bindingToken))
+        return asToolResult(snapshot(saved, binding.bindingToken, binding.target))
       },
     })),
   ]

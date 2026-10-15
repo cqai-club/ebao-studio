@@ -12,7 +12,11 @@ import { HostRpc } from '../src/host-rpc.ts'
 import { bindNativeRuntime, runtimeSnapshot } from '../src/host-runtime-bridge.ts'
 import type { DesktopRuntime, DesktopShellSpec } from '../src/runtime.ts'
 
-it.each([false, true])('boots a separate Web Host with client plugins (AA enabled: %s)', async aaEnabled => {
+it.each([
+  { aaEnabled: false, mode: 'advanced' },
+  { aaEnabled: true, mode: 'advanced' },
+  { aaEnabled: false, mode: 'extended' },
+])('boots a separate Web Host with client plugins (AA enabled: $aaEnabled, mode: $mode)', async ({ aaEnabled, mode }) => {
   const home = mkdtempSync(join(tmpdir(), 'dsh-isolated-host-'))
   const token = Buffer.alloc(32, 7).toString('base64url')
   let child: ReturnType<typeof fork> | undefined
@@ -22,8 +26,16 @@ it.each([false, true])('boots a separate Web Host with client plugins (AA enable
   let stderr = ''
   try {
     writeFileSync(join(home, 'settings.yaml'), 'dsh-desktop:\n  mode: advanced\n  port: 0\nagent-presets:\n  default: minimal\n')
-    const prepared = prepareDesktopProfile('1', home, 'win32', undefined, undefined, undefined, { aaEnabled })
-    prepared.overlays = []
+    let prepared = prepareDesktopProfile('1', home, 'win32', undefined, undefined, undefined, { aaEnabled })
+    if (mode === 'extended') {
+      writeFileSync(prepared.profile.patchPath, JSON.stringify([
+        { id: 'desktop-shell', name: 'dsh-plugin-desktop-beta', config: { mode, port: 0 } },
+        { id: 'ui-theme', config: { preference: 'dark' } },
+      ]))
+      prepared = prepareDesktopProfile('1', home, 'win32', undefined, undefined, undefined, { aaEnabled })
+    }
+    // Credentials belong to this temporary Profile, including in the child Host.
+    prepared.overlays = [{ id: 'credentials', config: { dshHome: home } }]
     if (aaEnabled) prepared.overlays.push({ id: 'agents-anywhere-bridge-next', config: { dshHome: home, stateRoot: join(home, 'aa-state') } })
     expect(prepared.port).toBe(0)
     const plugin = join(prepared.profile.dir, 'node_modules', 'isolated-client-fixture')
@@ -51,10 +63,8 @@ it.each([false, true])('boots a separate Web Host with client plugins (AA enable
     }, 30_000)
     child.on('exit', () => rpc?.close(stderr || 'worker exited'))
     let shell: DesktopShellSpec | undefined
-    // The legacy settings document above is imported once the Loader settles, which
-    // is after this profile has mounted in compatibility. The imported `advanced`
-    // mode is restart-applied, so 0.1.7 asks the runtime to restart exactly once on
-    // the first boot after an upgrade; a runtime without the method faults the Host.
+    // Profile preparation imports the legacy settings before Host boot. Keep the
+    // restart callback available for any later restart-applied preference change.
     const restarts: string[] = []
     const runtime = {
       platform: 'win32', locale: 'en',
@@ -88,6 +98,10 @@ it.each([false, true])('boots a separate Web Host with client plugins (AA enable
     expect(result.pid).not.toBe(process.pid)
     expect(shell).toBeDefined()
     const spec = shell!
+    if (mode === 'extended') {
+      expect(spec.mode).toBe('extended')
+      expect(spec.readThemeSource()).toBe('dark')
+    }
     const headers = { [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value }
     const unauthorized = await fetch(spec.url, { headers })
     await unauthorized.body?.cancel()

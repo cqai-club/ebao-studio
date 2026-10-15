@@ -52,22 +52,31 @@ it.each(['zh', undefined] as const)('synchronizes tray language at boot and on c
     })
     expect(native.publisher.readLocalVideoChunk).toHaveBeenCalledWith('44444444-4444-4444-8444-444444444444', 4, 4, expect.any(AbortSignal))
     let language: 'zh' | undefined
+    let themeReady = false
+    const readThemeSource = vi.fn(() => {
+      if (!themeReady) throw new Error('ui-theme settings namespace is not ready')
+      return 'dark' as const
+    })
     const mode = vi.fn(async () => {})
     const invoke = vi.fn(async () => {})
     const spec = { url: 'http://127.0.0.1:1234/?dsh-desktop-mode=advanced',
       authenticationUrl: 'http://127.0.0.1:1234/?token=fixture',
       rendererAccessHeader: { name: 'x-dsh-desktop-renderer', value: 'fixture' },
-      readLocalePreference: () => language, readThemeSource: () => 'dark',
+      readLocalePreference: () => language, readThemeSource,
       requestQuit() {}, requestModeChange: mode,
     } as unknown as DesktopShellSpec
     spec.readRemoteControl = vi.fn(async () => false)
     spec.enableRemoteControl = vi.fn(async () => {})
     spec.applySetupSettings = vi.fn(async () => {})
     const stopShell = runtime.schedule(spec)
+    expect(readThemeSource).not.toHaveBeenCalled()
     runtime.registerTrayItem({ group: 'tools', order: 1, label: () => desktopTrayLabel(runtime.locale, 'openTerminal'), invoke,
       submenu: () => [{ label: () => desktopTrayLabel(runtime.locale, 'checkForUpdates'), invoke }] })
     language = initialPreference
+    themeReady = true
     await runtime.mountScheduled()
+    expect(readThemeSource).toHaveBeenCalledOnce()
+    expect(shell.readThemeSource()).toBe('dark')
     expect(await shell.readRemoteControl?.()).toBe(false)
     await shell.enableRemoteControl?.()
     expect(spec.enableRemoteControl).toHaveBeenCalledTimes(1)
@@ -110,5 +119,34 @@ it.each(['zh', undefined] as const)('synchronizes tray language at boot and on c
     expect(native.openExternal).toHaveBeenCalledWith('https://auth.example.test/authorize')
     await stopShell()
     expect(disposeShell).toHaveBeenCalledOnce()
+  } finally { await release(); parent.close(); child.close(); port1.close(); port2.close() }
+})
+
+it('rejects the mount barrier when the theme settings namespace is still missing after Host boot', async () => {
+  const { port1, port2 } = new MessageChannel()
+  const [parent, child] = [port1, port2].map(port => new HostRpc({
+    send: value => port.postMessage(value),
+    listen: receive => { port.on('message', receive); return () => { port.off('message', receive) } },
+  })) as [HostRpc, HostRpc]
+  const native = {
+    platform: 'win32', locale: 'en',
+    updates: { isPackaged: false, canDownload: true, currentVersion: '2.0.7-beta.1', statePath: '/tmp/update' },
+    schedule: vi.fn(() => async () => {}),
+    setLocalePreference: vi.fn(),
+  } as unknown as DesktopRuntime
+  const release = bindNativeRuntime(parent, native)
+  try {
+    const runtime = createHostRuntime(child, runtimeSnapshot(native))
+    const missingTheme = new Error('dsh-plugin-desktop: custom shell requires the ui-theme settings namespace')
+    const readThemeSource = vi.fn(() => { throw missingTheme })
+    const stopShell = runtime.schedule({
+      readLocalePreference: () => undefined,
+      readThemeSource,
+      requestQuit() {}, requestModeChange: async () => {},
+    } as unknown as DesktopShellSpec)
+    expect(readThemeSource).not.toHaveBeenCalled()
+    await expect(runtime.mountScheduled()).rejects.toBe(missingTheme)
+    expect(readThemeSource).toHaveBeenCalledOnce()
+    await stopShell()
   } finally { await release(); parent.close(); child.close(); port1.close(); port2.close() }
 })

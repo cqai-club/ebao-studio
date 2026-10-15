@@ -91,7 +91,7 @@ const dshResolution = (name: string): unknown =>
 describe('published package surface', () => {
   it('keeps the private workspace version-neutral and versions the Beta package', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.14-beta.1')
+    expect(manifest.version).toBe('0.0.15-beta.1')
   })
 
   it('ships E剪宝 only through a separately installed plugin', () => {
@@ -879,7 +879,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.14-beta.1')
+    expect(manifest.version).toBe('0.0.15-beta.1')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
@@ -969,7 +969,7 @@ describe('published package surface', () => {
       '!node_modules/fs-ext/build/**',
     ])
     expect(manifest.build?.mac?.icon).toBe('build/app-icon-mac.png')
-    expect(manifest.build?.mac?.artifactName).toBe('e宝工坊-Beta-${version}-${arch}.${ext}')
+    expect(manifest.build?.mac?.artifactName).toBe('e宝工坊-Beta-${version}.${ext}')
     expect(manifest.build?.mac?.mergeASARs).toBe(false)
     expect(manifest.build?.mac?.signIgnore).toEqual(['\\.(?:pak|dat|wasm)$'])
     expect(manifest.build?.win?.compression).toBe('normal')

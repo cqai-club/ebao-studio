@@ -43,7 +43,7 @@ describe('durable draft Agent conversation association', () => {
     rmSync(file)
     const outside = join(env.DSH_HOME, 'outside.txt')
     writeFileSync(outside, 'private')
-    symlinkSync(outside, file)
+    symlinkSync(env.DSH_HOME, file, 'junction')
     expect(() => readAgentDraftSession(draft.id, env)).toThrow('Agent 会话关联无效')
     expect(readFileSync(outside, 'utf8')).toBe('private')
   })

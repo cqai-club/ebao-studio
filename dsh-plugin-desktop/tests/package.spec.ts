@@ -837,7 +837,7 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(workspaceManifest.version).toBeUndefined()
-    expect(manifest.version).toBe('0.0.14')
+    expect(manifest.version).toBe('0.0.15')
     expect(manifest.repository).toEqual({
       type: 'git',
       url: 'git+https://github.com/cqai-club/ebao-studio.git',
@@ -1027,7 +1027,7 @@ describe('published package surface', () => {
       notarize: true,
       signIgnore: ['\\.(?:pak|dat|wasm)$'],
       target: ['dir'],
-      artifactName: 'eBao-Studio-${version}-${arch}.${ext}',
+      artifactName: 'eBao-Studio-${version}.${ext}',
       x64ArchFiles: expect.stringContaining('node-pty/prebuilds/darwin-*'),
     }))
     expect(manifest.build?.mac?.x64ArchFiles).toContain('@dataiku/uv-darwin-*')

@@ -7,7 +7,7 @@ These ship as prebuilt runtimes inside the installer rather than as npm dependen
 they are not enumerated in the table below.
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| MatrixMedia（矩媒） | 0.11.4 | GPL-2.0-only | https://github.com/cqai-club/MatrixMedia.git @ 9072909cf692bcfbc5fa334ca70ddc486a58d3ec |
+| MatrixMedia（矩媒） | 0.11.4 | GPL-2.0-only | https://github.com/cqai-club/MatrixMedia.git @ 35f390be8a1f6cdd8403c459ed802abd63ed3b6b |
 MatrixMedia（矩媒） is built from the pinned `matrixmedia-publisher/` Git submodule and bundled at
 `resources/publisher/MatrixMedia Publisher Worker.app` on macOS or
 `resources/publisher/MatrixMedia Publisher Worker.exe` on Windows as the isolated publishing Helper.
@@ -25,7 +25,7 @@ or grant recipients unrestricted rights to redistribute them independently.
 | Package | Version | License |
 | --- | --- | --- |
 | @agentclientprotocol/sdk | 1.4.0 | Apache-2.0 |
-| @agents-anywhere/dsh-bridge-next | 2.0.3-desktop.c7fe1fce32650.r156e8f86 | MIT |
+| @agents-anywhere/dsh-bridge-next | 2.1.0-desktop.c58d98da25a23.r156e8f86 | MIT |
 | @aiden0z/pptx-renderer | 1.2.4 | Apache-2.0 |
 | @anthropic-ai/sdk | 0.124.0 | MIT |
 | @asamuzakjp/css-color | 5.1.11 | MIT |
@@ -553,7 +553,7 @@ or grant recipients unrestricted rights to redistribute them independently.
 | dsh-ppt | 0.1.1-rc.2 | MIT |
 | dsh-ppt-composer | 0.1.1-rc.2 | MIT |
 | dsh-skill-mcp-panel | 2.1.3 | MIT |
-| dshmarket | 1.66.14 | MIT |
+| dshmarket | 1.66.22 | MIT |
 | dunder-proto | 1.0.1 | MIT |
 | ecdsa-sig-formatter | 1.0.11 | Apache-2.0 |
 | echarts | 6.1.0 | Apache-2.0 |

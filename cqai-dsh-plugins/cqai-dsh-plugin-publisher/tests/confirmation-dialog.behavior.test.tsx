@@ -4,7 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConfirmDialog } from '../src/client/shared.tsx'
 
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => ({
+  observeComposition: (await import('../../../deepseek-harness/packages/client/ui-primitives/src/keyboard-composition.ts')).observeComposition,
   Button: ({ children, size: _size, variant: _variant, ...props }: any) => <button {...props}>{children}</button>,
   Input: (props: any) => <input {...props}/>,
   Tag: ({ children }: any) => <span>{children}</span>,

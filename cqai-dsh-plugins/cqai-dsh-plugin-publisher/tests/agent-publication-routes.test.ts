@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import * as plugin from '../src/index.ts'
 import { createContent, saveContent } from '../src/contents.ts'
+import { writeAgentDraftSession } from '../src/agent-draft-session.ts'
 import type { PublisherAccount, PublisherPlatformCapability, PublisherSubmission } from '../src/protocol.ts'
 
 const homes: string[] = []
@@ -120,6 +121,7 @@ async function fixture() {
       revision: created.revision, title: created.title, body: '正文内容', summary: '',
       tags: [], creativeStatement: 'none',
     }, { DSH_HOME: home })
+    writeAgentDraftSession(content.id, sessionId, { DSH_HOME: home })
     const bound = await request('POST', 'agent-draft-bind', { sessionId, contentId: content.id }, { 'x-ejianbao': '1' })
     expect(bound.status).toBe(200)
     const prepare = async (callId = 'request-publication-call') => {

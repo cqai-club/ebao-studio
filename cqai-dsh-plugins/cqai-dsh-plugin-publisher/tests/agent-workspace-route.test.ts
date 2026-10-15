@@ -22,26 +22,28 @@ function home(): string {
 }
 
 describe('draft Agent project Workspace route', () => {
-  it('uses each draft project directory for article, image-note, and video', () => {
+  it('uses one shared Agent cwd with independent project directories for all content types', () => {
     const root = home()
     const env = { DSH_HOME: root }
     const article = createContent('article', env, '重庆春日游')
     const imageNote = createContent('image-note', env, '山城图集')
     const video = createContent('video', env, '夜景视频')
     const first = ensureAgentWorkspace(article.id, env)
-    expect(first).toBe(ensureProjectWorkspace(article.id, env).path)
     const projectsRoot = readProjectSettings(env).defaultRoot
+    expect(first).toBe(projectsRoot)
     for (const [draft, prefix] of [[article, '文章-重庆春日游'], [imageNote, '图文-山城图集'], [video, '视频-夜景视频']] as const) {
       const path = ensureAgentWorkspace(draft.id, env)
+      expect(path).toBe(first)
       expect(path).toBe(realpathSync(path))
-      expect(dirname(path)).toBe(join(projectsRoot, draft.contentType))
-      expect(basename(path)).toMatch(new RegExp(`^${prefix}-\\d{4}-\\d{2}-\\d{2}-[0-9a-f]{8}$`, 'u'))
-      writeFileSync(join(path, 'Agent输出.md'), `# ${draft.title}`)
-      expect(readFileSync(join(path, 'Agent输出.md'), 'utf8')).toBe(`# ${draft.title}`)
+      const contentPath = ensureProjectWorkspace(draft.id, env).path
+      expect(dirname(contentPath)).toBe(join(projectsRoot, draft.contentType))
+      expect(basename(contentPath)).toMatch(new RegExp(`^${prefix}-\\d{4}-\\d{2}-\\d{2}-[0-9a-f]{8}$`, 'u'))
+      writeFileSync(join(contentPath, 'Agent输出.md'), `# ${draft.title}`)
+      expect(readFileSync(join(contentPath, 'Agent输出.md'), 'utf8')).toBe(`# ${draft.title}`)
     }
   })
 
-  it('reopens a v1 UUID workspace and keeps both historical session associations', () => {
+  it('keeps a v1 content material directory and historical associations without using it as an Agent cwd', () => {
     const env = { DSH_HOME: realpathSync(home()) }
     const draft = createContent('article', env, '历史文章')
     const projectsRoot = readProjectSettings(env).defaultRoot
@@ -65,7 +67,7 @@ describe('draft Agent project Workspace route', () => {
       revision: draft.revision, title: '历史标题修改', body: '历史正文', summary: '', tags: [], creativeStatement: 'none',
     }, env)
 
-    expect(ensureAgentWorkspace(draft.id, env)).toBe(legacy)
+    expect(ensureAgentWorkspace(draft.id, env)).toBe(projectsRoot)
     expect(ensureProjectWorkspace(draft.id, env)).toEqual({ contentId: draft.id, path: legacy })
     expect(readFileSync(join(legacy, '旧对话原稿.md'), 'utf8')).toBe('# 保留历史资料')
     expect(readFileSync(binding, 'utf8')).toBe(bindingBefore)

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { ContentEditor } from '../src/client/content.tsx'
 import { PublisherTipsProvider } from '../src/client/tips.tsx'
 import { api, uploadAsset } from '../src/client/shared.tsx'
+import { applyContentPatch } from '../src/client/content-patch.ts'
 import { listImagegenImages, readImagegenFile, type ImagegenImage } from '../src/client/imagegen-library.ts'
 import type { PublisherContent } from '../src/protocol.ts'
 
@@ -79,9 +80,9 @@ beforeEach(() => {
     if (route === 'accounts' || route === 'platform-capabilities') return []
     if (route.startsWith('content/')) return server.get(route.slice('content/'.length))
     if (route === 'project-workspace') return { contentId: payload.contentId, path: '/projects' }
-    if (route === 'content-save') {
+    if (route === 'content-patch') {
       const current = server.get(payload.id)!
-      const saved = { ...current, ...payload, revision: current.revision + 1 }
+      const saved = { ...applyContentPatch(current, payload.patch), revision: current.revision + 1 }
       server.set(payload.id, saved)
       return saved
     }
@@ -112,7 +113,7 @@ describe('e图宝 imports into the image-note editor', () => {
     })
     await render(); await enterTitle('导入前已修改标题'); await open()
     expect(server.get('first')?.title).toBe('导入前已修改标题')
-    expect(queryApi.mock.calls.filter(([route]) => route === 'content-save')).toHaveLength(1)
+    expect(queryApi.mock.calls.filter(([route]) => route === 'content-patch')).toHaveLength(1)
     await choose('two.webp'); await choose('one.png'); await click(button('导入选中图片（2）'))
     expect(read).toHaveBeenCalledTimes(1); expect(upload).toHaveBeenCalledTimes(1)
     expect(uploadedFiles[0].type).toBe('image/webp')
@@ -127,7 +128,7 @@ describe('e图宝 imports into the image-note editor', () => {
     expect(server.get('first')?.platformVariants).toEqual({ xhs: { assetOrder: [] } })
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(container.querySelectorAll('.pub-assets .pub-asset')).toHaveLength(2)
-    expect(queryApi.mock.calls.filter(([route]) => route === 'content-save')).toHaveLength(1)
+    expect(queryApi.mock.calls.filter(([route]) => route === 'content-patch')).toHaveLength(1)
   })
 
   it('retains saved images after partial failure and retries only the remaining selection', async () => {
@@ -145,7 +146,7 @@ describe('e图宝 imports into the image-note editor', () => {
     await click(button('导入选中图片（2）'))
     expect(server.get('first')?.assets.map(asset => asset.name)).toEqual(['one.png', 'two.webp', 'three.png'])
     expect(container.querySelectorAll('.pub-assets .pub-asset')).toHaveLength(3)
-    expect(queryApi.mock.calls.some(([route]) => route === 'content-save')).toBe(false)
+    expect(queryApi.mock.calls.some(([route]) => route === 'content-patch')).toBe(false)
   })
 
   it('stops before upload when the image cannot be read', async () => {

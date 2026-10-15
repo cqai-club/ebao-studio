@@ -17,62 +17,143 @@ export function AccountsPage({ active }: { active: boolean }) {
   const [preview, setPreview] = useState<PublisherImportPreview>()
   const [busy, setBusy] = useState('')
   const busyRef = useRef(false)
+  const [serviceState, setServiceState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [serviceError, setServiceError] = useState('')
+  const [serviceRetry, setServiceRetry] = useState(0)
+  const serviceLoading = useRef(false)
+  const pageGeneration = useRef(0)
+  const activeRef = useRef(active)
+  activeRef.current = active
+  const [loginErrors, setLoginErrors] = useState<Record<string, string>>({})
   const [dialog, setDialog] = useState<{ kind: 'rename' | 'delete'; account: PublisherAccount }>()
   const [nextName, setNextName] = useState('')
+  const serviceReady = active && serviceState === 'ready'
+  const actionsDisabled = !serviceReady || busy !== ''
 
-  const refresh = async () => {
+  useEffect(() => {
+    setLoginErrors(current => {
+      const remaining = Object.fromEntries(Object.entries(current).filter(([id]) =>
+        accounts.some(account => account.id === id && account.loginState !== 'logged-in')))
+      return Object.keys(remaining).length === Object.keys(current).length ? current : remaining
+    })
+  }, [accounts])
+
+  const refresh = async (isCurrent: () => boolean) => {
     const rows = await api<PublisherAccount[]>('accounts')
-    setAccounts(rows)
+    if (isCurrent()) setAccounts(rows)
   }
 
   useEffect(() => {
-    if (!active) return
+    const generation = ++pageGeneration.current
+    busyRef.current = false
+    setBusy('')
+    if (!active) {
+      setServiceState('loading')
+      return
+    }
     let live = true
-    void api<PublisherCapability>('capability').then(async value => {
-      if (!live) return
+    const controller = new AbortController()
+    const isCurrent = () => live && activeRef.current && pageGeneration.current === generation
+    serviceLoading.current = true
+    setServiceState('loading')
+    setServiceError('')
+    void api<PublisherCapability>('capability', undefined, controller.signal).then(async value => {
+      if (!isCurrent()) return
       setCapability(value)
-      if (value.supported) {
-        const [rows, supported] = await Promise.all([
-          api<PublisherAccount[]>('accounts'),
-          api<PublisherPlatformCapability[]>('platform-capabilities'),
-        ])
-        if (live) { setAccounts(rows); setPlatformCapabilities(supported) }
+      if (!value.supported) throw new Error(capabilityMessage(value))
+      const [rows, supported] = await Promise.all([
+        api<PublisherAccount[]>('accounts', undefined, controller.signal),
+        api<PublisherPlatformCapability[]>('platform-capabilities', undefined, controller.signal),
+      ])
+      if (isCurrent()) {
+        setAccounts(rows)
+        setPlatformCapabilities(supported)
+        setServiceState('ready')
       }
-    }).catch(cause => { if (live) showError(cause instanceof Error ? cause.message : '发布能力检查失败') })
-    return () => { live = false }
-  }, [active])
+    }).catch(cause => {
+      if (!isCurrent()) return
+      setServiceError(cause instanceof Error ? cause.message : '发布能力检查失败')
+      setServiceState('error')
+    }).finally(() => { if (isCurrent()) serviceLoading.current = false })
+    return () => {
+      live = false
+      controller.abort()
+      serviceLoading.current = false
+      busyRef.current = false
+      pageGeneration.current += 1
+    }
+  }, [active, serviceRetry])
+
+  const retryService = () => {
+    if (!activeRef.current || serviceLoading.current || busyRef.current) return
+    serviceLoading.current = true
+    setServiceRetry(value => value + 1)
+  }
 
   // Returning from a native login window focuses e宝. Check once per focus;
   // there is deliberately no timer, QR polling, or background status loop.
   useEffect(() => {
+    if (!serviceReady) return
+    let live = true
+    let checking = false
+    const generation = pageGeneration.current
     const checkOnFocus = () => {
-      if (accounts.length === 0 || busy !== '') return
+      if (!activeRef.current || accounts.length === 0 || busyRef.current || checking) return
+      checking = true
       void Promise.all(accounts.map(account => api<PublisherAccount>('account-check-login', { id: account.id })))
-        .then(setAccounts)
+        .then(rows => { if (live && activeRef.current && pageGeneration.current === generation && !busyRef.current) setAccounts(rows) })
         .catch(() => {})
+        .finally(() => { checking = false })
     }
     window.addEventListener('focus', checkOnFocus)
-    return () => window.removeEventListener('focus', checkOnFocus)
-  }, [accounts, busy])
+    return () => { live = false; window.removeEventListener('focus', checkOnFocus) }
+  }, [accounts, busy, serviceReady])
 
-  const act = async (label: string, task: () => Promise<void>) => {
-    if (busyRef.current) return
+  const act = async (label: string, task: (isCurrent: () => boolean) => Promise<void>) => {
+    if (!activeRef.current || !serviceReady || busyRef.current) return
+    const generation = pageGeneration.current
+    const isCurrent = () => activeRef.current && pageGeneration.current === generation
     busyRef.current = true
     setBusy(label); clearTip()
-    try { await task() } catch (cause) { showError(cause instanceof Error ? cause.message : '操作失败') }
-    finally { busyRef.current = false; setBusy('') }
+    try { await task(isCurrent) } catch (cause) { if (isCurrent()) showError(cause instanceof Error ? cause.message : '操作失败') }
+    finally { if (isCurrent()) { busyRef.current = false; setBusy('') } }
   }
 
-  const create = () => act('正在创建账号…', async () => {
+  const openLogin = async (account: PublisherAccount, isCurrent: () => boolean, added = false) => {
+    if (!isCurrent()) return false
+    setBusy('正在打开登录页…')
+    setLoginErrors(current => { const next = { ...current }; delete next[account.id]; return next })
+    try {
+      const result = await api<{ navigationFailed?: boolean }>('account-open-login', { id: account.id })
+      if (!isCurrent()) return false
+      if (result?.navigationFailed) {
+        setLoginErrors(current => ({ ...current, [account.id]: '登录窗口已打开，但平台页面未完成加载。请检查窗口，必要时点击此账号的“登录”重试，无需重复添加。' }))
+        return false
+      }
+      return true
+    } catch (cause) {
+      if (!isCurrent()) return false
+      const detail = cause instanceof Error ? cause.message : '操作失败'
+      const message = `${added ? '账号已添加' : '账号已保留'}，登录窗口打开失败：${detail}。请点击此账号的“登录”重试，无需重复添加。`
+      setLoginErrors(current => ({ ...current, [account.id]: message }))
+      showError(message)
+      return false
+    }
+  }
+
+  const create = () => act('正在创建账号…', async isCurrent => {
     if (platform === 'wxmp' && !displayName.trim()) throw new Error('请填写公众号名称')
     const account = await api<PublisherAccount>('accounts', {
       displayName, platform, ...(platform === 'wxmp' ? { appId, appSecret } : {}),
     })
+    if (!isCurrent()) return
+    setAccounts(rows => rows.some(row => row.id === account.id)
+      ? rows.map(row => row.id === account.id ? account : row) : [...rows, account])
     setDisplayName('')
     setAppId(''); setAppSecret('')
-    if (platform !== 'wxmp') await api('account-open-login', { id: account.id })
-    await refresh()
-    showSuccess(platform === 'wxmp' ? '公众号已添加，请检查接口状态。' : '登录窗口已打开；完成登录后回到 e宝工坊检查状态和账号名称。')
+    if (account.platform !== 'wxmp' && !await openLogin(account, isCurrent, true)) return
+    await refresh(isCurrent)
+    if (isCurrent()) showSuccess(account.platform === 'wxmp' ? '公众号已添加，请检查接口状态。' : '登录窗口已打开；完成登录后回到 e宝工坊检查状态和账号名称。')
   })
 
   const rename = (account: PublisherAccount) => {
@@ -91,47 +172,50 @@ export function AccountsPage({ active }: { active: boolean }) {
     const name = nextName.trim()
     if (!name || name === dialog.account.displayName) return
     const account = dialog.account
-    void act('正在保存…', async () => {
+    void act('正在保存…', async isCurrent => {
       await api('account-update', { id: account.id, displayName: name })
+      if (!isCurrent()) return
       setDialog(undefined)
-      await refresh()
+      await refresh(isCurrent)
     })
   }
 
   const confirmRemove = () => {
     if (busyRef.current || dialog?.kind !== 'delete') return
     const account = dialog.account
-    void act('正在删除…', async () => {
+    void act('正在删除…', async isCurrent => {
       await api('account-delete', { id: account.id })
+      if (!isCurrent()) return
       setDialog(undefined)
-      await refresh()
+      await refresh(isCurrent)
     })
   }
 
-  const inspectImport = () => act('正在检查旧账号…', async () => {
+  const inspectImport = () => act('正在检查旧账号…', async isCurrent => {
     const result = await api<PublisherImportPreview>('import-preview')
-    setPreview(result)
+    if (isCurrent()) setPreview(result)
   })
 
-  const applyImport = () => act('正在复制旧账号…', async () => {
+  const applyImport = () => act('正在复制旧账号…', async isCurrent => {
     if (preview?.running) throw new Error('请先完全退出独立 MatrixMedia')
     await api('import-apply', {})
+    if (!isCurrent()) return
     setPreview(undefined)
-    await refresh()
-    showSuccess('导入完成。已复制旧 session，原 MatrixMedia 数据未移动或删除；请检查登录状态。')
+    await refresh(isCurrent)
+    if (isCurrent()) showSuccess('导入完成。已复制旧 session，原 MatrixMedia 数据未移动或删除；请检查登录状态。')
   })
 
-  const unavailable = capabilityMessage(capability)
   return <div>
-    {unavailable && <div className="pub-error">{unavailable}</div>}
+    {serviceState === 'loading' && <div className="pub-muted" role="status">正在启动 MatrixMedia 发布服务…</div>}
+    {serviceState === 'error' && <div className="pub-error" role="alert">发布服务启动失败：{serviceError}<div className="pub-actions"><Button variant="outline" size="sm" onClick={retryService}>重试启动服务</Button></div></div>}
     <div className="pub-grid pub-account-layout">
       <div>
         <div className="pub-account-list-head">
-          <div><h2>账号列表</h2><p className="pub-muted">已添加 {accounts.length} 个平台账号</p></div>
-          {accounts.length > 0 && <Button variant="outline" size="sm" disabled={busy !== ''} onClick={() => void act('正在刷新…', refresh)}>刷新列表</Button>}
+          <div><h2>账号列表</h2><p className="pub-muted">{serviceReady ? `已添加 ${accounts.length} 个平台账号` : '正在等待发布服务就绪'}</p></div>
+          {accounts.length > 0 && <Button variant="outline" size="sm" disabled={actionsDisabled} onClick={() => void act('正在刷新…', refresh)}>刷新列表</Button>}
         </div>
         {accounts.length === 0
-          ? <div className="pub-card pub-empty">还没有发布账号<br/>请添加账号并完成平台登录。</div>
+          ? serviceReady && <div className="pub-card pub-empty">还没有发布账号<br/>请添加账号并完成平台登录。</div>
           : <div className="pub-account-cards">{accounts.map(account => <article className="pub-account-card" key={account.id}>
             <div className="pub-account-card-head">
               <div className="pub-account-icon"><PlatformIcon platform={account.platform}/></div>
@@ -146,12 +230,13 @@ export function AccountsPage({ active }: { active: boolean }) {
               </Tag>
             </div>
             {account.platform === 'wxmp' && account.loginError && <p className="pub-account-error">{account.loginError}</p>}
+            {loginErrors[account.id] && <p className="pub-warn" role="alert">{loginErrors[account.id]}</p>}
             <div className="pub-account-card-actions" role="group" aria-label={`${account.displayName}的账号操作`}>
-              {account.platform !== 'wxmp' && <Button variant="outline" size="sm" disabled={busy !== ''} onClick={() => void act('正在打开登录页…', async () => { await api('account-open-login', { id: account.id }) })}>{account.loginState === 'logged-in' ? '重新登录' : '登录'}</Button>}
-              <Button variant="outline" size="sm" disabled={busy !== ''} onClick={() => void act('正在检查…', async () => { const next = await api<PublisherAccount>('account-check-login', { id: account.id }); setAccounts(rows => rows.map(row => row.id === next.id ? next : row)) })}>检查状态</Button>
-              <Button variant="outline" size="sm" disabled={busy !== ''} onClick={() => void act('正在打开后台…', async () => { await api('account-open-dashboard', { id: account.id }) })}>打开平台后台</Button>
-              <Button variant="outline" size="sm" disabled={busy !== ''} onClick={() => rename(account)}>改名</Button>
-              <Button variant="outline" size="sm" className="pub-danger-action" disabled={busy !== ''} onClick={() => remove(account)}>删除</Button>
+              {account.platform !== 'wxmp' && <Button variant="outline" size="sm" disabled={actionsDisabled} onClick={() => void act('正在打开登录页…', async isCurrent => { await openLogin(account, isCurrent) })}>{account.loginState === 'logged-in' ? '重新登录' : '登录'}</Button>}
+              <Button variant="outline" size="sm" disabled={actionsDisabled} onClick={() => void act('正在检查…', async isCurrent => { const next = await api<PublisherAccount>('account-check-login', { id: account.id }); if (isCurrent()) setAccounts(rows => rows.map(row => row.id === next.id ? next : row)) })}>检查状态</Button>
+              <Button variant="outline" size="sm" disabled={actionsDisabled} onClick={() => void act('正在打开后台…', async () => { await api('account-open-dashboard', { id: account.id }) })}>打开平台后台</Button>
+              <Button variant="outline" size="sm" disabled={actionsDisabled} onClick={() => rename(account)}>改名</Button>
+              <Button variant="outline" size="sm" className="pub-danger-action" disabled={actionsDisabled} onClick={() => remove(account)}>删除</Button>
             </div>
           </article>)}</div>}
       </div>
@@ -170,17 +255,17 @@ export function AccountsPage({ active }: { active: boolean }) {
           <div className="pub-field"><label htmlFor="pub-wxmp-app-secret">公众号 AppSecret</label><Input id="pub-wxmp-app-secret" className="pub-input-wrap" type="password" autoComplete="new-password" value={appSecret} onChange={event => setAppSecret(event.target.value)}/></div>
           <p className="pub-muted">使用公众号官方接口；请在微信公众平台确认草稿与发布权限，并配置本机出口 IP 白名单。密钥在本机加密保存。</p>
         </>}
-        <Button size="sm" variant="primary" disabled={busy !== '' || capability?.supported !== true} onClick={() => void create()}>{busy || (platform === 'wxmp' ? '添加公众号' : '添加并打开登录页')}</Button>
+        <Button size="sm" variant="primary" disabled={actionsDisabled} onClick={() => void create()}>{busy || (platform === 'wxmp' ? '添加公众号' : '添加并打开登录页')}</Button>
         {capability?.legacyAccountImportSupported === false && <p className="pub-muted">Windows 暂不支持导入独立 MatrixMedia 账号；请直接添加账号并登录。</p>}
         {capability?.legacyAccountImportSupported !== false && <div className="pub-import"><h2>导入 MatrixMedia 账号</h2><p className="pub-muted">只复制 macOS 默认目录里的账号和 session；不会移动或删除原数据。导入前必须完全退出独立 MatrixMedia。</p>
-          <Button size="sm" variant="outline" disabled={busy !== '' || capability?.supported !== true} onClick={() => void inspectImport()}>预览可导入账号</Button>
+          <Button size="sm" variant="outline" disabled={actionsDisabled} onClick={() => void inspectImport()}>预览可导入账号</Button>
           {preview && <div style={{ marginTop: 14 }}>
             {preview.accounts.length === 0
               ? <div className="pub-muted">没有发现可导入账号。</div>
               : <>
                 <div className={preview.running ? 'pub-error' : 'pub-muted'}>{preview.running ? '检测到独立 MatrixMedia 仍在运行，请先退出。' : `发现 ${String(preview.accounts.length)} 个账号：`}</div>
                 <div className="pub-tags">{preview.accounts.map((item, index) => <Tag tone="neutral" key={`${item.platform}:${item.displayName}:${String(index)}`}>{PLATFORM_LABELS[item.platform]} · {item.displayName}</Tag>)}</div>
-                <div className="pub-actions"><Button size="sm" variant="primary" disabled={preview.running || busy !== ''} onClick={() => void applyImport()}>确认复制并导入</Button></div>
+                <div className="pub-actions"><Button size="sm" variant="primary" disabled={preview.running || actionsDisabled} onClick={() => void applyImport()}>确认复制并导入</Button></div>
               </>}
           </div>}
         </div>}
@@ -194,7 +279,7 @@ export function AccountsPage({ active }: { active: boolean }) {
       className="pub-modal-account"
       footer={<>
         <Button size="sm" variant="outline" disabled={busy !== ''} onClick={closeDialog}>取消</Button>
-        <Button size="sm" variant="primary" type="submit" form="pub-account-rename-form" disabled={busy !== '' || !nextName.trim() || nextName.trim() === dialog?.account.displayName}>{busy || '保存名称'}</Button>
+        <Button size="sm" variant="primary" type="submit" form="pub-account-rename-form" disabled={actionsDisabled || !nextName.trim() || nextName.trim() === dialog?.account.displayName}>{busy || '保存名称'}</Button>
       </>}
     >
       <form id="pub-account-rename-form" className="pub-modal-field" onSubmit={event => { event.preventDefault(); saveRename() }}>
@@ -211,7 +296,7 @@ export function AccountsPage({ active }: { active: boolean }) {
       className="pub-modal-account"
       footer={<>
         <Button size="sm" variant="outline" data-pub-initial-focus disabled={busy !== ''} onClick={closeDialog}>取消</Button>
-        <Button size="sm" variant="outline" className="pub-danger-action" disabled={busy !== ''} onClick={confirmRemove}>{busy || '确认删除'}</Button>
+        <Button size="sm" variant="outline" className="pub-danger-action" disabled={actionsDisabled} onClick={confirmRemove}>{busy || '确认删除'}</Button>
       </>}
     >
       <p className="pub-modal-copy">历史提交记录会保留账号名称快照。</p>

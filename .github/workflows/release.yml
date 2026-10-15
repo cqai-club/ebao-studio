@@ -207,8 +207,8 @@ jobs:
             output_dir='dsh-plugin-desktop/dist/mac-smoke'
           fi
           assets=(
-            "$output_dir/eBao-Studio-${version}-universal.dmg"
-            "$output_dir/eBao-Studio-${version}-universal.zip"
+            "$output_dir/eBao-Studio-${version}.dmg"
+            "$output_dir/eBao-Studio-${version}.zip"
             "$output_dir/latest-mac.yml"
           )
           mkdir -p release-assets
@@ -251,8 +251,8 @@ jobs:
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           checksum_assets=(
-            "eBao-Studio-${version}-universal.dmg"
-            "eBao-Studio-${version}-universal.zip"
+            "eBao-Studio-${version}.dmg"
+            "eBao-Studio-${version}.zip"
             "eBao-Studio-${version}-x64-Setup.exe"
             "eBao-Studio-${version}-x64-Portable.zip"
           )

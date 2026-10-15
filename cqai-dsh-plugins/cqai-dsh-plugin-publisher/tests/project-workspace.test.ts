@@ -45,7 +45,7 @@ function bindingPath(contentId: string, env: NodeJS.ProcessEnv): string {
 }
 
 describe('publisher project workspaces', () => {
-  it('creates independent directories for every type and binds old drafts to their first selected root', () => {
+  it('creates independent directories in the same immutable publishing root for every type', () => {
     const env = fixture()
     const initial = readProjectSettings(env)
     expect(initial).toEqual({ defaultRoot: join(env.DSH_HOME, 'publisher', 'projects'), isCustom: false })
@@ -70,7 +70,7 @@ describe('publisher project workspaces', () => {
     expect(ensureProjectWorkspace(article.id, env).path).toBe(paths.get(article.id))
     const newer = createContent('article', env)
     const newerPath = ensureProjectWorkspace(newer.id, env).path
-    expectReadablePath(newerPath, alternate, 'article')
+    expectReadablePath(newerPath, initial.defaultRoot, 'article')
     expect(saveProjectSettings(initial.defaultRoot, env)).toEqual(initial)
     expect(readProjectSettings(env)).toEqual(initial)
     expect(ensureProjectWorkspace(newer.id, env).path).toBe(newerPath)
@@ -79,6 +79,10 @@ describe('publisher project workspaces', () => {
   it('lazily creates a project for a preexisting draft without changing the draft revision', () => {
     const env = fixture()
     const draft = createContent('image-note', env)
+    const manifest = join(contentsRoot(env), draft.id, 'manifest.json')
+    const legacy = { ...draft }
+    delete legacy.workflowVersion
+    writeFileSync(manifest, JSON.stringify(legacy))
     const original = ensureProjectWorkspace(draft.id, env).path
     rmSync(original, { recursive: true })
     rmSync(join(contentsRoot(env), draft.id, 'project-workspace.json'))
@@ -93,7 +97,7 @@ describe('publisher project workspaces', () => {
   it('keeps a bound path stable and reports an offline custom root clearly', () => {
     const env = fixture()
     const alternate = customRoot()
-    const selected = saveProjectSettings(join(alternate, '..', alternate.split('/').at(-1)!), env)
+    const selected = saveProjectSettings(join(alternate, '..', basename(alternate)), env)
     expect(selected.defaultRoot).toBe(alternate)
     const draft = createContent('article', env)
     rmSync(alternate, { recursive: true })
@@ -289,27 +293,29 @@ describe('publisher project workspaces', () => {
 
     const root = customRoot()
     saveProjectSettings(root, env)
-    symlinkSync(contentsRoot(env), join(root, 'video'))
+    const sharedRoot = dirname(dirname(ensureProjectWorkspace(draft.id, env).path))
+    symlinkSync(contentsRoot(env), join(sharedRoot, 'video'), 'junction')
     const before = listContents(env).length
     expect(() => createContent('video', env)).toThrow('项目目录无效')
     expect(listContents(env)).toHaveLength(before)
     const target = ensureProjectWorkspace(draft.id, env).path
     rmSync(target, { recursive: true })
-    symlinkSync(contentsRoot(env), target)
+    symlinkSync(contentsRoot(env), target, 'junction')
     expect(() => ensureProjectWorkspace(draft.id, env)).toThrow('项目目录无效')
 
     rmSync(target)
     mkdirSync(target)
     const binding = join(contentsRoot(env), draft.id, 'project-workspace.json')
     rmSync(binding)
-    symlinkSync(join(contentsRoot(env), draft.id, 'manifest.json'), binding)
+    // Windows junctions exercise the same reparse boundary without requiring symlink privileges.
+    symlinkSync(join(contentsRoot(env), draft.id), binding, 'junction')
     expect(() => ensureProjectWorkspace(draft.id, env)).toThrow('草稿项目目录关联无效')
   })
 
   it('rejects a default projects directory redirected into internal draft storage', () => {
     const env = fixture()
     mkdirSync(contentsRoot(env), { recursive: true })
-    symlinkSync(contentsRoot(env), join(env.DSH_HOME, 'publisher', 'projects'))
+    symlinkSync(contentsRoot(env), join(env.DSH_HOME, 'publisher', 'projects'), 'junction')
     expect(() => createContent('article', env)).toThrow('默认项目目录无效')
     expect(listContents(env)).toEqual([])
   })

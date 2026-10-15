@@ -34,17 +34,19 @@ function parseArguments(argv) {
 }
 
 export function expectedReleaseAssets(version) {
+  // Keep immutable historical releases verifiable by the current mirror tooling.
+  const [major, minor, patch] = version.split('.').map(Number)
+  const macSuffix = major === 0 && minor === 0 && patch < 15 ? '-universal' : ''
   return [
-    `eBao-Studio-${version}-universal.dmg`,
-    `eBao-Studio-${version}-universal.zip`,
+    `eBao-Studio-${version}${macSuffix}.dmg`,
+    `eBao-Studio-${version}${macSuffix}.zip`,
     `eBao-Studio-${version}-x64-Setup.exe`,
     `eBao-Studio-${version}-x64-Portable.zip`,
   ]
 }
 
 export function expectedUpdaterMetadata(version) {
-  const macZip = `eBao-Studio-${version}-universal.zip`
-  const macDmg = `eBao-Studio-${version}-universal.dmg`
+  const [macDmg, macZip] = expectedReleaseAssets(version)
   return [
     {
       filename: 'latest.yml',

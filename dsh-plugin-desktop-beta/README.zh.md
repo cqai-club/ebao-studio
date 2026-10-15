@@ -173,13 +173,17 @@ npx dsh-plugin-desktop-beta
 
 当 Desktop 窗口没有焦点时，直接用户发起的回合到达 `completed` 会显示原生完成通知；以 `error` 或 `max-tokens` 结束时则显示需要处理的通知。后台任务完成或失败也使用同一条原生注意力路径。取消、阻塞、中断、被终止的任务、插件发起、仅 continuation、turn 不匹配及 subagent 活动都保持静默。点击通知会显示并聚焦窗口。macOS 与 Linux 会递增应用角标，Windows 会闪烁任务栏按钮；显示、聚焦或释放窗口时会清除这些提示。实时生效的 `dsh-desktop-notifications` settings namespace 提供相互独立的 `notifyOnTurnCompletion`、`notifyOnTurnFailure`、`notifyOnJobCompletion` 与 `notifyOnJobFailure` 开关，默认全部开启。通知文案刻意保持通用，不会包含提示词、回复、错误、任务标签、命令、路径、会话 ID、模型或 provider 名称、工具数据及输出。
 
-打包后的 Beta 应用仍会在启动约 60 秒后查询仓库自有清单 `https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json`，并在完成检查六小时后再次查询。每次 no-cache 请求有 15 秒期限，并标识 Beta 通道和当前安装版本。本轮刻意不发布 Beta 的 `latest*.yml` 或更新资产：Beta 检查与共享 lifecycle 保持兼容，但发现 Beta 版本时会说明其不可在应用内安装。稳定版使用稳定 edition 及其明确的 **重启并更新** 流程。开发运行、未打包启动和 Linux 不会下载安装包。
+打包后的 Beta 应用仍会在启动约 60 秒后查询按实际网络出口 IP 选择的仓库自有清单（仅 CN 使用 GitCode，其他及无法识别地区使用 GitHub，含 HK/MO/TW），并在完成检查六小时后再次查询。每次 no-cache 请求有 15 秒期限，并标识 Beta 通道和当前安装版本。本轮刻意不发布 Beta 的 `latest*.yml` 或更新资产：Beta 检查与共享 lifecycle 保持兼容，但发现 Beta 版本时会说明其不可在应用内安装。稳定版使用稳定 edition 及其明确的 **重启并更新** 流程。开发运行、未打包启动和 Linux 不会下载安装包。
 
 Beta 在本轮不提供应用内下载操作。其共享 lifecycle 保留手动检查、有界请求、通知 action 管线、版本验证与 teardown 行为，并不会声称尚未发布的 Beta 构件可以安装。
 
 当前公开清单只标记稳定版。Beta 手动检查会明确提示更新源未提供 Beta 版本信息，后台检查保持静默；网络或清单错误仍显示检查失败。只有发布 Beta 版本信息后，才能比较 Beta 更新。
 
-在单独评审 Beta 发布设计、元数据、构件、签名策略和验证 gate 之前，Release operator 不得把 Beta 版本添加到清单。稳定版 `v<version>` Release 仍是唯一官方应用内更新源。
+在单独评审 Beta 发布设计、元数据、构件、签名策略和验证 gate 之前，Release operator 不得把 Beta 版本添加到清单。稳定版 `v<version>` 在所选 GitHub 或 GitCode 来源上的 Release 仍是唯一官方应用内更新资产。
+
+更新源按实际网络出口 IP 选择。Stable 与 Beta 先请求自有路由接口 `https://cqaiclub.asia/api/ebao-studio/download?platform=windows|macos`（按系统选择 `windows` 或 `macos`），不传 `source`，不跟随 302 跳转，仅读取 `X-Download-Source`。服务端使用本地 `geoip-country` 识别 IP，仅 `CN` 使用 GitCode；其他地区（包括 HK/MO/TW）、无法识别，以及客户端探测失败、超时或无效响应，均使用 GitHub。此判断不使用语言或时区。成功的来源判断仅在当前进程缓存五分钟，不写入磁盘；缓存过期后在下次判断时重新探测，网络出口变化最多沿用五分钟内的成功判断。
+
+按 IP 选择来源随包含这些代码的下一版应用生效；已安装旧版不会自动切换。GitHub 仍是开发、打包和原始发布源。面向中国大陆分发时，必须启用 GitCode 同步，并将源码、版本清单及全部七个原始 Release 附件镜像和验证；源码与清单可能先于附件同步完成。所选清单或下载源本身失败时不自动跨源回退。Next 继续使用其上游更新源。
 
 在 macOS 与 Windows 上，**打开 DSH 终端** 会打开以当前激活 profile 为工作目录的系统终端。未打包的开发启动会在设置页标题区显示 **导出诊断信息**、**打开 DSH 终端** 和包含 **重启 Desktop**、**重启到恢复模式** 的重启菜单；正式打包版默认不注册这组设置页操作，等效的诊断与恢复能力仍保留在托盘中。任何重启路径都会先显示确认，再开始有序 Cordis shutdown 和 Electron relaunch。终端欢迎信息会显示应用版本、当前 profile、profile 目录与 DSH home，并列出配置与插件管理命令。在该终端内，裸 `dsh`、`dsh --dump-config`，以及没有选择 profile 的 plugin 子命令都会默认使用当前激活 profile；显式 `--profile` 与上游 `web` alias 会保留原有含义。e宝工坊 会在自身 user-data 目录下按 profile 生成私有 `dsh`、`pnpm` 与 `node` shim，设置 `DSH_HOME`，使用当前 profile 作为工作目录，并且只在该终端的 `PATH` 前置 shim 目录；之后切换 profile 不会改变已经打开的终端命令。它不会修改全局环境或 shell 启动文件。macOS launcher 会先保留用户的交互式 zsh 或 bash 设置，再恢复 desktop 自有变量。Windows 会依次选择 PowerShell 7、Windows PowerShell 或命令提示符，并在新的 Windows Terminal 窗口中打开；如果 `wt.exe` 不可用，则由私有 `cmd start` broker 创建可见控制台。同步启动失败与 broker 非正常退出会使用 Desktop dialog surface。Linux 不组合该终端命令。
 
@@ -280,7 +284,7 @@ corepack.cmd yarn dist:win-portable
 - macOS 与 Windows 托盘终端会提供私有 `dsh`、`pnpm` 与 `node` shim。除此之外，Host runtime 会在当前 Electron 进程的 `PATH` 中公开内置 `pnpm` 命令作为 ambient compatibility，并提供受管 `desktopPnpm` service；这些命令都不会加入系统 `PATH`，Linux 目前也没有 desktop 终端命令。
 - 在 Windows 上，ambient `pnpm` 命令与 lifecycle Node helper 是 `.cmd` shim。`desktopPnpm.run()` 会启动准确的已打包 pnpm entry，从而避免 manager process 的 shell lookup；上游 `dsh plugin`、PowerShell 与命令提示符则可通过 command interpreter 解析 ambient shim。第三方插件直接调用 Node `spawn('pnpm', { shell: false })`，或 lifecycle script 直接以 `shell: false` 执行其 `.cmd` `npm_node_execpath`，仍属于不可移植行为，应改用该 service 或 shell-aware 启动路径。
 - `dshmarket@1.2.3` 仍是用户可选安装的第三方 package，而不是内置 marketplace。只有重新审计的版本同时消费可选 Desktop service、保留普通 DSH fallback，并包含再分发所需的完整 license notice 后，才会重新评估预装。
-- Beta 没有对应的 GitHub Release 更新构件，不会在应用内暂存或替换自身；请手动下载新版 Beta。仅稳定版的 Electron Updater 暂存还要受发布者身份、macOS Developer ID 签名与公证、Windows Authenticode/SmartScreen 策略以及原生升级测试共同约束。
+- Beta 没有对应的 Release 更新构件，不会在应用内暂存或替换自身；请手动下载新版 Beta。仅稳定版的 Electron Updater 暂存还要受发布者身份、macOS Developer ID 签名与公证、Windows Authenticode/SmartScreen 策略以及原生升级测试共同约束。
 - 共享 carrier 使用 HTTP 与 WebSocket，而不是 Electron IPC；默认只绑定 loopback，并支持经过明确确认的全接口局域网监听。替换 carrier 需要上游 DSH 提供 transport 扩展点，不属于该独立包的范围。
 - Stable 与 Beta 保持官方 DSH `0.2.0-rc.2` 运行时及其源码 pin，Desktop 修复独立选择性移植；桌面构建解析这些包接口，不直接链接源码 checkout。历史会话由上游迁移到 V3，自动转换旧 PTC 事件和 `code` 预设引用并保留原日志，桌面端不再生成预设别名。旧运行时无法读取 V3 会话。扩展和增强模式接入右侧 Sidebar 的文档预览、分栏和全屏，并通过 keyed `main` 槽位支持独立于会话选择的全局插件面板。
 - `package:dir` 是用于 smoke 的未封装产物。`dist:win` 会额外生成未签名的 NSIS 测试安装包，但不会建立 Authenticode 身份或 SmartScreen 信誉。安装与升级行为、原生通知与终端、Windows ACL sandbox，以及每台目标机器上的原生材质外观仍属于目标平台验证边界。
