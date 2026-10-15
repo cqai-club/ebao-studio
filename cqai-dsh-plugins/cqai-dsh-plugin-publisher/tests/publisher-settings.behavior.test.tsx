@@ -9,6 +9,7 @@ vi.mock('../src/client/shared.tsx', () => ({
   api: vi.fn(),
   errorMessage: (cause: unknown) => cause instanceof Error ? cause.message : String(cause),
 }))
+vi.mock('../src/client/writing-profile-settings.tsx', () => ({ WritingProfileSettings: () => <section aria-label="写作风格"/> }))
 
 const queryApi = api as unknown as Mock
 let container: HTMLDivElement

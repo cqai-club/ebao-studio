@@ -11,6 +11,7 @@ import type { PublisherContent, PublisherContentType } from './protocol.ts'
 
 const SETTINGS_FILE = 'project-settings.json'
 const BINDING_FILE = 'project-workspace.json'
+const SHARED_WORKSPACE_FILE = 'publishing-workspace.json'
 const MAX_SETTINGS_BYTES = 8 * 1024
 const MAX_BINDING_BYTES = 8 * 1024
 const MAX_PATH_LENGTH = 4096
@@ -137,6 +138,34 @@ export function saveProjectSettings(root: string, env: NodeJS.ProcessEnv = proce
   return { defaultRoot: canonical, isCustom: true }
 }
 
+/** One immutable Agent cwd for this workflow, with content-specific folders below it. */
+export function ensurePublishingWorkspace(env: NodeJS.ProcessEnv = process.env): string {
+  const file = join(publisherRoot(env, true), SHARED_WORKSPACE_FILE)
+  const stored = parseRecord(file, MAX_BINDING_BYTES, '多平台发布工作区关联无效')
+  if (stored) {
+    if (Object.keys(stored).sort().join(',') !== 'path,version' || stored.version !== 1
+      || !validCanonicalPath(stored.path) || canonicalRoot(stored.path, env) !== stored.path) {
+      throw new Error('多平台发布工作区关联无效')
+    }
+    return stored.path
+  }
+  const settings = readProjectSettings(env)
+  const path = settings.isCustom ? canonicalRoot(settings.defaultRoot, env) : defaultRoot(env, true)
+  const temporary = join(publisherRoot(env, true), `.${randomUUID()}.tmp`)
+  try {
+    writeFileSync(temporary, JSON.stringify({ version: 1, path }), { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+    // The first caller fixes the shared cwd, including concurrent new-content requests.
+    try { linkSync(temporary, file) }
+    catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === 'EEXIST') return ensurePublishingWorkspace(env)
+      throw cause
+    }
+    return path
+  } finally {
+    if (existsSync(temporary)) rmSync(temporary)
+  }
+}
+
 interface ProjectBinding {
   root: string
   name: string
@@ -260,7 +289,8 @@ export function ensureProjectWorkspace(contentId: string, env: NodeJS.ProcessEnv
   const directory = directoryFor(contentId, env)
   const saved = boundProject(directory, contentId)
   const settings = saved === null ? readProjectSettings(env) : null
-  const root = saved?.root ?? (settings?.isCustom ? canonicalRoot(settings.defaultRoot, env) : defaultRoot(env, true))
+  const root = saved?.root ?? (content.workflowVersion === 2 ? ensurePublishingWorkspace(env)
+    : settings?.isCustom ? canonicalRoot(settings.defaultRoot, env) : defaultRoot(env, true))
   const typeDirectory = prepareTypeDirectory(root, content.contentType, env)
   if (saved) return { contentId, path: safeChild(typeDirectory, saved.name).path }
   const candidate = allocateProject(typeDirectory, content)

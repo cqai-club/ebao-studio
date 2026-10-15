@@ -39,8 +39,8 @@ for (const workspace of AA_WORKSPACES) {
       return source.slice(start, end)
     }
     const { createProjection, contentHash } = runInNewContext(
-      ['identity', 'tools', 'history'].map(region).join('\n') + ';({ createProjection, contentHash })',
-      { createHash, Buffer, json: value => JSON.parse(JSON.stringify(value)), record: value => value ?? {} },
+      ['types', 'identity', 'tools', 'history'].map(region).join('\n') + ';({ createProjection, contentHash })',
+      { createHash, Buffer },
     )
     const projection = createProjection('native-session', 'platform-session')
     projection.apply({ type: 'tool/result', seq: 0, time: '2026-09-24T00:00:00Z',

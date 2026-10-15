@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconChevronDownOutlineMedium, Menu, type MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import { api, errorMessage } from './shared.tsx'
+import { EditorSection } from './editor-layout.tsx'
 
 type ProjectWorkspace = { contentId: string; path: string }
 type AvailableApps = { apps: string[] }
@@ -111,8 +112,9 @@ export function ProjectDirectoryInfo({ contentId }: { contentId: string }) {
 
   const items: MenuItem[] = available.map(id => ({ id, label: APP_LABELS[id], icon: <AppIcon id={id}/> }))
 
-  return <div className="pub-card pub-project-directory"><style>{style}</style>
-    <div className="pub-project-directory-head"><h2>项目目录</h2>
+  return <EditorSection key={contentId} title="项目目录" className="pub-project-directory" hint={error || openError
+    ? <span className="pub-warn" role="status">{error ? '目录不可用' : '打开失败'}</span> : '打开 / 复制路径'}><style>{style}</style>
+    <div className="pub-project-directory-head">
       {path && current && <Menu open={menuOpen} align="end" dense portal selection="fill" onClose={() => setMenuOpen(false)}
         items={items} selectedId={current} onSelect={id => {
           setMenuOpen(false)
@@ -131,5 +133,5 @@ export function ProjectDirectoryInfo({ contentId }: { contentId: string }) {
         {apps !== null && !current && <p className="pub-project-directory-status" role="status">{appsError ? `暂时无法读取本机应用：${appsError}` : '本机没有可用的打开应用'}；仍可复制路径。</p>}
         {openError && <p className="pub-project-directory-error" role="alert">{openError}</p>}
       </> : <p className="pub-project-directory-status" role="status">正在读取项目目录…</p>}
-  </div>
+  </EditorSection>
 }

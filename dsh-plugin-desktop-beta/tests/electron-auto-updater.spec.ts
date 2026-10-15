@@ -20,6 +20,7 @@ function updater(overrides: Partial<ElectronAutoUpdater> = {}): ElectronAutoUpda
     allowDowngrade: true,
     disableDifferentialDownload: false,
     disableWebInstaller: false,
+    setFeedURL: vi.fn(),
     checkForUpdates: vi.fn(async () => ({
       ...updateCheck('2.1.0'),
     })),
@@ -30,7 +31,7 @@ function updater(overrides: Partial<ElectronAutoUpdater> = {}): ElectronAutoUpda
 }
 
 describe('Electron Desktop updater bridge', () => {
-  it('requires an explicit download, no quit-time installation, full artifacts, and prerelease release discovery', () => {
+  it('requires an explicit stable download, no quit-time installation, and full artifacts', () => {
     const value = updater()
 
     configureElectronAutoUpdater(value)
@@ -39,11 +40,57 @@ describe('Electron Desktop updater bridge', () => {
       autoDownload: false,
       autoInstallOnAppQuit: false,
       autoRunAppAfterInstall: true,
-      allowPrerelease: true,
+      allowPrerelease: false,
       allowDowngrade: false,
       disableDifferentialDownload: true,
       disableWebInstaller: true,
     })
+  })
+
+  it('defaults to the confirmed GitHub tag before checking for updates', async () => {
+    const value = updater()
+
+    await downloadElectronDesktopUpdate(value, '2.1.0', new AbortController().signal)
+
+    expect(value.setFeedURL).toHaveBeenCalledExactlyOnceWith({
+      provider: 'generic',
+      url: 'https://github.com/cqai-club/ebao-studio/releases/download/v2.1.0/',
+      channel: 'latest',
+      useMultipleRangeRequest: false,
+    })
+    expect(value.checkForUpdates).toHaveBeenCalledOnce()
+    expect(vi.mocked(value.setFeedURL).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(value.checkForUpdates).mock.invocationCallOrder[0]!)
+  })
+
+  it('selects the GitCode tag when mainland routing explicitly chooses that source', async () => {
+    const value = updater()
+
+    await downloadElectronDesktopUpdate(value, '2.1.0', new AbortController().signal, 'gitcode')
+
+    expect(value.setFeedURL).toHaveBeenCalledExactlyOnceWith({
+      provider: 'generic',
+      url: 'https://gitcode.com/g-dxw/ebao-studio/releases/download/v2.1.0/',
+      channel: 'latest',
+      useMultipleRangeRequest: false,
+    })
+    expect(value.checkForUpdates).toHaveBeenCalledOnce()
+    expect(vi.mocked(value.setFeedURL).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(value.checkForUpdates).mock.invocationCallOrder[0]!)
+  })
+
+  it.each([
+    '', 'v2.1.0', '2.1', '02.1.0', '2.1.0-beta.1', '2.1.0+build.1',
+    ' 2.1.0', '2.1.0 ', '2.1.0/../../latest',
+  ])('rejects unconfirmed or noncanonical stable version %j before network work', async version => {
+    const value = updater()
+
+    await expect(downloadElectronDesktopUpdate(value, version, new AbortController().signal))
+      .rejects.toThrow('update version must be canonical stable SemVer')
+
+    expect(value.setFeedURL).not.toHaveBeenCalled()
+    expect(value.checkForUpdates).not.toHaveBeenCalled()
+    expect(value.downloadUpdate).not.toHaveBeenCalled()
   })
 
   it('requires Electron Updater to agree with the manifest-confirmed version before downloading', async () => {
@@ -58,12 +105,29 @@ describe('Electron Desktop updater bridge', () => {
       .rejects.toThrow('did not find the confirmed update')
     expect(missing.downloadUpdate).not.toHaveBeenCalled()
 
+    const unavailable = updater({ checkForUpdates: vi.fn(async () => updateCheck('2.1.0', false)) })
+    await expect(downloadElectronDesktopUpdate(unavailable, '2.1.0', new AbortController().signal))
+      .rejects.toThrow('did not find the confirmed update')
+    expect(unavailable.downloadUpdate).not.toHaveBeenCalled()
+
     const mismatched = updater({ checkForUpdates: vi.fn(async () => ({
       ...updateCheck('2.2.0'),
     })) })
     await expect(downloadElectronDesktopUpdate(mismatched, '2.1.0', new AbortController().signal))
       .rejects.toThrow('does not match confirmed 2.1.0')
     expect(mismatched.downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it('does not contact a release provider after cancellation', async () => {
+    const value = updater()
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(downloadElectronDesktopUpdate(value, '2.1.0', controller.signal)).rejects.toThrow()
+
+    expect(value.setFeedURL).not.toHaveBeenCalled()
+    expect(value.checkForUpdates).not.toHaveBeenCalled()
+    expect(value.downloadUpdate).not.toHaveBeenCalled()
   })
 
   it('bridges Host cancellation into Electron Updater downloads', async () => {

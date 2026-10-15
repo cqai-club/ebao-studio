@@ -57,7 +57,7 @@ function setup(type: PublisherContent['contentType'] = 'article') {
       throw new Error(`Unexpected method: ${method}`)
     },
   }
-  const bindings = new AgentDraftBindings()
+  const bindings = new AgentDraftBindings(() => true)
   const binding = bindings.bind('session-test', content.id, env)!
   const manager = new AgentPublications(runtime, bindings, { env })
   const options = { contentId: content.id, expectedRevision: content.revision, bindingToken: binding.bindingToken,

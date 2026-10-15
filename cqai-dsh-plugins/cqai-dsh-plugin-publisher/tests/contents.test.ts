@@ -232,7 +232,7 @@ describe('publisher local content library', () => {
     rmSync(file)
     const outside = join(env.DSH_HOME, 'outside.png')
     writeFileSync(outside, png)
-    symlinkSync(outside, file)
+    symlinkSync(env.DSH_HOME, file, 'junction')
     expect(() => readAsset(draft.id, asset.id, env)).toThrow('素材路径')
     expect(() => resolveContent('../outside', 1, env)).toThrow('草稿 ID')
     rmSync(file)

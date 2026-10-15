@@ -1,23 +1,44 @@
-import { PLATFORMS, type Platform } from '../protocol.ts'
+import { PLATFORMS, type Platform, type PublisherContentType } from '../protocol.ts'
 
-/** One pending or currently selected article/image-note in the publisher panel. */
+/** One pending or currently selected content in the publisher panel. */
 export interface PublisherHandoff {
   contentId: string
-  contentType: 'article' | 'image-note'
+  contentType: PublisherContentType
   /** Platforms requested when the user opened a publication candidate. */
   platforms?: Platform[]
+  initialMode?: 'edit' | 'preview' | 'publish'
 }
 
 const STORAGE_KEY = 'cqai-publisher-handoff'
 const EVENT_NAME = 'cqai-publisher-handoff'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 let pendingHandoff: PublisherHandoff | undefined
+const DELIVERY_KEY = 'cqai-publisher-auto-delivery'
+const DELIVERY_STORE = Symbol.for('cqai-publisher.auto-delivery')
+const globals = globalThis as unknown as Record<symbol, Set<string> | undefined>
+const delivered = globals[DELIVERY_STORE] ??= new Set<string>()
+
+/** Claim a fresh live task once, including across client HMR and source-history reopening. */
+export function claimPublisherAutoHandoff(sessionId: string, taskId: string): boolean {
+  if (!sessionId || !taskId || sessionId.length > 512 || taskId.length > 512) return false
+  const key = `${sessionId}/${taskId}`
+  try {
+    const values: unknown = JSON.parse(window.sessionStorage.getItem(DELIVERY_KEY) ?? '[]')
+    if (Array.isArray(values)) for (const value of values.slice(-2048)) if (typeof value === 'string') delivered.add(value)
+  } catch { /* The same-page ledger still protects restricted storage and HMR. */ }
+  if (delivered.has(key)) return false
+  delivered.add(key)
+  if (delivered.size > 2048) delivered.delete(delivered.values().next().value!)
+  try { window.sessionStorage.setItem(DELIVERY_KEY, JSON.stringify([...delivered])) } catch { /* optional persistence */ }
+  return true
+}
 
 function valid(value: unknown): value is PublisherHandoff {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Partial<PublisherHandoff>
   return typeof candidate.contentId === 'string' && UUID.test(candidate.contentId)
-    && (candidate.contentType === 'article' || candidate.contentType === 'image-note')
+    && (candidate.contentType === 'article' || candidate.contentType === 'image-note' || candidate.contentType === 'video')
+    && (candidate.initialMode === undefined || ['edit', 'preview', 'publish'].includes(candidate.initialMode))
     && (candidate.platforms === undefined || (Array.isArray(candidate.platforms)
       && candidate.platforms.length > 0
       && candidate.platforms.every(platform => (PLATFORMS as readonly string[]).includes(platform))

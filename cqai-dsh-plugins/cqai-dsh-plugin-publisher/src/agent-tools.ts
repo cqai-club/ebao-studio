@@ -1,17 +1,20 @@
-/** Native Skills disclose instructions; successful loads unlock this turn's tools. */
+/** Verified native Skill instructions unlock tools for each currently bound turn. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
-import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
+import { createScope, scopeChainOf, type Scope } from '@deepseek-ai/dsh-scope'
 import { renderSkillContent } from '@deepseek-ai/dsh-skill'
 import type { ToolExecution, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+import * as NativeSkillLoader from '@deepseek-ai/dsh-tool-skill'
 import type { AssembleContext, PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type { AgentDraftBindings } from './agent-draft-binding.ts'
 import { registerAgentDraftReadTool, registerAgentDraftTools } from './agent-draft-tools.ts'
 import type { AgentPublications } from './agent-publication.ts'
 import { registerAgentPublicationTools } from './agent-publication-tools.ts'
-import { registerAgentSourceTools } from './agent-source-tools.ts'
-import { EDIT_DRAFT_SKILL, PUBLISHING_SKILL, isPublisherSkill } from './agent-skills.ts'
+import { PUBLISHER_SKILL_CATALOG, isPublisherSkill, type PublisherSkillEntry } from './agent-skills.ts'
+import { registerWritingProfileReadTool, registerWritingProfileWriteTool } from './agent-writing-profile-tools.ts'
+import { publisherSkillsInHistory } from './publisher-skill-history.ts'
 
 interface AgentTools {
   registration: Scope
@@ -19,11 +22,17 @@ interface AgentTools {
   request?: { id: string; text: string }
   gestures?: string[]
   bindingToken?: string
-  publicationSkill?: () => void
-  editSkill?: () => void
+  contentId?: string
+  /** Successful, delivered loads survive turn teardown; execution grants do not. */
+  learned?: Map<string, string>
+  catalog?: Map<string, () => void>
+  skillLoader?: Scope
+  skillLoaderDisposal?: Promise<void>
   publication?: () => void
   edit?: () => void
   draftRead?: () => void
+  writingProfileRead?: () => void
+  writingProfileWrite?: () => void
   inherited?: () => void
   hiddenSkills?: (() => void)[]
 }
@@ -34,6 +43,7 @@ interface Activation {
   generation: number
   requestId: string
   name: string
+  reuse?: boolean
 }
 
 interface SlashAssembly {
@@ -43,7 +53,9 @@ interface SlashAssembly {
 }
 
 function ownedSkill(name: string) {
-  return name === PUBLISHING_SKILL.name ? PUBLISHING_SKILL : EDIT_DRAFT_SKILL
+  const entry = PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === name)
+  if (!entry) throw new Error('Publisher Skill 不存在')
+  return entry.skill
 }
 
 function deliversSkillInstructions(content: readonly { type: string; text?: string }[], name: string): boolean {
@@ -72,7 +84,7 @@ function skillGestures(text: string): string[] {
 function skillName(exec: Readonly<ToolExecution>): string | undefined {
   if (exec.name !== 'skill' || typeof exec.arguments !== 'object' || exec.arguments === null) return undefined
   const name = (exec.arguments as { name?: unknown }).name
-  return name === PUBLISHING_SKILL.name || name === EDIT_DRAFT_SKILL.name ? name : undefined
+  return typeof name === 'string' && PUBLISHER_SKILL_CATALOG.some(entry => entry.skill.name === name) ? name : undefined
 }
 
 export class PublisherAgentTools {
@@ -89,10 +101,27 @@ export class PublisherAgentTools {
     private readonly bindings: AgentDraftBindings,
     private readonly publications: AgentPublications,
     private readonly available: (sessionId: string) => Promise<boolean>,
+    private readonly owns: (sessionId: string) => boolean = () => false,
+    private readonly trustedRequest?: (agent: Agent, message: UserMessage) => { id: string; text: string } | undefined,
   ) {
     this.disposers.push(
       ctx.on('tools/pre-execute', async (exec, next) => {
         const decision = await next()
+        if (decision.kind === 'allow' && exec.name.startsWith('publisher_')) {
+          const agent = exec.agent
+          if (!agent || agent.session.header.origin === 'subagent' || !this.owns(agent.id)
+            || !this.bindings.current(agent.id) || !await available(agent.id)
+            || !this.owns(agent.id) || !this.bindings.current(agent.id)) {
+            return { kind: 'deny', reason: '当前发布编辑面板已关闭或专属对话已变化' }
+          }
+          if (!ctx.tools.get(exec.name, agent)) {
+            const skill = exec.name === 'publisher_request_publication' || exec.name === 'publisher_get_publication_status'
+              ? 'multiplatform-publish' : exec.name === 'publisher_update_writing_profile'
+                ? 'publisher-learn-voice' : exec.name === 'publisher_get_writing_profile'
+                  ? 'publisher-write-article' : 'publisher-edit-draft'
+            return { kind: 'deny', reason: `当前工具尚未就绪，请先调用 skill 读取 ${skill}，然后在下一步调用所需工具；使用 run_code 时也应分为两次执行。` }
+          }
+        }
         const name = skillName(exec)
         if (!name || decision.kind !== 'allow') return decision
         const activation = this.activation(exec.agent, name)
@@ -110,28 +139,29 @@ export class PublisherAgentTools {
         const activations = this.pending.get(exec.token) ?? []
         this.pending.delete(exec.token)
         if (result.isError || exec.signal.aborted) return
-        const owned = ownedSkill(load?.name ?? '')
         if (load && isPublisherSkill(result.value) && result.value.name === load.name
-          && result.content.some(block => block.type === 'text' && block.text.includes(renderSkillContent(owned)))) activations.push(load)
+          && result.content.some(block => block.type === 'text' && block.text.includes(renderSkillContent(ownedSkill(load.name))))) activations.push(load)
         if (exec.parent) {
           if (activations.length) this.pending.set(exec.parent, [...this.pending.get(exec.parent) ?? [], ...activations])
         } else {
           for (const activation of activations) {
             if (this.current(activation) && deliversSkillInstructions(result.content, activation.name)) {
               this.install(activation.agent, activation.name)
+              this.remember(activation.agent, activation.name)
             }
           }
         }
       }),
       ctx.on('agent/created', ({ agent }) => { this.refresh(agent.id); return undefined }),
       ctx.on('agent/inbox/claimed', ({ agent, message }) => {
-        if (message.source.kind === 'user' && agent.session.header.origin !== 'subagent') {
+        const request = message.source.kind === 'user' ? humanRequest(message) : this.trustedRequest?.(agent, message)
+        if (request && agent.session.header.origin !== 'subagent') {
           // Inbox emits one event per message in the batch. Keep gestures only
           // until its assembly, while the latest human input still owns the grant.
           const gestures = this.state(agent).gestures ?? []
           this.reset(agent)
           const state = this.state(agent)
-          state.request = humanRequest(message)
+          state.request = request
           state.gestures = [...gestures, ...skillGestures(state.request.text)]
         }
       }),
@@ -146,12 +176,13 @@ export class PublisherAgentTools {
         const state = this.byAgent.get(agent)
         if (!state?.request) return assembly
         const gestures = state.gestures ?? []
+        const reusable = this.reusableSkills(agent, state)
         const activations: Activation[] = []
-        for (const name of new Set(gestures)) {
-          if (name !== PUBLISHING_SKILL.name && name !== EDIT_DRAFT_SKILL.name) continue
-          if (name === PUBLISHING_SKILL.name ? state.publication : state.edit) continue
+        for (const name of new Set([...gestures, ...reusable])) {
+          const entry = PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === name)
+          if (!entry || this.hasGrants(state, entry)) continue
           const activation = this.activation(agent, name)
-          if (activation) activations.push(activation)
+          if (activation) activations.push({ ...activation, reuse: !gestures.includes(name) })
         }
         const pending = this.slashAssemblies.get(agent)
         if (activations.length && (!pending || pending.context.signal !== context.signal
@@ -171,20 +202,27 @@ export class PublisherAgentTools {
           || (pending.context.signal && pending.context.signal !== signal) || !ctx.tools.get('skill', agent)) return decision
         const revocations: (() => void)[] = []
         const installed: Activation[] = []
+        const reminders: UserMessage[] = []
         const revoke = () => { for (const close of revocations.reverse()) close() }
         try {
           for (const activation of pending.activations) {
             if (!this.current(activation)) continue
             const owned = ownedSkill(activation.name)
-            const delivered = decision.messages.some(message => message.source.kind === 'skill-invocation'
+            const delivered = activation.reuse || decision.messages.some(message => message.source.kind === 'skill-invocation'
               && message.source.name === owned.name && message.source.form === 'instructions'
               && message.content.some(block => block.type === 'text' && block.text.includes(renderSkillContent(owned))))
             if (!delivered) continue
             const skill = await ctx.skills.get(owned.name, { scope: agent, cwd: agent.session.header.cwd, signal })
-            if (!isPublisherSkill(skill) || skill.name !== owned.name || !skill.invocation.userInvocable
+            if (!isPublisherSkill(skill) || skill.name !== owned.name
+              || (activation.reuse ? !skill.invocation.userInvocable && !skill.invocation.modelInvocable : !skill.invocation.userInvocable)
               || !await available(agent.id) || signal.aborted || pending.context.signal?.aborted || !this.current(activation)) continue
             const close = this.install(agent, owned.name)
             if (close) { revocations.push(close); installed.push(activation) }
+            if (activation.reuse && ![...agent.session.deriveMessages(), ...decision.messages]
+              .some(message => deliversSkillInstructions(message.content, owned.name))) {
+              reminders.push(createUserMessage({ content: [{ type: 'text', text: renderSkillContent(owned) }],
+                source: { kind: 'skill-invocation', name: owned.name, form: 'instructions' } }))
+            }
           }
           if (!installed.length) return decision
           this.assembling.add(agent)
@@ -192,9 +230,10 @@ export class PublisherAgentTools {
           signal.throwIfAborted()
           if (installed.some(activation => !this.current(activation))) { revoke(); return decision }
           refreshAssembly(pending.assembly, assembly)
+          for (const activation of installed) this.remember(agent, activation.name)
         } catch (error) { revoke(); throw error }
         finally { this.assembling.delete(agent) }
-        return decision
+        return reminders.length ? { ...decision, messages: [...decision.messages, ...reminders] } : decision
       }, { prepend: true }),
     )
     for (const agent of ctx.agents.list()) this.refresh(agent.id)
@@ -211,21 +250,75 @@ export class PublisherAgentTools {
   private activation(agent: Agent | undefined, name: string): Activation | undefined {
     if (this.disposed || !agent || agent.session.header.origin === 'subagent' || this.ctx.agents.get(agent.id) !== agent) return
     const state = this.state(agent)
-    if (!state.request || (name === EDIT_DRAFT_SKILL.name && !this.bindings.current(agent.id))) return
+    if (!state.request || !this.owns(agent.id) || !this.bindings.current(agent.id)) return
     return { agent, state, name, generation: state.generation, requestId: state.request.id }
   }
 
   private current(activation: Activation): boolean {
-    const { agent, state, generation, requestId, name } = activation
+    const { agent, state, generation, requestId } = activation
     return !this.disposed && this.ctx.agents.get(agent.id) === agent && this.byAgent.get(agent) === state
       && state.generation === generation && state.request?.id === requestId
-      && (name !== EDIT_DRAFT_SKILL.name || !!this.bindings.current(agent.id))
+      && this.owns(agent.id) && !!this.bindings.current(agent.id)
+  }
+
+  private hasGrants(state: AgentTools, entry: PublisherSkillEntry): boolean {
+    return Boolean((entry.capability === 'publish' ? state.publication : state.edit)
+      && (!entry.writingProfile || (state.writingProfileRead
+        && (entry.writingProfile !== 'write' || state.writingProfileWrite))))
+  }
+
+  private remember(agent: Agent, name: string): void {
+    this.state(agent).learned ??= new Map()
+    this.state(agent).learned!.set(name, ownedSkill(name).content)
+  }
+
+  /** Replay only verified instructions into this turn's fresh, currently bound scope. */
+  private reusableSkills(agent: Agent, state: AgentTools): string[] {
+    if (!state.request || !this.owns(agent.id) || !this.bindings.current(agent.id)) return []
+    for (const name of publisherSkillsInHistory(agent)) this.remember(agent, name)
+    return [...state.learned ?? []].flatMap(([name, content]) => {
+      const entry = PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === name)
+      // Persistent preference changes still require a fresh learning request and load.
+      return entry && entry.writingProfile !== 'write' && entry.skill.content === content ? [name] : []
+    })
   }
 
   private install(agent: Agent, name: string): (() => void) | undefined {
     const state = this.state(agent)
+    const entry = PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === name)
+    if (!entry) return
+    const disposers: (() => void)[] = []
+    const revoke = () => { for (const close of disposers.slice().reverse()) close() }
+    try {
+      const contentGrant = this.installContent(agent, name)
+      if (contentGrant) disposers.push(contentGrant)
+      const scoped = state.registration.ctx
+      if (entry.writingProfile && !state.writingProfileRead) {
+        const grant = registerWritingProfileReadTool(scoped, this.bindings)
+        state.writingProfileRead = grant
+        disposers.push(() => {
+          if (state.writingProfileRead !== grant) return
+          grant(); state.writingProfileRead = undefined
+        })
+      }
+      if (entry.writingProfile === 'write' && !state.writingProfileWrite) {
+        const grant = registerWritingProfileWriteTool(scoped, this.bindings)
+        state.writingProfileWrite = grant
+        disposers.push(() => {
+          if (state.writingProfileWrite !== grant) return
+          grant(); state.writingProfileWrite = undefined
+        })
+      }
+      if (!disposers.length) return
+      this.refreshDelegated()
+      return () => { revoke(); this.refreshDelegated() }
+    } catch (cause) { revoke(); this.refreshDelegated(); throw cause }
+  }
+
+  private installContent(agent: Agent, name: string): (() => void) | undefined {
+    const state = this.state(agent)
     const scoped = state.registration.ctx
-    if (name === EDIT_DRAFT_SKILL.name) {
+    if (PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === name)?.capability === 'edit') {
       if (state.edit) return
       const hadDraftRead = !!state.draftRead
       state.draftRead?.(); state.draftRead = undefined
@@ -242,14 +335,12 @@ export class PublisherAgentTools {
       }
     } else {
       if (state.publication) return
-      const bound = !!this.bindings.current(agent.id)
-      const disposeContent = bound
-        ? (state.edit ? () => {} : registerAgentDraftReadTool(scoped, this.bindings))
-        : registerAgentSourceTools(scoped)
+      if (!this.bindings.current(agent.id)) return
+      const disposeContent = state.edit ? () => {} : registerAgentDraftReadTool(scoped, this.bindings)
       try {
         const disposePublication = registerAgentPublicationTools(scoped, this.publications, this.available)
-        if (bound) state.draftRead = disposeContent
-        const grant = () => { disposePublication(); if (!bound) disposeContent() }
+        state.draftRead = disposeContent
+        const grant = () => { disposePublication() }
         state.publication = grant
         this.refreshDelegated()
         return () => {
@@ -257,7 +348,7 @@ export class PublisherAgentTools {
           grant(); state.publication = undefined
           // Rolling back edit may have restored a replacement read helper for
           // this same publication grant; revoke that helper as well.
-          if (bound) { state.draftRead?.(); state.draftRead = undefined }
+          state.draftRead?.(); state.draftRead = undefined
           this.refreshDelegated()
         }
       } catch (error) { disposeContent(); throw error }
@@ -274,6 +365,8 @@ export class PublisherAgentTools {
     state.publication?.(); state.publication = undefined
     state.edit?.(); state.edit = undefined
     state.draftRead?.(); state.draftRead = undefined
+    state.writingProfileWrite?.(); state.writingProfileWrite = undefined
+    state.writingProfileRead?.(); state.writingProfileRead = undefined
     for (const [token, activation] of this.loads) if (activation.agent === agent) this.loads.delete(token)
     for (const [token, activations] of this.pending) {
       const kept = activations.filter(activation => activation.agent !== agent)
@@ -289,7 +382,7 @@ export class PublisherAgentTools {
     for (const agent of this.ctx.agents.list()) {
       if (agent.session.header.origin !== 'subagent') continue
       const state = this.state(agent)
-      state.hiddenSkills ??= [PUBLISHING_SKILL, EDIT_DRAFT_SKILL].map(skill => state.registration.ctx.skills.register({
+      state.hiddenSkills ??= PUBLISHER_SKILL_CATALOG.map(({ skill }) => state.registration.ctx.skills.register({
         ...skill, content: '', invocation: { modelInvocable: false, userInvocable: false },
       }))
       state.inherited?.(); state.inherited = undefined
@@ -298,27 +391,72 @@ export class PublisherAgentTools {
     }
   }
 
+  private disposeSkillLoader(agent: Agent, state: AgentTools): void {
+    const loader = state.skillLoader
+    if (!loader) return
+    state.skillLoader = undefined
+    const pending = loader.dispose()
+    state.skillLoaderDisposal = pending
+    void pending.then(() => {
+      if (state.skillLoaderDisposal !== pending) return
+      state.skillLoaderDisposal = undefined
+      // Cordis removes registrations asynchronously. Reconsider a synchronous
+      // rebind only after the old tool is gone, without reviving removed Agents.
+      if (!this.disposed && this.byAgent.get(agent) === state && this.ctx.agents.get(agent.id) === agent) {
+        this.refresh(agent.id)
+      }
+    }).catch(cause => {
+      if (state.skillLoaderDisposal === pending) state.skillLoaderDisposal = undefined
+      this.ctx.logger.warn('无法完成发布 Skill 读取器的生命周期更新：%s', String(cause))
+    })
+  }
+
   refresh(sessionId: string): void {
     if (this.disposed) return
     const agent = this.ctx.agents.get(SessionId(sessionId))
     if (!agent) return
     if (agent.session.header.origin === 'subagent') { this.refreshDelegated(); return }
     const state = this.state(agent)
-    state.publicationSkill ??= state.registration.ctx.skills.register(PUBLISHING_SKILL)
-    const bindingToken = this.bindings.current(sessionId)?.bindingToken
+    const binding = this.owns(sessionId) ? this.bindings.current(sessionId) : undefined
+    const bindingToken = binding?.bindingToken
     if (bindingToken !== state.bindingToken) {
+      const request = binding && state.contentId === binding.contentId ? state.request : undefined
+      const gestures = request ? state.gestures : undefined
+      if (binding && state.contentId && state.contentId !== binding.contentId) state.learned?.clear()
       this.reset(agent)
       state.bindingToken = bindingToken
+      if (binding) state.contentId = binding.contentId
+      state.request = request
+      state.gestures = gestures
     }
-    if (bindingToken) state.editSkill ??= state.registration.ctx.skills.register(EDIT_DRAFT_SKILL)
-    else { state.editSkill?.(); state.editSkill = undefined }
+    if (bindingToken) {
+      // Minimal presets omit the native loader. Supply it only for this owned
+      // editor scope; preserve any loader or same-name tool already composed.
+      const composedLoader = this.ctx.tools.get('skill', agent) || this.ctx.tools.get('skill')
+        || scopeChainOf(agent).slice(1).some(parent => this.ctx.tools.get('skill', parent))
+      if (!state.skillLoader && !state.skillLoaderDisposal && !composedLoader) {
+        const loader = createScope(this.ctx, agent)
+        try { NativeSkillLoader.apply(loader.ctx); state.skillLoader = loader }
+        catch (cause) { void loader.dispose(); throw cause }
+      }
+      state.catalog ??= new Map()
+      for (const { skill } of PUBLISHER_SKILL_CATALOG) {
+        if (!state.catalog.has(skill.name)) state.catalog.set(skill.name, state.registration.ctx.skills.register(skill))
+      }
+    } else {
+      for (const close of state.catalog?.values() ?? []) close()
+      state.catalog = undefined
+      this.disposeSkillLoader(agent, state)
+    }
     this.refreshDelegated()
   }
 
   private remove(agent: Agent): void {
     this.reset(agent)
     const state = this.byAgent.get(agent)
-    state?.publicationSkill?.(); state?.editSkill?.(); state?.inherited?.()
+    for (const close of state?.catalog?.values() ?? []) close()
+    state?.inherited?.()
+    if (state) this.disposeSkillLoader(agent, state)
     for (const close of state?.hiddenSkills ?? []) close()
     this.byAgent.delete(agent)
     if (state) void state.registration.dispose()

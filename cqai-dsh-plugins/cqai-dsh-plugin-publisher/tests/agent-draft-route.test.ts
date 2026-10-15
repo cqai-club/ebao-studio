@@ -148,24 +148,31 @@ describe('Publisher draft Agent drawer binding route', () => {
       expect(await bind({ sessionId: 'missing', contentId: article.id })).toMatchObject({
         status: 400, body: { error: '当前 Agent 会话不存在或不可用于编辑' },
       })
-      expect(await bind({ sessionId, contentId: imageNote.id })).toMatchObject({
-        status: 200, body: { sessionId, contentId: imageNote.id },
+      expect(await bind({ sessionId, contentId: imageNote.id })).toMatchObject({ status: 400 })
+      writeAgentDraftSession(article.id, sessionId)
+      visibleSessionIds.add('image-note-session')
+      visibleSessionIds.add('video-session')
+      writeAgentDraftSession(imageNote.id, 'image-note-session')
+      writeAgentDraftSession(video.id, 'video-session')
+      expect(await bind({ sessionId: 'image-note-session', contentId: imageNote.id })).toMatchObject({
+        status: 200, body: { sessionId: 'image-note-session', contentId: imageNote.id },
       })
       expect(await associated(imageNote.id)).toEqual({ status: 200,
-        body: { contentId: imageNote.id, sessionId } })
-      expect(await bind({ sessionId, contentId: video.id })).toMatchObject({
-        status: 200, body: { sessionId, contentId: video.id },
+        body: { contentId: imageNote.id, sessionId: 'image-note-session' } })
+      expect(await bind({ sessionId: 'video-session', contentId: video.id })).toMatchObject({
+        status: 200, body: { sessionId: 'video-session', contentId: video.id },
       })
       expect(await associated(video.id)).toEqual({ status: 200,
-        body: { contentId: video.id, sessionId } })
+        body: { contentId: video.id, sessionId: 'video-session' } })
       const first = await bind({ sessionId, contentId: article.id })
       expect(first).toMatchObject({ status: 200, body: { sessionId, contentId: article.id } })
       expect(first.body.bindingToken).toMatch(/^[0-9a-f-]{36}$/u)
       expect(await associated(article.id)).toEqual({ status: 200, body: { contentId: article.id, sessionId } })
-      const switched = await bind({ sessionId, contentId: second.id })
-      expect(switched).toMatchObject({ status: 200, body: { sessionId, contentId: second.id } })
+      expect(await bind({ sessionId, contentId: second.id })).toMatchObject({ status: 400 })
+      const switched = await bind({ sessionId, contentId: article.id, target: { kind: 'platform', platform: 'xhs' } })
+      expect(switched).toMatchObject({ status: 200, body: { sessionId, contentId: article.id } })
       expect(switched.body.bindingToken).not.toBe(first.body.bindingToken)
-      expect(await associated(second.id)).toEqual({ status: 200, body: { contentId: second.id, sessionId } })
+      expect(await associated(second.id)).toEqual({ status: 200, body: { contentId: second.id, sessionId: null } })
       // A persisted conversation need not be attached to the live Session Store.
       writeAgentDraftSession(coldArticle.id, coldSessionId)
       expect(ctx.sessions.get(SessionId(coldSessionId))).toBeUndefined()

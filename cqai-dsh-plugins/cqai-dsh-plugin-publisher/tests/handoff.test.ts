@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearPublisherHandoff, readPublisherHandoff, rememberPublisherHandoff,
   requestPublisherHandoff, subscribePublisherHandoff,
+  claimPublisherAutoHandoff,
 } from '../src/client/handoff.ts'
 
 const article = { contentId: '9e94dbea-78e7-4fb9-90e1-2d231aa24436', contentType: 'article' } as const
@@ -32,6 +33,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('publisher draft handoff', () => {
+  it('claims a live delegation once across client reload and keeps distinct source tasks separate', async () => {
+    expect(claimPublisherAutoHandoff('delivery-source', 'task-for-delivery')).toBe(true)
+    expect(claimPublisherAutoHandoff('delivery-source', 'task-for-delivery')).toBe(false)
+    vi.resetModules()
+    const reloaded = await import('../src/client/handoff.ts')
+    expect(reloaded.claimPublisherAutoHandoff('delivery-source', 'task-for-delivery')).toBe(false)
+    expect(reloaded.claimPublisherAutoHandoff('delivery-source', 'another-task')).toBe(true)
+    expect(window.sessionStorage.getItem('cqai-publisher-auto-delivery')).toContain('delivery-source/task-for-delivery')
+  })
   it('remembers the exact draft for a panel mounted after navigation and for reload', () => {
     requestPublisherHandoff(article)
     expect(readPublisherHandoff()).toEqual(article)
@@ -60,6 +70,22 @@ describe('publisher draft handoff', () => {
     const { readPublisherHandoff: readAfterReload } = await import('../src/client/handoff.ts')
     expect(readAfterReload()).toEqual(candidate)
     expect(window.sessionStorage.getItem('cqai-publisher-handoff')).toContain('"platforms":["wxmp","tt"]')
+  })
+
+  it('retains the video selected by a native session handoff across reload', async () => {
+    const video = { ...article, contentType: 'video' as const, initialMode: 'edit' as const }
+    requestPublisherHandoff(video)
+    vi.resetModules()
+    const { readPublisherHandoff: readAfterReload } = await import('../src/client/handoff.ts')
+    expect(readAfterReload()).toEqual(video)
+  })
+
+  it('remembers the requested preview or publish mode and rejects unsupported modes', () => {
+    requestPublisherHandoff({ ...article, initialMode: 'preview' })
+    expect(readPublisherHandoff()).toEqual({ ...article, initialMode: 'preview' })
+    requestPublisherHandoff({ ...imageNote, initialMode: 'publish' })
+    expect(readPublisherHandoff()).toEqual({ ...imageNote, initialMode: 'publish' })
+    expect(() => requestPublisherHandoff({ ...article, initialMode: 'invalid' as never })).toThrow('发布草稿 ID 或类型无效')
   })
 
   it('discards malformed or stale session data instead of choosing an arbitrary draft', () => {

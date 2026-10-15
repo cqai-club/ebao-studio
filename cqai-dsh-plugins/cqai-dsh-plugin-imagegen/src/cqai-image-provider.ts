@@ -82,7 +82,7 @@ export class CqaiImageProvider {
       apiUrl: `${CQAI_ACCOUNT_SERVICE_URL}/v1`,
       apiKey: '',
       models: [...this.cachedModels],
-      protocol: 'openai',
+      protocol: 'cqai',
       request: async (path, init, signal) => {
         if (path !== '/v1/images/generations' && path !== '/v1/images/edits') {
           throw new ImageGenError(`CQAI Image Provider 不允许访问端点 ${path}`, 'cqai-endpoint-forbidden')

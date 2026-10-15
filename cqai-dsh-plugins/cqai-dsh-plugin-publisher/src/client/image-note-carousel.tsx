@@ -67,11 +67,11 @@ export function ImageNoteCarousel({ contentId, assets, renderImage }: {
 }
 
 export const imageNoteCarouselCss = `
-.pub-image-note-carousel { position: relative; width: 100%; min-width: 0; margin-bottom: 18px; border-radius: 10px; overflow: hidden; background: var(--dsw-alias-bg-module-platform, #f3f4f6); }
+.pub-image-note-carousel { position: relative; width: 100%; max-width: 420px; min-width: 0; margin: 0 auto 18px; border-radius: 10px; overflow: hidden; background: var(--dsw-alias-bg-module-platform, #f3f4f6); }
 .pub-image-note-carousel:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
 .pub-image-note-viewport { display: flex; width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-inline: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .pub-image-note-viewport::-webkit-scrollbar { display: none; }
-.pub-image-note-slide { display: flex; align-items: center; justify-content: center; flex: 0 0 100%; min-width: 0; aspect-ratio: 3 / 4; max-height: 560px; scroll-snap-align: start; overflow: hidden; }
+.pub-image-note-slide { display: flex; align-items: center; justify-content: center; flex: 0 0 100%; min-width: 0; aspect-ratio: 3 / 4; scroll-snap-align: start; overflow: hidden; }
 .pub-image-note-slide > img, .pub-image-note-slide > [role=img] { display: block; width: 100%; height: 100%; max-width: 100%; object-fit: contain; }
 .pub-image-note-carousel .pub-image-note-nav { position: absolute; top: 50%; z-index: 1; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; transform: translateY(-50%); border: 0; border-radius: 50%; background: #0009; color: #fff; font-size: 26px; line-height: 1; cursor: pointer; }
 .pub-image-note-carousel .pub-image-note-nav:disabled { opacity: .35; cursor: default; }

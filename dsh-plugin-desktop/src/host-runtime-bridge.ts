@@ -107,9 +107,11 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
         ...(spec.enableRemoteControl ? { remoteEnable: spec.enableRemoteControl } : {}),
         ...(spec.applySetupSettings ? { setup: spec.applySetupSettings } : {}),
       })
-      const { readLocalePreference, readThemeSource, requestQuit: _quit, requestModeChange: _mode, readRemoteControl: _remoteRead, enableRemoteControl: _remoteEnable, applySetupSettings: _setup, ...data } = spec
+      const { readLocalePreference: _locale, readThemeSource: _theme, requestQuit: _quit, requestModeChange: _mode, readRemoteControl: _remoteRead, enableRemoteControl: _remoteEnable, applySetupSettings: _setup, ...data } = spec
       shellSpecs.set(callback.id, spec)
-      trackSetup(send('shell:schedule', [callback.id, data, readLocalePreference(), readThemeSource(), Boolean(spec.readRemoteControl && spec.enableRemoteControl), Boolean(spec.applySetupSettings)]))
+      // Registration runs while other Host plugins can still be mounting. Their
+      // settings forms become readable after boot, at the mount barrier below.
+      trackSetup(send('shell:schedule', [callback.id, data, undefined, 'system', Boolean(spec.readRemoteControl && spec.enableRemoteControl), Boolean(spec.applySetupSettings)]))
       return async () => { try { await send('shell:dispose', [callback.id]) } finally { shellSpecs.delete(callback.id); callback.release() } }
     },
     // The parent mounts only after Host boot and this barrier finish.

@@ -36,7 +36,8 @@ function setup() {
       }, data: png }
     } },
   } as unknown as Context
-  const bindings = new AgentDraftBindings()
+  let authorized = true
+  const bindings = new AgentDraftBindings(() => authorized)
   const exec = { agent: { id: 'conversation-1' }, signal: new AbortController().signal } as unknown as ToolRunContext
   const previousHome = process.env.DSH_HOME
   process.env.DSH_HOME = home
@@ -48,10 +49,63 @@ function setup() {
   }
   return { home, env, article, png, attachment, definitions, bindings, exec, cleanup,
     duringImageRead: (callback: () => void) => { onReadImage = callback },
+    revokeOwnership: () => { authorized = false },
     }
 }
 
 describe('current Publisher draft Agent tools', () => {
+  it('requires current Publisher ownership by default instead of accepting a shared cwd', () => {
+    const test = setup()
+    try {
+      const strict = new AgentDraftBindings()
+      expect(() => strict.bind('unowned-conversation', test.article.id, test.env)).toThrow('专属 Agent 对话')
+    } finally { test.cleanup() }
+  })
+
+  it('rejects retired ownership while an image attachment is still being verified', async () => {
+    const test = setup()
+    try {
+      const imageNote = createContent('image-note', test.env)
+      const binding = test.bindings.bind('conversation-1', imageNote.id, test.env)!
+      test.duringImageRead(test.revokeOwnership)
+      await expect(test.definitions.get('publisher_add_current_draft_image')!.execute({
+        content_id: imageNote.id, binding_token: binding.bindingToken, expected_revision: 1,
+        source_image: test.attachment,
+      }, test.exec)).rejects.toThrow('当前草稿已切换')
+      expect(readContent(imageNote.id, test.env)).toMatchObject({ revision: 1, assets: [] })
+    } finally { test.cleanup() }
+  })
+
+  it('patches the selected platform version without overwriting other fields or the main body', async () => {
+    const test = setup()
+    try {
+      const initial = saveContent(test.article.id, { revision: 1, title: '通用标题', body: '通用正文',
+        summary: '摘要', tags: ['旅行'], creativeStatement: 'none',
+        platformVariants: { xhs: { title: '小红书标题' }, dy: { body: '抖音正文' } },
+      }, test.env)
+      const target = { kind: 'platform', platform: 'xhs' } as const
+      const binding = test.bindings.bind('conversation-1', initial.id, test.env, target)!
+      const get = test.definitions.get('publisher_get_current_draft')!
+      const update = test.definitions.get('publisher_update_current_draft')!
+      expect(await get.execute({}, test.exec)).toMatchObject({ target, title: '小红书标题', body: '通用正文' })
+      saveContent(initial.id, { ...initial, revision: initial.revision, title: '手动修改主标题',
+        platformVariants: { ...initial.platformVariants, xhs: { title: '手动修改平台标题' } },
+      }, test.env)
+      const saved = await update.execute({ content_id: initial.id, binding_token: binding.bindingToken,
+        expected_revision: 2, target, body: 'Agent 平台正文' }, test.exec)
+      expect(saved).toMatchObject({ target, revision: 4, title: '手动修改平台标题', body: 'Agent 平台正文' })
+      expect(readContent(initial.id, test.env)).toMatchObject({ title: '手动修改主标题', body: '通用正文',
+        platformVariants: { xhs: { title: '手动修改平台标题', body: 'Agent 平台正文' }, dy: { body: '抖音正文' } },
+      })
+      await expect(update.execute({ content_id: initial.id, binding_token: binding.bindingToken,
+        expected_revision: 4, body: '误写主稿' }, test.exec)).rejects.toThrow('编辑目标已切换')
+      await expect(test.definitions.get('publisher_insert_current_draft_image')!.execute({
+        content_id: initial.id, binding_token: binding.bindingToken, expected_revision: 4,
+        source_image: test.attachment, body_with_image_marker: '{{PUBLISHER_IMAGE}}', alt: '图',
+      }, test.exec)).rejects.toThrow('只支持通用正文')
+    } finally { test.cleanup() }
+  })
+
   it('ignores a delayed unbind for an older drawer binding', () => {
     const test = setup()
     try {
@@ -84,6 +138,7 @@ describe('current Publisher draft Agent tools', () => {
       const binding = test.bindings.bind('conversation-1', initial.id, test.env)!
       const current = await get.execute({}, test.exec) as { content_id: string; binding_token: string; revision: number }
       expect(current).toMatchObject({ content_id: initial.id, binding_token: binding.bindingToken, revision: 2 })
+      expect(current).not.toHaveProperty('image_generation_defaults')
       await expect(update.execute({ content_id: initial.id, binding_token: 'wrong', expected_revision: 2, body: '恶意正文' }, test.exec))
         .rejects.toThrow('当前草稿已切换')
       const saved = await update.execute({
@@ -97,12 +152,14 @@ describe('current Publisher draft Agent tools', () => {
         platformFields: { juejin: { category: '前端' } },
         platformVariants: { juejin: { title: '掘金稿' } },
       })
-      await expect(update.execute({ content_id: initial.id, binding_token: binding.bindingToken, expected_revision: 2, body: '旧版本' }, test.exec))
-        .rejects.toThrow('草稿已在其他页面更新')
+      await update.execute({ content_id: initial.id, binding_token: binding.bindingToken, expected_revision: 2, body: '后保存正文' }, test.exec)
+      expect(readContent(initial.id, test.env)).toMatchObject({ body: '后保存正文', title: '新题', summary: '原摘要' })
+      await expect(update.execute({ content_id: initial.id, binding_token: binding.bindingToken, expected_revision: 99, body: '未来版本' }, test.exec))
+        .rejects.toThrow('草稿版本无效')
       test.bindings.bind('conversation-1', null, test.env)
       await expect(update.execute({ content_id: initial.id, binding_token: binding.bindingToken, expected_revision: 3, body: '关闭后写入' }, test.exec))
         .rejects.toThrow('抽屉已关闭')
-      expect(readContent(initial.id, test.env).body).toBe('新正文')
+      expect(readContent(initial.id, test.env).body).toBe('后保存正文')
     } finally { test.cleanup() }
     expect(test.definitions.size).toBe(0)
   })
@@ -162,6 +219,7 @@ describe('current Publisher draft Agent tools', () => {
       const remove = test.definitions.get('publisher_remove_current_draft_image')!
       expect(await get.execute({}, test.exec)).toMatchObject({
         content_id: imageNote.id, content_type: 'image-note', revision: 1, assets: [],
+        image_generation_defaults: { size: '3:4' },
       })
       const common = { content_id: imageNote.id, binding_token: binding.bindingToken }
       const copy = await update.execute({ ...common, expected_revision: 1,
@@ -281,8 +339,8 @@ describe('current Publisher draft Agent tools', () => {
         title: '新视频', description: '新简介', shortTitle: '新短标题',
         tags: ['AI', '发布'], creativeStatement: 'ai_generated',
       })
-      await expect(select.execute({ ...common, expected_revision: 3, work_id: workId }, test.exec))
-        .rejects.toThrow('草稿已在其他页面更新')
+      await select.execute({ ...common, expected_revision: 3, work_id: workId }, test.exec)
+      expect(readContent(video.id, test.env)).toMatchObject({ revision: 5, title: '新视频', description: '新简介' })
       test.bindings.unbind('conversation-1', binding.bindingToken)
       await expect(list.execute({}, test.exec)).rejects.toThrow('没有绑定草稿')
     } finally { test.cleanup() }

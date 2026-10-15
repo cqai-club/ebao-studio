@@ -7,12 +7,16 @@ export interface DraftGalleryProps {
   contentType: PublisherContentType
   active: boolean
   busy?: boolean
+  trash?: boolean
   /** Change after a draft is created, copied, deleted, or saved to refresh the list. */
   refreshKey?: number
   onOpen(id: string): void
+  onPreview?(id: string): void
+  onPublish?(id: string): void
   onCreate(): void
   onCopy(id: string): void
   onDelete(id: string): void
+  onRestore?(id: string): void
 }
 
 type GalleryState = {
@@ -63,6 +67,11 @@ function updatedLabel(value: string): string {
   return Number.isNaN(date.getTime()) ? '修改时间未知' : `${date.toLocaleString()} 修改`
 }
 
+const PUBLICATION_LABELS: Record<NonNullable<PublisherContentCard['publication']>['state'], string> = {
+  unpublished: '未发布', queued: '等待发布', publishing: '发布中', published: '已发布',
+  'platform-draft': '已存平台草稿', failed: '发布失败', unknown: '状态未知',
+}
+
 /** Attach the existing range-capable preview only when the card approaches the scroll view. */
 function VideoFirstFrame({ source }: { source?: PublisherVideoSource }) {
   const holderRef = useRef<HTMLDivElement>(null)
@@ -100,10 +109,14 @@ function VideoFirstFrame({ source }: { source?: PublisherVideoSource }) {
   </div>
 }
 
-export function DraftGalleryCard({ item, menuOpen, busy = false, onMenu, onOpen, onCopy, onDelete }: {
+export function DraftGalleryCard({ item, menuOpen, busy = false, trash = false, onRestore, onPreview, onPublish, onMenu, onOpen, onCopy, onDelete }: {
   item: PublisherContentCard
   menuOpen: boolean
   busy?: boolean
+  trash?: boolean
+  onRestore?(): void
+  onPreview?(): void
+  onPublish?(): void
   onMenu(): void
   onOpen(): void
   onCopy(): void
@@ -115,9 +128,9 @@ export function DraftGalleryCard({ item, menuOpen, busy = false, onMenu, onOpen,
   const [coverFailed, setCoverFailed] = useState(false)
   useEffect(() => setCoverFailed(false), [cover])
   return <article className={`pub-gallery-card ${article ? 'pub-gallery-card-article' : 'pub-gallery-card-social'}`}>
-    <button type="button" className="pub-gallery-open" disabled={busy} onClick={onOpen} aria-label={`编辑${CONTENT_LABELS[item.contentType]}：${title}`}>
+    <button type="button" className="pub-gallery-open" disabled={busy || trash} onClick={onOpen} aria-label={`${trash ? '已删除' : '编辑'}${CONTENT_LABELS[item.contentType]}：${title}`}>
       <div className="pub-gallery-media">
-        {item.contentType === 'video'
+        {trash ? <span className="pub-gallery-media-placeholder" aria-hidden="true">{CONTENT_LABELS[item.contentType]}</span> : item.contentType === 'video'
           ? <VideoFirstFrame source={item.videoSource}/>
           : cover && !coverFailed
             ? <img src={cover} alt="" loading="lazy" onError={() => setCoverFailed(true)}/>
@@ -127,20 +140,27 @@ export function DraftGalleryCard({ item, menuOpen, busy = false, onMenu, onOpen,
       <div className="pub-gallery-copy">
         {!article && <strong className="pub-gallery-title">{title}</strong>}
         {item.excerpt && <p>{item.excerpt}</p>}
+        {!trash && <span className="pub-gallery-publication" aria-label={`发布状态：${PUBLICATION_LABELS[item.publication?.state ?? 'unknown']}`}>{PUBLICATION_LABELS[item.publication?.state ?? 'unknown']}</span>}
+        {trash && item.lifecyclePending && <span className="pub-gallery-pending" role="status">{item.lifecyclePending === 'trash' ? '回收尚未完成，请重试删除。' : '恢复尚未完成，请重试恢复。'}</span>}
         <small>{updatedLabel(item.updatedAt)}</small>
       </div>
     </button>
+    {trash ? <button type="button" className="pub-gallery-restore" disabled={busy}
+      onClick={item.lifecyclePending === 'trash' ? onDelete : onRestore}
+      aria-label={`${item.lifecyclePending === 'trash' ? '重试删除' : item.lifecyclePending === 'restore' ? '重试恢复' : '恢复'}${title}`}>
+      {item.lifecyclePending === 'trash' ? '重试删除' : item.lifecyclePending === 'restore' ? '重试恢复' : '恢复稿件'}</button> : <>
+    <div className="pub-gallery-quick-actions">{onPreview && <button type="button" disabled={busy} onClick={onPreview} aria-label={`预览${title}`}>预览</button>}{onPublish && <button type="button" disabled={busy} onClick={onPublish} aria-label={`发布${title}`}>发布</button>}</div>
     <button type="button" className="pub-gallery-more" aria-label={`${title}的更多操作`} aria-expanded={menuOpen}
       disabled={busy} onClick={onMenu}>···</button>
     <div className={`pub-gallery-actions${menuOpen ? ' pub-gallery-actions-open' : ''}`} role="group" aria-label={`${title}的草稿操作`}>
       <button type="button" disabled={busy} onClick={onOpen}>编辑</button>
       <button type="button" disabled={busy} onClick={onCopy}>复制</button>
       <button type="button" disabled={busy} className="pub-gallery-delete" onClick={onDelete}>删除</button>
-    </div>
+    </div></>}
   </article>
 }
 
-export function DraftGallery({ contentType, active, busy = false, refreshKey = 0, onOpen, onCreate, onCopy, onDelete }: DraftGalleryProps) {
+export function DraftGallery({ contentType, active, busy = false, trash = false, refreshKey = 0, onOpen, onPreview, onPublish, onCreate, onCopy, onDelete, onRestore }: DraftGalleryProps) {
   const [searchText, setSearchText] = useState('')
   const [query, setQuery] = useState('')
   const [searchRevision, setSearchRevision] = useState(0)
@@ -154,13 +174,13 @@ export function DraftGallery({ contentType, active, busy = false, refreshKey = 0
   const loading = useRef(false)
   const activeRef = useRef(active)
   const searchPending = useRef(false)
-  const previousRequest = useRef<{ contentType: PublisherContentType; query: string; refreshKey: number } | null>(null)
+  const previousRequest = useRef<{ contentType: PublisherContentType; query: string; refreshKey: number; trash: boolean } | null>(null)
   const refreshTargetCount = useRef<number | null>(null)
   const loadedFor = useRef('')
   const stateRef = useRef(state)
   activeRef.current = active
   stateRef.current = state
-  const requestIdentity = `${contentType}\0${query}\0${refreshKey}\0${searchRevision}`
+  const requestIdentity = `${contentType}\0${query}\0${refreshKey}\0${searchRevision}\0${trash}`
 
   const loadPage = useCallback(async (cursor: string | null) => {
     if (!activeRef.current || loading.current) return
@@ -169,7 +189,7 @@ export function DraftGallery({ contentType, active, busy = false, refreshKey = 0
     setState(current => ({ ...current, loading: true, error: '' }))
     try {
       const result = await api<PublisherContentQueryResult>('contents-query', {
-        contentType, query, ...(cursor ? { cursor } : {}),
+        contentType, query, ...(cursor ? { cursor } : {}), ...(trash ? { trash: true } : {}),
       })
       if (requestedGeneration !== generation.current || !activeRef.current) return
       if (!cursor) loadedFor.current = requestIdentity
@@ -198,7 +218,7 @@ export function DraftGallery({ contentType, active, busy = false, refreshKey = 0
       let items: PublisherContentCard[] = []
       do {
         const result: PublisherContentQueryResult = await api<PublisherContentQueryResult>('contents-query', {
-          contentType, query, ...(cursor ? { cursor } : {}),
+          contentType, query, ...(cursor ? { cursor } : {}), ...(trash ? { trash: true } : {}),
         })
         if (requestedGeneration !== generation.current || !activeRef.current) return
         items = appendUniqueCards(items, result.items)
@@ -217,9 +237,9 @@ export function DraftGallery({ contentType, active, busy = false, refreshKey = 0
 
   useEffect(() => {
     const previous = previousRequest.current
-    const sameSearch = previous?.contentType === contentType && previous.query === query
+    const sameSearch = previous?.contentType === contentType && previous.query === query && previous.trash === trash
     const refreshing = sameSearch && previous?.refreshKey !== refreshKey && stateRef.current.initialized
-    previousRequest.current = { contentType, query, refreshKey }
+    previousRequest.current = { contentType, query, refreshKey, trash }
     generation.current += 1
     loading.current = false
     if (refreshing) {
@@ -329,22 +349,22 @@ export function DraftGallery({ contentType, active, busy = false, refreshKey = 0
   const searchDebouncing = searchText.trim() !== query
   const label = CONTENT_LABELS[contentType]
 
-  return <div ref={rootRef} className="pub-gallery" aria-label={`${label}草稿库`}>
+  return <div ref={rootRef} className="pub-gallery" aria-label={`${label}${trash ? '回收站' : '草稿库'}`}>
     <div className="pub-gallery-toolbar">
       <input className="pub-input pub-gallery-search" type="search" aria-label={`搜索${label}草稿`}
         placeholder={`搜索${label}标题和${contentType === 'article' ? '摘要' : contentType === 'video' ? '简介' : '正文'}`}
         maxLength={200} value={searchText} onChange={event => changeSearch(event.target.value.slice(0, 200))}/>
-      <button type="button" className="pub-gallery-create" disabled={busy} onClick={create}>＋ 新增{label}</button>
+      {!trash && <button type="button" className="pub-gallery-create" disabled={busy} onClick={create}>＋ 新增{label}</button>}
     </div>
     {searchDebouncing ? <p className="pub-gallery-status" role="status">正在搜索…</p>
       : <>
         {state.items.length > 0 && (contentType === 'article' ? <div className="pub-gallery-articles">
-          {state.items.map(item => <DraftGalleryCard key={item.id} item={item} menuOpen={menuId === item.id} busy={busy}
+          {state.items.map(item => <DraftGalleryCard key={item.id} item={item} menuOpen={menuId === item.id} busy={busy} trash={trash} onRestore={() => onRestore?.(item.id)} onPreview={onPreview ? () => { rememberScroll(); onPreview(item.id) } : undefined} onPublish={onPublish ? () => { rememberScroll(); onPublish(item.id) } : undefined}
             onMenu={() => setMenuId(current => current === item.id ? null : item.id)}
             onOpen={() => open(item.id)} onCopy={() => copy(item.id)} onDelete={() => remove(item.id)}/>)}
         </div> : <div className={`pub-gallery-masonry pub-gallery-cols-${columnCount}`}>
           {distributeGalleryCards(state.items, columnCount).map((column, index) => <div className="pub-gallery-column" key={index}>
-            {column.map(item => <DraftGalleryCard key={item.id} item={item} menuOpen={menuId === item.id} busy={busy}
+            {column.map(item => <DraftGalleryCard key={item.id} item={item} menuOpen={menuId === item.id} busy={busy} trash={trash} onRestore={() => onRestore?.(item.id)} onPreview={onPreview ? () => { rememberScroll(); onPreview(item.id) } : undefined} onPublish={onPublish ? () => { rememberScroll(); onPublish(item.id) } : undefined}
               onMenu={() => setMenuId(current => current === item.id ? null : item.id)}
               onOpen={() => open(item.id)} onCopy={() => copy(item.id)} onDelete={() => remove(item.id)}/>)}
           </div>)}
@@ -357,7 +377,7 @@ export function DraftGallery({ contentType, active, busy = false, refreshKey = 0
             : void loadPage(state.initialized && state.items.length ? state.nextCursor : null)}>重试</button>
         </div>}
         {state.initialized && !state.loading && !state.error && state.items.length === 0 && <div className="pub-empty">
-          {query ? '没有找到匹配的草稿，请换个关键词。' : `还没有${label}草稿，点击“新增${label}”开始创作。`}
+          {query ? '没有找到匹配的草稿，请换个关键词。' : trash ? `没有已删除的${label}稿件。` : `还没有${label}草稿，点击“新增${label}”开始创作。`}
         </div>}
         {state.initialized && !state.loading && !state.error && state.items.length > 0 && !state.nextCursor && <p className="pub-gallery-status" role="status">已显示全部草稿</p>}
         {state.nextCursor && !state.error && <div ref={sentinelRef} className="pub-gallery-sentinel" aria-hidden="true"/>}

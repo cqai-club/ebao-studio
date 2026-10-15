@@ -113,6 +113,9 @@ export type PublisherVideoSource =
 
 export interface PublisherContent {
   id: string
+  /** Only the new publishing workflow is shown in its active and recycle-bin lists. */
+  workflowVersion?: 2
+  trashedAt?: string
   contentType: PublisherContentType
   revision: number
   createdAt: string
@@ -144,12 +147,50 @@ export interface PublisherContentCard {
   excerpt: string
   coverAssetId?: string
   videoSource?: PublisherVideoSource
+  trashedAt?: string
+  /** Derived from Worker records; never persisted with the editable draft. */
+  publication?: PublisherContentPublicationSummary
+  lifecyclePending?: 'trash' | 'restore'
+}
+
+export interface PublisherContentPublicationSummary {
+  state: 'unpublished' | 'queued' | 'publishing' | 'published' | 'platform-draft' | 'failed' | 'unknown'
+  submissionId?: string
+  submittedAt?: string
+  mode?: PublisherMode
 }
 
 export interface PublisherContentQueryRequest {
   contentType: PublisherContentType
   query: string
   cursor?: string
+  trash?: boolean
+}
+
+/** Fields actually changed by one editor save; null clears optional values/inheritance. */
+export interface PublisherContentPatch {
+  title?: string
+  body?: string
+  summary?: string
+  tags?: string[]
+  creativeStatement?: CreativeStatement
+  articleTheme?: ArticleTheme
+  description?: string
+  shortTitle?: string
+  videoSource?: PublisherVideoSource | null
+  coverAssetId?: string | null
+  assetOrder?: string[]
+  platformFields?: Partial<Record<Platform, Record<string, string | null> | null>>
+  platformVariants?: Partial<Record<Platform, {
+    title?: string | null
+    body?: string | null
+    summary?: string | null
+    tags?: string[] | null
+    coverAssetId?: string | null
+    assetOrder?: string[] | null
+  } | null>>
+  /** Remove a platform override; coverAssetId:null continues to explicitly clear the cover. */
+  unsetVariantFields?: Partial<Record<Platform, Array<keyof PublisherPlatformVariant>>>
 }
 
 export interface PublisherContentQueryResult {
