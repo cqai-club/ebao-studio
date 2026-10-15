@@ -1,6 +1,6 @@
 # Temporary recovery control; retain on its audit branch, never promote to dev/master.
-# Copies the existing verified release bytes. It does not build or create tags.
-name: Recover verified GitCode v0.0.15
+# Diagnoses attachment transport using the original verified checksum bytes.
+name: Probe GitCode v0.0.15 checksum upload
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
       github.ref == 'refs/heads/codex/gitcode-recovery-v0.0.15' &&
       vars.GITCODE_SYNC_ENABLED == 'true'
     runs-on: macos-latest
-    timeout-minutes: 120
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,7 +39,7 @@ jobs:
           node-version: 22.23.2
       - name: Verify cURL availability
         run: curl --disable --version
-      - name: Supplement verified release using cURL and anonymously verify every asset
+      - name: Probe original checksum bytes and anonymously verify
         env:
           SOURCE_REPOSITORY: cqai-club/ebao-studio
           GITCODE_REPOSITORY: g-dxw/ebao-studio
@@ -86,7 +86,7 @@ jobs:
                 `url = ${quote(url.href)}`, `upload-file = ${quote(filePath)}`,
                 ...headers.map(([name, value]) => `header = ${quote(value === '' ? `${name};` : `${name}: ${value}`)}`),
                 `output = ${quote(process.platform === 'win32' ? 'NUL' : '/dev/null')}`,
-                'connect-timeout = "30"', 'speed-limit = "16384"', 'speed-time = "90"', 'max-time = "1800"',
+                'connect-timeout = "30"', 'speed-limit = "16384"', 'speed-time = "90"', 'max-time = "60"',
                 `write-out = ${quote('{"httpCode":"%{http_code}","uploadedBytes":%{size_upload}}\n')}`,
               ].join('\n') + '\n'
               const childEnv = { ...process.env }
@@ -137,17 +137,147 @@ jobs:
             }
           }
 
-          export async function runFixedMain(directory = process.cwd()) {
-            try {
-              const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: directory })
-              if (stdout.trim() !== SOURCE_SHA) throw new Error('Source SHA differs')
-              await exec('git', ['diff', '--quiet', SOURCE_SHA, '--', ...SOURCE_FILES], { cwd: directory })
-            } catch { throw new Error('The driver requires the unchanged fixed d5a9fa0 execution source') }
-            const { main } = await import(pathToFileURL(resolve(directory, SOURCE_FILES[0])).href)
-            const originalFetch = globalThis.fetch
-            globalThis.fetch = createCurlPutFetch({ fetchImpl: originalFetch })
-            try { await main() } finally { globalThis.fetch = originalFetch }
+          import { execFile as probeExecFile } from 'node:child_process'
+          import { createHash as probeCreateHash } from 'node:crypto'
+          import { mkdtemp as probeMkdtemp, rm as probeRm, writeFile as probeWriteFile } from 'node:fs/promises'
+          import { tmpdir as probeTmpdir } from 'node:os'
+          import { join as probeJoin, resolve as probeResolve } from 'node:path'
+          import { promisify as probePromisify } from 'node:util'
+          import { pathToFileURL as probePathToFileURL } from 'node:url'
+
+          const PROBE_SOURCE_SHA = 'd5a9fa00f091e54f1c64f9641831b85c00e5bd0d'
+          const PROBE_SOURCE_FILES = ['scripts/sync-gitcode-release.mjs', 'scripts/release-flow.mjs', 'scripts/verify-release-assets.mjs']
+          const PROBE_SMALL_SIZES = new Map([['latest.yml', 342], ['SHA256SUMS', 379], ['latest-mac.yml', 495]])
+          const PROBE_UPLOAD_NAME = 'SHA256SUMS'
+          const probeExec = probePromisify(probeExecFile)
+
+          // Pure guards are exported only so they can be checked without executing a probe.
+          export function probeAssertOwnedRelease(release, source, marker) {
+            if (!release || release.tag_name !== source.tag || release.target_commitish !== source.sha
+              || release.release_status !== 'pre' || typeof release.body !== 'string' || !release.body.includes(marker)
+              || !Array.isArray(release.assets)) throw new Error('Existing release ownership check failed')
+          }
+          export function probePresentExpected(release, source) {
+            const present = []
+            for (const asset of source.assets) {
+              const matches = release.assets.filter(entry => entry.name === asset.name)
+              if (matches.length > 1) throw new Error('Duplicate expected attachment')
+              if (!matches.length) continue
+              if (!PROBE_SMALL_SIZES.has(asset.name)) throw new Error('Existing large attachment requires a separate full verification; checksum probe will not write')
+              present.push(asset)
+            }
+            return present
+          }
+          export function probeAssertChecksumBytes(asset, bytes) {
+            if (asset?.name !== PROBE_UPLOAD_NAME || asset.size !== 379 || bytes.length !== 379
+              || `sha256:${probeCreateHash('sha256').update(bytes).digest('hex')}` !== asset.digest) throw new Error('GitHub checksum bytes differ from verified provenance')
           }
 
-          await runFixedMain()
+          export async function runSmallProbe() {
+            const probeDeadline = AbortSignal.timeout(270_000)
+            const probeStarted = Date.now()
+            const probeRemaining = () => 270_000 - (Date.now() - probeStarted)
+            let probePhase = 'immutable source verification', probeDirectory
+            const probeCommand = async (command, args, encoding = 'utf8', maxBuffer = 2 * 1024 * 1024) => {
+              if (probeDeadline.aborted) throw new Error('Probe deadline reached')
+              return probeExec(command, args, {
+                cwd: process.cwd(), encoding, maxBuffer, timeout: Math.max(1, Math.min(30_000, probeRemaining())),
+                signal: probeDeadline, killSignal: 'SIGKILL', windowsHide: true,
+              })
+            }
+            const probeFetch = (input, init = {}) => fetch(input, {
+              ...init, signal: init.signal ? AbortSignal.any([init.signal, probeDeadline]) : probeDeadline,
+            })
+            try {
+              const { stdout: head } = await probeCommand('git', ['rev-parse', 'HEAD'])
+              if (head.trim() !== PROBE_SOURCE_SHA) throw new Error('Wrong execution SHA')
+              await probeCommand('git', ['diff', '--quiet', PROBE_SOURCE_SHA, '--', ...PROBE_SOURCE_FILES])
+              if (!createCurlPutFetch.toString().includes('max-time = "60"') || createCurlPutFetch.toString().includes('max-time = "1800"')) throw new Error('Checksum probe requires the reviewed 60-second transport')
+              const { gitcodeConfig, assertSourceProvenance, validateMirrorSource, mirrorMarker, createGitcodeApi, uploadGitcodeAsset, anonymousAssetDigest } =
+                await import(probePathToFileURL(probeResolve(PROBE_SOURCE_FILES[0])).href)
+              const config = gitcodeConfig(process.env)
+              if (config.tag !== 'v0.0.15' || config.repository !== 'g-dxw/ebao-studio') throw new Error('Wrong checksum probe destination')
+              const github = async endpoint => JSON.parse((await probeCommand('gh', ['api', `repos/${config.sourceRepository}/${endpoint}`])).stdout)
+              probePhase = 'GitHub release and annotated-tag provenance'
+              const release = await github(`releases/tags/${config.tag}`)
+              const ref = await github(`git/ref/tags/${config.tag}`)
+              if (ref.object?.type !== 'tag' || !/^[a-f0-9]{40}$/u.test(ref.object.sha)) throw new Error('Source ref is not an annotated tag')
+              const tag = await github(`git/tags/${ref.object.sha}`)
+              const provenance = assertSourceProvenance(release, tag)
+              const source = {
+                repository: config.sourceRepository, tag: config.tag, sha: provenance.sha,
+                name: release.name, body: release.body, prerelease: release.prerelease,
+                assets: release.assets.map(asset => ({ name: asset.name, size: asset.size, digest: asset.digest })),
+              }
+              validateMirrorSource(source)
+              if (source.sha !== PROBE_SOURCE_SHA || [...PROBE_SMALL_SIZES].some(([name, size]) => source.assets.find(asset => asset.name === name)?.size !== size)) throw new Error('Source release differs from the fixed checksum probe')
+              const marker = mirrorMarker(source)
+              const rawApi = createGitcodeApi(config, probeFetch)
+              const api = (endpoint, body, allow404 = false, method = 'GET') => {
+                if (body !== undefined || method !== 'GET') throw new Error('Checksum probe API is read-only')
+                return rawApi(endpoint, undefined, allow404, 'GET')
+              }
+              const endpoint = `releases/tags/${config.tag}`
+              const readOwned = async () => {
+                const current = await api(endpoint, undefined, true)
+                probeAssertOwnedRelease(current, source, marker)
+                return current
+              }
+              const verifyExisting = async current => {
+                // Inventory and reject duplicates/large assets before the first hash GET.
+                const present = probePresentExpected(current, source)
+                for (const asset of present) {
+                  const actual = await anonymousAssetDigest(config.repository, source.tag, asset, probeFetch)
+                  if (actual.size !== asset.size || actual.digest !== asset.digest) throw new Error('Existing attachment conflicts with provenance')
+                  console.log(`Verified existing small attachment: ${asset.name} (${asset.size} bytes)`)
+                }
+                return new Set(present.map(asset => asset.name))
+              }
+              probePhase = 'public repository and existing attachment verification'
+              if ((await api('')).private !== false) throw new Error('GitCode target is not public')
+              let present = await verifyExisting(await readOwned())
+              if (present.has(PROBE_UPLOAD_NAME)) {
+                console.log('Checksum probe complete: existing SHA256SUMS is anonymously verified; no upload needed')
+                return
+              }
+              probePhase = 'download and verify GitHub checksum bytes'
+              const githubAsset = release.assets.find(asset => asset.name === PROBE_UPLOAD_NAME)
+              if (!Number.isSafeInteger(githubAsset?.id) || githubAsset.id <= 0) throw new Error('Invalid source checksum asset ID')
+              const asset = source.assets.find(asset => asset.name === PROBE_UPLOAD_NAME)
+              const { stdout: bytes } = await probeCommand('gh', ['api', `repos/${config.sourceRepository}/releases/assets/${githubAsset.id}`, '--method', 'GET', '-H', 'Accept: application/octet-stream'], 'buffer', 4096)
+              probeAssertChecksumBytes(asset, bytes)
+              probeDirectory = await probeMkdtemp(probeJoin(probeTmpdir(), 'ebao-checksum-probe-'))
+              const path = probeJoin(probeDirectory, PROBE_UPLOAD_NAME)
+              await probeWriteFile(path, bytes, { flag: 'wx', mode: 0o600 })
+              probePhase = 'repeat ownership and attachment verification immediately before upload'
+              present = await verifyExisting(await readOwned())
+              if (present.has(PROBE_UPLOAD_NAME)) {
+                console.log('Checksum probe complete: SHA256SUMS appeared and was anonymously verified; no overwrite')
+                return
+              }
+              if (probeDeadline.aborted || probeRemaining() < 65_000) throw new Error('Insufficient remaining probe budget for one upload')
+              const curlPut = createCurlPutFetch({ fetchImpl: probeFetch })
+              const uploadFetch = (input, init) => curlPut(input, {
+                ...init, signal: AbortSignal.any([init.signal, probeDeadline]),
+              })
+              probePhase = 'SHA256SUMS upload'
+              console.log('Checksum probe upload begin: SHA256SUMS (379 bytes; cURL maximum 60 seconds)')
+              await uploadGitcodeAsset(api, source.tag, { ...asset, path }, uploadFetch)
+              probePhase = 'SHA256SUMS anonymous byte/hash verification'
+              const actual = await anonymousAssetDigest(config.repository, source.tag, asset, probeFetch)
+              if (actual.size !== asset.size || actual.digest !== asset.digest) throw new Error('Uploaded checksum differs from provenance')
+              probePhase = 'final ownership and attachment inventory verification'
+              const final = await readOwned()
+              const finalPresent = probePresentExpected(final, source)
+              if (!finalPresent.some(entry => entry.name === PROBE_UPLOAD_NAME)) throw new Error('Uploaded checksum missing from final inventory')
+              console.log('Checksum probe complete: SHA256SUMS uploaded and anonymously hash-verified; release body untouched')
+            } catch {
+              // Do not print unknown causes, GitHub/API bodies, signed URLs or headers.
+              throw new Error(`Checksum probe failed during ${probePhase}; no later upload attempted`)
+            } finally {
+              if (probeDirectory) await probeRm(probeDirectory, { recursive: true, force: true })
+            }
+          }
+
+          await runSmallProbe()
           NODE
