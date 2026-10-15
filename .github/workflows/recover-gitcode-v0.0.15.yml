@@ -1,6 +1,6 @@
-# Temporary recovery control; retain on its audit branch, never promote to dev/master.
-# Diagnoses attachment transport using the original verified checksum bytes.
-name: Probe GitCode v0.0.15 checksum upload
+# Temporary operational control; keep on the audit branch and do not promote to dev/master.
+# Issues encrypted temporary upload capabilities for already verified v0.0.15 bytes.
+name: Issue encrypted GitCode v0.0.15 upload capabilities
 
 on:
   push:
@@ -14,13 +14,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  mirror:
+  issue:
     if: >-
       github.repository == 'cqai-club/ebao-studio' &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/codex/gitcode-recovery-v0.0.15' &&
       vars.GITCODE_SYNC_ENABLED == 'true'
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7
@@ -37,247 +37,210 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22.23.2
-      - name: Verify cURL availability
-        run: curl --disable --version
-      - name: Probe original checksum bytes and anonymously verify
+      - name: Issue encrypted missing-package upload capabilities
         env:
           SOURCE_REPOSITORY: cqai-club/ebao-studio
           GITCODE_REPOSITORY: g-dxw/ebao-studio
           RELEASE_TAG: v0.0.15
           GH_TOKEN: ${{ github.token }}
           GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+          CAP_PUBLIC_KEY_B64: 'MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAte944iC3P9IJN19NxjDvmdntDmlkOwJrFPb9BevvtFxL5db7fF+12fDVu7AB70f4PDQJVRMco8Y7vWPGll3duFaEh8wsjpSBp1CeX5J6NOhOQa9WZzvPiCXqeQJ5ZKdXcpyl/CnKZu2Xx9HI4pIohG3NtDk/aH+BrG5mFS6ayA6TprwdpWA7zuNFOpp8piEUE0bynw2o+S3xEs6Fl0y8rSKCf6brXjJipUgby0QZiyrnMNlUniZynXzGscfcqZkxAAThww4Q/disDNvcM6egINjGHKOIoxW/WhShNxylWwxyry4YUFGGugpnA39PPXzGSbLo4N3G6JQvphMGXf99na86IwzQSSv0rr82QGNJjd99r6/4rHR0Th8UKYhks8aouqEUCJGp/UEqttPHBfYnx/9e6oK5XDgqnT6esDryAXZkZWy28Lg2xj3W6QH8uD/0YZLwikNrqYs02NU1cK3slpdDWZ/wt5vCWJMHcgRn97VyK7I1VX0c8W0Npd6z+ShBAgMBAAE='
+          CAP_SESSION_ID: 'f3aca3bc-e8c8-4a87-8b60-0db990086c05'
+          CAP_OUTPUT_PATH: ${{ runner.temp }}/gitcode-capabilities.enc.json
         run: |
           node --input-type=module <<'NODE'
-          /** Contingency transport only. Run from an unchanged checkout of SOURCE_SHA. */
-          import { execFile, spawn } from 'node:child_process'
-          import { ReadStream } from 'node:fs'
-          import { stat } from 'node:fs/promises'
+          /** One-session encrypted capabilities. This module performs no I/O on import. */
+          import { execFile } from 'node:child_process'
+          import { createCipheriv, createHash, createPublicKey, constants, publicEncrypt, randomBytes } from 'node:crypto'
+          import { writeFile } from 'node:fs/promises'
           import { resolve } from 'node:path'
           import { promisify } from 'node:util'
           import { pathToFileURL } from 'node:url'
 
-          const SOURCE_SHA = 'd5a9fa00f091e54f1c64f9641831b85c00e5bd0d'
-          const SOURCE_FILES = ['scripts/sync-gitcode-release.mjs', 'scripts/release-flow.mjs', 'scripts/verify-release-assets.mjs']
+          export const CAP_SOURCE_SHA = 'd5a9fa00f091e54f1c64f9641831b85c00e5bd0d'
+          export const CAP_SOURCE_REPO = 'cqai-club/ebao-studio'
+          export const CAP_TARGET_REPO = 'g-dxw/ebao-studio'
+          export const CAP_TAG = 'v0.0.15'
+          export const CAP_LIFETIME_MS = 20 * 60_000
+          export const CAP_SOURCE_FILES = ['scripts/sync-gitcode-release.mjs', 'scripts/release-flow.mjs', 'scripts/verify-release-assets.mjs']
+          export const CAP_ASSETS = [
+            { name: 'eBao-Studio-0.0.15.dmg', size: 781003561, digest: 'sha256:11fb6d6b703739ba011083df522288b44198c9beac525bb4afdab42d7e9e959b' },
+            { name: 'eBao-Studio-0.0.15.zip', size: 755854210, digest: 'sha256:81acc2cc77ea952f6e2d361cfc65229409eaed583b095666fb69ddf5547d7ff1' },
+            { name: 'eBao-Studio-0.0.15-x64-Setup.exe', size: 347694735, digest: 'sha256:aee109ea5b80301490f1eed6c9f2da7329796c63984fd6a2d6d2e56889f29b8b' },
+            { name: 'eBao-Studio-0.0.15-x64-Portable.zip', size: 524425989, digest: 'sha256:72738a2119dae51070d0fc8ea06c63b4a6595bf784f0c326f0b7d1447451b224' },
+          ]
           const exec = promisify(execFile)
-          const quote = value => `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\t', '\\t').replaceAll('\r', '\\r').replaceAll('\n', '\\n')}"`
-          const aborted = () => Object.assign(new Error('cURL upload aborted by the original deadline'), { name: 'AbortError' })
-
-          // Injection points are for offline tests. Production uses the defaults below.
-          export function createCurlPutFetch({ fetchImpl = globalThis.fetch, spawnImpl = spawn, curlExecutable = 'curl', onMetrics = metrics => console.log(JSON.stringify(metrics)) } = {}) {
-            return async function curlPutFetch(input, init) {
-              if (init?.method !== 'PUT' || !(init.body instanceof ReadStream)) return fetchImpl(input, init)
-              const filePath = init.body.path
-              init.body.on('error', () => {}) // Asynchronous open can still fail after destroy; stat/cURL own the real error path.
-              init.body.destroy() // cURL opens the same already-verified file; do not leak the unused Node stream.
-              let url
-              try { url = new URL(input) } catch { throw new Error('Invalid cURL upload target') }
-              if (url.protocol !== 'https:' || url.username || url.password || typeof filePath !== 'string') throw new Error('Invalid cURL upload target')
-              if (!init.headers || Object.getPrototypeOf(init.headers) !== Object.prototype) throw new Error('Invalid cURL upload headers')
-              const headers = Object.entries(init.headers)
-              if (headers.some(([name, value]) => !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(name) || typeof value !== 'string' || /[\r\n\0]/u.test(value))) throw new Error('Invalid cURL upload headers')
-              const lengths = headers.filter(([name]) => name.toLowerCase() === 'content-length')
-              if (lengths.length !== 1 || !/^(0|[1-9][0-9]*)$/u.test(lengths[0][1])) throw new Error('Invalid cURL upload size')
-              const expectedBytes = Number(lengths[0][1])
-              const file = await stat(filePath)
-              if (!Number.isSafeInteger(expectedBytes) || !file.isFile() || file.size !== expectedBytes) throw new Error('Verified cURL upload file changed')
-              if (init.signal?.aborted) throw aborted()
-              const config = [
-                'silent', 'show-error', 'globoff', 'proto = "=https"', 'request = "PUT"',
-                `url = ${quote(url.href)}`, `upload-file = ${quote(filePath)}`,
-                ...headers.map(([name, value]) => `header = ${quote(value === '' ? `${name};` : `${name}: ${value}`)}`),
-                `output = ${quote(process.platform === 'win32' ? 'NUL' : '/dev/null')}`,
-                'connect-timeout = "30"', 'speed-limit = "16384"', 'speed-time = "90"', 'max-time = "60"',
-                `write-out = ${quote('{"httpCode":"%{http_code}","uploadedBytes":%{size_upload}}\n')}`,
-              ].join('\n') + '\n'
-              const childEnv = { ...process.env }
-              for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'GITCODE_TOKEN']) delete childEnv[name]
-              const result = await new Promise((accept, reject) => {
-                let child
-                try { child = spawnImpl(curlExecutable, ['--disable', '--config', '-'], { stdio: ['pipe', 'pipe', 'ignore'], env: childEnv, windowsHide: true }) }
-                catch { reject(new Error('Unable to start cURL upload')); return }
-                let output = '', wasAborted = false, oversized = false, killTimer
-                const terminate = () => {
-                  child.kill('SIGTERM')
-                  killTimer ??= setTimeout(() => child.kill('SIGKILL'), 2000)
-                  killTimer.unref()
-                }
-                const abort = () => {
-                  if (wasAborted) return
-                  wasAborted = true
-                  terminate()
-                }
-                const cleanup = () => { init.signal?.removeEventListener('abort', abort); clearTimeout(killTimer) }
-                init.signal?.addEventListener('abort', abort, { once: true })
-                if (init.signal?.aborted) abort()
-                child.stdout.on('data', bytes => {
-                  if (output.length + bytes.length > 4096) { oversized = true; terminate() }
-                  else output += bytes.toString('utf8')
-                })
-                child.stdin.on('error', () => {}) // EPIPE is represented by the child's safe exit result.
-                child.once('error', () => { cleanup(); reject(new Error('Unable to start cURL upload')) })
-                child.once('close', (code, signal) => {
-                  cleanup()
-                  if (wasAborted) { reject(aborted()); return }
-                  if (oversized) { reject(new Error('Unexpected cURL upload metrics')); return }
-                  let metrics
-                  try { metrics = JSON.parse(output) } catch { reject(new Error(`cURL upload ended without valid metrics (exit ${Number.isInteger(code) ? code : 'signal'})`)); return }
-                  if (!metrics || !/^[0-9]{3}$/u.test(metrics.httpCode) || !Number.isSafeInteger(metrics.uploadedBytes) || metrics.uploadedBytes < 0 || metrics.uploadedBytes > expectedBytes) { reject(new Error('Unexpected cURL upload metrics')); return }
-                  const safeMetrics = { httpCode: metrics.httpCode, uploadedBytes: metrics.uploadedBytes }
-                  try { onMetrics(safeMetrics) } catch { reject(new Error('Unable to report safe cURL metrics')); return }
-                  if (code !== 0 || signal) { reject(new Error(`cURL upload transport failure (exit ${Number.isInteger(code) ? code : 'signal'})`)); return }
-                  const status = Number(metrics.httpCode)
-                  if (status < 200 || status > 599) { reject(new Error('Invalid cURL upload HTTP status')); return }
-                  if (status >= 200 && status < 300 && metrics.uploadedBytes !== expectedBytes) { reject(new Error('Incomplete cURL upload byte count')); return }
-                  accept({ status })
-                })
-                child.stdin.end(config)
-              })
-              // The original function consumes and discards the callback body. cURL already discards it.
-              return new Response(null, { status: result.status })
+          export const capCanonical = value => JSON.stringify(value, (_, item) => item && !Array.isArray(item) && typeof item === 'object' ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : item)
+          export function capArguments(argv, allowed) {
+            const values = {}
+            for (let i = 0; i < argv.length; i += 2) {
+              if (!allowed.includes(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || Object.hasOwn(values, argv[i])) throw new Error('Invalid capability command arguments')
+              values[argv[i]] = argv[i + 1]
+            }
+            if (Object.keys(values).length !== allowed.length) throw new Error('Missing capability command arguments')
+            return values
+          }
+          export async function capLoadFixedSource(directory = process.cwd()) {
+            const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: directory, timeout: 20_000 })
+            if (stdout.trim() !== CAP_SOURCE_SHA) throw new Error('Wrong fixed execution source')
+            await exec('git', ['diff', '--quiet', CAP_SOURCE_SHA, '--', ...CAP_SOURCE_FILES], { cwd: directory, timeout: 20_000 })
+            return import(pathToFileURL(resolve(directory, CAP_SOURCE_FILES[0])).href)
+          }
+          export function capAssertSource(source, validateMirrorSource) {
+            validateMirrorSource(source)
+            if (source.repository !== CAP_SOURCE_REPO || source.tag !== CAP_TAG || source.sha !== CAP_SOURCE_SHA) throw new Error('Wrong capability source')
+            for (const fixed of CAP_ASSETS) {
+              const actual = source.assets.find(asset => asset.name === fixed.name)
+              if (actual?.size !== fixed.size || actual.digest !== fixed.digest) throw new Error('Source package differs from fixed release bytes')
             }
           }
-
-          import { execFile as probeExecFile } from 'node:child_process'
-          import { createHash as probeCreateHash } from 'node:crypto'
-          import { mkdtemp as probeMkdtemp, rm as probeRm, writeFile as probeWriteFile } from 'node:fs/promises'
-          import { tmpdir as probeTmpdir } from 'node:os'
-          import { join as probeJoin, resolve as probeResolve } from 'node:path'
-          import { promisify as probePromisify } from 'node:util'
-          import { pathToFileURL as probePathToFileURL } from 'node:url'
-
-          const PROBE_SOURCE_SHA = 'd5a9fa00f091e54f1c64f9641831b85c00e5bd0d'
-          const PROBE_SOURCE_FILES = ['scripts/sync-gitcode-release.mjs', 'scripts/release-flow.mjs', 'scripts/verify-release-assets.mjs']
-          const PROBE_SMALL_SIZES = new Map([['latest.yml', 342], ['SHA256SUMS', 379], ['latest-mac.yml', 495]])
-          const PROBE_UPLOAD_NAME = 'SHA256SUMS'
-          const probeExec = probePromisify(probeExecFile)
-
-          // Pure guards are exported only so they can be checked without executing a probe.
-          export function probeAssertOwnedRelease(release, source, marker) {
-            if (!release || release.tag_name !== source.tag || release.target_commitish !== source.sha
-              || release.release_status !== 'pre' || typeof release.body !== 'string' || !release.body.includes(marker)
-              || !Array.isArray(release.assets)) throw new Error('Existing release ownership check failed')
-          }
-          export function probePresentExpected(release, source) {
+          export function capAssertOwnedRelease(release, source, marker) {
+            if (!release || release.tag_name !== CAP_TAG || release.target_commitish !== source.sha || release.release_status !== 'pre'
+              || typeof release.body !== 'string' || !release.body.includes(marker) || !Array.isArray(release.assets)) throw new Error('Existing release ownership check failed')
             const present = []
             for (const asset of source.assets) {
-              const matches = release.assets.filter(entry => entry.name === asset.name)
+              const matches = release.assets.filter(entry => entry?.name === asset.name)
               if (matches.length > 1) throw new Error('Duplicate expected attachment')
-              if (!matches.length) continue
-              if (!PROBE_SMALL_SIZES.has(asset.name)) throw new Error('Existing large attachment requires a separate full verification; checksum probe will not write')
-              present.push(asset)
+              if (matches.length) present.push(asset)
             }
             return present
           }
-          export function probeAssertChecksumBytes(asset, bytes) {
-            if (asset?.name !== PROBE_UPLOAD_NAME || asset.size !== 379 || bytes.length !== 379
-              || `sha256:${probeCreateHash('sha256').update(bytes).digest('hex')}` !== asset.digest) throw new Error('GitHub checksum bytes differ from verified provenance')
-          }
-
-          export async function runSmallProbe() {
-            const probeDeadline = AbortSignal.timeout(270_000)
-            const probeStarted = Date.now()
-            const probeRemaining = () => 270_000 - (Date.now() - probeStarted)
-            let probePhase = 'immutable source verification', probeDirectory
-            const probeCommand = async (command, args, encoding = 'utf8', maxBuffer = 2 * 1024 * 1024) => {
-              if (probeDeadline.aborted) throw new Error('Probe deadline reached')
-              return probeExec(command, args, {
-                cwd: process.cwd(), encoding, maxBuffer, timeout: Math.max(1, Math.min(30_000, probeRemaining())),
-                signal: probeDeadline, killSignal: 'SIGKILL', windowsHide: true,
-              })
+          export function capValidateTarget(cap) {
+            let url
+            try { url = new URL(cap?.url) } catch { throw new Error('Invalid capability target') }
+            if (url.protocol !== 'https:' || url.username || url.password || url.hash || !cap.headers || Object.getPrototypeOf(cap.headers) !== Object.prototype) throw new Error('Invalid capability target')
+            const names = new Set()
+            for (const [name, value] of Object.entries(cap.headers)) {
+              const lower = name.toLowerCase()
+              if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(name) || typeof value !== 'string' || /[\r\n\0]/u.test(value) || names.has(lower)) throw new Error('Invalid capability headers')
+              if (lower === 'content-length' && name !== 'Content-Length') throw new Error('Ambiguous capability content length')
+              names.add(lower)
             }
-            const probeFetch = (input, init = {}) => fetch(input, {
-              ...init, signal: init.signal ? AbortSignal.any([init.signal, probeDeadline]) : probeDeadline,
-            })
+          }
+          export function capAssertNoPersistentToken(cap, token) {
+            if (typeof token !== 'string' || !token) throw new Error('Missing persistent token safety input')
+            const base64 = Buffer.from(token).toString('base64')
+            const forms = [token, encodeURIComponent(token), base64, encodeURIComponent(base64), Buffer.from(token).toString('base64url')]
+            const check = text => { if (forms.some(form => text.includes(form))) throw new Error('Capability contains persistent authentication material') }
+            const headers = Object.values(cap.headers || {})
+            for (const text of [cap.url, ...headers]) {
+              if (typeof text !== 'string') throw new Error('Invalid capability safety input')
+              check(text)
+              try { check(decodeURIComponent(text)) } catch (error) { if (!(error instanceof URIError)) throw error }
+            }
+            for (const text of headers) {
+              if (text.length > 32768 || !/^[A-Za-z0-9+/_-]+={0,2}$/u.test(text)) continue
+              const decoded = Buffer.from(text, 'base64').toString('utf8')
+              check(decoded)
+              try { check(decodeURIComponent(decoded)) } catch (error) { if (!(error instanceof URIError)) throw error }
+            }
+          }
+          export function capAssertHeader(header, { sessionId, runId, controlSha, controlRef, keyFingerprint, now = Date.now() }) {
+            if (header?.schema !== 1 || header.sessionId !== sessionId || !/^[A-Za-z0-9_-]{16,128}$/u.test(sessionId)
+              || header.issuerRunId !== runId || !/^[1-9][0-9]*$/u.test(runId)
+              || header.issuerControlSha !== controlSha || !/^[a-f0-9]{40}$/u.test(controlSha)
+              || header.issuerRef !== controlRef || !/^refs\/heads\/codex\/[A-Za-z0-9._/-]+$/u.test(controlRef)
+              || header.sourceRepository !== CAP_SOURCE_REPO || header.sourceSha !== CAP_SOURCE_SHA || header.tag !== CAP_TAG
+              || header.targetRepository !== CAP_TARGET_REPO || header.recipientKeySha256 !== keyFingerprint) throw new Error('Envelope session/source binding failed')
+            const issued = Date.parse(header.issuedAt), expires = Date.parse(header.expiresAt)
+            if (!Number.isFinite(issued) || !Number.isFinite(expires) || expires - issued !== CAP_LIFETIME_MS
+              || new Date(issued).toISOString() !== header.issuedAt || new Date(expires).toISOString() !== header.expiresAt
+              || issued > now + 60_000 || now >= expires) throw new Error('Envelope is expired or has an invalid local deadline')
+          }
+          export function capValidatePayload(payload, validateMirrorSource) {
+            if (!payload || !Array.isArray(payload.assets)) throw new Error('Invalid capability payload')
+            capAssertSource(payload.source, validateMirrorSource)
+            const names = new Set()
+            for (const asset of payload.assets) {
+              const fixed = CAP_ASSETS.find(entry => entry.name === asset.name)
+              if (!fixed || names.has(asset.name) || asset.size !== fixed.size || asset.digest !== fixed.digest || asset.method !== 'PUT') throw new Error('Capability is outside the four fixed packages')
+              capValidateTarget(asset.cap)
+              if (asset.cap.headers['Content-Length'] !== undefined && asset.cap.headers['Content-Length'] !== String(fixed.size)) throw new Error('Invalid capability content length')
+              names.add(asset.name)
+            }
+          }
+          export async function issueCapabilities(argv = process.argv.slice(2), env = process.env) {
+            let phase = 'arguments and immutable source', aesKey, plaintext
             try {
-              const { stdout: head } = await probeCommand('git', ['rev-parse', 'HEAD'])
-              if (head.trim() !== PROBE_SOURCE_SHA) throw new Error('Wrong execution SHA')
-              await probeCommand('git', ['diff', '--quiet', PROBE_SOURCE_SHA, '--', ...PROBE_SOURCE_FILES])
-              if (!createCurlPutFetch.toString().includes('max-time = "60"') || createCurlPutFetch.toString().includes('max-time = "1800"')) throw new Error('Checksum probe requires the reviewed 60-second transport')
-              const { gitcodeConfig, assertSourceProvenance, validateMirrorSource, mirrorMarker, createGitcodeApi, uploadGitcodeAsset, anonymousAssetDigest } =
-                await import(probePathToFileURL(probeResolve(PROBE_SOURCE_FILES[0])).href)
-              const config = gitcodeConfig(process.env)
-              if (config.tag !== 'v0.0.15' || config.repository !== 'g-dxw/ebao-studio') throw new Error('Wrong checksum probe destination')
-              const github = async endpoint => JSON.parse((await probeCommand('gh', ['api', `repos/${config.sourceRepository}/${endpoint}`])).stdout)
-              probePhase = 'GitHub release and annotated-tag provenance'
-              const release = await github(`releases/tags/${config.tag}`)
-              const ref = await github(`git/ref/tags/${config.tag}`)
-              if (ref.object?.type !== 'tag' || !/^[a-f0-9]{40}$/u.test(ref.object.sha)) throw new Error('Source ref is not an annotated tag')
-              const tag = await github(`git/tags/${ref.object.sha}`)
-              const provenance = assertSourceProvenance(release, tag)
-              const source = {
-                repository: config.sourceRepository, tag: config.tag, sha: provenance.sha,
-                name: release.name, body: release.body, prerelease: release.prerelease,
-                assets: release.assets.map(asset => ({ name: asset.name, size: asset.size, digest: asset.digest })),
-              }
-              validateMirrorSource(source)
-              if (source.sha !== PROBE_SOURCE_SHA || [...PROBE_SMALL_SIZES].some(([name, size]) => source.assets.find(asset => asset.name === name)?.size !== size)) throw new Error('Source release differs from the fixed checksum probe')
-              const marker = mirrorMarker(source)
-              const rawApi = createGitcodeApi(config, probeFetch)
+              const args = capArguments(argv, ['--output', '--session-id'])
+              if (env.GITHUB_ACTIONS !== 'true' || env.GITHUB_REPOSITORY !== CAP_SOURCE_REPO || !/^[1-9][0-9]*$/u.test(env.GITHUB_RUN_ID || '')
+                || !/^[a-f0-9]{40}$/u.test(env.GITHUB_SHA || '') || !/^refs\/heads\/codex\/[A-Za-z0-9._/-]+$/u.test(env.GITHUB_REF || '')
+                || !/^[A-Za-z0-9_-]{16,128}$/u.test(args['--session-id'])) throw new Error('Issuer requires the approved official Actions session')
+              const original = await capLoadFixedSource()
+              const config = original.gitcodeConfig(env)
+              if (config.repository !== CAP_TARGET_REPO || config.tag !== CAP_TAG) throw new Error('Wrong capability destination')
+              const deadline = AbortSignal.timeout(6 * 60_000)
+              const nativeFetch = (input, init = {}) => fetch(input, { ...init, signal: init.signal ? AbortSignal.any([init.signal, deadline]) : deadline })
+              const childEnv = { ...env }; delete childEnv.GITCODE_TOKEN
+              const github = async endpoint => JSON.parse((await exec('gh', ['api', `repos/${CAP_SOURCE_REPO}/${endpoint}`], {
+                env: childEnv, timeout: 30_000, signal: deadline, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024,
+              })).stdout)
+              phase = 'GitHub release and annotated-tag provenance'
+              const release = await github(`releases/tags/${CAP_TAG}`)
+              const ref = await github(`git/ref/tags/${CAP_TAG}`)
+              if (ref.object?.type !== 'tag' || !/^[a-f0-9]{40}$/u.test(ref.object.sha)) throw new Error('Source tag lacks annotated provenance')
+              const provenance = original.assertSourceProvenance(release, await github(`git/tags/${ref.object.sha}`))
+              const source = { repository: CAP_SOURCE_REPO, tag: CAP_TAG, sha: provenance.sha, name: release.name, body: release.body, prerelease: release.prerelease,
+                assets: release.assets.map(asset => ({ name: asset.name, size: asset.size, digest: asset.digest })) }
+              capAssertSource(source, original.validateMirrorSource)
+              const marker = original.mirrorMarker(source)
+              const rawApi = original.createGitcodeApi(config, nativeFetch)
               const api = (endpoint, body, allow404 = false, method = 'GET') => {
-                if (body !== undefined || method !== 'GET') throw new Error('Checksum probe API is read-only')
+                if (body !== undefined || method !== 'GET') throw new Error('Issuer API is read-only')
                 return rawApi(endpoint, undefined, allow404, 'GET')
               }
-              const endpoint = `releases/tags/${config.tag}`
-              const readOwned = async () => {
-                const current = await api(endpoint, undefined, true)
-                probeAssertOwnedRelease(current, source, marker)
-                return current
+              phase = 'public existing release and all present attachment hashes'
+              if ((await api('')).private !== false) throw new Error('Target is not public')
+              const endpoint = `releases/tags/${CAP_TAG}`
+              const existing = await api(endpoint, undefined, true)
+              const present = capAssertOwnedRelease(existing, source, marker)
+              for (const asset of present) {
+                const actual = await original.anonymousAssetDigest(CAP_TARGET_REPO, CAP_TAG, asset, nativeFetch)
+                if (actual.size !== asset.size || actual.digest !== asset.digest) throw new Error('Existing attachment conflicts with provenance')
               }
-              const verifyExisting = async current => {
-                // Inventory and reject duplicates/large assets before the first hash GET.
-                const present = probePresentExpected(current, source)
-                for (const asset of present) {
-                  const actual = await anonymousAssetDigest(config.repository, source.tag, asset, probeFetch)
-                  if (actual.size !== asset.size || actual.digest !== asset.digest) throw new Error('Existing attachment conflicts with provenance')
-                  console.log(`Verified existing small attachment: ${asset.name} (${asset.size} bytes)`)
-                }
-                return new Set(present.map(asset => asset.name))
+              phase = 'temporary package capability issuance'
+              const missing = CAP_ASSETS.filter(asset => !present.some(entry => entry.name === asset.name))
+              const assets = []
+              for (const asset of missing) {
+                const current = capAssertOwnedRelease(await api(endpoint, undefined, true), source, marker)
+                if (current.length !== present.length || current.some(entry => !present.some(verified => verified.name === entry.name))) throw new Error('Attachment inventory changed during capability issuance; rerun preflight')
+                const cap = await api(`releases/${CAP_TAG}/upload_url?file_name=${encodeURIComponent(asset.name)}`)
+                capValidateTarget(cap)
+                capAssertNoPersistentToken(cap, config.token)
+                assets.push({ ...asset, method: 'PUT', cap: { url: cap.url, headers: cap.headers } })
               }
-              probePhase = 'public repository and existing attachment verification'
-              if ((await api('')).private !== false) throw new Error('GitCode target is not public')
-              let present = await verifyExisting(await readOwned())
-              if (present.has(PROBE_UPLOAD_NAME)) {
-                console.log('Checksum probe complete: existing SHA256SUMS is anonymously verified; no upload needed')
-                return
-              }
-              probePhase = 'download and verify GitHub checksum bytes'
-              const githubAsset = release.assets.find(asset => asset.name === PROBE_UPLOAD_NAME)
-              if (!Number.isSafeInteger(githubAsset?.id) || githubAsset.id <= 0) throw new Error('Invalid source checksum asset ID')
-              const asset = source.assets.find(asset => asset.name === PROBE_UPLOAD_NAME)
-              const { stdout: bytes } = await probeCommand('gh', ['api', `repos/${config.sourceRepository}/releases/assets/${githubAsset.id}`, '--method', 'GET', '-H', 'Accept: application/octet-stream'], 'buffer', 4096)
-              probeAssertChecksumBytes(asset, bytes)
-              probeDirectory = await probeMkdtemp(probeJoin(probeTmpdir(), 'ebao-checksum-probe-'))
-              const path = probeJoin(probeDirectory, PROBE_UPLOAD_NAME)
-              await probeWriteFile(path, bytes, { flag: 'wx', mode: 0o600 })
-              probePhase = 'repeat ownership and attachment verification immediately before upload'
-              present = await verifyExisting(await readOwned())
-              if (present.has(PROBE_UPLOAD_NAME)) {
-                console.log('Checksum probe complete: SHA256SUMS appeared and was anonymously verified; no overwrite')
-                return
-              }
-              if (probeDeadline.aborted || probeRemaining() < 65_000) throw new Error('Insufficient remaining probe budget for one upload')
-              const curlPut = createCurlPutFetch({ fetchImpl: probeFetch })
-              const uploadFetch = (input, init) => curlPut(input, {
-                ...init, signal: AbortSignal.any([init.signal, probeDeadline]),
-              })
-              probePhase = 'SHA256SUMS upload'
-              console.log('Checksum probe upload begin: SHA256SUMS (379 bytes; cURL maximum 60 seconds)')
-              await uploadGitcodeAsset(api, source.tag, { ...asset, path }, uploadFetch)
-              probePhase = 'SHA256SUMS anonymous byte/hash verification'
-              const actual = await anonymousAssetDigest(config.repository, source.tag, asset, probeFetch)
-              if (actual.size !== asset.size || actual.digest !== asset.digest) throw new Error('Uploaded checksum differs from provenance')
-              probePhase = 'final ownership and attachment inventory verification'
-              const final = await readOwned()
-              const finalPresent = probePresentExpected(final, source)
-              if (!finalPresent.some(entry => entry.name === PROBE_UPLOAD_NAME)) throw new Error('Uploaded checksum missing from final inventory')
-              console.log('Checksum probe complete: SHA256SUMS uploaded and anonymously hash-verified; release body untouched')
-            } catch {
-              // Do not print unknown causes, GitHub/API bodies, signed URLs or headers.
-              throw new Error(`Checksum probe failed during ${probePhase}; no later upload attempted`)
-            } finally {
-              if (probeDirectory) await probeRm(probeDirectory, { recursive: true, force: true })
-            }
+              const payload = { source, assets }
+              capValidatePayload(payload, original.validateMirrorSource)
+              capAssertNoPersistentToken({ url: JSON.stringify(payload), headers: {} }, config.token)
+              phase = 'encrypting one-session capabilities'
+              if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(env.CAP_PUBLIC_KEY_B64 || '')) throw new Error('Missing recipient public SPKI key')
+              const publicKey = createPublicKey({ key: Buffer.from(env.CAP_PUBLIC_KEY_B64, 'base64'), type: 'spki', format: 'der' })
+              if (publicKey.asymmetricKeyType !== 'rsa' || publicKey.asymmetricKeyDetails?.modulusLength !== 3072) throw new Error('Recipient key must be temporary RSA3072')
+              const now = Date.now()
+              const header = { schema: 1, sessionId: args['--session-id'], issuerRunId: env.GITHUB_RUN_ID, issuerControlSha: env.GITHUB_SHA, issuerRef: env.GITHUB_REF, sourceRepository: CAP_SOURCE_REPO,
+                sourceSha: CAP_SOURCE_SHA, tag: CAP_TAG, targetRepository: CAP_TARGET_REPO, issuedAt: new Date(now).toISOString(), expiresAt: new Date(now + CAP_LIFETIME_MS).toISOString(),
+                recipientKeySha256: createHash('sha256').update(publicKey.export({ type: 'spki', format: 'der' })).digest('hex') }
+              capAssertHeader(header, { sessionId: args['--session-id'], runId: env.GITHUB_RUN_ID, controlSha: env.GITHUB_SHA, controlRef: env.GITHUB_REF, keyFingerprint: header.recipientKeySha256, now })
+              aesKey = randomBytes(32)
+              const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', aesKey, iv)
+              cipher.setAAD(Buffer.from(capCanonical(header)))
+              plaintext = Buffer.from(JSON.stringify(payload))
+              const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()])
+              const envelope = { header, wrappedKey: publicEncrypt({ key: publicKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, aesKey).toString('base64'),
+                iv: iv.toString('base64'), authTag: cipher.getAuthTag().toString('base64'), ciphertext: ciphertext.toString('base64') }
+              await writeFile(resolve(args['--output']), JSON.stringify(envelope) + '\n', { flag: 'wx', mode: 0o600 })
+              console.log(`Encrypted capability count: ${assets.length}; package names: ${assets.map(asset => asset.name).join(', ')}`)
+            } catch { throw new Error(`Capability issuer stopped during ${phase}`) }
+            finally { aesKey?.fill(0); plaintext?.fill(0) }
           }
 
-          await runSmallProbe()
+          await issueCapabilities(['--output', process.env.CAP_OUTPUT_PATH, '--session-id', process.env.CAP_SESSION_ID]).catch(error => { console.error(error.message); process.exitCode = 1 })
           NODE
+      - name: Save encrypted one-session capabilities
+        uses: actions/upload-artifact@v7
+        with:
+          name: gitcode-upload-capabilities-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gitcode-capabilities.enc.json
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
