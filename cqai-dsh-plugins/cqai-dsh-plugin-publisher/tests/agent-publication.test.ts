@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AgentDraftBindings } from '../src/agent-draft-binding.ts'
@@ -57,7 +57,7 @@ function setup(type: PublisherContent['contentType'] = 'article') {
       throw new Error(`Unexpected method: ${method}`)
     },
   }
-  const bindings = new AgentDraftBindings()
+  const bindings = new AgentDraftBindings(() => true)
   const binding = bindings.bind('session-test', content.id, env)!
   const manager = new AgentPublications(runtime, bindings, { env })
   const options = { contentId: content.id, expectedRevision: content.revision, bindingToken: binding.bindingToken,
@@ -75,7 +75,213 @@ function setup(type: PublisherContent['contentType'] = 'article') {
   }
 }
 
+function longDouyin(t: ReturnType<typeof setup>) {
+  t.setAccounts([{ ...t.account, platform: 'dy' }])
+  t.setCapabilities([{ platform: 'dy', contentTypes: ['article'], modes: { article: ['publish', 'draft'] }, requiredFields: {} }])
+  return saveContent(t.content.id, { ...t.content, revision: t.content.revision, summary: '需由模型压缩的主稿摘要'.repeat(5) }, t.env)
+}
+
+function saveCompressedSummary(content: PublisherContent, env: NodeJS.ProcessEnv) {
+  return saveContent(content.id, { ...content, revision: content.revision,
+    platformVariants: { ...content.platformVariants, dy: { ...content.platformVariants?.dy, summary: '模型生成的完整短摘要' } } }, env)
+}
+
+function noConfirmationFiles(t: ReturnType<typeof setup>) {
+  expect(readdirSync(join(t.home, 'publisher/agent-publications')).filter(file => file.endsWith('.json'))).toEqual([])
+  expect(t.count()).toBe(0)
+}
+
 describe('durable Agent publication confirmations', () => {
+  it.each(['publish', 'draft'] as const)('compresses a requested Douyin summary before writing the %s confirmation snapshot', async mode => {
+    const t = setup()
+    const original = longDouyin(t)
+    const controller = new AbortController()
+    let calls = 0
+    const manager = new AgentPublications(t.runtime, t.bindings, { env: t.env,
+      compressSummary: async (content, signal, beforeSave) => {
+        calls++
+        expect(content).toEqual(original)
+        expect(signal).toBe(controller.signal)
+        beforeSave?.()
+        return saveCompressedSummary(content, t.env)
+      } })
+    const card = await manager.prepare('session-test', `compress-${mode}`, {
+      contentId: original.id, expectedRevision: original.revision, bindingToken: t.binding.bindingToken,
+      platforms: ['dy'], mode, signal: controller.signal,
+    })
+    expect(calls).toBe(1)
+    expect(card.content.revision).toBe(original.revision + 1)
+    expect(card.content.summary).toBe(original.summary)
+    expect(card.content.platformVariants?.dy?.summary).toBe('模型生成的完整短摘要')
+    expect(card.mode).toBe(mode)
+    expect(card.warnings).toEqual([])
+    expect(t.count()).toBe(0)
+    expect((await manager.read('session-test', card.requestId)).state).toBe('awaiting-confirmation')
+    expect((await manager.confirm('session-test', card.requestId, { accountIds: [t.account.id], mode })).state).toBe('submitted')
+    expect(t.count()).toBe(1)
+    expect(calls).toBe(1)
+    expect(readContent(original.id, t.env).summary).toBe(original.summary)
+  })
+
+  it('also compresses when only explicitly selected account IDs identify the Douyin target', async () => {
+    const t = setup()
+    const original = longDouyin(t)
+    let calls = 0
+    const manager = new AgentPublications(t.runtime, t.bindings, { env: t.env,
+      compressSummary: async content => { calls++; return saveCompressedSummary(content, t.env) } })
+    const card = await manager.prepare('session-test', 'account-target', {
+      ...t.options, expectedRevision: original.revision, platforms: [],
+    })
+    expect(calls).toBe(1)
+    expect(card.requestedPlatforms).toEqual([])
+    expect(card.content.platformVariants?.dy?.summary).toBe('模型生成的完整短摘要')
+    expect(card.mode).toBe('publish')
+    expect(t.count()).toBe(0)
+  })
+
+  it('does not spend a model call for an unspecified target and refuses adding Douyin at confirmation', async () => {
+    const t = setup()
+    const original = longDouyin(t)
+    let calls = 0
+    const manager = new AgentPublications(t.runtime, t.bindings, { env: t.env,
+      compressSummary: async content => { calls++; return saveCompressedSummary(content, t.env) } })
+    const card = await manager.prepare('session-test', 'unspecified-target', {
+      contentId: original.id, expectedRevision: original.revision, bindingToken: t.binding.bindingToken,
+    })
+    expect(calls).toBe(0)
+    expect(card.content.revision).toBe(original.revision)
+    const blocked = await manager.confirm('session-test', card.requestId, t.choices)
+    expect(blocked.state).toBe('awaiting-confirmation')
+    expect(blocked.message).toContain('重新准备发布确认')
+    expect(calls).toBe(0)
+    expect(t.count()).toBe(0)
+  })
+
+  it.each(['other-target', 'short-override'] as const)('skips model preparation for %s', async scenario => {
+    const t = setup()
+    let original = longDouyin(t)
+    if (scenario === 'other-target') {
+      t.setAccounts([t.account, { ...t.account, id: randomUUID(), platform: 'dy' }])
+      t.setCapabilities([{ platform: 'bjh', contentTypes: ['article'], modes: { article: ['publish', 'draft'] }, requiredFields: {} }])
+    } else original = saveCompressedSummary(original, t.env)
+    let calls = 0
+    const manager = new AgentPublications(t.runtime, t.bindings, { env: t.env,
+      compressSummary: async content => { calls++; return saveCompressedSummary(content, t.env) } })
+    const card = await manager.prepare('session-test', `skip-${scenario}`, {
+      ...t.options, expectedRevision: original.revision, platforms: [scenario === 'other-target' ? 'bjh' : 'dy'],
+    })
+    expect(calls).toBe(0)
+    expect(card.content).toEqual(original)
+    expect(card.mode).toBe('publish')
+    expect(t.count()).toBe(0)
+  })
+
+  it('hard-stops a requested long Douyin summary if no model preparation callback is configured', async () => {
+    const t = setup()
+    const original = longDouyin(t)
+    await expect(t.manager.prepare('session-test', 'no-summary-model', {
+      ...t.options, expectedRevision: original.revision, platforms: ['dy'],
+    })).rejects.toThrow('配置模型压缩服务')
+    noConfirmationFiles(t)
+    expect(readContent(original.id, t.env)).toEqual(original)
+  })
+
+  it.each(['failure', 'cancel', 'invalid-result'] as const)('does not write a confirmation card after summary %s', async failure => {
+    const t = setup()
+    const original = longDouyin(t)
+    const controller = new AbortController()
+    const manager = new AgentPublications(t.runtime, t.bindings, { env: t.env,
+      compressSummary: async content => {
+        if (failure === 'failure') throw new Error('摘要模型请求失败')
+        if (failure === 'cancel') controller.abort(new Error('摘要压缩取消'))
+        return content
+      } })
+    await expect(manager.prepare('session-test', `model-${failure}`, {
+      ...t.options, expectedRevision: original.revision, platforms: ['dy'], signal: controller.signal,
+    })).rejects.toThrow(failure === 'failure' ? '模型请求失败' : failure === 'cancel' ? '取消' : '有效的 30 字内')
+    noConfirmationFiles(t)
+    expect(readContent(original.id, t.env)).toEqual(original)
+  })
+
+  it('invalidates model preparation when the editor binding changes during generation', async () => {
+    const t = setup()
+    const original = longDouyin(t)
+    let started!: () => void
+    const begins = new Promise<void>(resolve => { started = resolve })
+    let finish!: () => void
+    const delayed = new Promise<void>(resolve => { finish = resolve })
+    const manager = new AgentPublications(t.runtime, t.bindings, { env: t.env,
+      compressSummary: async (content, _signal, beforeSave) => { started(); await delayed; beforeSave?.(); return saveCompressedSummary(content, t.env) } })
+    const prepared = manager.prepare('session-test', 'binding-race', {
+      ...t.options, expectedRevision: original.revision, platforms: ['dy'],
+    })
+    await begins
+    t.bindings.bind('session-test', null, t.env)
+    finish()
+    await expect(prepared).rejects.toThrow('草稿已切换')
+    noConfirmationFiles(t)
+    expect(readContent(original.id, t.env)).toEqual(original)
+  })
+
+  it.each(['source', 'candidate', 'binding'] as const)('invalidates file-first preparation when its %s changes during generation', async change => {
+    const t = setup()
+    longDouyin(t)
+    t.bindings.bind('session-test', null, t.env)
+    const workspace = join(t.home, 'workspace')
+    mkdirSync(workspace)
+    const file = join(workspace, 'article.md')
+    writeFileSync(file, '# 原稿标题\n\n原稿正文')
+    const source = registerSourceDocument('session-test', file, t.env)
+    const candidateInput = { sourceId: source.id, sourceRevision: source.revision,
+      contentType: 'article' as const, platforms: ['dy' as const], summary: '需由模型压缩的原稿摘要'.repeat(5) }
+    preparePublicationCandidate('session-test', candidateInput, t.env)
+    let started!: () => void
+    const begins = new Promise<void>(resolve => { started = resolve })
+    let finish!: () => void
+    const delayed = new Promise<void>(resolve => { finish = resolve })
+    let captured!: PublisherContent
+    const manager = new AgentPublications(t.runtime, t.bindings, { env: t.env,
+      compressSummary: async (content, _signal, beforeSave) => {
+        captured = content; started(); await delayed; beforeSave?.(); return saveCompressedSummary(content, t.env)
+      } })
+    const prepared = manager.prepare('session-test', `file-${change}-race`, { platforms: ['dy'] })
+    await begins
+    if (change === 'source') writeFileSync(file, '# 原稿标题\n\n原稿正文已变化')
+    if (change === 'candidate') preparePublicationCandidate('session-test', candidateInput, t.env)
+    if (change === 'binding') t.bindings.bind('session-test', t.content.id, t.env)
+    finish()
+    await expect(prepared).rejects.toThrow(change === 'source' ? '原稿已更新' : change === 'candidate' ? '发布候选已更新' : '草稿已切换')
+    noConfirmationFiles(t)
+    expect(readContent(captured.id, t.env)).toEqual(captured)
+  })
+
+  it('compresses the file-first candidate before creating a card for its inherited Douyin target', async () => {
+    const t = setup()
+    longDouyin(t)
+    t.bindings.bind('session-test', null, t.env)
+    const workspace = join(t.home, 'workspace')
+    mkdirSync(workspace)
+    const file = join(workspace, 'article.md')
+    writeFileSync(file, '# 原稿标题\n\n原稿正文')
+    const source = registerSourceDocument('session-test', file, t.env)
+    const summary = '原稿完整摘要不作直接截断'.repeat(5)
+    preparePublicationCandidate('session-test', { sourceId: source.id, sourceRevision: source.revision,
+      contentType: 'article', platforms: ['dy'], summary }, t.env)
+    let calls = 0
+    const manager = new AgentPublications(t.runtime, t.bindings, { env: t.env,
+      compressSummary: async (content, _signal, beforeSave) => { calls++; beforeSave?.(); return saveCompressedSummary(content, t.env) } })
+    const card = await manager.prepare('session-test', 'file-compressed', {})
+    expect(calls).toBe(1)
+    expect(card.requestedPlatforms).toEqual(['dy'])
+    expect(card.content.title).toBe('原稿标题')
+    expect(card.content.summary).toBe(summary)
+    expect(card.content.platformVariants?.dy?.summary).toBe('模型生成的完整短摘要')
+    expect(card.mode).toBe('publish')
+    expect((await manager.confirm('session-test', card.requestId, t.choices)).state).toBe('submitted')
+    expect(calls).toBe(1)
+    expect(t.count()).toBe(1)
+  })
+
   it.each(['binding', 'content', 'cancel'] as const)('does not create a card when its %s changes while preparing account context', async change => {
     const t = setup()
     const controller = new AbortController()
@@ -190,15 +396,15 @@ describe('durable Agent publication confirmations', () => {
     expect(t.count()).toBe(0)
   })
 
-  it('shows article adjustments as draft before authorizing an immediate publication', async () => {
+  it.each(['tt', 'dy'] as const)('shows %s article adjustments as draft before authorizing an immediate publication', async platform => {
     const t = setup()
-    t.setAccounts([{ ...t.account, platform: 'tt' }])
-    t.setCapabilities([{ platform: 'tt', contentTypes: ['article'], modes: { article: ['publish', 'draft'] }, requiredFields: {} }])
+    t.setAccounts([{ ...t.account, platform }])
+    t.setCapabilities([{ platform, contentTypes: ['article'], modes: { article: ['publish', 'draft'] }, requiredFields: {} }])
     const current = saveContent(t.content.id, { ...t.content, revision: t.content.revision,
       body: '正文 ![图片](https://example.com/image.png)' }, t.env)
-    const card = await t.manager.prepare('session-test', 'warnings', { ...t.options, expectedRevision: current.revision, platforms: ['tt'] })
+    const card = await t.manager.prepare('session-test', 'warnings', { ...t.options, expectedRevision: current.revision, platforms: [platform] })
     expect(card.mode).toBe('draft')
-    expect(card.warnings.join()).toContain('从发布历史打开头条草稿手动补图')
+    expect(card.warnings.join()).toContain('草稿手动补图')
     const requireReview = await t.manager.confirm('session-test', card.requestId, t.choices)
     expect(requireReview.state).toBe('awaiting-confirmation')
     expect(t.count()).toBe(0)
@@ -207,20 +413,61 @@ describe('durable Agent publication confirmations', () => {
     expect(t.count()).toBe(1)
   })
 
-  it('keeps immediate Toutiao publication available with local summary and tags', async () => {
+  it.each(['tt', 'dy'] as const)('keeps immediate %s article publication available with a short summary and local tags', async platform => {
     const t = setup()
-    t.setAccounts([{ ...t.account, platform: 'tt' }])
-    t.setCapabilities([{ platform: 'tt', contentTypes: ['article'], modes: { article: ['publish', 'draft'] }, requiredFields: {} }])
+    t.setAccounts([{ ...t.account, platform }])
+    t.setCapabilities([{ platform, contentTypes: ['article'], modes: { article: ['publish', 'draft'] }, requiredFields: {} }])
     const current = saveContent(t.content.id, { ...t.content, revision: t.content.revision,
       summary: '本地摘要', tags: ['本地标签'] }, t.env)
     const card = await t.manager.prepare('session-test', 'silent-information', {
-      ...t.options, expectedRevision: current.revision, platforms: ['tt'],
+      ...t.options, expectedRevision: current.revision, platforms: [platform],
     })
     expect(card.mode).toBe('publish')
     expect(card.warnings).toEqual([])
     expect(card.content).toMatchObject({ summary: '本地摘要', tags: ['本地标签'] })
     expect((await t.manager.confirm('session-test', card.requestId, t.choices)).submission?.mode).toBe('publish')
     expect(t.count()).toBe(1)
+  })
+
+  it('requires draft confirmation for a Douyin title shortened to the platform limit while retaining the original title', async () => {
+    const t = setup()
+    t.setAccounts([{ ...t.account, platform: 'dy' }])
+    t.setCapabilities([{ platform: 'dy', contentTypes: ['article'], modes: { article: ['publish', 'draft'] },
+      requiredFields: {}, maxTitleLength: { article: 30 } }])
+    const title = '原标题'.repeat(11)
+    const current = saveContent(t.content.id, { ...t.content, revision: t.content.revision, title }, t.env)
+    const card = await t.manager.prepare('session-test', 'douyin-long-title', {
+      ...t.options, expectedRevision: current.revision, platforms: ['dy'],
+    })
+    expect(card.content.title).toBe(title)
+    expect(card.mode).toBe('draft')
+    expect(card.warnings).toContain('抖音：标题将截短至 30 字')
+    expect((await t.manager.confirm('session-test', card.requestId, t.choices)).state).toBe('awaiting-confirmation')
+    expect(t.count()).toBe(0)
+    expect((await t.manager.confirm('session-test', card.requestId, { ...t.choices, mode: 'draft' })).submission?.mode).toBe('draft')
+    expect(readContent(t.content.id, t.env).title).toBe(title)
+  })
+
+  it('accepts a model-compressed Douyin platform summary without changing mode or the editable source', async () => {
+    const t = setup()
+    t.setAccounts([{ ...t.account, platform: 'dy' }])
+    t.setCapabilities([{ platform: 'dy', contentTypes: ['article'], modes: { article: ['publish', 'draft'] }, requiredFields: {} }])
+    const summary = '原稿摘要'.repeat(10)
+    const compressedSummary = '模型生成的精炼摘要'
+    const current = saveContent(t.content.id, { ...t.content, revision: t.content.revision, summary,
+      platformVariants: { dy: { summary: compressedSummary } } }, t.env)
+    const card = await t.manager.prepare('session-test', 'douyin-long-summary', {
+      ...t.options, expectedRevision: current.revision, platforms: ['dy'],
+    })
+    expect(card.content.summary).toBe(summary)
+    expect(card.content.platformVariants?.dy?.summary).toBe(compressedSummary)
+    expect(card.mode).toBe('publish')
+    expect(card.warnings).toEqual([])
+    const confirmed = await t.manager.confirm('session-test', card.requestId, t.choices)
+    expect(confirmed.submission?.mode).toBe('publish')
+    expect(t.count()).toBe(1)
+    expect(readContent(t.content.id, t.env).summary).toBe(summary)
+    expect(readContent(t.content.id, t.env).platformVariants?.dy?.summary).toBe(compressedSummary)
   })
 
   it('projects old Toutiao timeout and informational notices safely without changing the queue history', async () => {

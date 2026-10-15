@@ -17,6 +17,7 @@ import {
   DesktopPluginsError,
   DesktopPluginsService,
   DesktopProfileSelectionError,
+  clearDesktopProfileDisabledBundleNames,
   desktopPluginBundleMutable,
   readDesktopDisabledBundles,
   readDesktopProfileBundleInventory,
@@ -76,7 +77,10 @@ function installBundle(home: string, packageName: string, rowId = 'external-mark
   writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify({
     name: packageName,
     version: '1.2.3',
-    dsh: { bundle: { patch: './cordis.patch.yml' } },
+    dsh: {
+      bundle: { patch: './cordis.patch.yml' },
+      ...(packageName === 'cqai-dsh-plugin-ejianbao' ? { ejianbao: { distribution: 'external', version: 1 } } : {}),
+    },
   })}\n`)
   writeFileSync(join(packageDir, 'cordis.patch.yml'), [
     '- insert:',
@@ -117,6 +121,30 @@ function errorCode(cause: unknown): string | undefined {
 }
 
 describe('desktop direct bundle management', () => {
+  it('clears only retired E剪宝 disables in the selected profile', async () => {
+    const root = temporaryRoot()
+    const options = bootstrap(root)
+    mkdirSync(dirname(options.statePath), { recursive: true })
+    writeFileSync(options.statePath, JSON.stringify({ version: 1, profiles: [
+      { profileName: 'desktop', disabledBundles: ['cqai-dsh-plugin-ejianbao', 'cqai-dsh-plugin-short-video', 'cqai-dsh-plugin-imagegen'] },
+      { profileName: 'research', disabledBundles: ['cqai-dsh-plugin-ejianbao'] },
+    ] }))
+    await clearDesktopProfileDisabledBundleNames(options.statePath, 'desktop', [
+      'cqai-dsh-plugin-ejianbao', 'cqai-dsh-plugin-video', 'cqai-dsh-plugin-short-video', 'cqai-dsh-plugin-talkcraft',
+    ])
+    expect([...readDesktopDisabledBundles(options.statePath, 'desktop')]).toEqual(['cqai-dsh-plugin-imagegen'])
+    expect([...readDesktopDisabledBundles(options.statePath, 'research')]).toEqual(['cqai-dsh-plugin-ejianbao'])
+    const after = readFileSync(options.statePath, 'utf8')
+    await clearDesktopProfileDisabledBundleNames(options.statePath, 'desktop', ['cqai-dsh-plugin-ejianbao'])
+    expect(readFileSync(options.statePath, 'utf8')).toBe(after)
+  })
+
+  it('does not create a disable state when retired features have no markers', async () => {
+    const options = bootstrap(temporaryRoot())
+    await clearDesktopProfileDisabledBundleNames(options.statePath, 'desktop', ['cqai-dsh-plugin-ejianbao'])
+    expect(existsSync(options.statePath)).toBe(false)
+  })
+
   it('lists each direct bundle once, keeps foundations immutable, and makes shipped features toggleable', async () => {
     const root = temporaryRoot()
     const options = bootstrap(root)
@@ -149,12 +177,8 @@ describe('desktop direct bundle management', () => {
     expect(desktopPluginBundleMutable('@cqaiclub/dsn-account')).toBe(false)
     for (const feature of [
       'cqai-dsh-plugin-imagegen',
-      'cqai-dsh-plugin-video',
-      'cqai-dsh-plugin-ejianbao',
       'cqai-dsh-plugin-publisher',
       '@xmanrui/dsh-im',
-      'cqai-dsh-plugin-talkcraft',
-      'cqai-dsh-plugin-short-video',
       'dsh-ppt-composer',
     ]) {
       expect(desktopPluginBundleMutable(feature)).toBe(true)
@@ -174,6 +198,23 @@ describe('desktop direct bundle management', () => {
       expect.objectContaining({ mutable: false, uninstallable: false }),
     )
     await harness.dispose()
+  })
+
+  it('offers E剪宝 only after a direct install and allows it to be removed', async () => {
+    const root = temporaryRoot()
+    const options = bootstrap(root)
+    ensureDesktopProfile(options.homeDir)
+    const before = await createHarness(options)
+    expect(before.service.list().some(item => item.packageName === 'cqai-dsh-plugin-ejianbao')).toBe(false)
+    await before.dispose()
+
+    installBundle(options.homeDir, 'cqai-dsh-plugin-ejianbao', 'external-ejianbao')
+    addDependency(options.homeDir, 'cqai-dsh-plugin-ejianbao')
+    addBundle(options.homeDir, 'cqai-dsh-plugin-ejianbao')
+    const installed = await createHarness(options)
+    expect(installed.service.list().find(item => item.packageName === 'cqai-dsh-plugin-ejianbao'))
+      .toEqual(expect.objectContaining({ status: 'active', mutable: true, uninstallable: true }))
+    await installed.dispose()
   })
 
   it('keeps the running generation snapshot while a shipped feature is toggled for restart', async () => {

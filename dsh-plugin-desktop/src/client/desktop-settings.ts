@@ -103,6 +103,7 @@ export function applyDesktopSettings(
       setMode,
       desktopSettings,
       notificationSettings,
+      capabilities: { logging: true },
     }),
   }, DesktopSettingsSection))
   if (developerActions) {

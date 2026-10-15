@@ -28,6 +28,8 @@ import {
   type ImageToolViewOwnerProps,
 } from './image-toolview.tsx'
 import { registerImageGenStudio } from './dsh-integration.tsx'
+import { registerChatImageEditors } from './chat-image-editor.tsx'
+import { registerMarkdownImageEditor } from './markdown-image-editor.tsx'
 
 /** Locale namespace this plugin owns. */
 const NS = 'dsh-imagegen'
@@ -106,7 +108,6 @@ export function apply(ctx: ClientContext): void {
     applyLocale()
     return ctx.locale.subscribe(applyLocale)
   }, 'dsh-imagegen: follow host locale')
-  registerImageToolviews(ctx)
 
   const connection = ctx.get('connection') as ConnectionHandle | undefined
   const loopback = connection?.isLoopback === true
@@ -137,6 +138,9 @@ export function apply(ctx: ClientContext): void {
   }, ImageGenSettingsCard))
 
   const api = new ImageGenApi()
+  registerImageToolviews(ctx, { api, scope })
+  registerChatImageEditors(ctx, { api, scope })
+  registerMarkdownImageEditor(ctx, { api, scope })
   registerImageGenStudio(ctx, {
     label: () => tt('entry.image'),
     order: 40,

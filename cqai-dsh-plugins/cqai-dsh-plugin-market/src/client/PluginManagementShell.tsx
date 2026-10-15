@@ -11,10 +11,7 @@ import { styles } from './styles.js'
 const PRODUCT_DETAILS: Readonly<Record<ProductPackage, { name: string; zh: string; en: string }>> = {
   'cqai-dsh-plugin-cqai-club-theme': { name: 'CQAI Club 主题', zh: '自定义桌面配色与背景。', en: 'Customize Desktop colors and background.' },
   'cqai-dsh-plugin-imagegen': { name: 'e图宝', zh: '生成、编辑和管理图片素材。', en: 'Generate, edit and manage images.' },
-  'cqai-dsh-plugin-video': { name: 'e剪宝', zh: '制作口播短视频并预览成片。', en: 'Create and preview narrated videos.' },
   'cqai-dsh-plugin-publisher': { name: '多平台发布', zh: '管理草稿并向多个平台发布内容。', en: 'Manage drafts and publish to multiple platforms.' },
-  'cqai-dsh-plugin-talkcraft': { name: '口播视频制作', zh: '制作和编辑口播视频。', en: 'Create and edit talking videos.' },
-  'cqai-dsh-plugin-short-video': { name: '短视频制作', zh: '根据脚本与素材制作短视频。', en: 'Create short videos from scripts and media.' },
   'dsh-ppt-composer': { name: 'PPT 制作', zh: '创建和编辑演示文稿。', en: 'Create and edit presentations.' },
 }
 
@@ -59,7 +56,7 @@ function copy(locale: string) {
   }
 }
 
-type ShellProps = PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market' | 'cqai.pluginManagement.skills' | 'cqai.pluginManagement.mcp'> & {
+type ShellProps = PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market' | 'cqai.pluginManagement.updates' | 'cqai.pluginManagement.skills' | 'cqai.pluginManagement.mcp'> & {
   ctx: Context
   viewState: ViewState
 }
@@ -84,6 +81,7 @@ export function PluginManagementShell({ ctx, viewState, content, nativeView, sho
   }, [nativeView.kind, viewState])
 
   const openInstalled = () => { showList(); viewState.select('installed') }
+  const openUpdates = () => { window.dispatchEvent(new window.Event('cqai-plugin-market-open-updates')) }
   return <div className="cqpm-shell">
     <style>{styles}</style>
     <nav className="cqpm-nav" aria-label={t.title}>
@@ -96,7 +94,10 @@ export function PluginManagementShell({ ctx, viewState, content, nativeView, sho
       <button type="button" aria-current={view === 'skills' ? 'page' : undefined} onClick={() => viewState.select('skills')}>{t.skills}</button>
       <button type="button" aria-current={view === 'mcp' ? 'page' : undefined} onClick={() => viewState.select('mcp')}>{t.mcp}</button>
     </nav>
-    <div className="cqpm-native" hidden={view !== 'installed'}>{content}</div>
+    <div className="cqpm-native" hidden={view !== 'installed'}>
+      {renderSlot('cqai.pluginManagement.updates', { onOpenUpdates: openUpdates })}
+      {content}
+    </div>
     {view === 'market' && <div className="cqpm-market">
       <header className="cqpm-market-head" data-window-drag><h1>{t.market}</h1><p>{t.marketIntro}</p></header>
       {renderSlot('cqai.pluginManagement.market', { onOpenInstalled: openInstalled }, {

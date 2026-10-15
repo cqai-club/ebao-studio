@@ -5,8 +5,9 @@ import type { DesktopShellSpec } from '../src/runtime.ts'
 import { desktopTrayLabel } from '../src/tray-locale.ts'
 import { DESKTOP_FRAME_HEIGHT } from '../src/window-chrome.ts'
 import { DESKTOP_RELEASE_CHANNEL } from '../src/product-identity.ts'
-import type { DesktopReleaseChannel } from '../src/update-checker.ts'
+import { DESKTOP_VERSION_ENDPOINT, type DesktopReleaseChannel } from '../src/update-checker.ts'
 import type { DesktopPublisherRuntime } from '../src/publisher-runtime.ts'
+import { configureDeveloperLogging, initializeDeveloperLogging } from '../src/developer-logging.ts'
 
 const terminal = vi.hoisted(() => ({ open: vi.fn() }))
 const diagnostics = vi.hoisted(() => ({ export: vi.fn() }))
@@ -18,6 +19,7 @@ const electronUpdater = vi.hoisted(() => ({
   allowDowngrade: true,
   disableDifferentialDownload: false,
   disableWebInstaller: false,
+  setFeedURL: vi.fn(),
   checkForUpdates: vi.fn(),
   downloadUpdate: vi.fn(),
   quitAndInstall: vi.fn(),
@@ -48,6 +50,10 @@ vi.mock('../src/diagnostic-export.ts', () => ({
   exportDesktopDiagnostics: diagnostics.export,
 }))
 
+
+vi.mock('../src/electron-update-route.ts', () => ({
+  requestDesktopUpdateRoute: (url: string, init: RequestInit) => electron.net.fetch(url, init),
+}))
 
 vi.mock('electron-updater', () => ({ default: { autoUpdater: electronUpdater } }))
 
@@ -347,6 +353,11 @@ describe('Electron desktop runtime', () => {
     electron.menuTemplates.length = 0
     electron.notifications.length = 0
     vi.clearAllMocks()
+    electron.net.fetch.mockReset()
+    electron.net.fetch.mockResolvedValue(new Response(null, {
+      status: 302,
+      headers: { 'X-Download-Source': 'github' },
+    }))
     electronUpdater.checkForUpdates.mockReset()
     electronUpdater.checkForUpdates.mockResolvedValue({
       isUpdateAvailable: true,
@@ -750,6 +761,31 @@ describe('Electron desktop runtime', () => {
     expect(electron.browserWindows[0]?.destroy).toHaveBeenCalledOnce()
   })
 
+  it('retains a correlated authentication failure before logging is enabled without recording access URLs', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const records: any[] = []
+    initializeDeveloperLogging((_level, line) => records.push(JSON.parse(line)), 'startup-test')
+    configureDeveloperLogging({ developerLogging: false, logLevel: 'error' })
+    try {
+      electron.sessionFetch.mockResolvedValueOnce(new Response(null, { status: 401 }))
+      const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+      const runtime = new ElectronDesktopRuntime(async () => {})
+      runtime.schedule(spec)
+      await expect(runtime.mountScheduled()).rejects.toThrow('browser authentication failed with HTTP 401')
+      const start = records.find(record => record.event === 'authenticate.start')
+      const failed = records.find(record => record.event === 'authenticate.failed')
+      expect(failed).toMatchObject({ source: 'renderer.boot', operationId: start.operationId,
+        error: { message: 'dsh-plugin-desktop: browser authentication failed with HTTP 401' } })
+      expect(JSON.stringify(records)).not.toContain(spec.authenticationUrl)
+      expect(JSON.stringify(records)).not.toContain(spec.rendererAccessHeader.value)
+      expect(electron.loadURL).not.toHaveBeenCalled()
+      expect(electron.browserWindows[0]?.destroy).toHaveBeenCalledOnce()
+    } finally {
+      initializeDeveloperLogging(() => {})
+      configureDeveloperLogging({ developerLogging: false, logLevel: 'info' })
+    }
+  })
+
   it('fails closed when the authenticated redirect chain does not reach the Web root', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     electron.sessionFetch.mockResolvedValueOnce(new Response(null, { status: 503 }))
@@ -870,7 +906,7 @@ describe('Electron desktop runtime', () => {
       await expect(handler({ sender: electron.webContents, senderFrame: frame })).resolves.toBe('/Users/test/Work')
       expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(
         electron.browserWindows[0],
-        { title: 'Select Workspace Directory', properties: ['openDirectory', 'dontAddToRecent'] },
+        { title: 'Select Workspace Directory', properties: ['openDirectory', 'createDirectory', 'dontAddToRecent'] },
       )
       await expect(handler({ sender: electron.webContents, senderFrame: { url: spec.url } }))
         .rejects.toThrow('untrusted directory picker sender')
@@ -1069,7 +1105,10 @@ describe('Electron desktop runtime', () => {
     const rendererBoot = runtime.beginRendererBootMonitoring({ commitHealthy: async () => {} })
     await runtime.mountScheduled()
 
-    await vi.advanceTimersByTimeAsync(RENDERER_BOOT_TIMEOUT_MS)
+    expect(RENDERER_BOOT_TIMEOUT_MS).toBe(120_000)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(onRendererBoot).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(RENDERER_BOOT_TIMEOUT_MS - 30_000)
     await rendererBoot
 
     expect(runtime.rendererBootFailureReason).toBe('renderer-timeout')
@@ -2535,15 +2574,22 @@ describe('Electron desktop runtime', () => {
   it('uses Electron Updater after a confirmation-gated stable update check', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     const response = Response.json({ version: '2.1.0' })
-    electron.net.fetch.mockResolvedValueOnce(response)
+    electron.net.fetch
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { 'X-Download-Source': 'github' } }))
+      .mockResolvedValueOnce(response)
     const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
     const runtime = new ElectronDesktopRuntime(async () => {})
     const release = runtime.schedule(spec)
     await runtime.mountScheduled()
     const activeWindow = electron.browserWindows[0]
 
-    await expect(runtime.updates.request('https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json', { method: 'GET' }))
+    await expect(runtime.updates.request(DESKTOP_VERSION_ENDPOINT, { method: 'GET' }))
       .resolves.toBe(response)
+    expect(electron.net.fetch).toHaveBeenNthCalledWith(1,
+      'https://cqaiclub.asia/api/ebao-studio/download?platform=macos',
+      expect.objectContaining({ redirect: 'manual' }),
+    )
+    expect(electron.net.fetch).toHaveBeenNthCalledWith(2, DESKTOP_VERSION_ENDPOINT, { method: 'GET' })
     expect(runtime.updates).toMatchObject({
       isPackaged: false,
       canDownload: false,
@@ -2618,12 +2664,20 @@ describe('Electron desktop runtime', () => {
         autoDownload: false,
         autoInstallOnAppQuit: false,
         autoRunAppAfterInstall: true,
-        allowPrerelease: true,
+        allowPrerelease: false,
         allowDowngrade: false,
         disableDifferentialDownload: true,
         disableWebInstaller: true,
       })
+      expect(electronUpdater.setFeedURL).toHaveBeenCalledExactlyOnceWith({
+        provider: 'generic',
+        url: 'https://github.com/cqai-club/ebao-studio/releases/download/v2.1.0/',
+        channel: 'latest',
+        useMultipleRangeRequest: false,
+      })
       expect(electronUpdater.checkForUpdates).toHaveBeenCalledOnce()
+      expect(electronUpdater.setFeedURL.mock.invocationCallOrder[0])
+        .toBeLessThan(electronUpdater.checkForUpdates.mock.invocationCallOrder[0]!)
       expect(electronUpdater.downloadUpdate).toHaveBeenCalledWith(expect.objectContaining({ cancelled: false }))
       expect(electron.dialog.showMessageBox).toHaveBeenLastCalledWith(
         activeWindow,
@@ -2671,6 +2725,44 @@ describe('Electron desktop runtime', () => {
     releaseUpdateAction()
 
     await release()
+  })
+
+  it.each([
+    ['darwin', 'macos'],
+    ['win32', 'windows'],
+  ] as const)('routes mainland %s update manifests and downloads to GitCode', async (platform, downloadPlatform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    const response = Response.json({ version: '2.1.0' })
+    electron.net.fetch
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { 'X-Download-Source': 'gitcode' } }))
+      .mockResolvedValueOnce(response)
+    const { ElectronDesktopRuntime } = await import('../src/electron-runtime.ts')
+    const runtime = new ElectronDesktopRuntime(async () => {})
+
+    await expect(runtime.updates.request(DESKTOP_VERSION_ENDPOINT, { method: 'GET' }))
+      .resolves.toBe(response)
+
+    expect(electron.net.fetch).toHaveBeenNthCalledWith(1,
+      `https://cqaiclub.asia/api/ebao-studio/download?platform=${downloadPlatform}`,
+      expect.objectContaining({ redirect: 'manual' }),
+    )
+    expect(electron.net.fetch).toHaveBeenNthCalledWith(2,
+      'https://api.gitcode.com/api/v5/repos/g-dxw/ebao-studio/raw/release%2Fdesktop-version.json?ref=master',
+      { method: 'GET' },
+    )
+
+    if (isStableProductRelease(DESKTOP_RELEASE_CHANNEL)) {
+      await runtime.updates.downloadAndInstall('2.1.0', new AbortController().signal)
+      expect(electronUpdater.setFeedURL).toHaveBeenCalledExactlyOnceWith({
+        provider: 'generic',
+        url: 'https://gitcode.com/g-dxw/ebao-studio/releases/download/v2.1.0/',
+        channel: 'latest',
+        useMultipleRangeRequest: false,
+      })
+      expect(electronUpdater.downloadUpdate).toHaveBeenCalledOnce()
+    }
+    // The manifest check and the later download share the same routing decision.
+    expect(electron.net.fetch).toHaveBeenCalledTimes(2)
   })
 
   it('keeps a downloaded stable update staged when the user chooses Later', async () => {

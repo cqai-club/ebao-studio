@@ -11,6 +11,7 @@ import {
   readMarketInstallable,
   readMarketInstallations,
   readMarketState,
+  readMarketUpdates,
   readMoreMarketCatalog,
   requestMarketRestart,
 } from '../src/client/api.js'
@@ -20,6 +21,21 @@ afterEach(() => {
 })
 
 describe('community market client API', () => {
+  it('checks updates by GET and bypasses the Host cache only for an explicit request', async () => {
+    const body = { updates: [], checkedAt: '2026-10-14T00:00:00.000Z' }
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(body), {
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', request)
+    const controller = new AbortController()
+    await expect(readMarketUpdates(controller.signal)).resolves.toEqual(body)
+    await readMarketUpdates(controller.signal, true)
+    expect(request.mock.calls).toEqual([
+      ['/api/community-market/updates', { cache: 'no-store', signal: controller.signal }],
+      ['/api/community-market/updates?force=1', { cache: 'no-store', signal: controller.signal }],
+    ])
+  })
+
   it('binds the initial page to one source, requests 50 items, and repeats category parameters', async () => {
     const fetch = vi.fn(async (_input: RequestInfo | URL) => ({
       ok: true,

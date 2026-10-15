@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isPublicAccount, remainingQuota } from '../src/protocol.ts'
+import { isDsnDefaultModelCategory, isPublicAccount, parseDsnModelList, remainingQuota } from '../src/protocol.ts'
 
 describe('account protocol', () => {
   it('uses the service-reported remaining wallet quota', () => {
@@ -17,5 +17,24 @@ describe('account protocol', () => {
     expect(isPublicAccount({ userId: 1, platform: 'dsn', quota: '10' })).toBe(false)
     expect(isPublicAccount({ userId: 1, platform: 'dsn', quota: Number.NaN })).toBe(false)
     expect(isPublicAccount({ userId: 1, platform: 'dsn', tokenUnlimitedQuota: 'false' })).toBe(false)
+  })
+
+  it('preserves vector and rerank catalog categories and their endpoint declarations', () => {
+    expect(parseDsnModelList([
+      {
+        id: 'vector', owned_by: 'relay',
+        categories: ['embedding', 'embedding', 'unsupported'],
+        supported_endpoint_types: ['embeddings'],
+      },
+      {
+        id: 'ranking', owned_by: 'relay', categories: ['rerank'],
+        supported_endpoint_types: ['jina-rerank'],
+      },
+    ])).toEqual([
+      { id: 'vector', ownedBy: 'relay', categories: ['embedding'], supportedEndpointTypes: ['embeddings'] },
+      { id: 'ranking', ownedBy: 'relay', categories: ['rerank'], supportedEndpointTypes: ['jina-rerank'] },
+    ])
+    expect(isDsnDefaultModelCategory('embedding')).toBe(true)
+    expect(isDsnDefaultModelCategory('rerank')).toBe(false)
   })
 })

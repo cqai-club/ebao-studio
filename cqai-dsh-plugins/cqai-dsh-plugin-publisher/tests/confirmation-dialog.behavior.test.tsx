@@ -4,7 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConfirmDialog } from '../src/client/shared.tsx'
 
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => ({
+  observeComposition: (await import('../../../deepseek-harness/packages/client/ui-primitives/src/keyboard-composition.ts')).observeComposition,
   Button: ({ children, size: _size, variant: _variant, ...props }: any) => <button {...props}>{children}</button>,
   Input: (props: any) => <input {...props}/>,
   Tag: ({ children }: any) => <span>{children}</span>,
@@ -20,10 +21,10 @@ const cancel = vi.fn()
 const props: ComponentProps<typeof ConfirmDialog> = {
   contentType: 'article', title: '周末徒步攻略', mode: 'publish', busy: false,
   accounts: [
-    { id: 'bjh-a', displayName: '百家号账号', platform: 'bjh', loginState: 'logged-in' },
+    { id: 'dy-a', displayName: '抖音文章账号', platform: 'dy', loginState: 'logged-in' },
     { id: 'juejin-a', displayName: '掘金主账号', platform: 'juejin', loginState: 'logged-in' },
   ],
-  targetTitles: { 'juejin-a': '掘金平台标题' },
+  targetTitles: { 'juejin-a': '掘金平台标题' }, targetSummaries: { 'dy-a': '适合周末的徒步路线' },
   onConfirm: confirm, onCancel: cancel,
 }
 
@@ -55,6 +56,7 @@ describe('Publisher confirmation dialog', () => {
     expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe(label)
     expect(container.textContent).toContain('目标账号 · 2 个')
     expect(container.textContent).toContain('掘金平台标题')
+    expect(container.textContent).toContain('抖音摘要适合周末的徒步路线')
     expect(confirm).not.toHaveBeenCalled()
     const submit = button(`${label} · 2 个账号`)
     await act(async () => { submit.click(); submit.click() })

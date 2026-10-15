@@ -107,9 +107,11 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
         ...(spec.enableRemoteControl ? { remoteEnable: spec.enableRemoteControl } : {}),
         ...(spec.applySetupSettings ? { setup: spec.applySetupSettings } : {}),
       })
-      const { readLocalePreference, readThemeSource, requestQuit: _quit, requestModeChange: _mode, readRemoteControl: _remoteRead, enableRemoteControl: _remoteEnable, applySetupSettings: _setup, ...data } = spec
+      const { readLocalePreference: _locale, readThemeSource: _theme, requestQuit: _quit, requestModeChange: _mode, readRemoteControl: _remoteRead, enableRemoteControl: _remoteEnable, applySetupSettings: _setup, ...data } = spec
       shellSpecs.set(callback.id, spec)
-      trackSetup(send('shell:schedule', [callback.id, data, readLocalePreference(), readThemeSource(), Boolean(spec.readRemoteControl && spec.enableRemoteControl), Boolean(spec.applySetupSettings)]))
+      // Registration runs while other Host plugins can still be mounting. Their
+      // settings forms become readable after boot, at the mount barrier below.
+      trackSetup(send('shell:schedule', [callback.id, data, undefined, 'system', Boolean(spec.readRemoteControl && spec.enableRemoteControl), Boolean(spec.applySetupSettings)]))
       return async () => { try { await send('shell:dispose', [callback.id]) } finally { shellSpecs.delete(callback.id); callback.release() } }
     },
     // The parent mounts only after Host boot and this barrier finish.
@@ -144,6 +146,7 @@ export function createHostRuntime(rpc: HostRpc, snapshot: RuntimeSnapshot): Desk
       publish()
       return { refresh: publish, dispose() { trayPublishers.delete(id); releases.forEach(release => release()); void send('tray:dispose', [id]) } }
     },
+    configureDeveloperLogging(preferences) { void send('native:configureDeveloperLogging', [preferences]) },
     show() { void send('native:show') },
     openExternal: target => send('native:openExternal', [target]),
     notifyAttention(value) { void send('native:notifyAttention', [value]) },
@@ -188,6 +191,10 @@ export function bindNativeRuntime(rpc: HostRpc, runtime: DesktopRuntime): () => 
     'setThemeSource', 'prepareToQuit'] as const) {
     handle(`native:${method}`, args => (runtime[method] as (...args: any[]) => unknown).apply(runtime, args))
   }
+  handle('native:configureDeveloperLogging', ([preferences]) => {
+    if (!preferences || typeof preferences.developerLogging !== 'boolean' || !['debug', 'info', 'warn', 'error'].includes(preferences.logLevel)) throw new TypeError('Invalid logging preferences')
+    runtime.configureDeveloperLogging?.(preferences)
+  })
   handle('native:platformLogin', ([request]) => { runtime.platformLogin(parseDesktopPlatformLoginRequest(request)) })
   handle('native:setLocalePreference', ([preference]) => {
     runtime.setLocalePreference(preference)

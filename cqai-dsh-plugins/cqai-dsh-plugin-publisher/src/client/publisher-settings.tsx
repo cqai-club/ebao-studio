@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, errorMessage } from './shared.tsx'
 import { publisherSettingsCss } from './publisher-settings-style.ts'
+import { WritingProfileSettings } from './writing-profile-settings.tsx'
 
 type ProjectSettings = { defaultRoot: string; isCustom: boolean }
 const PICK_DIRECTORY = '/_dsh/desktop/pick-directory'
@@ -14,7 +15,7 @@ async function pickProjectRoot(): Promise<string | null> {
   return result.path
 }
 
-export function PublisherSettings() {
+export function PublisherSettings({ onWritingProfileDirtyChange, onWritingProfileBusyChange }: { onWritingProfileDirtyChange?(dirty: boolean): void; onWritingProfileBusyChange?(busy: boolean): void }) {
   const [settings, setSettings] = useState<ProjectSettings>()
   const [draftRoot, setDraftRoot] = useState('')
   const [loading, setLoading] = useState(true)
@@ -59,7 +60,7 @@ export function PublisherSettings() {
     finally { setBusy(false) }
   }
 
-  return <section className="pub-settings" aria-labelledby="pub-settings-title"><style>{publisherSettingsCss}</style>
+  return <><WritingProfileSettings onDirtyChange={onWritingProfileDirtyChange} onBusyChange={onWritingProfileBusyChange}/><section className="pub-settings" aria-labelledby="pub-settings-title"><style>{publisherSettingsCss}</style>
     <h3 id="pub-settings-title">项目工作区</h3>
     <p>为每篇文章、每份图文和每条视频草稿建立独立的项目目录，供 Agent 存放资料和生成文件。</p>
     {loading ? <p role="status">正在读取设置…</p> : !settings ? <div role="alert">{error || '无法读取项目工作区设置'} <button type="button" className="pub-settings-retry" onClick={load}>重试</button></div>
@@ -74,5 +75,5 @@ export function PublisherSettings() {
         {error && <p className="pub-settings-error" role="alert">{error}</p>}
         {saved && <p className="pub-settings-status" role="status">已保存。后续新建项目将使用这个目录。</p>}
       </form>}
-  </section>
+  </section></>
 }

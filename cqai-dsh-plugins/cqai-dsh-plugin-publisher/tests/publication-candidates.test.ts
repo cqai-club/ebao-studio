@@ -21,6 +21,29 @@ function fixture() {
 }
 
 describe('transient publication preview candidates', () => {
+  it('prepares a Douyin article with source images and warns before opening a publication draft', () => {
+    const { env, source } = fixture()
+    const candidate = preparePublicationCandidate('session-1', {
+      sourceId: source.id, sourceRevision: source.revision, contentType: 'article', platforms: ['dy'],
+    }, env)
+    expect(candidate.platforms).toEqual(['dy'])
+    expect(candidate.body).toBe(source.body)
+    expect(candidate.warnings.dy).toEqual(['抖音文章正文图片会保留占位，转存草稿后需手动补图和设置封面'])
+    expect(listContents(env)).toEqual([])
+    const textVariant = preparePublicationCandidate('session-1', {
+      sourceId: source.id, sourceRevision: source.revision, contentType: 'article', platforms: ['dy'],
+      platformVariants: { dy: { title: '抖音文字版', body: '无需插图的抖音正文' } },
+    }, env)
+    expect(textVariant.warnings.dy).toBeUndefined()
+    const longTitle = '原标题'.repeat(11)
+    const truncated = preparePublicationCandidate('session-1', {
+      sourceId: source.id, sourceRevision: source.revision, contentType: 'article', platforms: ['dy'],
+      platformVariants: { dy: { title: longTitle, body: '无需插图的抖音正文' } },
+    }, env)
+    expect(truncated.platformVariants.dy?.title).toBe(longTitle)
+    expect(truncated.warnings.dy).toEqual(['抖音文章标题超过 30 字，提交时会截短并转存草稿'])
+  })
+
   it('keeps source images as references and creates no publication content before a click', () => {
     const { env, source } = fixture()
     const candidate = preparePublicationCandidate('session-1', {

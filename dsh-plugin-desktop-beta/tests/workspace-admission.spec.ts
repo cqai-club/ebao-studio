@@ -29,6 +29,10 @@ describe('Electron workspace admission', () => {
     const first = subject.pickDirectory()
     const second = subject.pickDirectory()
     expect(showOpenDialog).toHaveBeenCalledOnce()
+    expect(showOpenDialog).toHaveBeenCalledWith({
+      title: 'Select Workspace Directory',
+      properties: ['openDirectory', 'dontAddToRecent'],
+    })
     finish?.({ canceled: false, filePaths: ['C:\\Work'] })
 
     await expect(Promise.all([first, second])).resolves.toEqual(['C:\\Work', 'C:\\Work'])
@@ -49,7 +53,7 @@ describe('Electron workspace admission', () => {
     expect(showOpenDialog).not.toHaveBeenCalled()
   })
 
-  it('uses the native picker on macOS and returns null when cancelled', async () => {
+  it('allows creating folders in the macOS picker and returns null when cancelled', async () => {
     const showOpenDialog = vi.fn(async () => ({ canceled: true, filePaths: [] }))
     const { admission: subject } = admission({
       platform: 'darwin',
@@ -60,7 +64,7 @@ describe('Electron workspace admission', () => {
     await expect(subject.pickDirectory()).resolves.toBeNull()
     expect(showOpenDialog).toHaveBeenCalledWith({
       title: 'Select Workspace Directory',
-      properties: ['openDirectory', 'dontAddToRecent'],
+      properties: ['openDirectory', 'createDirectory', 'dontAddToRecent'],
     })
   })
 

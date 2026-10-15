@@ -26,7 +26,6 @@ import {
   PROFILE_TEMPLATES,
   PROFILES_DIR,
   readProfileManifest,
-  removeLinkProjections,
   resolveProfileDir,
   writeProfileManifest,
   type Profile,
@@ -35,6 +34,7 @@ import {
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { isMap, isPair, isScalar, isSeq, parseAllDocuments, parseDocument, type Pair, type YAMLMap } from 'yaml'
 import { findOverlayPackage, resolveOverlayPackage } from './package-overlay.ts'
+import { removeLinkProjectionsSafely } from './link-projections.ts'
 import { DESKTOP_DEFAULT_WEB_PORT } from './desktop-port.ts'
 import {
   desktopBrowserAccessAvailable,
@@ -75,6 +75,13 @@ import {
   type DesktopMarketSnapshot,
 } from './desktop-market.ts'
 import { DesktopShellConfig } from './settings-bridge.ts'
+import {
+  EJIANBAO_BUNDLE_NAMES,
+  EJIANBAO_PACKAGE_NAME,
+  externalEjianbaoPackage,
+  isEjianbaoEntry,
+  migrateEjianbaoProfile,
+} from './ejianbao-migration.ts'
 
 /** Persistent profile managed by the desktop launcher and the ordinary dsh plugin command. */
 export const DESKTOP_PROFILE_NAME = 'desktop'
@@ -104,10 +111,6 @@ const PPT_COMPOSER_PACKAGE = 'dsh-ppt-composer'
 const DEFAULT_PRODUCT_BUNDLES = [
   CQAI_ACCOUNT_PACKAGE,
   CQAI_IMAGEGEN_PACKAGE,
-  'cqai-dsh-plugin-video',
-  'cqai-dsh-plugin-ejianbao',
-  'cqai-dsh-plugin-short-video',
-  'cqai-dsh-plugin-talkcraft',
   CQAI_PUBLISHER_PACKAGE,
   DSH_IM_PACKAGE,
   CQAI_MARKET_PACKAGE,
@@ -118,7 +121,7 @@ const DEFAULT_PRODUCT_BUNDLES = [
 ] as const
 const DEFAULT_PRODUCT_BUNDLE_SET = new Set<string>(DEFAULT_PRODUCT_BUNDLES)
 /** Former defaults remain only when the user explicitly installed them into the Profile. */
-const FORMER_DEFAULT_BUNDLE_SET = new Set([CQAI_ACTIVITIES_PACKAGE])
+const FORMER_DEFAULT_BUNDLE_SET = new Set([CQAI_ACTIVITIES_PACKAGE, ...EJIANBAO_BUNDLE_NAMES])
 const OFFICIAL_DEEPSEEK_LLM_ROW_ID = 'llm-deepseek'
 const OFFICIAL_DEEPSEEK_LLM_PACKAGE = '@deepseek-ai/dsh-llm-deepseek-api-key'
 const OFFICIAL_DEEPSEEK_ACCOUNT_LLM_ROW_ID = 'llm-deepseek-account'
@@ -502,6 +505,7 @@ const PENDING_DESKTOP_SHELL_FIELDS: ReadonlySet<string> = new Set([
   'openBrowser',
   'networkExposure',
   'logLevel',
+  'developerLogging',
 ])
 
 /**
@@ -782,6 +786,7 @@ export function ensureDesktopProfile(home: string = resolveDshHome()): string {
   if (!existsSync(join(dir, 'package.json'))) {
     initProfile(dir, REQUIRED_BUNDLES)
   }
+  migrateEjianbaoProfile(dir, INSTALL_ANCHOR)
   const manifest = readProfileManifest(BIN_NAME, dir)
   const rawBundles = (manifest.dsh?.profile as { bundles?: unknown } | undefined)?.bundles
   if (rawBundles !== undefined
@@ -954,19 +959,33 @@ function loadRecoveryFilteredProfile(
   }
   if (aaEnabled && !selectedBundles.includes(AA_PACKAGE_NAME)) selectedBundles.push(AA_PACKAGE_NAME)
   const layers: Profile['layers'] = []
+  const skippedBundles: Profile['skippedBundles'] = []
+  const externalEjianbao = externalEjianbaoPackage(profileDir, manifest)
   let aaFailure: string | undefined
   let dshMarketFailure: string | undefined
   const installPackageUrl = pathToFileURL(INSTALL_ANCHOR).href
   const profilePackageUrl = pathToFileURL(join(profileDir, 'package.json')).href
   for (const packageName of selectedBundles) {
+    if (packageName !== EJIANBAO_PACKAGE_NAME && EJIANBAO_BUNDLE_NAMES.has(packageName)) {
+      skippedBundles.push({ packageName, reason: 'Video engines are enabled together by the standalone E剪宝 plugin' })
+      continue
+    }
+    // Plugin inventory may reselect a retained old direct dependency after the
+    // one-time migration. A generation admits this root only when the actual
+    // directly installed package proves it is the external distribution.
+    if (packageName === EJIANBAO_PACKAGE_NAME && externalEjianbao === undefined) {
+      skippedBundles.push({ packageName, reason: 'E剪宝 now requires installation of the standalone external plugin' })
+      continue
+    }
     const isDshMarket = packageName === DESKTOP_MARKET_IDENTITIES.dshMarket.packageName
     const isAa = packageName === AA_PACKAGE_NAME
     if (!isAa && !isDshMarket && desktopPluginBundleMutable(packageName) && disabledBundles.has(packageName)) continue
     try {
-      const packageDir = resolveOverlayPackage(packageName, {
-        installPackageUrl,
-        profilePackageUrl,
-      }).selected.packageDir
+      const packageDir = (packageName === EJIANBAO_PACKAGE_NAME ? externalEjianbao : undefined)
+        ?? resolveOverlayPackage(packageName, {
+          installPackageUrl,
+          profilePackageUrl,
+        }).selected.packageDir
       const bundleManifest: unknown = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
       if ((isDshMarket || isAa) && (bundleManifest === null || typeof bundleManifest !== 'object'
         || Array.isArray(bundleManifest)
@@ -1000,7 +1019,7 @@ function loadRecoveryFilteredProfile(
       name: profileName,
       dir: profileDir,
       layers,
-      skippedBundles: [],
+      skippedBundles,
       patchPath,
       patches: existsSync(patchPath) ? loadOverlayPatches(BIN_NAME, patchPath) : [],
     },
@@ -1145,6 +1164,25 @@ function isMarketProviderEntry(entry: { readonly id?: unknown, readonly name?: u
     || (typeof entry.name === 'string' && MARKET_PACKAGE_NAMES.has(entry.name))
 }
 
+/** Loader group aliases may carry children without repeating the explicit group flag. */
+function isLoaderGroup(entry: { readonly group?: unknown, readonly name?: unknown }): boolean {
+  return entry.group === true || entry.name === 'cordis:group' || entry.name === '@deepseek-ai/cordis-plugin-group'
+}
+
+/** A group override inherits its target's group flag; ordinary plugin config arrays stay opaque. */
+function loaderGroupIds(rows: readonly EntryOptions[]): ReadonlySet<string> {
+  const ids = new Set<string>()
+  const visit = (entries: readonly EntryOptions[]): void => {
+    for (const entry of entries) {
+      if (!isLoaderGroup(entry)) continue
+      if (typeof entry.id === 'string') ids.add(entry.id)
+      if (Array.isArray(entry.config)) visit(entry.config)
+    }
+  }
+  visit(rows)
+  return ids
+}
+
 /** Remove provider rows recursively before an untrusted patch can activate either implementation. */
 function filterMarketProviderRows(rows: EntryOptions[], matches = isMarketProviderEntry): {
   rows: EntryOptions[]
@@ -1157,7 +1195,7 @@ function filterMarketProviderRows(rows: EntryOptions[], matches = isMarketProvid
       removedProviderReference = true
       continue
     }
-    if (row.group === true && Array.isArray(row.config)) {
+    if (isLoaderGroup(row) && Array.isArray(row.config)) {
       const nested = filterMarketProviderRows(row.config, matches)
       removedProviderReference ||= nested.removedProviderReference
       filtered.push(nested.removedProviderReference ? { ...row, config: nested.rows } : row)
@@ -1169,7 +1207,11 @@ function filterMarketProviderRows(rows: EntryOptions[], matches = isMarketProvid
 }
 
 /** Strip provider inserts and overrides from every non-provider layer. */
-function filterMarketProviderPatches(patches: PatchOptions[], matches = isMarketProviderEntry): MarketPatchFilter {
+function filterMarketProviderPatches(
+  patches: PatchOptions[],
+  matches = isMarketProviderEntry,
+  groupIds: ReadonlySet<string> = new Set(),
+): MarketPatchFilter {
   const filtered: PatchOptions[] = []
   let removedProviderReference = false
   for (const patch of patches) {
@@ -1177,13 +1219,19 @@ function filterMarketProviderPatches(patches: PatchOptions[], matches = isMarket
       removedProviderReference = true
       continue
     }
+    let retained = patch
     if (Array.isArray(patch.insert)) {
       const insert = filterMarketProviderRows(patch.insert, matches)
       removedProviderReference ||= insert.removedProviderReference
-      filtered.push(insert.removedProviderReference ? { ...patch, insert: insert.rows } : patch)
-    } else {
-      filtered.push(patch)
+      if (insert.removedProviderReference) retained = { ...retained, insert: insert.rows }
     }
+    if (Array.isArray(patch.config)
+      && (isLoaderGroup(patch) || (typeof patch.id === 'string' && groupIds.has(patch.id)))) {
+      const nested = filterMarketProviderRows(patch.config, matches)
+      removedProviderReference ||= nested.removedProviderReference
+      if (nested.removedProviderReference) retained = { ...retained, config: nested.rows }
+    }
+    filtered.push(retained)
   }
   return { patches: filtered, removedProviderReference }
 }
@@ -1295,6 +1343,7 @@ export function prepareDesktopProfile(
   const profileDir = profileName === DESKTOP_PROFILE_NAME
     ? ensureDesktopProfile(home)
     : resolveProfileDir(profileName, home)
+  if (profileName !== DESKTOP_PROFILE_NAME) migrateEjianbaoProfile(profileDir, INSTALL_ANCHOR)
   const workspaceChanged = reconcileProfilePnpmWorkspace(profileDir)
   const requiresDependencyMigration = profileDependencyMigrationRequired(profileDir, workspaceChanged, platform)
   // Desktop-owned disables follow the active Profile across Market provider
@@ -1368,9 +1417,19 @@ export function prepareDesktopProfile(
     loadedHomePatches,
     bareModuleBaseUrl,
   )
-  const filteredBundles = filterMarketProviderPatches(bundlePatches)
-  const filteredProfile = filterMarketProviderPatches(profile.patches)
-  const filteredHome = filterMarketProviderPatches(homePatches)
+  // Keep saved video settings untouched while the former preset is absent. A
+  // direct install of the external root restores the same Loader ids and all
+  // their existing settings on the next composition, including package HMR.
+  const ejianbaoInstalled = externalEjianbaoPackage(profileDir) !== undefined
+    && profile.layers.some(layer => layer.packageName === EJIANBAO_PACKAGE_NAME)
+  const inheritedGroupIds = ejianbaoInstalled ? new Set<string>() : loaderGroupIds(composeEntries([
+    bundlePatches, profile.patches, homePatches,
+  ]))
+  const admittedPatches = (patches: PatchOptions[]) => ejianbaoInstalled
+    ? patches : filterMarketProviderPatches(patches, isEjianbaoEntry, inheritedGroupIds).patches
+  const filteredBundles = filterMarketProviderPatches(admittedPatches(bundlePatches))
+  const filteredProfile = filterMarketProviderPatches(admittedPatches(profile.patches))
+  const filteredHome = filterMarketProviderPatches(admittedPatches(homePatches))
   const hasProviderConflict = filteredBundles.removedProviderReference
     || filteredProfile.removedProviderReference
     || filteredHome.removedProviderReference
@@ -1702,10 +1761,12 @@ export function prepareDesktopProfile(
  * dsh 0.1.7-alpha.1 deleted `healProfilesModuleFallback`: profile-local packages are
  * served by the runtime resolution table instead of a materialized link tree, so there
  * is no fallback left to heal. All this can still usefully do is sweep the tree older
- * Desktop releases wrote, which `removeLinkProjections` does idempotently. Upstream runs
- * that sweep itself inside `loadProfile`, but Desktop composes profiles through
- * {@link loadRecoveryFilteredProfile} and never calls `loadProfile`, so this is the only
- * place a Desktop install cleans up after an upgrade.
+ * Desktop releases wrote. Upstream runs that sweep (`removeLinkProjections`) inside
+ * `loadProfile`, but Desktop composes profiles through {@link loadRecoveryFilteredProfile}
+ * and never calls `loadProfile`, so this is the only place a Desktop install cleans up
+ * after an upgrade. It uses {@link removeLinkProjectionsSafely}: the upstream helper's
+ * recursive `rmSync` follows the projection junctions under Electron 44 and empties the
+ * installation packages they point to.
  *
  * NOTE FOR FUTURE WORK: if Desktop ever needs to re-materialize a link tree of its own,
  * it must NOT reuse the directory name `.dsh-module-fallback`. 0.1.7's `loadProfile`
@@ -1719,10 +1780,10 @@ export function prepareDesktopProfile(
 export async function healDesktopProfileModuleFallback(home: string, profile?: Profile): Promise<void> {
   await Promise.resolve()
   if (profile !== undefined) {
-    removeLinkProjections(profile.dir)
+    removeLinkProjectionsSafely(profile.dir)
     return
   }
-  // Pre-boot callers have no profile yet. `removeLinkProjections` expects one profile
+  // Pre-boot callers have no profile yet. The sweep expects one profile
   // directory, so sweep every directory under the profiles root.
   const profilesDir = join(home, PROFILES_DIR)
   let entries: string[]
@@ -1734,7 +1795,7 @@ export async function healDesktopProfileModuleFallback(home: string, profile?: P
     if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return
     throw cause
   }
-  for (const dir of entries) removeLinkProjections(dir)
+  for (const dir of entries) removeLinkProjectionsSafely(dir)
 }
 
 /** Expose the package anchor for focused resolution tests. */

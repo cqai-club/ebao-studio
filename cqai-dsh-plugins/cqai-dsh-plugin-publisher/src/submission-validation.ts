@@ -38,9 +38,9 @@ export function articleSubmissionWarnings(
     if (account.platform === 'wxmp' && selected.summary.length > 120) notes.push('摘要将截短至 120 字')
     const selectedCover = selected.assets.find(asset => asset.id === selected.coverAssetId)
     const effectiveCoverId = selectedCover?.id ?? selected.assets[0]?.id
-    if (account.platform === 'tt') {
+    if (account.platform === 'tt' || account.platform === 'dy') {
       if (sources.length > 0 || hasRawArticleImage(selected.body)) {
-        notes.push('正文图片会在原位置保留占位，请从发布历史打开头条草稿手动补图')
+        notes.push(`正文图片会在原位置保留占位，请从发布历史打开${PLATFORM_LABELS[account.platform]}草稿手动补图`)
       }
     } else if (account.platform === 'juejin' || account.platform === 'blbl') {
       if (sources.length > 0 || hasRawArticleImage(selected.body)) notes.push('正文插图将从该平台版本移除')
@@ -74,10 +74,12 @@ export function articleSubmissionWarnings(
       if (selected.assets.some(asset => asset.id !== effectiveCover?.id && !usedBodyIds.has(asset.id))) {
         notes.push('未使用或不兼容的素材不会上传到公众号')
       }
-    } else if (!selectedCover && selected.assets.length > 0 && account.platform !== 'tt') {
+    } else if (!selectedCover && selected.assets.length > 0 && account.platform !== 'tt' && account.platform !== 'dy') {
       notes.push('将自动选取首张图片作为封面')
     }
-    if (account.platform === 'tt' && effectiveCoverId) notes.push('封面需手动设置，请从发布历史打开头条草稿')
+    if ((account.platform === 'tt' || account.platform === 'dy') && effectiveCoverId) {
+      notes.push(`封面需手动设置，请从发布历史打开${PLATFORM_LABELS[account.platform]}草稿`)
+    }
     if (account.platform !== 'wxmp' && selected.coverAssetId && !selectedCover && selected.assets.length === 0) {
       notes.push('封面不在该平台所选图片中，提交时将忽略')
     }
@@ -101,6 +103,9 @@ export function contentSubmissionError(
     if (selected.contentType === 'image-note' && account.platform === 'tt') return '头条暂不支持图文发布'
     if (!selected.title.trim()) return '请填写标题'
     if (selected.contentType === 'article' && !selected.body.trim()) return '请填写正文'
+    if (selected.contentType === 'article' && account.platform === 'dy' && selected.summary.length > 30) {
+      return '抖音文章摘要不能超过 30 字，请先用模型压缩至30字以内'
+    }
     if (selected.contentType === 'image-note' && selected.assets.length === 0) return '图文至少添加一张图片'
     if (selected.contentType === 'image-note' && account.platform !== 'wxmp'
       && selected.coverAssetId && !selected.assets.some(asset => asset.id === selected.coverAssetId)) {

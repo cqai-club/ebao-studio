@@ -10,15 +10,18 @@ Installed plugins and their dependency trees run locally with the user's permiss
 
 ## Package-operation boundary
 
-- Installation starts only after explicit user confirmation.
-- The confirmation shows the Host-resolved npm package, npm `latest` stable version, and active Profile.
+- Installation, update, and uninstallation start only after explicit user confirmation. Scheduled checks and update notices never authorize a package mutation.
+- The confirmation shows the Host-resolved npm package, npm `latest` stable version, and active Profile. Update confirmations also show the verified installed version.
 - Provider commands, scripts, HTML, headers, credentials, and package-manager argv are never accepted from catalog data.
 - Automatic installation requires one valid npm package identity and a valid `dsh.bundle.patch` declaration in the official npm `latest` manifest.
 - Source-provided versions and verification claims are not installation authority.
 - Market package changes use only `desktopPnpm.run(argv)` and run one at a time.
-- The Renderer submits source/item identities for install or an opaque Desktop `bundleId` for uninstall; it never chooses an arbitrary package name at execution time.
-- Installed inventory comes from current Profile direct dependencies, so packages installed by other markets or the DSH CLI are visible. Removable direct dependencies offer uninstall only; Market exposes no enable or disable operation.
-- Market creates no install receipt, install-specific snapshot, retry, cleanup, or rollback. Recovery is owned by Desktop's unified three-slot healthy-start checkpoints.
+- The Renderer submits source/item identities for install or an opaque Desktop `bundleId` for update and uninstall; it never chooses an arbitrary package name at execution time.
+- Installed inventory comes from current Profile direct dependencies, so packages installed by other markets or the DSH CLI are visible. Removable direct dependencies offer uninstall, and eligible mutable direct npm bundles offer update. Market exposes no enable or disable operation.
+- Update targets come from Host-owned inventory and actual installed versions. Product-owned core bundles and local or Git dependencies are skipped; unknown installed versions produce an error and cannot be updated. npm stable `latest` and semver comparison exclude downgrades and prereleases.
+- Update previews bind the active Profile, package, and exact old and new versions to a short-lived one-shot token. The Host rechecks these facts before execution and retains bundle references and configuration.
+- Market creates no install receipt, install-specific snapshot, retry, cleanup, or rollback. An update failure does trigger an attempt to reinstall the previous exact version. If that attempt fails, the error directs the user to Desktop's unified three-slot healthy-start checkpoints; checkpoint restoration remains explicit.
+- Update all runs individual confirmed updates, not an atomic transaction. It stops at the first failure, retains successful items, and identifies the failed and unattempted items for another review before retry.
 - A successful mutation may issue a short-lived one-shot restart grant. Restart remains an explicit user action.
 - **Open DSH Terminal** carries an empty body and only opens Desktop's terminal; it never pastes or executes a displayed command.
 

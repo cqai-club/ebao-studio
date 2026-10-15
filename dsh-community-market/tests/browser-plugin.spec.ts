@@ -4,6 +4,8 @@ import { apply, inject, NS } from '../src/client/index.js'
 import { MarketLauncher } from '../src/client/MarketLauncher.js'
 import { MarketOverlay } from '../src/client/MarketOverlay.js'
 import { MarketSettingsTab } from '../src/client/MarketSettingsTab.js'
+import { MarketUpdateNotice } from '../src/client/MarketUpdateNotice.js'
+import { pluginUpdatesStore } from '../src/client/plugin-updates-store.js'
 import { en, zh } from '../src/client/locales.js'
 
 interface TestEntry {
@@ -100,6 +102,9 @@ function bench() {
 beforeEach(() => {
   Object.defineProperty(navigator, 'languages', { value: ['zh-CN'], configurable: true })
   Object.defineProperty(navigator, 'language', { value: 'zh-CN', configurable: true })
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ updates: [], checkedAt: '2026-10-14T00:00:00.000Z' }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  })))
 })
 
 afterEach(() => {
@@ -107,6 +112,8 @@ afterEach(() => {
   delete own.languages
   delete own.language
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  pluginUpdatesStore.dispose()
 })
 
 describe('community market browser plugin', () => {
@@ -126,7 +133,7 @@ describe('community market browser plugin', () => {
     b.dispose()
   })
 
-  it('registers one shared Market surface in official settings and sidebar slots without fetching', () => {
+  it('registers shared Market surfaces and a global notice, checking updates without mutating packages', async () => {
     const b = bench()
     for (const name of ['settings.plugins.tab', 'sidebar.footer.action', 'shell.overlay']) b.declare(name)
     const fetch = vi.spyOn(globalThis, 'fetch')
@@ -139,10 +146,11 @@ describe('community market browser plugin', () => {
     const overlay = b.entries('shell.overlay')
     expect(settings).toHaveLength(1)
     expect(launcher).toHaveLength(1)
-    expect(overlay).toHaveLength(1)
+    expect(overlay).toHaveLength(2)
     expect(settings[0]?.component).toBe(MarketSettingsTab)
     expect(launcher[0]?.component).toBe(MarketLauncher)
     expect(overlay[0]?.component).toBe(MarketOverlay)
+    expect(overlay[1]?.component).toBe(MarketUpdateNotice)
     expect(settings[0]?.options).toMatchObject({ id: 'community-market', order: 20 })
     expect(launcher[0]?.options).toMatchObject({ id: 'community-market', order: 10 })
     expect(overlay[0]?.options).toMatchObject({ id: 'community-market', order: 10 })
@@ -152,7 +160,10 @@ describe('community market browser plugin', () => {
     expect(overlay[0]?.locale).toBe(NS)
     expect((settings[0]?.options.label as () => string)()).toBe(zh.tab)
     expect((launcher[0]?.options.label as () => string)()).toBe(zh.tab)
-    expect(fetch).not.toHaveBeenCalled()
+    await pluginUpdatesStore.check()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledWith('/api/community-market/updates', expect.objectContaining({ cache: 'no-store' }))
+    expect(fetch.mock.calls.every(call => (call[1]?.method ?? 'GET') === 'GET')).toBe(true)
 
     const settingsInject = settings[0]?.inject?.() as { readLocale: () => string }
     const overlayInject = overlay[0]?.inject?.() as { readLocale: () => string }
@@ -170,14 +181,14 @@ describe('community market browser plugin', () => {
     expect(document.querySelector('style[data-plugin="dsh-community-market/styles"]')).toBeNull()
   })
 
-  it('follows late declaration and declaration reload for all three entries', () => {
+  it('follows late declaration and declaration reload for settings, launcher, and both overlays', () => {
     const b = bench()
     b.apply()
     const names = ['settings.plugins.tab', 'sidebar.footer.action', 'shell.overlay'] as const
     for (const name of names) expect(b.entries(name)).toHaveLength(0)
 
     const stops = names.map(name => b.declare(name))
-    for (const name of names) expect(b.entries(name)).toHaveLength(1)
+    for (const name of names) expect(b.entries(name)).toHaveLength(name === 'shell.overlay' ? 2 : 1)
     for (const stop of stops) stop()
     for (const name of names) expect(b.entries(name)).toHaveLength(0)
 

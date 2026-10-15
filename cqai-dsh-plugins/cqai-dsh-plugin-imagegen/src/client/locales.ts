@@ -398,6 +398,7 @@ export const zh = {
   'preview.copyPrompt': '复制提示词',
   'preview.copied': '已复制',
   'preview.addToEdit': '添加到图生图',
+  'preview.editImage': '编辑图片',
   // config banner
   'config.missing': '尚未配置 API：请前往「设置 → 插件 → 可配置」为 e图宝填写 api_url 与 api_key。',
   'config.generationTitle': '请先登录 CQAI 或选择第三方渠道',
@@ -1213,6 +1214,7 @@ export const en: Record<keyof typeof zh, string> = {
   'preview.copyPrompt': 'Copy prompt',
   'preview.copied': 'Copied',
   'preview.addToEdit': 'Add to image to image',
+  'preview.editImage': 'Edit image',
   'config.missing': 'API not configured: open "Settings → Plugins → Configurable" and fill in api_url and api_key for e图宝.',
   'config.generationTitle': 'Sign in to CQAI or select a third-party channel',
   'config.generationHint': 'DSH Settings → Plugins → e图宝 has opened. CQAI is the default provider; sign in to use account image models, or explicitly select a configured third-party channel.',
@@ -2028,6 +2030,7 @@ export const ru: Record<keyof typeof zh, string> = {
   'preview.copyPrompt': 'Копировать промпт',
   'preview.copied': 'Скопировано',
   'preview.addToEdit': 'В режим img2img',
+  'preview.editImage': 'Редактировать изображение',
   'config.missing': 'API не настроен: откройте «Настройки → Плагины → Настраиваемые» и заполните api_url и api_key для e图宝.',
   'config.generationTitle': 'Войдите в CQAI или выберите сторонний канал',
   'config.generationHint': 'Открыты «Настройки → Плагины → e图宝». CQAI — Provider по умолчанию; войдите для работы с моделями аккаунта или явно выерите настроенный сторонний канал.',

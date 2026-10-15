@@ -6,7 +6,7 @@ Status: delivered and built into 易宝工坊.
 
 ## Ownership
 
-`dsh-community-market` owns catalog-source settings, source adapters, normalized discovery, the Market Client surface, npm latest preview, and Profile package-operation orchestration. It does not own Profile storage, pnpm execution, recovery checkpoints, terminal windows, or restart implementation.
+`dsh-community-market` owns catalog-source settings, source adapters, normalized discovery, the Market Client surface, npm latest preview, plugin update checks and notices, and Profile package-operation orchestration. It does not own Profile storage, pnpm execution, recovery checkpoints, terminal windows, or restart implementation. Update checks and execution use its own services and do not depend on DSH Market.
 
 ## Runtime shape
 
@@ -15,7 +15,11 @@ catalog source -> Host adapter -> normalized catalog -> Market Client
                                       |
                                       +-> npm latest preview
 
-Desktop Profile inventory -> Installed view -> opaque bundleId -> pnpm remove
+Desktop Profile inventory -> Installed view -> opaque bundleId -> uninstall preview -> pnpm remove
+                                      |
+                                      +-> installed version + npm latest -> update notice
+                                                                          |
+                                                                          +-> confirmed update preview -> exact pnpm add
 ```
 
 The Client receives normalized data and opaque operation identities. It never receives a package-manager capability.
@@ -40,15 +44,23 @@ The preview binds these facts, the observed catalog item, and the active Profile
 
 There are no Market receipts or install-specific protection and recovery paths. Source version, repository matching, lifecycle scripts, deprecation, engine ranges, and provider verification badges do not gate installation.
 
-## Installed inventory and uninstall
+## Installed inventory, updates, and uninstall
 
-Desktop inventory reads direct Profile dependencies and bundles. It therefore includes plugins installed by this Market, other markets, and the DSH CLI. Product-owned bundles are read-only. Other direct plugin dependencies receive an opaque generation-scoped `bundleId` and offer uninstall only.
+Desktop inventory reads direct Profile dependencies and bundles. It therefore includes plugins installed by this Market, other markets, and the DSH CLI. Product-owned bundles are read-only. Other direct plugin dependencies receive an opaque generation-scoped `bundleId` and offer uninstall. Eligible mutable direct npm bundles also offer updates.
+
+The Client starts a check after startup and repeats it every 30 minutes. Normal checks use a bounded Host cache; the Market's manual check refreshes it. The Host derives npm targets from current inventory and compares actual installed versions with the official npm registry's stable `latest` versions using semver. Core bundles, local or Git sources, unknown installed versions, downgrades, and prereleases cannot become update targets. Unknown installed versions produce an explicit check error. Failed checks remain distinct from successful up-to-date results.
+
+An update preview binds the active Profile, package, and exact old and new versions to a short-lived one-shot token. The Host rechecks these facts before execution, adds the exact target version through `desktopPnpm.run(argv)`, preserves the bundle reference and configuration, and verifies the resulting installed version. Updates are serialized with other package operations and require an explicit confirmation and restart.
+
+The Client offers single-package and all-package review. **Update all** runs individual updates in sequence and stops at the first failure; it is not atomic. Successful items remain installed. The result lists successful, failed, and remaining unattempted packages, with another review required before retrying the remaining items.
 
 The Host resolves `bundleId` immediately before preview and rechecks the direct dependency before execution. Uninstall uses `desktopPnpm.run(['remove', packageName])` and removes the bundle reference. The Market does not expose enable or disable.
 
 ## Failure boundary
 
-Browsing remains available when Desktop package capabilities are absent. A source failure never blocks Desktop startup. Package-operation errors do not trigger automatic cleanup or rollback. Desktop's three healthy-start Profile checkpoints are the single recovery mechanism, and restoration remains an explicit Recovery-page action.
+Browsing remains available when Desktop package capabilities are absent. A source failure never blocks Desktop startup. Installation and uninstallation errors do not trigger automatic cleanup or rollback.
+
+When an update fails, the Host attempts to reinstall the previous exact version while retaining the bundle reference and configuration. It reports the update failure even if restoration succeeds. If restoration also fails, the message directs the user to Desktop's three healthy-start Profile checkpoints. Checkpoint restoration remains an explicit Recovery-page action.
 
 ## Headless requirements
 

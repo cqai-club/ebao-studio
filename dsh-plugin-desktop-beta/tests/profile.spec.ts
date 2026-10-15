@@ -35,6 +35,12 @@ import { setDesktopProfileBundleSelected } from '../src/desktop-plugins.ts'
 import { migrateLegacyAgentPresetSettings } from '../src/setup-wizard-settings.ts'
 import { DESKTOP_MARKET_IDENTITIES } from '../src/desktop-market.ts'
 import { isStableDesktopRelease } from '../src/product-identity.ts'
+import {
+  completeEjianbaoDisabledBundleMigration,
+  EJIANBAO_BUNDLE_NAMES,
+  EJIANBAO_PACKAGE_NAME,
+  pendingEjianbaoDisabledBundles,
+} from '../src/ejianbao-migration.ts'
 
 const homes: string[] = []
 
@@ -186,10 +192,6 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
-      'cqai-dsh-plugin-video',
-      'cqai-dsh-plugin-ejianbao',
-      'cqai-dsh-plugin-short-video',
-      'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-publisher',
       '@xmanrui/dsh-im',
       'cqai-dsh-plugin-market',
@@ -351,10 +353,6 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
-      'cqai-dsh-plugin-video',
-      'cqai-dsh-plugin-ejianbao',
-      'cqai-dsh-plugin-short-video',
-      'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-publisher',
       '@xmanrui/dsh-im',
       'cqai-dsh-plugin-market',
@@ -395,10 +393,6 @@ describe('desktop profile composition', {
       '@deepseek-ai/dsh-web-app',
       '@cqaiclub/dsn-account',
       'cqai-dsh-plugin-imagegen',
-      'cqai-dsh-plugin-video',
-      'cqai-dsh-plugin-ejianbao',
-      'cqai-dsh-plugin-short-video',
-      'cqai-dsh-plugin-talkcraft',
       'cqai-dsh-plugin-publisher',
       '@xmanrui/dsh-im',
       'cqai-dsh-plugin-market',
@@ -425,6 +419,149 @@ describe('desktop profile composition', {
     writeFileSync(managementStatePath, JSON.stringify({ version: 1, profiles: [] }) + '\n')
     const restored = prepareDesktopProfile(undefined, home, 'win32', 'desktop', managementStatePath)
     expect(restored.profile.layers.some(layer => layer.packageName === 'cqai-dsh-plugin-cqai-club-theme')).toBe(true)
+  })
+
+  it('retires the old preset once and restores saved video settings only after an external reinstall', () => {
+    const home = temporaryHome()
+    const dir = join(home, 'profiles', 'desktop')
+    initProfile(dir, PROFILE_TEMPLATES.web!.bundles)
+    const manifestPath = join(dir, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.dependencies = { [EJIANBAO_PACKAGE_NAME]: 'file:./old-ejianbao.tgz', 'unrelated-plugin': '^1.0.0' }
+    manifest.dsh.profile.bundles.push(...EJIANBAO_BUNDLE_NAMES)
+    writeFileSync(manifestPath, JSON.stringify(manifest) + '\n')
+    const savedPatch = '# Saved video preferences remain editable\n- id: cqai-short-video\n  config:\n    saveDrafts: true\n- id: cqai-talkcraft\n  config:\n    customModel: original\n- id: timer\n  disabled: true\n'
+    const machinePatch = '- id: cqai-video\n  config:\n    model: old-model\n'
+    writeFileSync(join(dir, 'cordis.patch.yml'), savedPatch)
+    writeFileSync(join(home, 'cordis.patch.yml'), machinePatch)
+    const userAssets = join(home, 'ejianbao', 'tasks.json')
+    mkdirSync(dirname(userAssets), { recursive: true })
+    writeFileSync(userAssets, '{"task":"keep","material":"keep"}\n')
+    const accountToken = join(home, 'account-session.json')
+    writeFileSync(accountToken, '{"session":"keep"}\n')
+
+    const upgraded = prepareDesktopProfile(undefined, home, 'darwin')
+    expect(upgraded.profile.layers.some(layer => EJIANBAO_BUNDLE_NAMES.has(layer.packageName))).toBe(false)
+    expect(composeEntries([upgraded.patches]).some(row => row.id?.startsWith('cqai-video'))).toBe(false)
+    expect(composeEntries([upgraded.patches]).find(row => row.id === 'timer')?.disabled).toBe(true)
+    expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')).toBe(savedPatch)
+    expect(readFileSync(join(home, 'cordis.patch.yml'), 'utf8')).toBe(machinePatch)
+    expect(JSON.parse(readFileSync(manifestPath, 'utf8')).dependencies).toEqual(manifest.dependencies)
+    expect(pendingEjianbaoDisabledBundles(dir)).toEqual([...EJIANBAO_BUNDLE_NAMES])
+    completeEjianbaoDisabledBundleMigration(dir)
+    expect(pendingEjianbaoDisabledBundles(dir)).toBeUndefined()
+
+    const patch = '- insert:\n' + [
+      ['cqai-video', 'cqai-dsh-plugin-video'],
+      ['cqai-short-video', 'cqai-dsh-plugin-short-video'],
+      ['cqai-talkcraft', 'cqai-dsh-plugin-talkcraft'],
+      ['cqai-ejianbao', EJIANBAO_PACKAGE_NAME],
+    ].map(([id, name]) => `    - id: ${id}\n      name: ${name}\n`).join('')
+    const packageDir = installBundle(home, EJIANBAO_PACKAGE_NAME, patch, '0.1.0')
+    const packageManifestPath = join(packageDir, 'package.json')
+    const packageManifest = JSON.parse(readFileSync(packageManifestPath, 'utf8'))
+    packageManifest.dsh.ejianbao = { distribution: 'external', version: 1 }
+    writeFileSync(packageManifestPath, JSON.stringify(packageManifest) + '\n')
+    const installed = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    installed.dependencies[EJIANBAO_PACKAGE_NAME] = 'file:./new-ejianbao.tgz'
+    installed.dsh.profile.bundles.push(EJIANBAO_PACKAGE_NAME)
+    writeFileSync(manifestPath, JSON.stringify(installed) + '\n')
+    for (let boot = 0; boot < 2; boot++) {
+      const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+      expect(prepared.profile.layers.find(layer => layer.packageName === EJIANBAO_PACKAGE_NAME)?.packageDir).toBe(packageDir)
+      const rows = composeEntries([prepared.patches])
+      expect(rows.find(row => row.id === 'cqai-short-video')?.config).toEqual({ saveDrafts: true })
+      expect(rows.find(row => row.id === 'cqai-talkcraft')?.config).toEqual({ customModel: 'original' })
+      expect(rows.find(row => row.id === 'cqai-video')?.config).toEqual({ model: 'old-model' })
+      expect(rows.filter(row => row.id === 'cqai-ejianbao')).toHaveLength(1)
+      expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')).toBe(savedPatch)
+      expect(readFileSync(join(home, 'cordis.patch.yml'), 'utf8')).toBe(machinePatch)
+      expect(readFileSync(userAssets, 'utf8')).toBe('{"task":"keep","material":"keep"}\n')
+      expect(readFileSync(accountToken, 'utf8')).toBe('{"session":"keep"}\n')
+      expect(pendingEjianbaoDisabledBundles(dir)).toBeUndefined()
+    }
+  })
+
+  it('does not let old direct packages or nested user inserts reactivate E剪宝 without the external root', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const manifestPath = join(dir, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.dependencies = { [EJIANBAO_PACKAGE_NAME]: '^0.0.7' }
+    manifest.dsh.profile.bundles.push(EJIANBAO_PACKAGE_NAME)
+    writeFileSync(manifestPath, JSON.stringify(manifest) + '\n')
+    installBundle(home, EJIANBAO_PACKAGE_NAME, '- insert:\n    - id: cqai-ejianbao\n      name: cqai-dsh-plugin-ejianbao\n')
+    const nested = '- insert:\n    - id: saved-video-group\n      name: cordis:group\n      config:\n        - id: saved-video-insert\n          name: cqai-dsh-plugin-video/client\n    - id: ordinary-array-plugin\n      name: cordis:example\n      config:\n        - id: keep-data-item\n          name: cqai-dsh-plugin-talkcraft\n- id: saved-video-group\n  config:\n    - id: overridden-video-insert\n      name: cqai-dsh-plugin-talkcraft\n'
+    writeFileSync(join(dir, 'cordis.patch.yml'), nested)
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+    const rows = composeEntries([prepared.patches])
+    expect(rows.some(row => row.id === 'cqai-ejianbao')).toBe(false)
+    expect(rows.find(row => row.id === 'saved-video-group')?.config).toEqual([])
+    expect(rows.find(row => row.id === 'ordinary-array-plugin')?.config).toEqual([{ id: 'keep-data-item', name: 'cqai-dsh-plugin-talkcraft' }])
+    expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')).toBe(nested)
+  })
+
+  it('keeps reselected legacy engines out of the generation when the external suite is installed', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const engineRows = [
+      ['cqai-video', 'cqai-dsh-plugin-video'],
+      ['cqai-short-video', 'cqai-dsh-plugin-short-video'],
+      ['cqai-talkcraft', 'cqai-dsh-plugin-talkcraft'],
+    ]
+    const oldPayloads = new Map<string, string>()
+    for (const [id, name] of engineRows) {
+      const packageDir = installBundle(home, name!, '- insert:\n    - id: ' + id + '\n      name: ' + name + '\n', '2.0.0')
+      const payload = join(packageDir, 'index.js')
+      writeFileSync(payload, 'throw new Error("OLD_ENGINE_MUST_NOT_RUN");\n')
+      oldPayloads.set(payload, readFileSync(payload, 'utf8'))
+    }
+    const rows = [...engineRows, ['cqai-ejianbao', EJIANBAO_PACKAGE_NAME]]
+    const patch = '- insert:\n' + rows.map(([id, name]) => '    - id: ' + id + '\n      name: ' + name + '\n').join('')
+    const packageDir = installBundle(home, EJIANBAO_PACKAGE_NAME, patch, '0.1.0')
+    const packageManifestPath = join(packageDir, 'package.json')
+    const packageManifest = JSON.parse(readFileSync(packageManifestPath, 'utf8'))
+    packageManifest.dsh.ejianbao = { distribution: 'external', version: 1 }
+    writeFileSync(packageManifestPath, JSON.stringify(packageManifest))
+    const manifestPath = join(dir, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.dependencies = Object.fromEntries(rows.map(([, name]) => [name, name === EJIANBAO_PACKAGE_NAME ? 'file:./external.tgz' : '2.0.0']))
+    manifest.dsh.profile.bundles.push(...rows.map(([, name]) => name))
+    writeFileSync(manifestPath, JSON.stringify(manifest))
+    const saved = '- id: cqai-video\n  config:\n    model: preserved\n'
+    writeFileSync(join(dir, 'cordis.patch.yml'), saved)
+    const prepared = prepareDesktopProfile('1', home, 'win32')
+    expect(prepared.profile.layers.filter(layer => EJIANBAO_BUNDLE_NAMES.has(layer.packageName)).map(layer => layer.packageName))
+      .toEqual([EJIANBAO_PACKAGE_NAME])
+    expect(prepared.profile.skippedBundles.filter(bundle => EJIANBAO_BUNDLE_NAMES.has(bundle.packageName))).toHaveLength(3)
+    const active = composeEntries([prepared.patches]).filter(row => EJIANBAO_BUNDLE_NAMES.has(row.name))
+    expect(active.map(row => [row.id, row.name])).toEqual(rows)
+    expect(new Set(active.map(row => row.id)).size).toBe(4)
+    expect(active.find(row => row.id === 'cqai-video')?.config).toEqual({ model: 'preserved' })
+    expect(JSON.parse(readFileSync(manifestPath, 'utf8')).dependencies).toEqual(manifest.dependencies)
+    expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')).toBe(saved)
+    for (const [file, content] of oldPayloads) expect(readFileSync(file, 'utf8')).toBe(content)
+  })
+
+  it('preserves an already reinstalled external root during its first upgrade while removing old engine layers', () => {
+    const home = temporaryHome()
+    const dir = join(home, 'profiles', 'desktop')
+    initProfile(dir, PROFILE_TEMPLATES.web!.bundles)
+    const packageDir = installBundle(home, EJIANBAO_PACKAGE_NAME, '- insert:\n    - id: cqai-ejianbao\n      name: cqai-dsh-plugin-ejianbao\n', '0.1.0')
+    const packageManifestPath = join(packageDir, 'package.json')
+    const packageManifest = JSON.parse(readFileSync(packageManifestPath, 'utf8'))
+    packageManifest.dsh.ejianbao = { distribution: 'external', version: 1 }
+    writeFileSync(packageManifestPath, JSON.stringify(packageManifest) + '\n')
+    const manifestPath = join(dir, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.dependencies = { [EJIANBAO_PACKAGE_NAME]: 'file:./external.tgz' }
+    manifest.dsh.profile.bundles.push(...EJIANBAO_BUNDLE_NAMES)
+    writeFileSync(manifestPath, JSON.stringify(manifest) + '\n')
+
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+    expect(prepared.profile.layers.filter(layer => EJIANBAO_BUNDLE_NAMES.has(layer.packageName)).map(layer => layer.packageName)).toEqual([EJIANBAO_PACKAGE_NAME])
+    expect(pendingEjianbaoDisabledBundles(dir)).not.toContain(EJIANBAO_PACKAGE_NAME)
+    expect(composeEntries([prepared.patches]).filter(row => row.id === 'cqai-ejianbao')).toHaveLength(1)
   })
 
   it('marks legacy isolated Profile dependencies for one-time migration', () => {
@@ -845,12 +982,8 @@ virtualStoreDirMaxLength: 60
     const home = temporaryHome()
     const features = [
       'cqai-dsh-plugin-imagegen',
-      'cqai-dsh-plugin-video',
-      'cqai-dsh-plugin-ejianbao',
       'cqai-dsh-plugin-publisher',
       '@xmanrui/dsh-im',
-      'cqai-dsh-plugin-talkcraft',
-      'cqai-dsh-plugin-short-video',
       'dsh-ppt-composer',
     ]
     const profileDir = ensureDesktopProfile(home)
@@ -1038,6 +1171,7 @@ virtualStoreDirMaxLength: 60
       openBrowser: true,
       networkExposure: 'lan',
       logLevel: 'debug',
+      developerLogging: true,
     } as const
     writeDesktopShellPreferences(home, Object.entries(edited).map(([key, value]) => `${key}: ${value}`))
 
@@ -1259,7 +1393,7 @@ virtualStoreDirMaxLength: 60
     writeDesktopShellPreferences(home, ['mode: compatibility', 'port: 43189'])
     const settingsPath = join(home, 'settings.yaml')
     const patchPath = join(ensureDesktopProfile(home), 'cordis.patch.yml')
-    writeFileSync(settingsPath, ['dsh-desktop:', '  mode: extended', 'agent-presets:', '  default: minimal', ''].join('\n'))
+    writeFileSync(settingsPath, ['dsh-desktop:', '  mode: extended', '  developerLogging: true', 'agent-presets:', '  default: minimal', ''].join('\n'))
 
     const first = prepareDesktopProfile(undefined, home, 'win32')
     const rows = composeEntries([first.patches])
@@ -1269,11 +1403,11 @@ virtualStoreDirMaxLength: 60
     expect(rows.find(row => row.id === 'ui-layout')?.disabled).toBe(true)
     expect(rows.find(row => row.id === 'ui-sidebar')?.disabled).toBe(false)
     expect(rows.find(row => row.id === 'desktop-shell')?.config)
-      .toEqual(expect.objectContaining({ mode: 'extended', port: 43_189 }))
+      .toEqual(expect.objectContaining({ mode: 'extended', port: 43_189, developerLogging: true }))
     // Persisted in the profile's own row, where the config editor edits it later;
     // the launcher pins nothing, so those edits are never shadowed.
     expect(readFileSync(patchPath, 'utf8'))
-      .toBe(['- id: desktop-shell', '  config:', '    mode: extended', '    port: 43189', ''].join('\n'))
+      .toBe(['- id: desktop-shell', '  config:', '    mode: extended', '    port: 43189', '    developerLogging: true', ''].join('\n'))
     expect(first.patches.findLast(patch => patch.id === 'desktop-shell')).toEqual({ id: 'desktop-shell', disabled: false })
     // Only Desktop's shell section leaves the document; the import still merges the rest.
     expect(readFileSync(settingsPath, 'utf8')).toBe(['agent-preset-registry:', '  selectedDefault: minimal', ''].join('\n'))

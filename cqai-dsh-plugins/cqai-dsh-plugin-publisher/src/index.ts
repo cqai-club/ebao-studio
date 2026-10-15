@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { resolve } from 'node:path'
 import {
   API,
   ARTICLE_THEMES,
@@ -16,28 +17,41 @@ import {
   type Platform,
   type PublisherCapability,
   type PublisherContent,
+  type PublisherContentPatch,
   type PublisherLocalVideo,
   type PublisherOpenTargetResult,
+  type PublisherSubmission,
   type PublisherVideoSource,
 } from './protocol.ts'
 import {
-  MAX_ASSET_BYTES, MAX_BODY_BYTES as MAX_CONTENT_BODY_BYTES, addAsset, createContent, deleteContent, duplicateContent,
-  listContents, queryContents, readAsset, readContent, removeAsset, saveContent,
+  MAX_ASSET_BYTES, MAX_BODY_BYTES as MAX_CONTENT_BODY_BYTES, addAsset, createContent, duplicateContent,
+  listContents, patchContent, queryContents, readAsset, readContent, removeAsset, saveContent,
   type SaveContentInput,
 } from './contents.ts'
 import { createPublisherSubmission } from './submission-service.ts'
 import { AgentPublications } from './agent-publication.ts'
 import { PublisherAgentTools } from './agent-tools.ts'
-import { AgentDraftBindings, validAgentSessionId } from './agent-draft-binding.ts'
-import { readAgentDraftSession, writeAgentDraftSession } from './agent-draft-session.ts'
+import { registerPublisherHandoffTools } from './agent-handoff-tools.ts'
+import { PublisherArticleHandoffs } from './article-handoff.ts'
+import type { PublisherArticleHandoff } from './article-handoff-protocol.ts'
+import { PublisherDelegations } from './publisher-delegation.ts'
+import type { Session } from '@deepseek-ai/dsh-session'
+import { AgentDraftBindings, normalizeAgentDraftTarget, validAgentSessionId } from './agent-draft-binding.ts'
+import { isCurrentPublisherSession, readAgentDraftSession, readPublisherSessionOwnership, retireAgentDraftSession } from './agent-draft-session.ts'
+import { PublisherDraftSessionController, type PublisherSessionSummary } from './agent-draft-controller.ts'
+import { trashContent, restoreContent, shouldRetireArchivedPublisherSession } from './content-lifecycle.ts'
+import { annotateContentOverview } from './content-overview.ts'
+import { readPublisherWorkspaceVisibility, type PublisherWorkspaceVisibilityRegistry } from './internal-workspace-visibility.ts'
 import { ensureAgentWorkspace } from './agent-workspace.ts'
 import { ensureProjectWorkspace, readProjectSettings, saveProjectSettings } from './project-workspace.ts'
+import { readWritingProfile, updateWritingProfile, WritingProfileConflictError, type WritingProfileUpdate } from './writing-profile.ts'
 import { readSessionContent } from './session-contents.ts'
 import { readSessionSourceDocument, readSourceImage } from './source-documents.ts'
 import { readPublicationCandidate, validPublicationCandidate } from './publication-candidates.ts'
 import { openPublicationFromSource } from './publication-preparation.ts'
 import { listWorks } from './works.ts'
 import { serveVideoPreview, VideoPreviewError, type LocalVideoReader } from './video-preview.ts'
+import { compressDouyinSummary, summaryCompressionRequest, type SummaryCompressionRequest, type SummaryCompressionServices } from './summary-compression.ts'
 
 export const name = 'cqai-publisher'
 export const inject = ['webServer', 'desktopRuntime']
@@ -289,6 +303,7 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     }
     if (action.startsWith('content/')) return { code: 200, data: readContent(uuid(action.slice('content/'.length), '草稿 ID')) }
     if (action === 'project-settings') return { code: 200, data: readProjectSettings() }
+    if (action === 'writing-profile') return { code: 200, data: readWritingProfile() }
     if (action === 'works') return { code: 200, data: listWorks() }
     if (action === 'accounts') return { code: 200, data: await runtime.request('accounts.list') }
     if (action === 'submissions') return { code: 200, data: await runtime.request('submissions.list') }
@@ -312,7 +327,9 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     return { code: 404, data: { error: '接口不存在' } }
   }
   if (req.method !== 'POST') return { code: 405, data: { error: '请求方法不支持' } }
-  const body = await readJson(req, action === 'content-save' ? 2 * MAX_CONTENT_BODY_BYTES : MAX_BODY_BYTES)
+  const body = await readJson(req, action === 'content-save' || action === 'content-patch' ? 2 * MAX_CONTENT_BODY_BYTES
+    : action === 'writing-profile' ? 2 * MAX_BODY_BYTES : MAX_BODY_BYTES)
+  if (action === 'writing-profile') return { code: 200, data: updateWritingProfile(body as WritingProfileUpdate) }
   if (action === 'publication-open-source') {
     const value = exact(body, ['sessionId', 'sourceRevision'])
     const sessionId = text(value.sessionId, '会话 ID', 512)
@@ -337,14 +354,22 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     return { code: 201, data: createContent(value.contentType, process.env, value.title) }
   }
   if (action === 'contents-query') {
-    const value = exact(body, ['contentType', 'query', 'cursor'])
+    const value = exact(body, ['contentType', 'query', 'cursor', 'trash'])
     if (value.contentType !== 'article' && value.contentType !== 'image-note' && value.contentType !== 'video') throw new Error('内容类型无效')
     if (typeof value.query !== 'string') throw new Error('搜索关键词无效')
     if (value.cursor !== undefined && typeof value.cursor !== 'string') throw new Error('草稿查询游标无效')
-    return { code: 200, data: queryContents({
+    if (value.trash !== undefined && typeof value.trash !== 'boolean') throw new Error('回收站查询方式无效')
+    const result = queryContents({
       contentType: value.contentType, query: value.query,
       ...(value.cursor === undefined ? {} : { cursor: value.cursor }),
-    }) }
+      ...(value.trash === undefined ? {} : { trash: value.trash }),
+    })
+    let submissions: PublisherSubmission[] | null = null
+    try {
+      const history = await runtime.request('submissions.list')
+      if (Array.isArray(history)) submissions = history as PublisherSubmission[]
+    } catch { /* Content remains accessible when the publishing Worker is unavailable. */ }
+    return { code: 200, data: annotateContentOverview(result, submissions) }
   }
   if (action === 'project-settings') {
     const value = exact(body, ['defaultRoot'])
@@ -359,8 +384,14 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
     const { id, input } = contentSaveBody(body)
     return { code: 200, data: saveContent(id, input) }
   }
+  if (action === 'content-patch') {
+    const value = exact(body, ['id', 'revision', 'patch'])
+    if (!Number.isSafeInteger(value.revision) || (value.revision as number) < 1) throw new Error('草稿修订号无效')
+    return { code: 200, data: patchContent(uuid(value.id, '草稿 ID'), {
+      revision: value.revision as number, patch: object(value.patch) as PublisherContentPatch,
+    }) }
+  }
   if (action === 'content-copy') return { code: 201, data: duplicateContent(idBody(body).id) }
-  if (action === 'content-delete') { deleteContent(idBody(body).id); return { code: 200, data: { ok: true } } }
   if (action === 'content-asset-delete') {
     const value = exact(body, ['id', 'assetId'])
     return { code: 200, data: removeAsset(uuid(value.id, '草稿 ID'), uuid(value.assetId, '素材 ID')) }
@@ -414,9 +445,50 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
 
 export function apply(ctx: Context): void {
   const runtime = (ctx as PublisherContext).desktopRuntime.publisher
+  let summaryServices: SummaryCompressionServices = {}
+  const summaryAborts = new Set<AbortController>()
+  ctx.inject(['llm', 'agentDefaultModel'], (modelCtx) => {
+    summaryServices = {
+      llm: modelCtx.get('llm') as SummaryCompressionServices['llm'],
+      defaultModel: modelCtx.get('agentDefaultModel') as SummaryCompressionServices['defaultModel'],
+    }
+    return () => {
+      summaryServices = {}
+      for (const controller of summaryAborts) controller.abort()
+    }
+  })
+  ctx.effect(() => () => { for (const controller of summaryAborts) controller.abort() }, '多平台摘要压缩取消')
+  const compressSummary = async (input: SummaryCompressionRequest, signal?: AbortSignal, beforeSave?: () => void) => {
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) controller.abort()
+    summaryAborts.add(controller)
+    try {
+      const result = await compressDouyinSummary(input, summaryServices, { signal: controller.signal, beforeSave })
+      controller.signal.throwIfAborted()
+      return result
+    } finally {
+      summaryAborts.delete(controller)
+      signal?.removeEventListener('abort', abort)
+    }
+  }
   const draftBindings = new AgentDraftBindings()
+  const articleHandoffs = new PublisherArticleHandoffs({
+    session: id => (ctx.get('sessions') as { get(id: string): Session | undefined } | undefined)?.get(SessionId(id)),
+    owns: id => Boolean(readPublisherSessionOwnership(id)),
+  })
   let agentTools: PublisherAgentTools | undefined
-  const publications = new AgentPublications(runtime, draftBindings)
+  let delegations: PublisherDelegations | undefined
+  const withDelegation = (handoff: PublisherArticleHandoff): PublisherArticleHandoff => {
+    const task = delegations?.forHandoff(handoff.source.sessionId, handoff.handoffId)
+    return task ? { ...handoff, delegation: task } : handoff
+  }
+  const publications = new AgentPublications(runtime, draftBindings, {
+    compressSummary: async (content, signal, beforeSave) => (await compressSummary({
+      id: content.id, revision: content.revision, platform: 'dy',
+    }, signal, beforeSave)).content,
+  })
   let liveSession: (id: string) => boolean = () => false
   const listedSession = async (id: string): Promise<boolean> => {
     // The Session Store only contains activated conversations. The Session
@@ -437,6 +509,71 @@ export function apply(ctx: Context): void {
     const registry = ctx.get('workspaceRegistry') as { archivedSessionIds?: readonly string[] } | undefined
     return registry?.archivedSessionIds?.includes(id) ?? false
   }
+  const revokeDraft = (sessionId: string): void => {
+    draftBindings.bind(sessionId, null)
+    agentTools?.refresh(sessionId)
+  }
+  const sessionController = () => {
+    const controller = ctx.get('sessionController') as {
+      list(request: Record<string, never>, signal: AbortSignal): Promise<{ items: readonly PublisherSessionSummary[] }>
+      create(request: { sessionId: string; workspaceId: string }): Promise<unknown>
+      rename?(request: { sessionId: string; title: string }): Promise<unknown>
+    } | undefined
+    if (!controller) throw new Error('Agent 对话服务尚未就绪，请重试')
+    return controller
+  }
+  const workspaceRegistry = () => {
+    const registry = ctx.get('workspaceRegistry') as {
+      create(path: string, title: string): Promise<{ id: string; path: string }>
+      archiveSession(sessionId: string, options: { stopActivity: boolean }): Promise<void>
+      unarchiveSession(sessionId: string): Promise<void>
+    } | undefined
+    if (!registry) throw new Error('工作区服务尚未就绪，请重试')
+    return registry
+  }
+  const findSession = async (sessionId: string): Promise<PublisherSessionSummary | undefined> => {
+    const controller = ctx.get('sessionController') as ReturnType<typeof sessionController> | undefined
+    if (!controller) return liveSession(sessionId) ? { sessionId } : undefined
+    return (await controller.list({}, new AbortController().signal)).items.find(item => item.sessionId === sessionId)
+  }
+  const draftSessions = new PublisherDraftSessionController({
+    workspace: path => workspaceRegistry().create(path, '多平台发布'),
+    find: findSession,
+    create: async (sessionId, workspaceId) => { await sessionController().create({ sessionId, workspaceId }) },
+    rename: async (sessionId, title) => { await sessionController().rename?.({ sessionId, title }) },
+    isArchived: archivedSession,
+    archive: sessionId => workspaceRegistry().archiveSession(sessionId, { stopActivity: true }),
+    revoke: revokeDraft,
+  })
+  const lifecycle = (contentId: string) => ({
+    isArchived: archivedSession,
+    isAvailable: listedSession,
+    archiveSession: (sessionId: string) => workspaceRegistry().archiveSession(sessionId, { stopActivity: true }),
+    restoreSession: (sessionId: string) => workspaceRegistry().unarchiveSession(sessionId),
+    beforeTrash: (_id: string, sessionId: string | null) => {
+      if (sessionId) revokeDraft(sessionId)
+    },
+  })
+  // Native sidebar archival must also retire the content association. The
+  // global domain event contains the committed archive set, even before the
+  // registry's synchronous projection has caught up with the write.
+  const domainEvents = ctx as unknown as {
+    on(name: 'domain/changed', listener: (change: { domain: string; table: string; operation: string; value: unknown }) => void): () => void
+  }
+  domainEvents.on('domain/changed', change => {
+    if (change.domain !== 'workspace' || change.table !== '' || change.operation !== 'put') return
+    const state = change.value as { archivedSessionIds?: unknown }
+    if (!Array.isArray(state?.archivedSessionIds)) return
+    for (const id of state.archivedSessionIds) {
+      if (typeof id !== 'string') continue
+      try {
+        const owner = readPublisherSessionOwnership(id)
+        if (!owner || owner.status !== 'current') continue
+        revokeDraft(id)
+        if (shouldRetireArchivedPublisherSession(id)) retireAgentDraftSession(id)
+      } catch (cause) { ctx.logger.warn('无法解除已回收对话的发布关联：%s', String(cause)) }
+    }
+  })
   ctx.inject(['sessions'], (sessionCtx) => {
     liveSession = id => {
       const session = sessionCtx.sessions.get(SessionId(id))
@@ -449,10 +586,41 @@ export function apply(ctx: Context): void {
     return () => { disposeSession(); liveSession = () => false; draftBindings.clear() }
   })
   ctx.inject(['agents', 'tools', 'attachments', 'skills', 'systemPrompt'], (agentCtx) => {
+    const tasks = new PublisherDelegations(agentCtx, draftBindings, {
+      owns: (id, contentId) => isCurrentPublisherSession(id, contentId),
+      available: async id => await listedSession(id) && !archivedSession(id),
+      bindingReleased: id => agentTools?.refresh(id),
+      sourceIdle: id => {
+        const source = agentCtx.agents.get(SessionId(id))
+        return !source || source.status === 'idle'
+      },
+    })
+    delegations = tasks
+    const disposeHandoff = registerPublisherHandoffTools(agentCtx, articleHandoffs, id => Boolean(readPublisherSessionOwnership(id)), {
+      delegate: async (handoff, source) => {
+        source.assertCurrent()
+        if (!await listedSession(source.agent.id) || archivedSession(source.agent.id)) throw new Error('来源对话已删除或归档')
+        source.assertCurrent()
+        const result = articleHandoffs.open(source.agent.id, handoff.handoffId)
+        const linked = await draftSessions.ensure(result.content.id)
+        source.assertCurrent()
+        const delegation = tasks.enqueue({ handoffId: handoff.handoffId, sourceSessionId: source.agent.id,
+          requestId: source.request.id, requestText: source.request.text.trim()
+            || '用户本次没有附加文字，请根据本次交接整理的创作任务和发布要求继续处理。', contentId: result.content.id,
+          publisherSessionId: linked.sessionId, contentType: result.content.contentType, contentRevision: result.content.revision,
+          platforms: handoff.platforms, instructions: handoff.instructions, creationBrief: handoff.creationBrief })
+        return { ...result.handoff, delegation }
+      },
+    })
     const tools = new PublisherAgentTools(agentCtx, draftBindings, publications,
-      async id => await listedSession(id) && !archivedSession(id))
+      async id => await listedSession(id) && !archivedSession(id),
+      id => isCurrentPublisherSession(id), (agent, message) => tasks.trustedRequest(agent, message))
     agentTools = tools
-    return () => { tools.dispose(); if (agentTools === tools) agentTools = undefined }
+    return () => {
+      disposeHandoff(); tools.dispose(); tasks.dispose()
+      if (agentTools === tools) agentTools = undefined
+      if (delegations === tasks) delegations = undefined
+    }
   })
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
@@ -464,6 +632,110 @@ export function apply(ctx: Context): void {
         const prefix = `${API}/`
         if (!url.pathname.startsWith(prefix) || url.search !== '') { json(res, 404, { error: '接口不存在' }); return }
         const action = url.pathname.slice(prefix.length)
+        if (req.method === 'GET' && action.startsWith('article-handoff/')) {
+          const parts = action.slice('article-handoff/'.length).split('/')
+          if (parts.length !== 2) throw new Error('文章转交路径无效')
+          json(res, 200, withDelegation(articleHandoffs.get(validAgentSessionId(decodeURIComponent(parts[0]!)), uuid(parts[1], '转交 ID'))))
+          return
+        }
+        if (req.method === 'GET' && action.startsWith('article-origin/')) {
+          const origin = articleHandoffs.origin(uuid(action.slice('article-origin/'.length), '草稿 ID'))
+          json(res, 200, origin ? { ...withDelegation(origin), sourceSessionAvailable: await listedSession(origin.source.sessionId) && !archivedSession(origin.source.sessionId) } : null)
+          return
+        }
+        if (req.method === 'GET' && action.startsWith('publisher-delegation-for-content/')) {
+          const contentId = uuid(action.slice('publisher-delegation-for-content/'.length), '草稿 ID')
+          readContent(contentId)
+          json(res, 200, delegations?.forContent(contentId) ?? null)
+          return
+        }
+        if (req.method === 'POST' && action === 'publisher-delegation-start') {
+          const value = exact(await readJson(req), ['taskId', 'sessionId', 'bindingToken', 'expectedContentRevision'])
+          if (!delegations) throw new Error('发布 Agent 服务尚未就绪，请重试')
+          if (value.expectedContentRevision !== undefined && (!Number.isSafeInteger(value.expectedContentRevision)
+            || (value.expectedContentRevision as number) < 1)) throw new Error('草稿版本无效')
+          json(res, 200, await delegations.start({ taskId: uuid(value.taskId, '发布任务 ID'),
+            sessionId: validAgentSessionId(value.sessionId), bindingToken: uuid(value.bindingToken, '草稿绑定 ID'),
+            ...(value.expectedContentRevision === undefined ? {} : { expectedContentRevision: value.expectedContentRevision as number }) }))
+          return
+        }
+        if (req.method === 'POST' && action === 'article-handoff-prepare') {
+          const value = exact(await readJson(req), ['sessionId', 'messageId'])
+          const sessionId = validAgentSessionId(value.sessionId)
+          if (!await listedSession(sessionId) || archivedSession(sessionId)) throw new Error('来源对话已删除或归档，请重新选择文章')
+          json(res, 200, articleHandoffs.prepare({ sessionId, messageId: text(value.messageId, '文章回复 ID', 512) }))
+          return
+        }
+        if (req.method === 'POST' && (action === 'article-handoff-open' || action === 'article-handoff-update')) {
+          const value = exact(await readJson(req), action === 'article-handoff-update'
+            ? ['sessionId', 'handoffId', 'expectedContentRevision'] : ['sessionId', 'handoffId'])
+          const sessionId = validAgentSessionId(value.sessionId), handoffId = uuid(value.handoffId, '转交 ID')
+          const pending = articleHandoffs.get(sessionId, handoffId)
+          if ((!pending.contentId || action === 'article-handoff-update') && (!await listedSession(sessionId) || archivedSession(sessionId))) {
+            throw new Error('来源对话已删除或归档，已有发布稿可以继续编辑')
+          }
+          if (action === 'article-handoff-update') {
+            if (!Number.isSafeInteger(value.expectedContentRevision) || (value.expectedContentRevision as number) < 1) throw new Error('草稿版本无效')
+            const result = articleHandoffs.update(sessionId, handoffId, value.expectedContentRevision as number)
+            json(res, 200, result)
+          } else {
+            const result = articleHandoffs.open(sessionId, handoffId)
+            if (delegations && !delegations.forHandoff(sessionId, handoffId) && await listedSession(sessionId) && !archivedSession(sessionId)) {
+              const linked = await draftSessions.ensure(result.content.id)
+              delegations.enqueue({ handoffId, sourceSessionId: sessionId,
+                requestId: result.handoff.source.requestId ?? `manual-${handoffId}`,
+                requestText: result.handoff.creationBrief ?? result.handoff.instructions
+                  ?? '用户通过交接入口打开了这份内容，请检查当前草稿，并在没有具体修改要求时简短说明可以继续写作、编辑或准备发布。',
+                contentId: result.content.id, publisherSessionId: linked.sessionId,
+                contentType: result.content.contentType, contentRevision: result.content.revision,
+                instructions: result.handoff.instructions, creationBrief: result.handoff.creationBrief, platforms: result.handoff.platforms })
+            }
+            json(res, 200, { ...result, handoff: withDelegation(result.handoff) })
+          }
+          return
+        }
+        if (req.method === 'GET' && action === 'internal-workspace-visibility') {
+          const registry = ctx.get('workspaceRegistry') as PublisherWorkspaceVisibilityRegistry | undefined
+          const controller = ctx.get('sessionController') as ReturnType<typeof sessionController> | undefined
+          const summaries = controller ? (await controller.list({}, new AbortController().signal)).items : undefined
+          json(res, 200, readPublisherWorkspaceVisibility(typeof registry?.list === 'function' ? registry : undefined, summaries))
+          return
+        }
+        if (req.method === 'POST' && (action === 'content-delete' || action === 'content-restore')) {
+          const contentId = idBody(await readJson(req), '草稿 ID').id
+          const content = await draftSessions.run(contentId, () => action === 'content-delete'
+            ? trashContent(contentId, lifecycle(contentId)) : restoreContent(contentId, lifecycle(contentId)))
+          json(res, 200, action === 'content-delete' ? { ok: true } : content)
+          return
+        }
+        if (req.method === 'POST' && action === 'agent-draft-session') {
+          const value = exact(await readJson(req), ['contentId'])
+          json(res, 200, await draftSessions.ensure(uuid(value.contentId, '草稿 ID')))
+          return
+        }
+        if (req.method === 'POST' && action === 'agent-draft-session-delete') {
+          const value = exact(await readJson(req), ['contentId'])
+          await draftSessions.removeConversation(uuid(value.contentId, '草稿 ID'))
+          json(res, 200, { ok: true })
+          return
+        }
+        if (req.method === 'POST' && action === 'summary-compress') {
+          const input = summaryCompressionRequest(await readJson(req))
+          const controller = new AbortController()
+          const disconnected = () => controller.abort()
+          req.once('aborted', disconnected)
+          res.once('close', disconnected)
+          if (req.aborted || res.destroyed) controller.abort()
+          try {
+            const result = await compressSummary(input, controller.signal)
+            controller.signal.throwIfAborted()
+            json(res, 200, result)
+          } finally {
+            req.off('aborted', disconnected)
+            res.off('close', disconnected)
+          }
+          return
+        }
         if (req.method === 'GET' && action.startsWith('agent-publication/')) {
           const segments = action.split('/')
           if (segments.length !== 3) throw new Error('发布确认请求地址无效')
@@ -505,24 +777,46 @@ export function apply(ctx: Context): void {
           json(res, 200, { contentId, sessionId })
           return
         }
+        if (req.method === 'GET' && action.startsWith('agent-draft-content/')) {
+          const segments = action.split('/')
+          if (segments.length !== 2) throw new Error('Agent 会话地址无效')
+          let decoded: string
+          try { decoded = decodeURIComponent(segments[1]!) } catch { throw new Error('Agent 会话 ID 无效') }
+          const sessionId = validAgentSessionId(decoded)
+          const empty = { sessionId, contentId: null, contentType: null }
+          const summary = await findSession(sessionId)
+          if (!summary || summary.origin === 'subagent' || archivedSession(sessionId)
+            || !isCurrentPublisherSession(sessionId)) { json(res, 200, empty); return }
+          const owner = readPublisherSessionOwnership(sessionId)
+          const registry = ctx.get('workspaceRegistry') as {
+            get?(id: string): { path: string } | undefined
+          } | undefined
+          const workspace = owner?.workspaceId ? registry?.get?.(owner.workspaceId) : undefined
+          if (!owner || !workspace || !summary.cwd || resolve(summary.cwd) !== resolve(workspace.path)) {
+            json(res, 200, empty)
+            return
+          }
+          const content = readContent(owner.contentId)
+          json(res, 200, { sessionId, contentId: content.id, contentType: content.contentType })
+          return
+        }
         if (req.method === 'POST' && action === 'agent-draft-bind') {
-          const value = exact(await readJson(req), ['sessionId', 'contentId', 'bindingToken'])
+          const value = exact(await readJson(req), ['sessionId', 'contentId', 'bindingToken', 'target'])
           const sessionId = validAgentSessionId(value.sessionId)
           const contentId = value.contentId === null ? null : uuid(value.contentId, '草稿 ID')
           if (contentId === null) {
-            if (draftBindings.unbind(sessionId, uuid(value.bindingToken, '绑定令牌'))) agentTools?.refresh(sessionId)
+            const token = uuid(value.bindingToken, '绑定令牌')
+            if (!delegations?.deferBindingRelease(sessionId, token)
+              && draftBindings.unbind(sessionId, token)) agentTools?.refresh(sessionId)
             json(res, 200, { sessionId, contentId: null, bindingToken: null })
             return
           }
           if (!await listedSession(sessionId) || archivedSession(sessionId)) throw new Error('当前 Agent 会话不存在或不可用于编辑')
+          if (!isCurrentPublisherSession(sessionId, contentId)) throw new Error('当前对话不是这份内容的发布专属对话')
           if (value.bindingToken !== undefined) throw new Error('绑定草稿时不应提供令牌')
-          const binding = draftBindings.bind(sessionId, contentId)
-          try { writeAgentDraftSession(contentId, sessionId) }
-          catch (cause) {
-            if (binding) draftBindings.unbind(sessionId, binding.bindingToken)
-            agentTools?.refresh(sessionId)
-            throw cause
-          }
+          const target = normalizeAgentDraftTarget(value.target)
+          const binding = delegations?.reuseRunningBinding(sessionId, contentId, target)
+            ?? draftBindings.bind(sessionId, contentId, process.env, target)
           agentTools?.refresh(sessionId)
           json(res, 200, { sessionId, contentId: binding?.contentId ?? null,
             bindingToken: binding?.bindingToken ?? null })
@@ -551,7 +845,7 @@ export function apply(ctx: Context): void {
         if (req.method === 'GET' && action.startsWith('content-asset/')) {
           const segments = action.split('/')
           if (segments.length !== 3 || url.search) throw new Error('素材地址无效')
-          const asset = readAsset(uuid(segments[1], '草稿 ID'), uuid(segments[2], '素材 ID'))
+          const asset = readAsset(uuid(segments[1], '草稿 ID'), uuid(segments[2], '素材 ID'), process.env, { includeTrash: true })
           res.writeHead(200, {
             'content-type': asset.mime, 'content-length': asset.data.length,
             'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
@@ -577,7 +871,7 @@ export function apply(ctx: Context): void {
         if (!res.headersSent && !res.destroyed) {
           const error = cause instanceof Error ? cause : new Error('操作失败')
           const code = (error as Error & { code?: string }).code
-          json(res, error instanceof VideoPreviewError ? error.status
+          json(res, error instanceof WritingProfileConflictError ? 409 : error instanceof VideoPreviewError ? error.status
             : code === 'publisher-not-supported' || code === 'publisher-worker-missing' ? 501 : 400,
           { error: error.message, code })
         } else if (!res.destroyed) res.destroy()

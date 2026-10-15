@@ -134,6 +134,10 @@ export function preparePublicationCandidate(
       if ((platform === 'juejin' || platform === 'blbl') && imageSources(targetBody).length > 0) {
         notes.push('该平台暂不支持正文插图；提交时会从平台草稿版本移除')
       }
+      if (platform === 'dy') {
+        if (imageSources(targetBody).length > 0) notes.push('抖音文章正文图片会保留占位，转存草稿后需手动补图和设置封面')
+        if ((platformVariants.dy?.title ?? title).length > 30) notes.push('抖音文章标题超过 30 字，提交时会截短并转存草稿')
+      }
       if (platform === 'wxmp') {
         const selected = new Set(imageSources(targetBody))
         if (source.images.some(image => selected.has(image.src) && image.mime === 'image/webp')) {

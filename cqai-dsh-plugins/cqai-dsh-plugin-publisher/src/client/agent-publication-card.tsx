@@ -179,6 +179,8 @@ export function AgentPublicationCard({ sessionId, requestId }: { sessionId: stri
   }, [request?.state, request?.submission?.state, uncertain, refresh])
 
   const selectedAccounts = request?.accounts.filter(account => accountIds.includes(account.id)) ?? []
+  const douyinSummary = request?.content.contentType === 'article' && selectedAccounts.some(account => account.platform === 'dy')
+    ? projectContentForPlatform(request.content, 'dy').summary : ''
   const warnings = request && !request.submission ? articleSubmissionWarnings(request.content, selectedAccounts, request.capabilities) : []
   const effectiveMode = request?.submission?.mode
     ?? (request?.content.contentType === 'article' && warnings.length > 0 ? 'draft' : mode)
@@ -275,6 +277,7 @@ export function AgentPublicationCard({ sessionId, requestId }: { sessionId: stri
       <p className="pub-agent-publication-title">{submission?.title || request.content.title || '未填写标题'}</p>
       <p className="pub-agent-publication-notes">{CONTENT_LABELS[request.content.contentType]} · 第 {request.content.revision} 版 · {request.content.assets.length} 张图片</p>
       {contentExcerpt && <p className="pub-agent-publication-excerpt">{contentExcerpt}</p>}
+      {douyinSummary && <p className="pub-agent-publication-summary" aria-label="本次抖音摘要"><strong>抖音摘要</strong>{douyinSummary}</p>}
       <details className="pub-agent-publication-preview">
         <summary>查看全文和平台版本</summary>
         <p className="pub-agent-publication-notes">{submission

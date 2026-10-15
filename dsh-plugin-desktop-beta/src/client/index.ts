@@ -1,4 +1,5 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { installUiDiagnostics } from './ui-diagnostics.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -28,6 +29,7 @@ import { installDesktopLaunchWorkspaceBridge } from './launch-workspace.ts'
 import { DESKTOP_SETTINGS_FORMS_SERVICE } from './settings-bridge.ts'
 import { installSidebarFooterStyles } from './sidebar-footer-styles.ts'
 import { desktopWindowService, provideDesktopWindow } from './window-service.ts'
+import { registerDesktopWorkspaceFolder } from './workspace-folder.tsx'
 
 export { applyAdvancedShell } from './advanced-shell.ts'
 export { applyDesktopBrand } from './desktop-brand.tsx'
@@ -131,8 +133,10 @@ export const inject = [
 export function apply(ctx: ClientContext): void {
   const environment = parseDesktopClientEnvironment(window.location.search)
   if (!environment) return
+  ctx.effect(installUiDiagnostics, 'Desktop client failure diagnostics')
   applyDesktopBrand(ctx)
   registerDesktopComputerUse(ctx, environment.platform)
+  registerDesktopWorkspaceFolder(ctx)
   ctx.effect(
     () => provideDesktopWindow(ctx, desktopWindowService(environment)),
     'dsh-plugin-desktop: native window geometry service',

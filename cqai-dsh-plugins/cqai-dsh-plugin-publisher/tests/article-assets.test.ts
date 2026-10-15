@@ -13,12 +13,33 @@ const content: PublisherContent = {
 }
 const tt: PublisherAccount = { id: '11111111-1111-4111-8111-111111111111', platform: 'tt', displayName: '头条号', loginState: 'logged-in' }
 const blbl: PublisherAccount = { ...tt, platform: 'blbl' }
+const dy: PublisherAccount = { ...tt, platform: 'dy', displayName: '抖音号' }
 const capability: PublisherPlatformCapability = {
   platform: 'tt', contentTypes: ['video', 'article'], modes: { video: ['draft', 'publish'], article: ['draft'] },
   requiredFields: { article: [] }, maxAssets: { article: 20 },
 }
 
 describe('article managed image preflight', () => {
+  it('warns about manual Douyin article images and covers without modifying the source or counting metadata as an adjustment', () => {
+    const dyCapability: PublisherPlatformCapability = { ...capability, platform: 'dy', modes: { article: ['draft', 'publish'] }, maxTitleLength: { article: 30 } }
+    const before = structuredClone(content)
+    expect(contentSubmissionError(content, [dy], [dyCapability], 'draft')).toBeUndefined()
+    expect(articleSubmissionWarnings(content, [dy], [dyCapability])).toEqual([
+      '抖音：正文图片会在原位置保留占位，请从发布历史打开抖音草稿手动补图',
+      '抖音：封面需手动设置，请从发布历史打开抖音草稿',
+    ])
+    expect(content).toEqual(before)
+    const textOnly = { ...content, body: '只有文字', assets: [], coverAssetId: undefined, summary: '独立摘要', tags: ['AI'] }
+    expect(articleSubmissionWarnings(textOnly, [dy], [dyCapability])).toEqual([])
+    expect(contentSubmissionError(textOnly, [dy], [dyCapability], 'publish')).toBeUndefined()
+    expect(contentSubmissionError(textOnly, [dy], [{ ...dyCapability, modes: { video: ['publish', 'draft'] } }], 'publish')).toContain('暂不支持')
+    const textVariant = { ...content, platformVariants: { dy: { body: '抖音文字版', assetOrder: [], coverAssetId: null } } }
+    expect(articleSubmissionWarnings(textVariant, [dy], [dyCapability])).toEqual([])
+    const longTitle = { ...textOnly, title: '标题'.repeat(16) }
+    expect(articleSubmissionWarnings(longTitle, [dy], [dyCapability])).toEqual(['抖音：标题将截短至 30 字'])
+    expect(longTitle.title).toBe('标题'.repeat(16))
+  })
+
   it('keeps the cover independent of platform image adjustments', () => {
     expect(contentSubmissionError(content, [tt], [capability], 'draft')).toBeUndefined()
     expect(articleSubmissionWarnings(content, [tt], [capability])).toContain('头条：封面需手动设置，请从发布历史打开头条草稿')

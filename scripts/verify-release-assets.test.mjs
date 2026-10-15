@@ -13,6 +13,17 @@ import {
 const version = '1.2.3'
 const assetNames = expectedReleaseAssets(version)
 
+test('macOS naming changes at 0.0.15 while historical releases remain verifiable', () => {
+  for (const [release, suffix] of [['0.0.14', '-universal'], ['0.0.15', ''], ['0.0.16', ''], ['0.1.0', ''], ['1.0.0', '']]) {
+    const [dmg, zip] = expectedReleaseAssets(release)
+    assert.equal(dmg, `eBao-Studio-${release}${suffix}.dmg`)
+    assert.equal(zip, `eBao-Studio-${release}${suffix}.zip`)
+    const metadata = expectedUpdaterMetadata(release).find(entry => entry.filename === 'latest-mac.yml')
+    assert.equal(metadata.asset, zip)
+    assert.deepEqual(metadata.files, [zip, dmg])
+  }
+})
+
 function sha512(value) {
   return createHash('sha512').update(value).digest('base64')
 }

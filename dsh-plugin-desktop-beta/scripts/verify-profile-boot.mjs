@@ -16,6 +16,7 @@ import {
 } from '@deepseek-ai/dsh-launch-environment'
 import { installDesktopPnpmRuntime } from '../lib/desktop-runtime-environment.js'
 import { installProfilePackageResolver } from '../lib/module-resolution.js'
+import { DesktopPluginPackages } from '../lib/plugin-packages.js'
 import { prepareDesktopProfile } from '../lib/profile.js'
 import { DesktopProfileService } from '../lib/profile-service.js'
 import { createDesktopProfileBoot } from '../lib/profile-context.js'
@@ -247,6 +248,7 @@ try {
         profileBoot.prepare(host)
         // Match the public resolver path used by packaged Electron.
         host.loader.internal = undefined
+        await host.plugin(DesktopPluginPackages)
         host.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([]))
         host.provide('desktopBrowserAccess', BROWSER_ACCESS)
         host.provide('desktopLanHttps', LAN_HTTPS)
@@ -302,10 +304,14 @@ try {
     throw new Error(`assembled desktop profile must mount one DSH PPT composer, found ${pptEntries.length}`)
   }
 
-  const shortVideoEntry = [...ctx.loader.entries()]
-    .find(entry => entry.options.name === 'cqai-dsh-plugin-short-video')
-  if (shortVideoEntry === undefined) {
-    throw new Error('assembled desktop profile is missing the Short Video plugin')
+  const separateVideoPackages = new Set([
+    'cqai-dsh-plugin-ejianbao', 'cqai-dsh-plugin-video',
+    'cqai-dsh-plugin-short-video', 'cqai-dsh-plugin-talkcraft',
+  ])
+  const preloadedVideo = [...ctx.loader.entries()]
+    .find(entry => separateVideoPackages.has(entry.options.name))
+  if (preloadedVideo !== undefined) {
+    throw new Error(`assembled desktop profile preloads separately installed video plugin ${preloadedVideo.options.name}`)
   }
 
   const themeEntry = [...ctx.loader.entries()]
@@ -360,6 +366,13 @@ try {
   if ((await ctx.get('pluginManager').listPlugins()).length === 0) {
     throw new Error('Official plugin manager cannot inspect the Desktop composition')
   }
+  // The official metadata reader must reach installation packages through the Desktop resolver.
+  const metadataModule = '@deepseek-ai/dsh-client-ui-plugin-manager'
+  const officialMeta = ctx.get('pluginPackages')?.metaOf(metadataModule, ctx.baseUrl)
+  if (officialMeta?.title !== metadataModule || officialMeta.error !== undefined) {
+    throw new Error(`Official plugin metadata is unavailable to the Desktop Host: ${JSON.stringify(officialMeta)}`)
+  }
+  assert.equal(ctx.get('pluginPackages').packageOf(metadataModule, ctx.baseUrl)?.version, '0.2.0-rc.2')
   // Exercise the actual Profile watcher twice, rather than invoking our reader
   // directly. Both generations must preserve the Desktop layers and fixture.
   const reloadProbePath = join(home, 'reload-probe.mjs')
@@ -473,27 +486,6 @@ try {
   if (cookie === undefined || cookie.length === 0) {
     throw new Error('browser authentication exchange did not mint a cookie')
   }
-  const shortVideoResponse = await fetch(new URL('/cqai-short-video/jobs', expectedUrl), {
-    headers: {
-      [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
-      Cookie: cookie,
-    },
-  })
-  const shortVideoJobs = await shortVideoResponse.json()
-  if (shortVideoResponse.status !== 200 || !Array.isArray(shortVideoJobs)) {
-    throw new Error('assembled Short Video Host API is unavailable')
-  }
-  const catalogResponse = await fetch(new URL('/cqai-short-video/catalog', expectedUrl), {
-    headers: {
-      [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
-      Cookie: cookie,
-    },
-  })
-  const modelCatalog = await catalogResponse.json()
-  if (catalogResponse.status !== 200 || modelCatalog.signedIn !== false
-    || !Array.isArray(modelCatalog.text) || !Array.isArray(modelCatalog.image)) {
-    throw new Error('assembled Short Video CQAI model catalog is unavailable')
-  }
   const response = await fetch(expectedUrl, {
     headers: {
       [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
@@ -517,8 +509,8 @@ try {
   }
   const graph = JSON.parse(bootMatch[1])
   const ids = new Set(graph.entries.map(entry => entry.id))
-  if (!ids.has('cqai-dsh-plugin-short-video')) {
-    throw new Error('assembled Web graph is missing the Short Video client')
+  if ([...separateVideoPackages].some(name => ids.has(name))) {
+    throw new Error('assembled Web graph preloads separately installed video clients')
   }
   if (!ids.has('@xmanrui/dsh-im')) {
     throw new Error('assembled Web graph is missing the IM client')

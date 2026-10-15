@@ -50,6 +50,11 @@ export function apply(ctx: Context): void {
   const viewState = createViewState()
   ctx.inject(['layout', 'remote', 'remote.pluginManager'], scope => {
     const open = () => { viewState.select('installed'); scope.layout.selectPanel(PANEL) }
+    scope.effect(() => {
+      const openUpdates = () => { scope.layout.selectPanel(PANEL); viewState.select('market') }
+      window.addEventListener('cqai-plugin-market-open-updates', openUpdates)
+      return () => window.removeEventListener('cqai-plugin-market-open-updates', openUpdates)
+    }, 'cqai-plugin-management: open market updates')
     const label = () => scope.locale.getLocale().active.startsWith('zh') ? '插件管理' : 'Plugin management'
     scope.slots.inject('cqaiclub.account.menu.action', () => scope.slots.register({
       name: 'cqaiclub.account.menu.action', id: 'cqai-plugin-management', order: 10,
@@ -58,10 +63,11 @@ export function apply(ctx: Context): void {
       name: 'plugins.shell',
       children: {
         'cqai.pluginManagement.market': { kind: 'list', scope: 'root' },
+        'cqai.pluginManagement.updates': { kind: 'list', scope: 'root' },
         'cqai.pluginManagement.skills': { kind: 'list', scope: 'root' },
         'cqai.pluginManagement.mcp': { kind: 'list', scope: 'root' },
       },
-    }, (props: PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market' | 'cqai.pluginManagement.skills' | 'cqai.pluginManagement.mcp'>) =>
+    }, (props: PropsRuntime<'plugins.shell'> & PropsRenderSlots<'cqai.pluginManagement.market' | 'cqai.pluginManagement.updates' | 'cqai.pluginManagement.skills' | 'cqai.pluginManagement.mcp'>) =>
       <PluginManagementShell {...props} ctx={scope} viewState={viewState} />))
     scope.slots.inject('plugins.installed.cards', () => scope.slots.register({
       name: 'plugins.installed.cards', id: 'cqai-product-bundles',

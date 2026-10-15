@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { OidcClient, Prompt } from '../src/oidc.ts'
+import { DEFAULT_CLUB_MCP_URL } from '../src/protocol.ts'
 
 const issuer = 'https://auth.example.test/oidc'
 const resource = 'https://account.example.test'
@@ -85,6 +86,22 @@ describe('OidcClient', () => {
 
     await client.refreshAccessToken('first-refresh', undefined, portalResource)
     expect(requestBody(requests[1]?.init).get('resource')).toBe(portalResource)
+  })
+
+  it('adds MCP only to the explicitly enabled authorization without replacing either existing resource', async () => {
+    const client = new OidcClient({
+      issuer, clientId: 'client-123', resource, additionalResources: [portalResource],
+      scopes: ['openid', 'offline_access', 'ai:invoke'], timeoutMs: 1000,
+      fetchImpl: async () => json(discovery()),
+    })
+    const disabled = await client.createAuthorizationRequest('http://127.0.0.1:38992/callback')
+    const enabled = await client.createAuthorizationRequest('http://127.0.0.1:38992/callback', {
+      additionalResources: [portalResource, DEFAULT_CLUB_MCP_URL, DEFAULT_CLUB_MCP_URL],
+    })
+    expect(new URL(disabled.authorizationUrl).searchParams.getAll('resource')).toEqual([resource, portalResource])
+    expect(new URL(enabled.authorizationUrl).searchParams.getAll('resource')).toEqual([resource, portalResource, DEFAULT_CLUB_MCP_URL])
+    const disabledAgain = await client.createAuthorizationRequest('http://127.0.0.1:38992/callback')
+    expect(new URL(disabledAgain.authorizationUrl).searchParams.getAll('resource')).toEqual([resource, portalResource])
   })
 
   it('exchanges the callback code with the redirect URI, verifier, and resource', async () => {

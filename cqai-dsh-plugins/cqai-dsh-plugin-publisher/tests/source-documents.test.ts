@@ -145,7 +145,8 @@ describe('original Markdown source documents', () => {
   it('rejects symlink images and remote or non-inline image destinations', () => {
     const { workspace, env } = fixture()
     writeFileSync(join(workspace, 'real.png'), png)
-    symlinkSync(join(workspace, 'real.png'), join(workspace, 'linked.png'))
+    symlinkSync(process.platform === 'win32' ? workspace : join(workspace, 'real.png'), join(workspace, 'linked.png'),
+      process.platform === 'win32' ? 'junction' : 'file')
     const file = join(workspace, 'images.md')
     writeFileSync(file, '![图](linked.png)')
     expect(() => registerSourceDocument('symlink', file, env)).toThrow('符号链接')
@@ -154,6 +155,7 @@ describe('original Markdown source documents', () => {
     writeFileSync(file, '![图][ref]\n\n[ref]: real.png')
     expect(() => registerSourceDocument('reference', file, env)).toThrow('普通内联写法')
     expect(readSessionSourceDocument('symlink', env)).toBeNull()
+    expect(readFileSync(join(workspace, 'real.png'))).toEqual(png)
   })
 
   it('detects a deleted source file or image on later reads and never serves stale bytes', () => {
@@ -192,7 +194,7 @@ describe('original Markdown source documents', () => {
     const accepted = registerSourceDocument('inside', markdownPath, env, { allowedRoot: workspace })
     expect(readSourceDocument(accepted.id, env)).toEqual(accepted)
     const alias = join(root, 'workspace-alias')
-    symlinkSync(workspace, alias, 'dir')
+    symlinkSync(workspace, alias, process.platform === 'win32' ? 'junction' : 'dir')
     const throughAlias = registerSourceDocument('alias-parent', join(alias, 'source.md'), env, { allowedRoot: alias })
     expect(throughAlias.body).toContain('source-image://')
     expect(readSourceDocument(throughAlias.id, env)).toEqual(throughAlias)
@@ -200,12 +202,15 @@ describe('original Markdown source documents', () => {
     const outsideDir = join(root, 'outside-images')
     mkdirSync(outsideDir)
     writeFileSync(join(outsideDir, 'outside.png'), png)
-    symlinkSync(outsideDir, join(workspace, 'linked-images'), 'dir')
+    symlinkSync(outsideDir, join(workspace, 'linked-images'), process.platform === 'win32' ? 'junction' : 'dir')
     writeFileSync(markdownPath, '![越界图](linked-images/outside.png)')
     expect(() => readSourceDocument(accepted.id, env)).toThrow('超出当前 Agent 工作目录')
     writeFileSync(markdownPath, '![内部图](inside.png)')
     rmSync(imagePath)
-    symlinkSync(outsideImage, imagePath)
+    symlinkSync(process.platform === 'win32' ? outsideDir : outsideImage, imagePath,
+      process.platform === 'win32' ? 'junction' : 'file')
     expect(() => readSourceDocument(accepted.id, env)).toThrow('超出当前 Agent 工作目录')
+    expect(readFileSync(outsideImage)).toEqual(png)
+    expect(readFileSync(join(outsideDir, 'outside.png'))).toEqual(png)
   })
 })

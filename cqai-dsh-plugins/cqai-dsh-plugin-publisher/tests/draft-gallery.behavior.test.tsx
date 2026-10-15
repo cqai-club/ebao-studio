@@ -83,6 +83,35 @@ afterEach(async () => {
 })
 
 describe('draft gallery interactions', () => {
+  it('shows the real platform draft status and keeps preview/publish shortcuts separate from edit', async () => {
+    queryApi.mockResolvedValue(page([{ ...card('platform-draft'), publication: { state: 'platform-draft', mode: 'draft' } }]))
+    const onPreview = vi.fn()
+    const onPublish = vi.fn()
+    const callbacks = await renderGallery({ onPreview, onPublish })
+    expect(container!.querySelector('[aria-label="发布状态：已存平台草稿"]')).not.toBeNull()
+    await act(async () => { container!.querySelector<HTMLButtonElement>('[aria-label="预览platform-draft"]')!.click() })
+    await act(async () => { container!.querySelector<HTMLButtonElement>('[aria-label="发布platform-draft"]')!.click() })
+    expect(onPreview).toHaveBeenCalledWith('platform-draft')
+    expect(onPublish).toHaveBeenCalledWith('platform-draft')
+    expect(callbacks.onOpen).not.toHaveBeenCalled()
+  })
+
+  it.each(['trash', 'restore'] as const)('offers retry for a pending %s operation and keeps trashed content closed', async lifecyclePending => {
+    queryApi.mockResolvedValue(page([{ ...card('pending'), trashedAt: '2026-10-13T00:00:00.000Z', lifecyclePending }]))
+    const onRestore = vi.fn()
+    const callbacks = await renderGallery({ trash: true, onRestore })
+    expect(container!.querySelector<HTMLButtonElement>('.pub-gallery-open')!.disabled).toBe(true)
+    expect(container!.textContent).toContain(lifecyclePending === 'trash' ? '回收尚未完成' : '恢复尚未完成')
+    await act(async () => { container!.querySelector<HTMLButtonElement>('.pub-gallery-restore')!.click() })
+    if (lifecyclePending === 'trash') {
+      expect(callbacks.onDelete).toHaveBeenCalledWith('pending')
+      expect(onRestore).not.toHaveBeenCalled()
+    } else {
+      expect(onRestore).toHaveBeenCalledWith('pending')
+      expect(callbacks.onDelete).not.toHaveBeenCalled()
+    }
+  })
+
   it('debounces search for 300 ms and ignores an older response after the query changes', async () => {
     const initial = deferred<PublisherContentQueryResult>()
     const matching = deferred<PublisherContentQueryResult>()
@@ -155,4 +184,29 @@ describe('draft gallery interactions', () => {
     await act(async () => { container!.querySelector<HTMLButtonElement>('.pub-gallery-delete')!.click() })
     expect(callbacks.onDelete).toHaveBeenCalledWith('note-1')
   })
+  it('queries the trash separately and restores without editing or fetching media', async () => {
+    queryApi.mockResolvedValue(page([{ ...card('deleted', 'video'), trashedAt: '2026-10-13T00:00:00.000Z', videoSource: { kind: 'local', localVideoId: 'local', fileName: 'clip.mp4', bytes: 12 } }]))
+    const onRestore = vi.fn()
+    const callbacks = await renderGallery({ contentType: 'video', trash: true, onRestore })
+    expect(queryApi).toHaveBeenCalledWith('contents-query', { contentType: 'video', query: '', trash: true })
+    expect(container!.querySelector('.pub-gallery-create')).toBeNull()
+    expect(container!.querySelector('.pub-gallery-more')).toBeNull()
+    expect(container!.querySelector('video')).toBeNull()
+    expect(container!.querySelector<HTMLButtonElement>('.pub-gallery-open')?.disabled).toBe(true)
+    await act(async () => { container!.querySelector<HTMLButtonElement>('.pub-gallery-restore')!.click() })
+    expect(onRestore).toHaveBeenCalledWith('deleted')
+    expect(callbacks.onOpen).not.toHaveBeenCalled()
+    expect(callbacks.onDelete).not.toHaveBeenCalled()
+  })
+
+  it('discards an active-list result after switching to trash', async () => {
+    const pending = deferred<PublisherContentQueryResult>()
+    queryApi.mockImplementation((_route, payload) => payload.trash ? Promise.resolve(page([card('trash-item')])) : pending.promise)
+    const callbacks = await renderGallery()
+    await act(async () => { root!.render(<DraftGallery contentType="article" active trash {...callbacks} onRestore={vi.fn()}/>) })
+    await act(async () => { pending.resolve(page([card('late-active-item')])) })
+    expect(container!.textContent).toContain('trash-item')
+    expect(container!.textContent).not.toContain('late-active-item')
+  })
+
 })

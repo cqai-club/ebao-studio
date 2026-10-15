@@ -20,7 +20,11 @@ export function MarketOverlay({ useStore, actions, readLocale, t, initialView }:
   useEffect(() => {
     const onHomeRequest = () => { actions.open() }
     window.addEventListener('cqai-desktop-presentation:open-market', onHomeRequest)
-    return () => window.removeEventListener('cqai-desktop-presentation:open-market', onHomeRequest)
+    window.addEventListener('community-market:open-updates', onHomeRequest)
+    return () => {
+      window.removeEventListener('cqai-desktop-presentation:open-market', onHomeRequest)
+      window.removeEventListener('community-market:open-updates', onHomeRequest)
+    }
   }, [actions])
 
   useEffect(() => {

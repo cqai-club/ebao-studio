@@ -118,9 +118,6 @@ export const ALLOWED_SMART_UNPACK_PACKAGE_ROOTS = [
   'node_modules/@dataiku/uv-darwin-arm64',
   'node_modules/@dataiku/uv-darwin-x64',
   'node_modules/@dataiku/uv-win32-x64',
-  // The video packages carry explicitly unpacked Python runtime scripts.
-  'node_modules/cqai-dsh-plugin-short-video',
-  'node_modules/cqai-dsh-plugin-video',
   'node_modules/fs-ext',
   'node_modules/koffi',
   'node_modules/node-addon-require-builtin',
@@ -296,33 +293,56 @@ export const REQUIRED_PACKAGED_RUNTIME_ENTRIES = [
   'node_modules/pnpm/bin/pnpm.mjs',
 ] as const
 
-/** macOS assets and external Python runtime scripts loaded from physical paths. */
+/** macOS assets loaded from physical paths. */
 export const REQUIRED_MACOS_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon-mac.png',
   'build/tray-iconTemplate.png',
   'build/tray-iconTemplate@2x.png',
-  'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
 ] as const
 
-/** Windows assets, including white notification-area DPI variants, and Python runtime scripts. */
+/** Windows assets, including white notification-area DPI variants. */
 export const REQUIRED_WINDOWS_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon.png',
   'build/tray-icon-white.png',
   'build/tray-icon-white@1.25x.png',
   'build/tray-icon-white@1.5x.png',
   'build/tray-icon-white@2x.png',
-  'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
 ] as const
 
-/** Linux assets, including brand-color DPI variants, and Python runtime scripts. */
+/** Linux assets, including brand-color DPI variants. */
 export const REQUIRED_LINUX_UNPACKED_RUNTIME_ENTRIES = [
   'build/app-icon.png',
   'build/tray-icon-blue.png',
   'build/tray-icon-blue@1.25x.png',
   'build/tray-icon-blue@1.5x.png',
   'build/tray-icon-blue@2x.png',
-  'node_modules/cqai-dsh-plugin-video/runtime/runner.py',
 ] as const
+
+/** E剪宝 is distributed independently and must not remain in Desktop payloads. */
+export const EXCLUDED_EJIANBAO_PACKAGE_NAMES = [
+  'cqai-dsh-plugin-ejianbao',
+  'cqai-dsh-plugin-video',
+  'cqai-dsh-plugin-short-video',
+  'cqai-dsh-plugin-talkcraft',
+  'cqai-dsh-media-settings',
+  'cqai-dsh-plugin-media-runtime',
+] as const
+
+/** Reject direct and nested package leaves in archived or physical inventories. */
+function verifyNoBundledEjianbao(entries: Iterable<string>): void {
+  const forbidden = [...entries].map(normalizeArchiveEntry).filter(entry =>
+    EXCLUDED_EJIANBAO_PACKAGE_NAMES.some(name => {
+      const root = `node_modules/${name}`
+      return entry === root || entry.startsWith(`${root}/`)
+        || entry.includes(`/${root}/`) || entry.endsWith(`/${root}`)
+    }),
+  )
+  if (forbidden.length > 0) {
+    throw new Error(
+      `dsh-plugin-desktop: packaged runtime contains separately installed E剪宝 packages: ${forbidden.join(', ')}`,
+    )
+  }
+}
 
 /** Complete cross-platform physical asset surface, used only as a closed allowlist. */
 export const REQUIRED_UNPACKED_RUNTIME_ENTRIES = [
@@ -725,6 +745,7 @@ export function verifyPackagedAsar(
   }
 
   const index = indexPackagedAsarHeader(rawHeader.header)
+  verifyNoBundledEjianbao(index.files)
   const missing = requiredEntries
     .map(normalizeArchiveEntry)
     .filter(entry => !index.files.has(entry))
@@ -1092,6 +1113,7 @@ export function verifyPackagedRuntime(
     }
   }
   const files = listUnpacked(runtimeRoot)
+  verifyNoBundledEjianbao(files.map(file => file.path))
   if (archive === undefined) return summarizeUnpackedRuntime(files)
   return verifySelectiveUnpackedRuntime(archive, runtimeRoot, files, desktopPhysicalEntries)
 }

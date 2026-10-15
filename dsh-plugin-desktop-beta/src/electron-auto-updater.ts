@@ -2,6 +2,8 @@
 
 import { CancellationToken } from 'builder-util-runtime'
 import type { UpdateCheckResult } from 'electron-updater'
+import { parseCanonicalChannelVersion } from './update-checker.ts'
+import type { DesktopUpdateSource } from './desktop-update-source.ts'
 
 /** Narrow runtime contract consumed by the Desktop update handoff. */
 export interface ElectronAutoUpdater {
@@ -12,6 +14,12 @@ export interface ElectronAutoUpdater {
   allowDowngrade: boolean
   disableDifferentialDownload: boolean
   disableWebInstaller: boolean
+  setFeedURL(options: {
+    provider: 'generic'
+    url: string
+    channel: 'latest'
+    useMultipleRangeRequest: false
+  }): void
   checkForUpdates(): Promise<UpdateCheckResult | null>
   downloadUpdate(cancellationToken?: CancellationToken): Promise<readonly string[]>
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
@@ -20,16 +28,15 @@ export interface ElectronAutoUpdater {
 /**
  * Configure the updater for an explicit user-approved download and restart.
  *
- * Stable releases remain GitHub prereleases by publishing convention, so the
- * provider must inspect prerelease entries. The manifest check still requires
- * a strictly newer stable version and the secondary version equality check
- * below prevents this setting from accepting an unrelated release.
+ * Version discovery uses the region-selected manifest. Downloads use that
+ * confirmed stable version's generic feed, independent of release-list order
+ * or GitHub's prerelease publishing convention.
  */
 export function configureElectronAutoUpdater(updater: ElectronAutoUpdater): void {
   updater.autoDownload = false
   updater.autoInstallOnAppQuit = false
   updater.autoRunAppAfterInstall = true
-  updater.allowPrerelease = true
+  updater.allowPrerelease = false
   updater.allowDowngrade = false
   // A complete NSIS/ZIP artifact has both Electron Updater's SHA-512 metadata
   // check and a deterministic release asset. Avoid block-map and web-installer
@@ -49,8 +56,24 @@ export async function downloadElectronDesktopUpdate(
   updater: ElectronAutoUpdater,
   expectedVersion: string,
   signal: AbortSignal,
+  source: DesktopUpdateSource = 'github',
 ): Promise<readonly string[]> {
   signal.throwIfAborted()
+  const version = parseCanonicalChannelVersion(expectedVersion, 'stable')
+  if (version === null || version.build.length !== 0) {
+    throw new Error('dsh-plugin-desktop: update version must be canonical stable SemVer')
+  }
+  // Pin both metadata and relative artifact URLs to the manifest-confirmed
+  // regional source tag. A newer release appearing during download cannot move it.
+  const repository = source === 'gitcode'
+    ? 'https://gitcode.com/g-dxw/ebao-studio'
+    : 'https://github.com/cqai-club/ebao-studio'
+  updater.setFeedURL({
+    provider: 'generic',
+    url: `${repository}/releases/download/v${expectedVersion}/`,
+    channel: 'latest',
+    useMultipleRangeRequest: false,
+  })
   const check = await updater.checkForUpdates()
   signal.throwIfAborted()
   if (check === null || !check.isUpdateAvailable) {

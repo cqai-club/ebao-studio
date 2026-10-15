@@ -154,7 +154,9 @@ export class ElectronWorkspaceAdmission {
   private async showDirectoryPicker(): Promise<string | null> {
     const result = await this.options.showOpenDialog({
       title: this.options.locale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
-      properties: ['openDirectory', 'dontAddToRecent'],
+      properties: this.options.platform === 'darwin'
+        ? ['openDirectory', 'createDirectory', 'dontAddToRecent']
+        : ['openDirectory', 'dontAddToRecent'],
     })
     return result.canceled ? null : result.filePaths[0] ?? null
   }

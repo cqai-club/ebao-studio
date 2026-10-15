@@ -9,7 +9,7 @@ const account = (id: string, platform: PublisherAccount['platform']): PublisherA
 describe('article and image-note account choices', () => {
   it('keeps target accounts selectable while Worker capability data loads', () => {
     const accounts = [account('juejin-1', 'juejin'), account('blbl-1', 'blbl'), account('xhs-1', 'xhs'), account('tt-1', 'tt'), account('bjh-1', 'bjh'), account('wxmp-1', 'wxmp'), account('dy-1', 'dy'), account('ks-1', 'ks')]
-    expect(CONTENT_ACCOUNT_PLATFORMS.article).toEqual(['juejin', 'blbl', 'tt', 'bjh', 'wxmp'])
+    expect(CONTENT_ACCOUNT_PLATFORMS.article).toEqual(['juejin', 'blbl', 'dy', 'tt', 'bjh', 'wxmp'])
     expect(CONTENT_ACCOUNT_PLATFORMS['image-note']).toEqual(['xhs', 'dy', 'ks', 'wxmp'])
     expect(selectedContentAccounts('article', accounts, { juejin: 'juejin-1', blbl: 'blbl-1' }))
       .toEqual(accounts.slice(0, 2))
@@ -18,7 +18,24 @@ describe('article and image-note account choices', () => {
     expect(selectedContentAccounts('image-note', accounts, { xhs: 'xhs-1', dy: 'dy-1', ks: 'ks-1', tt: 'tt-1' }))
       .toEqual([accounts[2], accounts[6], accounts[7]])
     expect(selectedContentAccounts('article', accounts, { tt: 'tt-1', bjh: 'bjh-1', wxmp: 'wxmp-1' })).toEqual(accounts.slice(3, 6))
+    expect(selectedContentAccounts('article', accounts, { dy: 'dy-1' })).toEqual([accounts[6]])
+    expect(selectedContentAccounts('article', accounts, { dy: 'blbl-1' })).toEqual([])
     expect(contentModeAvailable('juejin', 'article', 'publish', [])).toBe(false)
+  })
+
+  it('requires the Worker article capability even when a Douyin account already supports images and video', () => {
+    const existing: PublisherPlatformCapability = {
+      platform: 'dy', contentTypes: ['video', 'image-note'],
+      modes: { video: ['publish', 'draft'], 'image-note': ['publish', 'draft'] }, requiredFields: {},
+    }
+    expect(contentModeAvailable('dy', 'article', 'draft', [existing])).toBe(false)
+    expect(contentModeAvailable('dy', 'article', 'publish', [existing])).toBe(false)
+    const updated: PublisherPlatformCapability = {
+      ...existing, contentTypes: [...existing.contentTypes, 'article'], modes: { ...existing.modes, article: ['draft'] },
+    }
+    expect(contentModeAvailable('dy', 'article', 'draft', [updated])).toBe(true)
+    expect(contentModeAvailable('dy', 'article', 'publish', [updated])).toBe(false)
+    expect(contentModeAvailable('dy', 'article', 'publish', [{ ...updated, modes: { ...updated.modes, article: ['draft', 'publish'] } }])).toBe(true)
   })
 
   it('does not select a mismatched account ID and gates each submission mode separately', () => {

@@ -5,6 +5,7 @@ import {
   type CreateSubmissionResult, type Platform, type PublisherAccount,
   type PublisherCapability, type PublisherContent, type PublisherPlatformCapability,
   type PublisherPlatformVariant, projectContentForPlatform, resolveArticleTheme,
+  type PublisherContentPatch,
 } from '../protocol.ts'
 import { contentModeAvailable, selectedContentAccounts } from '../content-targets.ts'
 import {
@@ -17,8 +18,12 @@ import { usePublisherTips } from './tips.tsx'
 import { articleUploadFile } from './article-image.ts'
 import { AssetPreviewImage, PublisherContentPreview, contentAssetUrl } from './content-preview.tsx'
 import { ProjectDirectoryInfo } from './project-directory-info.tsx'
+import { EditorMoreMenu, EditorSection } from './editor-layout.tsx'
+import { ArticleSourceControls, articleHandoffApi } from './article-handoff-card.tsx'
+import type { PublisherArticleHandoffResult } from '../article-handoff-protocol.ts'
 import { ImagegenPicker, type ImagegenImportResult } from './imagegen-picker.tsx'
 import { readImagegenFile, type ImagegenImage } from './imagegen-library.ts'
+import { applyContentPatch, changedContentFields, mergeContentPatches, type PublisherEditorTarget } from './content-patch.ts'
 
 type EditorType = 'article' | 'image-note'
 type Mode = 'publish' | 'draft'
@@ -26,24 +31,35 @@ type ContentView = 'master' | Platform
 type VariantField = keyof PublisherPlatformVariant
 const FIELD_LABELS: Record<string, string> = { category: '分类', topic: '话题', original: '原创声明' }
 
-export function ContentEditor({ contentType, active, selectedContentId, intendedPlatforms, handoffGeneration, agentOpen, onToggleAgent, onSelectedContentChange, onBack }: {
+export function ContentEditor({ contentType, active, selectedContentId, initialMode = 'edit', intendedPlatforms, handoffGeneration, agentOpen, onToggleAgent, onDraftReady, onAgentTargetChange, onRestartAgent, onDeleteContent, onReturnToSource, onSourceNavigation, onSelectedContentChange, onOpenWritingProfile, onBack }: {
   contentType: EditorType
   active: boolean
   selectedContentId?: string
+  initialMode?: 'edit' | 'preview' | 'publish'
   intendedPlatforms?: readonly Platform[]
   handoffGeneration?: number
   agentOpen?: boolean
-  onToggleAgent?: (content: PublisherContent) => Promise<void>
+  onToggleAgent?: (content: PublisherContent, target?: PublisherEditorTarget) => Promise<void>
+  onDraftReady?: (content: PublisherContent, target?: PublisherEditorTarget) => void
+  onAgentTargetChange?: (content: PublisherContent, target: PublisherEditorTarget) => Promise<void>
+  onRestartAgent?: (content: PublisherContent, target?: PublisherEditorTarget) => Promise<void>
+  onDeleteContent?: (id: string) => Promise<void>
+  onReturnToSource?: (sessionId: string, navigation?: AbortSignal) => Promise<void>
+  onSourceNavigation?: () => AbortSignal
   onSelectedContentChange?: (id?: string) => void
+  onOpenWritingProfile?: () => void
   onBack(): void
 }) {
   const { showError, showSuccess, clearTip } = usePublisherTips()
   const [draft, setDraft] = useState<PublisherContent>()
   const draftRef = useRef<PublisherContent>()
+  const serverDraftRef = useRef<PublisherContent>()
   const bodyInputRef = useRef<HTMLTextAreaElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const dirtyRef = useRef(false)
+  const pendingChanges = useRef<PublisherContentPatch>({})
+  const inFlightChanges = useRef<{ id: string; patch: PublisherContentPatch }>()
   const saveTask = useRef<Promise<void>>()
   const [editVersion, setEditVersion] = useState(0)
   const [tagsInput, setTagsInput] = useState('')
@@ -60,9 +76,12 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
   const contentViewRef = useRef<ContentView>('master')
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
+  const compressionRequest = useRef<AbortController>()
+  const [compressingSummary, setCompressingSummary] = useState(false)
   const [publishOpen, setPublishOpen] = useState(false)
   const [confirm, setConfirm] = useState<PublisherConfirmation & { revision: number }>()
   const [deleteDraftId, setDeleteDraftId] = useState<string>()
+  const [restartAgent, setRestartAgent] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [handoffError, setHandoffError] = useState('')
   const [handoffRetry, setHandoffRetry] = useState(0)
@@ -75,6 +94,8 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
   selectedIdRef.current = selectedContentId
   activeRef.current = active
   useEffect(() => { editorAlive.current = true; return () => { editorAlive.current = false } }, [])
+  useEffect(() => () => { compressionRequest.current?.abort() }, [])
+  useEffect(() => { compressionRequest.current?.abort() }, [selectedContentId, active])
   useEffect(() => { setImagegenPickerDraftId(undefined) }, [selectedContentId, active])
 
   useEffect(() => { setConfirm(undefined); setPublishOpen(false) }, [selectedContentId, active])
@@ -83,22 +104,47 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
   useEffect(() => {
     setHandoffError('')
     if (selectedContentId) {
-      setPreview(false)
+      setPreview(initialMode === 'preview')
       contentViewRef.current = 'master'
       setContentView('master')
       setTagsInput(draftRef.current?.tags.join(' ') ?? '')
     }
-  }, [selectedContentId])
+  }, [selectedContentId, initialMode])
+  useEffect(() => {
+    if (active && draft?.id === selectedContentId && initialMode === 'publish') setPublishOpen(true)
+  }, [active, draft?.id, selectedContentId, initialMode])
 
   const setServerDraft = (value: PublisherContent | undefined) => {
+    const previous = serverDraftRef.current
+    if (value?.id === previous?.id && value && previous && previous.revision > value.revision) value = previous
+    serverDraftRef.current = value
     draftRef.current = value
     dirtyRef.current = false
+    pendingChanges.current = {}
+    inFlightChanges.current = undefined
     setSaveError('')
     setHandoffError('')
     setDraft(value)
     const view = contentViewRef.current
     setTagsInput(value ? (view === 'master' ? value : projectContentForPlatform(value, view)).tags.join(' ') : '')
   }
+  const acceptServerSnapshot = (value: PublisherContent) => {
+    const previous = serverDraftRef.current
+    const latest = previous?.id === value.id && previous.revision > value.revision ? previous : value
+    serverDraftRef.current = latest
+    const local = inFlightChanges.current?.id === latest.id
+      ? mergeContentPatches(inFlightChanges.current.patch, pendingChanges.current) : pendingChanges.current
+    const merged = applyContentPatch(latest, local)
+    draftRef.current = merged
+    setDraft(merged)
+    if (!Object.hasOwn(local, 'tags') && !Object.hasOwn(local.platformVariants?.[contentViewRef.current as Platform] ?? {}, 'tags')) {
+      setTagsInput((contentViewRef.current === 'master' ? merged : projectContentForPlatform(merged, contentViewRef.current)).tags.join(' '))
+    }
+  }
+  useEffect(() => {
+    if (active && draft && draft.id === selectedContentId && !handoffError) onDraftReady?.(draft,
+      contentViewRef.current === 'master' ? { kind: 'main' } : { kind: 'platform', platform: contentViewRef.current })
+  }, [active, draft?.id, selectedContentId, handoffError, handoffGeneration, onDraftReady])
   useEffect(() => {
     // Finish a local image/draft operation before replacing its result with a handoff.
     if (!active || busy || !selectedContentId) return
@@ -145,10 +191,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
         if (!live || busyRef.current || latest.contentType !== contentType) return
         const current = draftRef.current
         if (current?.id === latest.id && latest.revision > current.revision) {
-          if (dirtyRef.current || saveTask.current) {
-            // Keep local edits visible until the user explicitly reloads them.
-            setSaveError('草稿已在其他页面更新，请重新加载后再保存')
-          } else setServerDraft(latest)
+          acceptServerSnapshot(latest)
         }
       } catch { /* Ordinary editor requests still surface read failures. */ }
       finally { reading = false }
@@ -180,8 +223,9 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
   const update = (patch: Partial<PublisherContent>) => {
     if (!draftRef.current) return
     const next = { ...draftRef.current, ...patch }
+    pendingChanges.current = mergeContentPatches(pendingChanges.current, changedContentFields(draftRef.current, next))
     draftRef.current = next
-    dirtyRef.current = true
+    dirtyRef.current = Object.keys(pendingChanges.current).length > 0
     setDraft(next)
     setEditVersion(version => version + 1)
   }
@@ -221,6 +265,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     const variants = { ...current.platformVariants }
     delete variants[contentView]
     update({ platformVariants: variants })
+    pendingChanges.current = mergeContentPatches(pendingChanges.current, { platformVariants: { [contentView]: null } })
     setTagsInput(current.tags.join(' '))
   }
 
@@ -230,6 +275,12 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     setContentView(view)
     setTagsInput(current ? (view === 'master' ? current : projectContentForPlatform(current, view)).tags.join(' ') : '')
   }
+  const changeContentView = (view: ContentView) => void act(async () => {
+    const current = await flush()
+    if (!current) return
+    await onAgentTargetChange?.(current, view === 'master' ? { kind: 'main' } : { kind: 'platform', platform: view })
+    selectContentView(view)
+  })
 
   const togglePlatformAsset = (assetId: string, included: boolean) => {
     const current = draftRef.current
@@ -248,24 +299,21 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     if (saveTask.current) await saveTask.current
     const current = draftRef.current
     if (!current || !dirtyRef.current) return current
+    const patch = pendingChanges.current
+    pendingChanges.current = {}
     dirtyRef.current = false
+    inFlightChanges.current = { id: current.id, patch }
     const task = (async () => {
       try {
-        const saved = await api<PublisherContent>('content-save', {
-          id: current.id, revision: current.revision, title: current.title, body: current.body,
-          summary: current.summary, tags: current.tags, creativeStatement: current.creativeStatement,
-          articleTheme: current.articleTheme,
-          coverAssetId: current.coverAssetId, assetOrder: current.assets.map(asset => asset.id),
-          platformFields: current.platformFields, platformVariants: current.platformVariants,
-        })
+        const saved = await api<PublisherContent>('content-patch', { id: current.id, revision: current.revision, patch })
+        inFlightChanges.current = undefined
         if (draftRef.current?.id === current.id) {
-          const latest = draftRef.current
-          const merged = { ...latest, revision: saved.revision, updatedAt: saved.updatedAt }
-          draftRef.current = merged
-          setDraft(merged)
+          acceptServerSnapshot(saved)
         }
         setSaveError('')
       } catch (cause) {
+        inFlightChanges.current = undefined
+        pendingChanges.current = mergeContentPatches(patch, pendingChanges.current)
         dirtyRef.current = true
         setSaveError(errorMessage(cause))
         throw cause
@@ -287,11 +335,11 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     if (dirtyRef.current) void flush().catch(() => { /* The server keeps its previous revision on failure. */ })
   }, [])
 
-  const act = async (task: () => Promise<void>) => {
+  const act = async (task: () => Promise<void>, propagateError = false) => {
     if (busyRef.current) return
     busyRef.current = true
     setBusy(true); clearTip()
-    try { await task() } catch (cause) { showError(errorMessage(cause)) }
+    try { await task() } catch (cause) { if (propagateError) throw cause; showError(errorMessage(cause)) }
     finally { busyRef.current = false; setBusy(false) }
   }
 
@@ -314,12 +362,9 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     const id = deleteDraftId
     if (!id) return
     void act(async () => {
-      // Explicit deletion discards unsaved edits, even when a previous autosave failed.
-      try { if (saveTask.current) await saveTask.current } catch { /* discard failed save */ }
-      const wasDirty = dirtyRef.current
-      dirtyRef.current = false
-      try { await api('content-delete', { id }) }
-      catch (cause) { dirtyRef.current = wasDirty; throw cause }
+      await flush()
+      if (onDeleteContent) await onDeleteContent(id)
+      else await api('content-delete', { id })
       setDeleteDraftId(undefined)
       setServerDraft(undefined)
       onBack()
@@ -438,12 +483,8 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
       updateVariant({ assetOrder: order })
       return
     }
-    setServerDraft(await api<PublisherContent>('content-save', {
-      id: current.id, revision: current.revision, title: current.title, body: current.body,
-      summary: current.summary, tags: current.tags, creativeStatement: current.creativeStatement,
-      articleTheme: current.articleTheme,
-      coverAssetId: current.coverAssetId, assetOrder: order, platformFields: current.platformFields,
-      platformVariants: current.platformVariants,
+    acceptServerSnapshot(await api<PublisherContent>('content-patch', {
+      id: current.id, revision: current.revision, patch: { assetOrder: order },
     }))
   })
   const reorder = (assetId: string, delta: number) => {
@@ -487,6 +528,7 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     : capabilities.find(item => item.platform === contentView)?.maxTitleLength?.[contentType] ?? TITLE_MAX
   const titleLength = contentType === 'image-note' && contentView === 'wxmp'
     ? Array.from(visibleDraft?.title ?? '').length : visibleDraft?.title.length ?? 0
+  const manualArticleImages = contentType === 'article' && (contentView === 'tt' || contentView === 'dy')
   const assetLimit = contentView === 'master' ? 20
     : capabilities.find(item => item.platform === contentView)?.maxAssets?.[contentType] ?? 20
   const enteredTags = [...new Set(tagsInput.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))]
@@ -494,12 +536,45 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     ? selectedAccounts.filter(account => account.platform === 'wxmp' || account.platform === 'bjh') : []
   const validationError = draft && selectedAccounts.length > 0 && !capabilitiesPending && !capabilitiesError
     ? contentSubmissionError(draft, selectedAccounts, capabilities, submissionMode) : undefined
+  const summaryNeedsCompression = contentType === 'article' && draft && selectedAccounts.some(account => account.platform === 'dy')
+    && projectContentForPlatform(draft, 'dy').summary.trim().length > 30
   const requestConfirm = () => void act(async () => {
-    const current = await flush()
-    if (!current) throw new Error('请先创建草稿')
+    const original = await flush()
+    if (!original) throw new Error('请先创建草稿')
+    let current = original
+    if (!editorAlive.current || !activeRef.current || draftRef.current?.id !== current.id
+      || (selectedIdRef.current && selectedIdRef.current !== current.id)) return
     if ((selectedContentId && current.id !== selectedContentId) || handoffError) throw new Error('指定草稿尚未打开，请先确认当前草稿')
     if (missingRequestedPlatforms.length > 0) {
       throw new Error(`请先为本次目标平台选择账号：${missingRequestedPlatforms.map(platform => PLATFORM_LABELS[platform]).join('、')}`)
+    }
+    if (contentType === 'article' && selectedAccounts.some(account => account.platform === 'dy')
+      && projectContentForPlatform(current, 'dy').summary.trim().length > 30) {
+      const controller = new AbortController()
+      compressionRequest.current = controller
+      setCompressingSummary(true)
+      try {
+        const compressed = await api<{ content: PublisherContent; generated: boolean; summary: string }>('summary-compress', {
+          id: current.id, revision: current.revision, platform: 'dy',
+        }, controller.signal)
+        controller.signal.throwIfAborted()
+        if (!editorAlive.current || !activeRef.current || draftRef.current?.id !== current.id
+          || (selectedIdRef.current && selectedIdRef.current !== current.id)) return
+        if (!compressed || typeof compressed.summary !== 'string' || !compressed.content || compressed.generated !== true
+          || compressed.content.id !== current.id || compressed.content.contentType !== 'article'
+          || !Number.isSafeInteger(compressed.content.revision) || compressed.content.revision <= current.revision || !compressed.summary.trim()
+          || compressed.summary.length > 30 || projectContentForPlatform(compressed.content, 'dy').summary !== compressed.summary) {
+          throw new Error('压缩后的抖音摘要未通过校验，请重新检查')
+        }
+        setServerDraft(compressed.content)
+        current = compressed.content
+      } catch (cause) {
+        if (controller.signal.aborted) return
+        throw cause
+      } finally {
+        if (compressionRequest.current === controller) compressionRequest.current = undefined
+        setCompressingSummary(false)
+      }
     }
     const warnings = articleSubmissionWarnings(current, selectedAccounts, capabilities)
     const confirmedMode = contentType === 'article' && warnings.length > 0 ? 'draft' : mode
@@ -510,6 +585,8 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     setPublishOpen(false)
     setConfirm({ contentId: current.id, revision: current.revision, title: displayTitle, mode: confirmedMode, accounts: selectedAccounts, warnings,
       targetTitles: Object.fromEntries(selectedAccounts.map(account => [account.id, projectContentForPlatform(current, account.platform).title])),
+      targetSummaries: Object.fromEntries(selectedAccounts.filter(account => account.platform === 'dy')
+        .map(account => [account.id, projectContentForPlatform(current, account.platform).summary])),
     })
   })
   const submit = () => void act(async () => {
@@ -577,12 +654,17 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
         {onToggleAgent && <Button size="sm" variant="outline" aria-expanded={Boolean(agentOpen)} aria-controls="pub-agent-drawer" disabled={editorLocked || !draft} onClick={() => void act(async () => {
           const current = await flush()
           if (!current) throw new Error('请先打开草稿')
-          selectContentView('master')
-          setPreview(false)
-          await onToggleAgent(current)
+          await onToggleAgent(current, contentViewRef.current === 'master' ? { kind: 'main' } : { kind: 'platform', platform: contentViewRef.current })
         })}>Agent 辅助编辑</Button>}
+        <EditorMoreMenu>
+        {onOpenWritingProfile && <Button size="sm" variant="outline" disabled={editorLocked} onClick={onOpenWritingProfile}>写作风格</Button>}
+        <Button size="sm" variant="outline" disabled={editorLocked || !draft || !dirtyRef.current} onClick={() => void act(async () => { await flush(); showSuccess('已保存。') })}>保存</Button>
+        {contentType === 'article' && <Button size="sm" variant="outline" disabled={editorLocked || !draft} onClick={() => importInputRef.current?.click()}>导入 .md/.txt 到主稿</Button>}
+        {onRestartAgent && <Button size="sm" variant="outline" disabled={editorLocked || !draft} onClick={() => setRestartAgent(true)}>重新开始对话</Button>}
         <Button size="sm" variant="outline" disabled={editorLocked || !draft} onClick={duplicate}>复制</Button>
         <Button size="sm" variant="outline" className="pub-danger-action" disabled={editorLocked || !draft} onClick={remove}>删除</Button>
+        </EditorMoreMenu>
+        {contentType === 'article' && <input ref={importInputRef} type="file" accept=".md,.txt,text/markdown,text/plain" style={{ display: 'none' }} onChange={event => { importText(event.target.files?.[0]); event.target.value = '' }}/>}
         <Button size="sm" variant="primary" disabled={editorLocked || !draft} onClick={() => setPublishOpen(true)}>发布</Button>
       </div>
     </div>
@@ -596,45 +678,46 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
     {exactMismatch ? <div className="pub-empty" role="status">
       {handoffError ? '指定草稿未能打开。可以返回列表，或恢复先前正在编辑的内容。' : '正在打开指定草稿…'}
       {handoffError && draft && <div className="pub-actions"><Button size="sm" variant="outline" onClick={() => onSelectedContentChange?.(draft.id)}>返回先前草稿</Button></div>}
-    </div> : !draft ? <div className="pub-empty">正在打开草稿…</div> : <fieldset disabled={editorLocked} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}><div className="pub-grid">
+    </div> : !draft ? <div className="pub-empty">正在打开草稿…</div> : <fieldset disabled={editorLocked} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}><div className="pub-grid pub-editor-grid">
       {!preview && contentType === 'image-note' && <div style={{ gridColumn: '1 / -1' }}>{mediaCard}</div>}
-      <div>
-        {preview ? <div className="pub-card"><PublisherContentPreview content={visibleDraft!} platform={contentView === 'master' ? undefined : contentView}/>
+      <div className="pub-editor-main">
+        {preview ? <div className="pub-card pub-editor-preview"><div className="pub-editor-heading"><h2>内容预览</h2><label className="pub-editor-version-picker"><span>编辑版本</span><select aria-label="编辑版本" value={contentView} onChange={event => changeContentView(event.target.value as ContentView)}><option value="master">主稿</option>{accountPlatforms.map(platform => <option key={platform} value={platform}>{PLATFORM_LABELS[platform]}{draft.platformVariants?.[platform] ? ' · 已单独修改' : ''}</option>)}</select></label></div><PublisherContentPreview content={visibleDraft!} platform={contentView === 'master' ? undefined : contentView}/>
           {contentType === 'article' && visibleDraft!.summary && contentView !== 'blbl' && contentView !== 'wxmp' && contentView !== 'tt' && <p className="pub-preview-summary"><strong>独立摘要字段：</strong>{visibleDraft!.summary}</p>}
           <p className="pub-muted">{contentView === 'wxmp' && contentType === 'image-note' ? '公众号图片消息按当前图片顺序展示，第一张为封面；正文和标签以纯文本发布。'
             : contentView === 'wxmp' ? '公众号正文按所选主题预览；封面和摘要是独立字段。平台后台的最终呈现请以实际草稿为准。'
             : contentView === 'master' ? '主稿展示阅读排版；公众号会采用所选主题，其他平台的实际样式仍需在后台草稿核对。'
-              : contentView === 'tt' && contentType === 'article' ? '这里展示本地原图，提交到头条时正文改为图片占位，请从发布历史打开草稿手动补图并核对。'
+              : manualArticleImages ? `这里展示本地原图，提交到${PLATFORM_LABELS[contentView as Platform]}时正文改为图片占位，请从发布历史打开草稿手动补图并核对。`
               : contentView === 'ks' && contentType === 'image-note' ? '快手图文没有独立标题字段，适配器会把标题放在作品描述首段；草稿状态仍需在快手后台核对。'
               : '这里展示当前平台版本的内容结构和图片顺序；实际样式由平台编辑器决定，请在后台草稿核对。'}</p></div> : <>
-        <div className="pub-card"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2>
+        <div className="pub-card"><div className="pub-editor-heading"><h2>{contentType === 'article' ? '文章内容' : '图文内容'}</h2><label className="pub-editor-version-picker"><span>编辑版本</span><select aria-label="编辑版本" value={contentView} onChange={event => changeContentView(event.target.value as ContentView)}><option value="master">主稿</option>{accountPlatforms.map(platform => <option key={platform} value={platform}>{PLATFORM_LABELS[platform]}{draft.platformVariants?.[platform] ? ' · 已单独修改' : ''}</option>)}</select></label></div>
           <div className="pub-field"><label htmlFor={`pub-${contentType}-title`}>标题 <span className={titleLength > titleLimit ? 'pub-warn' : 'pub-muted'}>（{titleLength}/{titleLimit} 字）</span>{hasOverride('title') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-title`} maxLength={TITLE_MAX} value={visibleDraft!.title} onChange={event => updateTextField('title', event.target.value)}/>{hasOverride('title') && <Button variant="outline" size="sm" onClick={() => resetVariantField('title')}>标题恢复主稿</Button>}</div>
           {contentType === 'image-note' && contentView === 'ks' && <p className="pub-muted">快手图文没有独立标题框，标题将放入正文第一段。</p>}
           {contentType === 'image-note' && contentView === 'wxmp' && <p className="pub-muted">公众号图片消息最多 20 张，第一张为封面。WebP 图片上传前自动转为 JPEG；正文使用纯文本。直接发布需要公众号具备发布接口权限。</p>}
-          {contentType === 'article' && <div className="pub-actions" style={{ marginBottom: 12 }}>
-            <Button variant="outline" size="sm" disabled={busy} onClick={() => importInputRef.current?.click()}>导入 .md/.txt 到主稿</Button>
-            <input ref={importInputRef} type="file" accept=".md,.txt,text/markdown,text/plain" style={{ display: 'none' }} onChange={event => { importText(event.target.files?.[0]); event.target.value = '' }}/>
-          </div>}
+
           <div className="pub-field"><label htmlFor={`pub-${contentType}-body`}>{contentType === 'article' ? '正文' : '正文 / 话题'}{hasOverride('body') && ' · 此平台已单独修改'}</label>
             <textarea ref={bodyInputRef} className={`pub-input ${contentType === 'article' ? 'pub-editor' : ''}`} id={`pub-${contentType}-body`} value={visibleDraft!.body} onChange={event => updateTextField('body', event.target.value)}/>
             {hasOverride('body') && <Button variant="outline" size="sm" onClick={() => resetVariantField('body')}>正文恢复主稿</Button>}
           </div>
-          {contentType === 'article' && contentView === 'tt' && <p className="pub-muted">正文图片和封面不自动上传，有图片的文章会转存草稿；请从发布历史打开草稿手动补图和设置封面。</p>}
-          {contentType === 'article' && contentView !== 'tt' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要{hasOverride('summary') && ' · 此平台已单独修改'}</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={visibleDraft!.summary} onChange={event => updateTextField('summary', event.target.value)}/>{hasOverride('summary') && <Button variant="outline" size="sm" onClick={() => resetVariantField('summary')}>摘要恢复主稿</Button>}</div>}
+          {manualArticleImages && <p className="pub-muted">正文图片和封面不自动上传，有图片的文章会转存草稿；请从发布历史打开草稿手动补图和设置封面。</p>}
+          {contentType === 'article' && contentView === 'dy' && <p className="pub-muted">抖音文章正文（含内容声明）最多 20000 字；独立摘要最多 30 字。提交前会用模型压缩超长摘要，在确认页核对后提交；完整原摘要和标签仍保留在本地。</p>}
+
+        </div>
+        </>}
+      </div>
+      <div className="pub-editor-sidebar">
+        {!preview && <EditorSection key={`info-${draft.id}`} title="发布信息" hint={enteredTags.length > MAX_TAGS ? <span className="pub-warn">标签超限</span> : contentView === 'dy' && visibleDraft!.summary.length > 30 ? <span className="pub-warn">摘要需压缩</span> : contentType === 'article' ? '摘要、标签与声明' : '标签与内容声明'}>
+          {contentType === 'article' && contentView !== 'tt' && <div className="pub-field"><label htmlFor="pub-article-summary">摘要{contentView === 'dy' && <span className={visibleDraft!.summary.length > 30 ? 'pub-warn' : 'pub-muted'}>（{visibleDraft!.summary.length}/30 字）</span>}{hasOverride('summary') && ' · 此平台已单独修改'}</label><textarea className="pub-input" id="pub-article-summary" maxLength={2000} value={visibleDraft!.summary} onChange={event => updateTextField('summary', event.target.value)}/>{hasOverride('summary') && <Button variant="outline" size="sm" onClick={() => resetVariantField('summary')}>摘要恢复主稿</Button>}</div>}
           <div className="pub-field"><label htmlFor={`pub-${contentType}-tags`}>标签（{visibleDraft!.tags.length}/{MAX_TAGS} 个，用空格或逗号分隔）{hasOverride('tags') && ' · 此平台已单独修改'}</label><Input className="pub-text-input" id={`pub-${contentType}-tags`} value={tagsInput} onChange={event => { setTagsInput(event.target.value); const tags = [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS); if (contentView === 'master') update({ tags }); else updateVariant({ tags }) }}/>{hasOverride('tags') && <Button variant="outline" size="sm" onClick={() => resetVariantField('tags')}>标签恢复主稿</Button>}</div>
           {visibleDraft!.tags.length > 0 && skippedArticleTagTargets.length > 0 && <p className="pub-muted">{skippedArticleTagTargets.map(account => PLATFORM_LABELS[account.platform]).join('、')}文章暂不写入标签；草稿标签仍保留供其他平台使用。</p>}
           {enteredTags.length > MAX_TAGS && <p className="pub-warn">超过 {MAX_TAGS} 个标签，超出的标签不会保存。</p>}
           {contentView === 'master' ? <div className="pub-field"><label htmlFor={`pub-${contentType}-statement`}>AI 内容声明（所有平台共用）</label><select className="pub-input" id={`pub-${contentType}-statement`} value={draft.creativeStatement} onChange={event => update({ creativeStatement: event.target.value as PublisherContent['creativeStatement'] })}>{CREATIVE_STATEMENTS.map(value => <option key={value} value={value}>{STATEMENT_LABELS[value]}</option>)}</select></div>
             : <p className="pub-muted">AI 内容声明由主稿统一设置：{STATEMENT_LABELS[draft.creativeStatement]}。</p>}
-        </div>
-        {contentType === 'article' && mediaCard}
-        </>}
-      </div>
-      <div>
-        <div className="pub-card pub-version-card">
+        </EditorSection>}
+        {!preview && contentType === 'article' && <EditorSection key={`media-${draft.id}`} title="封面与图片" hint={`${visibleDraft!.assets.length} 张图片${visibleDraft!.coverAssetId ? ' · 已选封面' : ''}`}>{mediaCard}</EditorSection>}
+        <EditorSection key={`version-${draft.id}`} title="平台与排版" className="pub-version-card" hint={contentView === 'master' ? '主稿' : `${PLATFORM_LABELS[contentView]}${selectedVariant ? ' · 已单独修改' : ''}`}>
           <div className="pub-version-tabs" role="group" aria-label="内容版本">
-            <button type="button" className="pub-version-tab" aria-pressed={contentView === 'master'} onClick={() => selectContentView('master')}>主稿</button>
-            {accountPlatforms.map(platform => <button type="button" className="pub-version-tab" aria-pressed={contentView === platform} key={platform} disabled={agentOpen} title={agentOpen ? '先关闭 Agent 对话，再切换平台版本' : undefined} onClick={() => selectContentView(platform)}>
+            <button type="button" className="pub-version-tab" aria-pressed={contentView === 'master'} onClick={() => changeContentView('master')}>主稿</button>
+            {accountPlatforms.map(platform => <button type="button" className="pub-version-tab" aria-pressed={contentView === platform} key={platform} onClick={() => changeContentView(platform)}>
               {PLATFORM_LABELS[platform]}{draft.platformVariants?.[platform] ? ' · 已单独修改' : ''}
             </button>)}
           </div>
@@ -648,15 +731,38 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
             <p className="pub-muted">主稿预览可比较排版；所选主题用于公众号正文，文颜灵感主题是适配版本，最终以公众号草稿为准。其他平台按各自编辑器处理。</p>
           </div>}
           {contentView !== 'master' && selectedVariant && <Button variant="outline" size="sm" onClick={resetPlatformVariant}>此平台全部恢复主稿</Button>}
-        </div>
+        </EditorSection>
         <ProjectDirectoryInfo key={draft.id} contentId={draft.id}/>
+        {draft.id === selectedContentId && onReturnToSource && <ArticleSourceControls key={`source-${draft.id}`} contentId={draft.id} active={active} busy={editorLocked}
+          onReturn={sessionId => {
+            if (busyRef.current) return Promise.resolve()
+            const navigation = onSourceNavigation?.()
+            return act(async () => {
+              const selected = selectedIdRef.current
+              await flush()
+              if (!editorAlive.current || !activeRef.current || navigation?.aborted || selectedIdRef.current !== selected) return
+              await onReturnToSource(sessionId, navigation)
+            })
+          }}
+          onUpdate={origin => act(async () => {
+            const current = await flush()
+            if (!editorAlive.current || !activeRef.current || selectedIdRef.current !== origin.contentId) return
+            if (!current || current.id !== origin.contentId) throw new Error('当前发布稿已变化，请重新打开来源信息')
+            const result = await articleHandoffApi<PublisherArticleHandoffResult>('article-handoff-update', {
+              sessionId: origin.source.sessionId, handoffId: origin.handoffId, expectedContentRevision: current.revision,
+            })
+            if (!editorAlive.current || selectedIdRef.current !== current.id) return
+            if (result.content.id !== current.id) throw new Error('更新结果与当前发布稿不匹配')
+            setServerDraft(result.content)
+            showSuccess('已更新发布主稿的正文和配图。')
+          }, true)}/>}
       </div>
     </div></fieldset>}
     {publishOpen && draft && <PublisherModal open title="发布设置" closeLabel="关闭发布设置" className="pub-modal pub-publish-modal" contentClassName="pub-modal-content"
       onClose={() => { if (!busyRef.current) setPublishOpen(false) }}
       footer={<>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => setPublishOpen(false)}>取消</Button>
-        <Button size="sm" variant="primary" disabled={busy || !submitReady} onClick={requestConfirm}>检查并提交</Button>
+        <Button size="sm" variant="primary" disabled={busy || !submitReady} onClick={requestConfirm}>{compressingSummary ? '正在压缩抖音摘要…' : '检查并提交'}</Button>
       </>}>
       <fieldset disabled={editorLocked} className="pub-publish-fields">
         <h3>选择平台账号</h3>
@@ -693,14 +799,18 @@ export function ContentEditor({ contentType, active, selectedContentId, intended
         </div>
         {missingRequestedPlatforms.length > 0 && <p className="pub-warn" role="status">本次目标尚未选账号：{missingRequestedPlatforms.map(platform => PLATFORM_LABELS[platform]).join('、')}。选择全部目标账号后才能提交。</p>}
         {!capabilitiesPending && !capabilitiesError && unavailableTargets.length > 0 ? <p className="pub-warn" role="status">当前发布引擎尚未开放所选平台的提交方式；本地草稿仍会保存。若刚更新 Helper，请完全退出并重启应用后重试。</p>
-          : validationError && <p className="pub-warn" role="status">提交前请处理：{validationError}</p>}
+          : validationError && <p className="pub-warn" role="status">{summaryNeedsCompression && validationError.includes('摘要不能超过 30 字')
+            ? '点击“检查并提交”后会用模型压缩抖音摘要，在确认页核对生成结果；完整原摘要保留。'
+            : `提交前请处理：${validationError}`}</p>}
+        {compressingSummary && <p className="pub-muted" role="status">正在用当前文字模型压缩摘要，请稍候…</p>}
         {articleWarnings.length > 0 && <p className="pub-muted">以上调整只影响提交给平台的文章副本，原始 MD 和本地编辑稿保留；本次将转存平台草稿供核对。</p>}
         <p className="pub-muted">提交只表示任务已被本机发布队列接受，不代表平台发布成功。文章/图文适配仍需实际平台验证，建议先转存草稿并到对应账号后台核对。</p>
       </fieldset>
     </PublisherModal>}
     {imagegenPickerDraftId && draft?.id === imagegenPickerDraftId && <ImagegenPicker remaining={20 - draft.assets.length}
       onCancel={() => { if (!busyRef.current) setImagegenPickerDraftId(undefined) }} onImport={importImagegenImages}/>}
-    {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} targetTitles={confirm.targetTitles} warnings={confirm.warnings} busy={busy} onCancel={() => { setConfirm(undefined); setPublishOpen(true) }} onConfirm={submit}/>}
-    <PublisherModal open={deleteDraftId !== undefined} title="删除本地草稿" closeLabel="关闭删除草稿确认" description="删除这份本地草稿？已经提交的内容快照不受影响。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button size="sm" variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button size="sm" variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/>
+    {confirm && <ConfirmDialog contentType={contentType} title={confirm.title} mode={confirm.mode} accounts={confirm.accounts} targetTitles={confirm.targetTitles} targetSummaries={confirm.targetSummaries} warnings={confirm.warnings} busy={busy} onCancel={() => { setConfirm(undefined); setPublishOpen(true) }} onConfirm={submit}/>}
+    <PublisherModal open={deleteDraftId !== undefined} title="删除本地草稿" closeLabel="关闭删除草稿确认" description="将这份稿件和关联对话一起移入回收站？素材和已发布记录保留，稿件可恢复。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button size="sm" variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button size="sm" variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/>
+    <PublisherModal open={restartAgent} title="重新开始对话" closeLabel="关闭重新开始对话确认" className="pub-modal" description="保存当前对话并开启新对话？稿件、素材和平台版本都会保留。" onClose={() => { if (!busyRef.current) setRestartAgent(false) }} footer={<><Button variant="outline" data-pub-initial-focus disabled={busy} onClick={() => setRestartAgent(false)}>取消</Button><Button disabled={busy} onClick={() => void act(async () => { const current = await flush(); if (current) await onRestartAgent?.(current, contentViewRef.current === 'master' ? { kind: 'main' } : { kind: 'platform', platform: contentViewRef.current }); setRestartAgent(false) })}>开启新对话</Button></>}/>
   </div>
 }

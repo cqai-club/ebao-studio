@@ -16,7 +16,7 @@ function options(overrides: Partial<MacReleaseVerificationOptions> = {}) {
   const value: MacReleaseVerificationOptions = {
     distDir: '/release/dist',
     productName: '易宝工坊',
-    listDmgs: () => ['/release/dist/e宝工坊-2.0.0-universal.dmg'],
+    listDmgs: () => ['/release/dist/eBao-Studio-2.0.0.dmg'],
     makeMountPoint: () => '/private/tmp/dsh-desktop-dmg-test',
     run: (command, args) => { calls.push({ command, args: [...args] }) },
     removeMountPoint,
@@ -33,14 +33,14 @@ describe('macOS release artifact verification', () => {
 
     expect(verifyMacRelease(harness.value)).toEqual({
       appPath,
-      dmgPath: '/release/dist/e宝工坊-2.0.0-universal.dmg',
+      dmgPath: '/release/dist/eBao-Studio-2.0.0.dmg',
     })
 
     expect(harness.calls).toEqual([
       {
         command: 'hdiutil',
         args: [
-          'attach', '/release/dist/e宝工坊-2.0.0-universal.dmg',
+          'attach', '/release/dist/eBao-Studio-2.0.0.dmg',
           '-mountpoint', '/private/tmp/dsh-desktop-dmg-test', '-nobrowse', '-readonly',
         ],
       },

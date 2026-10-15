@@ -1,6 +1,7 @@
 /** Electron implementation of the launcher-provided desktop runtime capability. */
 
 import { spawn } from 'node:child_process'
+import { configureDeveloperLogging, type DiagnosticPreferences } from './developer-logging.ts'
 import {
   app,
   dialog,
@@ -60,6 +61,8 @@ import {
   downloadElectronDesktopUpdate,
 } from './electron-auto-updater.ts'
 import type { UpdateCheckResult } from './update-checker.ts'
+import { createDesktopUpdateRouting, type DesktopUpdateRouting } from './desktop-update-source.ts'
+import { requestDesktopUpdateRoute } from './electron-update-route.ts'
 import type { DesktopInstallationId } from './desktop-installation-id.ts'
 import { DESKTOP_RELEASE_CHANNEL } from './product-identity.ts'
 import type { DesktopReleaseChannel } from './update-checker.ts'
@@ -101,15 +104,18 @@ const PRODUCT_VERSION = desktopProductVersion()
 const AUTO_UPDATE_RELEASE_CHANNEL = DESKTOP_RELEASE_CHANNEL as DesktopReleaseChannel
 
 /** Main-process deadline for one Renderer generation to settle its client Loader. */
-export const RENDERER_BOOT_TIMEOUT_MS = 30_000
+export const RENDERER_BOOT_TIMEOUT_MS = 120_000
 
 /** Native adapter used by the e宝工坊 launcher and owned by its Cordis shell plugin. */
 export class ElectronDesktopRuntime implements DesktopRuntime {
+  configureDeveloperLogging(preferences: DiagnosticPreferences): void { configureDeveloperLogging(preferences) }
+
   setupOnboarding?: import('./setup-onboarding-bridge.ts').DesktopOnboardingBridge
   readonly platform: DesktopPlatform
   readonly loginCompletionUrl = DESKTOP_LOGIN_COMPLETION_URL
   private readonly platformStrategy: ElectronPlatformStrategy
   readonly updates: DesktopUpdateAdapter
+  private readonly updateRouting: DesktopUpdateRouting
   readonly publisher: DesktopPublisherRuntime
   private readonly publisherSupervisor: PublisherSupervisor | undefined
 
@@ -171,6 +177,9 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       logError: message => { this.logError(message) },
       ...(workspaceVolumeQuery === undefined ? {} : { volumeQuery: workspaceVolumeQuery }),
     })
+    this.updateRouting = createDesktopUpdateRouting(
+      (url, init) => net.fetch(url, init), this.platform, requestDesktopUpdateRoute,
+    )
     this.updates = {
       get isPackaged() { return app.isPackaged },
       get canDownload() {
@@ -182,7 +191,7 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
       get releaseChannel() { return DESKTOP_RELEASE_CHANNEL },
       get statePath() { return join(app.getPath('userData'), 'updates', 'state.json') },
       ...(installationId === undefined ? {} : { installationId }),
-      request: (url, init) => net.fetch(url, init),
+      request: this.updateRouting.request,
       confirmDownload: (version, channel) => this.confirmUpdateDownload(version, channel),
       showManualCheckResult: result => this.showManualUpdateCheckResult(result),
       downloadAndInstall: (version, signal, channel) => this.downloadAndInstallUpdate(version, signal, channel),
@@ -891,7 +900,8 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
     }
     signal.throwIfAborted()
     configureElectronAutoUpdater(autoUpdater)
-    await downloadElectronDesktopUpdate(autoUpdater, version, signal)
+    const source = await this.updateRouting.source(signal)
+    await downloadElectronDesktopUpdate(autoUpdater, version, signal, source)
     signal.throwIfAborted()
 
     const copy = desktopNativeCopy(this.currentLocale)

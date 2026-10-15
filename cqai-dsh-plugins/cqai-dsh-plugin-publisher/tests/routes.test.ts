@@ -2,7 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage } from 'node:http'
@@ -91,9 +91,11 @@ describe('e剪宝 work resolution', () => {
     mkdirSync(directory, { recursive: true })
     writeFileSync(join(directory, 'job.json'), JSON.stringify({ id: WORK_ID }))
     writeFileSync(outside, 'video')
-    symlinkSync(outside, join(directory, 'final_video.mp4'))
+    symlinkSync(process.platform === 'win32' ? home : outside, join(directory, 'final_video.mp4'),
+      process.platform === 'win32' ? 'junction' : 'file')
     expect(() => resolveWork(WORK_ID, { DSH_HOME: home })).toThrow('作品成片不存在')
     expect(listWorks({ DSH_HOME: home })).toEqual([])
+    expect(readFileSync(outside, 'utf8')).toBe('video')
   })
 })
 

@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -13,6 +14,7 @@ import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { describe, expect, it } from 'vitest'
 import AdmZip from 'adm-zip'
+import { LogFileSink } from '../src/log-files.ts'
 import {
   exportDesktopDiagnostics,
   exportDiagnosticsZip,
@@ -53,6 +55,51 @@ function writeLifecycleEvidence(userDataDir: string): string {
 }
 
 describe('exportDiagnosticsZip', () => {
+  it('exports redacted structured developer records from Desktop and Host with correlation fields intact', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-dx-developer-'))
+    const logs = join(root, 'logs')
+    const hostLogs = join(logs, 'host')
+    const record = { source: 'host.rpc', event: 'call.failed', operationId: 'export-operation',
+      fields: { sessionId: 'export-session', failureCode: 'MODEL_UNAVAILABLE', accessToken: 'private-access',
+        refresh_token: 'private-refresh', privateKey: 'private-key', 'Set-Cookie': 'private-cookie' } }
+    for (const directory of [logs, hostLogs]) {
+      const sink = new LogFileSink(directory, { maxFileBytes: 10_000, maxDirectoryBytes: 100_000 })
+      sink.writeRecord('error', record)
+      sink.close()
+    }
+    const out = await exportDiagnosticsZip(logs, root, { appVersion: APP_VERSION, hostLogsDir: hostLogs })
+    const zip = new AdmZip(out)
+    const entries = zip.getEntries().filter(entry => entry.entryName.endsWith('.log'))
+    expect(entries.some(entry => entry.entryName.startsWith('host/'))).toBe(true)
+    expect(entries.some(entry => !entry.entryName.startsWith('host/'))).toBe(true)
+    for (const entry of entries) {
+      const content = zip.readAsText(entry)
+      expect(content).not.toContain('private-')
+      expect(JSON.parse(content)).toMatchObject({ operationId: 'export-operation',
+        fields: { sessionId: 'export-session', failureCode: 'MODEL_UNAVAILABLE', accessToken: '****',
+          refresh_token: '****', privateKey: '****', 'Set-Cookie': '****' } })
+    }
+  })
+
+  it('keeps developer traces within rotating-log and diagnostic-archive byte budgets', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-dx-developer-limit-'))
+    const logs = join(root, 'logs')
+    const sink = new LogFileSink(logs, { maxFileBytes: 800, maxDirectoryBytes: 2400 })
+    for (let sequence = 0; sequence < 40; sequence++) {
+      sink.writeRecord('info', { source: 'fixture', event: 'trace', sequence, message: '诊断'.repeat(50) })
+    }
+    sink.close()
+    const sizes = readdirSync(logs).map(name => statSync(join(logs, name)).size)
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(800)
+    expect(sizes.reduce((total, size) => total + size, 0)).toBeLessThanOrEqual(2400)
+    const out = await exportDiagnosticsZip(logs, root, { appVersion: APP_VERSION, maxEvidenceBytes: 1200 })
+    const zip = new AdmZip(out)
+    const logEntries = zip.getEntries().filter(entry => entry.entryName.endsWith('.log'))
+    expect(logEntries.length).toBeGreaterThan(0)
+    expect(logEntries.reduce((total, entry) => total + entry.getData().length, 0)).toBeLessThanOrEqual(1200)
+    expect(zip.readAsText('system-info.txt')).toMatch(/omitted-log-files: [1-9]/u)
+  })
+
   it('terminates a diagnostic Worker that does not respond before its deadline', async () => {
     const worker = new Worker('setInterval(() => {}, 1_000)', { eval: true })
     const exited = once(worker, 'exit')

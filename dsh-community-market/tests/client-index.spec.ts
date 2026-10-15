@@ -29,6 +29,8 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
 import { apply, inject, MarketSurface, NS } from '../src/client/index.js'
 import { MarketSurface as MarketSurfaceImplementation } from '../src/client/MarketSettingsTab.js'
 import { PluginManagementMarket } from '../src/client/PluginManagementMarket.js'
+import { PluginUpdatesSummary } from '../src/client/PluginUpdatesSummary.js'
+import { MarketUpdateNotice } from '../src/client/MarketUpdateNotice.js'
 
 interface TestContext {
   readonly effects: Array<{ effect: () => unknown; label: string }>
@@ -68,7 +70,7 @@ describe('community market client registration', () => {
     expect(MarketSurface).toBe(MarketSurfaceImplementation)
   })
 
-  it('registers locale, styles, settings tab, sidebar launcher, and shell overlay effects', () => {
+  it('registers locale, styles, update checks, settings, launcher, and both shell overlays', () => {
     const test = testContext()
 
     apply(test.context)
@@ -76,10 +78,12 @@ describe('community market client registration', () => {
     expect(test.effects.map(value => value.label)).toEqual([
       'community-market: dictionaries',
       'community-market: styles',
+      'community-market: plugin update checks',
     ])
     expect(test.injections.map(value => value.name)).toEqual([
       'settings.plugins.tab',
       'sidebar.footer.action',
+      'shell.overlay',
       'shell.overlay',
     ])
   })
@@ -90,7 +94,7 @@ describe('community market client registration', () => {
     apply(test.context)
     test.injections.forEach(value => { value.factory() })
 
-    expect(test.registrations).toHaveLength(3)
+    expect(test.registrations).toHaveLength(4)
     expect(test.registrations.map(value => value.spec)).toEqual([
       expect.objectContaining({
         name: 'settings.plugins.tab',
@@ -110,6 +114,12 @@ describe('community market client registration', () => {
         order: 10,
         locale: NS,
       }),
+      expect.objectContaining({
+        name: 'shell.overlay',
+        id: 'community-market-update-notice',
+        order: 20,
+        locale: NS,
+      }),
     ])
     const [settings, launcher, overlay] = test.registrations.map(value => value.spec)
     expect(typeof settings?.label).toBe('function')
@@ -117,6 +127,7 @@ describe('community market client registration', () => {
     expect(typeof launcher?.label).toBe('function')
     expect(launcher?.store).toBe(overlay?.store)
     expect(typeof overlay?.inject).toBe('function')
+    expect(test.registrations[3]?.component).toBe(MarketUpdateNotice)
   })
 
   it('leaves the CQAI account menu to plugin management on Stable and Beta', () => {
@@ -126,17 +137,23 @@ describe('community market client registration', () => {
     expect(test.injections.map(value => value.name)).toEqual([
       'settings.plugins.tab',
       'cqai.pluginManagement.market',
+      'cqai.pluginManagement.updates',
+      'shell.overlay',
       'shell.overlay',
     ])
     test.injections.forEach(value => { value.factory() })
     expect(test.registrations.map(value => value.spec.name)).toEqual([
       'settings.plugins.tab',
       'cqai.pluginManagement.market',
+      'cqai.pluginManagement.updates',
+      'shell.overlay',
       'shell.overlay',
     ])
     const [, embedded] = test.registrations
     expect(embedded?.component).toBe(PluginManagementMarket)
     expect(embedded?.spec.locale).toBe(NS)
     expect(typeof embedded?.spec.inject).toBe('function')
+    expect(test.registrations[2]?.component).toBe(PluginUpdatesSummary)
+    expect(test.registrations[4]?.component).toBe(MarketUpdateNotice)
   })
 })

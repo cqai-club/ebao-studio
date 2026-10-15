@@ -2,8 +2,8 @@
 
 [English](PRIVACY.md)
 
-- **版本：** 1.1
-- **生效及最近更新日期：** 2026 年 9 月 21 日
+- **版本：** 1.2
+- **生效及最近更新日期：** 2026 年 10 月 15 日
 
 e宝工坊 是一个本地优先的开源桌面应用。本政策说明 e宝工坊 官方版本及官方在线服务会处理哪些信息、为什么处理、信息会发送给谁，以及您可以如何作出选择。
 
@@ -15,7 +15,7 @@ e宝工坊 是一个本地优先的开源桌面应用。本政策说明 e宝工�
 
 本政策适用于：
 
-- 我们通过 [官方 GitHub 仓库](https://github.com/cqai-club/ebao-studio)、其中的 `release/desktop-version.json` 清单及 GitHub Release 资产提供的 e宝工坊；
+- 我们通过 [官方 GitHub 仓库](https://github.com/cqai-club/ebao-studio) 和 [GitCode 分发仓库](https://gitcode.com/g-dxw/ebao-studio)、其中的 `release/desktop-version.json` 清单及 Release 资产提供的 e宝工坊；
 - 您主动发送给项目维护团队的隐私请求、支持邮件或问题报告。
 
 第三方 Fork、自行修改的构建、第三方分发渠道、模型服务商、插件、插件市场来源及软件包服务各自的处理行为不由本政策控制。第三方构建可能使用不同的更新端点或 Release 资产，其分发者应自行说明相关处理。
@@ -24,7 +24,7 @@ e宝工坊 是一个本地优先的开源桌面应用。本政策说明 e宝工�
 
 - e宝工坊 的 Profile、设置、工作区、会话、日志和崩溃文件默认保存在本机。
 - 官方更新服务不需要 e宝工坊 账户；版本检查代码也不会主动发送或附加提示词、回复、文件内容、工作区路径、Profile 名称、会话内容、API Key、MAC 地址或硬件序列号。
-- 打包后的 macOS 和 Windows 版本默认会检查更新，并发送一个本地随机生成、持续保存的安装 UUID。该 UUID 是伪匿名标识，可能依法构成个人信息；它不是硬件 ID，也不保证一台机器只有一个值。
+- 打包后的 macOS 和 Windows 版本默认会检查更新。项目自有路由请求按网络出口 IP 选择来源，仅中国大陆（CN）使用 GitCode，其余使用 GitHub；该请求不发送安装 UUID。最终所选版本清单请求会发送一个本地随机生成、持续保存的安装 UUID。该 UUID 是伪匿名标识，可能依法构成个人信息；它不是硬件 ID，也不保证一台机器只有一个值。
 - 安装包下载不附带上述安装 UUID，但官网、下载承载方和网络基础设施仍会看到通常的网络元数据。
 - 诊断包只在您主动导出时在本地创建，不会由 e宝工坊 自动上传。
 - 您选择的模型服务、插件、插件市场来源和软件包服务会按照各自规则处理信息；它们不因出现在 e宝工坊 中而受本政策约束。
@@ -33,24 +33,28 @@ e宝工坊 是一个本地优先的开源桌面应用。本政策说明 e宝工�
 
 ### 3.1 何时请求
 
-打包后的 macOS 和 Windows 应用默认在启动约 60 秒后请求：
+包含按 IP 选择来源的下一版应用，将在打包后的 Stable 和 Beta macOS/Windows 版本中默认于启动约 60 秒后发起下列路由请求。实际 `platform` 值为 `windows` 或 `macos`，不传 `source` 参数。已安装旧版仍使用原 GitHub 端点（`https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json`），不会因仓库或镜像配置变化而自动切换。Next 继续使用其上游更新源。
 
 ```text
-GET https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json
+GET https://cqaiclub.asia/api/ebao-studio/download?platform=windows|macos
 ```
 
-此后，每次检查完成约 6 小时后会再次检查。您也可以手动选择“检查更新”。开发运行、未打包启动和 Linux 当前不会执行这套打包版自动更新流程。
+路由请求不跟随 302 跳转，Desktop 只读取 `X-Download-Source`。服务端按请求的实际网络出口 IP，使用本地 `geoip-country` 数据库识别，不向第三方发起 IP 定位请求。仅国家代码 `CN` 使用 GitCode，其他地区（包括 HK/MO/TW）、无法识别，以及路由探测失败、超时或无效响应，均使用 GitHub；语言和时区不参与判断。成功的来源判断仅在当前进程缓存五分钟，不写入磁盘；缓存过期后的下次判断会重新探测，因此网络变化后最多可能沿用五分钟内的成功判断。
+
+GitHub 使用版本清单 `https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json`，GitCode 使用 `https://api.gitcode.com/api/v5/repos/g-dxw/ebao-studio/raw/release%2Fdesktop-version.json?ref=master`。此后，每次检查完成约 6 小时后会再次检查。您也可以手动选择“检查更新”。开发运行、未打包启动和 Linux 当前不会执行这套打包版自动更新流程。
 
 ### 3.2 请求包含什么
 
-客户端明确添加：
+路由请求使用 `cache: no-store`、`credentials: omit` 和 `redirect: manual`，不发送安装 UUID、当前版本、发行通道或请求 body。`cqaiclub.asia` 及其交付基础设施会接收 `platform` query 值、IP 地址、请求时间等通常的网络元数据，用于选择并交付更新来源。
+
+仅最终所选版本清单请求明确添加：
 
 - `Accept: application/json`；
 - `X-DSH-Desktop-Channel: <stable 或 beta>`；
 - `X-DSH-Desktop-Version: <规范的当前安装版本>`；
 - `X-DSH-Desktop-Installation-Id: <随机 UUID v4>`。
 
-该 GET 请求没有由应用添加的 query 参数或请求 body。与所有互联网请求一样，GitHub 及其交付基础设施还会接收 IP 地址、请求时间、TLS/连接信息以及网络栈自动产生的标准请求元数据；这些元数据可能包括 User-Agent、Cookie、压缩支持、操作系统或运行时版本信息。当前代码没有显式要求 Electron 网络 session 忽略已有凭据，因此我们不会承诺版本请求一定不带 session 数据，也不会把客户端显式设置的 header 描述成网络上只会传出的字段。
+GitCode 清单 URL 包含用于选择源码分支的固定 `ref=master` query 参数；应用不会为任一清单 GET 请求添加其他 query 参数或请求 body。所选 GitCode 或 GitHub 及其交付基础设施还会接收 IP 地址、请求时间、TLS/连接信息以及网络栈自动产生的标准请求元数据；这些元数据可能包括 User-Agent、Cookie、压缩支持、操作系统或运行时版本信息。当前清单请求代码没有显式要求 Electron 网络 session 忽略已有凭据，因此我们不会承诺清单请求一定不带 session 数据；这与显式忽略凭据的路由请求不同。我们也不会把客户端显式设置的 header 描述成网络上只会传出的字段。
 
 版本检查代码不会主动把提示词、回复、文件内容、工作区路径、Profile 名称、会话内容、模型凭据、MAC 地址或硬件序列号附加到该请求。
 
@@ -76,17 +80,18 @@ GET https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/deskt
 
 ### 3.4 用途
 
-版本请求用于取得仓库自有清单，并支持所选通道的更新提示。GitHub 可能依据其条款和隐私政策处理请求元数据，用于交付和保护其服务。项目没有为该请求运营独立更新 API，不声称能够访问 GitHub 的原始交付日志，也不会把安装 UUID 用于统计分析、广告画像、跨服务追踪或出售。版本检查不要求登录，客户端也不会在该请求中发送姓名、邮箱或 e宝工坊 账户 ID。
+项目自有路由端点按网络出口 IP 选择来源，不代理版本清单或安装包下载。最终所选版本请求用于取得仓库自有清单，并支持所选通道的更新提示。GitCode 或 GitHub 可能依据其条款和隐私政策处理请求元数据，用于交付和保护其服务。项目不声称能够访问任一平台的原始交付日志，也不会把安装 UUID 用于统计分析、广告画像、跨服务追踪或出售。路由与版本检查均不要求登录，客户端也不会在任一请求中发送姓名、邮箱或 e宝工坊 账户 ID。
 
 ## 4. 安装包下载、网站与项目沟通
 
 | 场景 | 触发方式 | 可能处理的信息 | 目的及接收方 |
 | --- | --- | --- | --- |
-| 更新元数据、安装包与校验清单下载 | 您确认稳定版更新，或从 Release 页面下载资产 | IP 地址、时间、标准网络元数据、Release 标签，以及请求的 `latest.yml`、`latest-mac.yml`、`SHA256SUMS`、DMG、EXE 或 ZIP 资产 | GitHub 及其交付基础设施用于交付并保护 GitHub Release 资产。Desktop 不会在更新元数据、校验清单或安装包请求中添加安装 UUID。 |
+| 更新来源路由 | 打包版检查需要来源判断，且没有未过期的成功判断缓存时 | 网络出口 IP、请求时间、标准网络元数据及 `platform=windows` 或 `platform=macos`；无安装 UUID、当前版本、通道或 body | 项目自有 `cqaiclub.asia` 端点及其交付基础设施以本地国家数据库判断，仅 CN 选择 GitCode，其余选择 GitHub；不向第三方请求 IP 定位。 |
+| 更新元数据、安装包与校验清单下载 | 您确认稳定版更新，或从 Release 页面下载资产 | IP 地址、时间、标准网络元数据、Release 标签，以及请求的 `latest.yml`、`latest-mac.yml`、`SHA256SUMS`、DMG、EXE 或 ZIP 资产 | 所选 GitCode 或 GitHub 及其交付基础设施交付应用内更新资产；您手动下载任一平台的 Release 资产时，该平台也会接收相关请求。Desktop 不会在更新元数据、校验清单或安装包请求中添加安装 UUID。 |
 | GitHub Issue、讨论或贡献 | 您主动提交 | 您公开提交的账号信息、文字、附件、代码及元数据 | GitHub 和项目维护团队用于处理问题、贡献及社区沟通。公开提交会公开可见。 |
 | 邮件与支持资料 | 您主动发送 | 邮箱地址、邮件内容、附件，以及您选择提供的诊断或环境信息 | [QQ 邮箱](https://mail.qq.com/)、您的发件服务商和项目维护团队用于传递和回复邮件、排查问题及保存必要的沟通记录。 |
 
-截至本政策生效日，GitHub 是更新发现和 Release 交付的唯一官方来源：`raw.githubusercontent.com` 提供仓库清单，`github.com` 的 Release 资产提供 `SHA256SUMS` 与安装包。GitHub 及其交付基础设施按 GitHub 自身条款与隐私政策处理请求。本节所述 Desktop 更新链路不使用独立的网站或 API。
+包含按 IP 选择来源的应用，仅在路由结果明确选择 GitCode 时，使用其清单和更新资产；其他结果均使用 GitHub。您确认 Stable 更新后，Electron Updater 会从已确认版本的目录 `https://github.com/cqai-club/ebao-studio/releases/download/v<version>/` 或 `https://gitcode.com/g-dxw/ebao-studio/releases/download/v<version>/` 请求 `latest.yml` 或 `latest-mac.yml`，以及其中引用的相对安装包或压缩包文件。版本匹配与完整文件 SHA-512 校验仍是必要条件。路由探测失败时默认 GitHub；所选清单或下载源本身失败时不会自动跨源回退。Beta 检查版本，不提供应用内安装。GitHub 仍是开发、打包和原始发布源；GitCode 镜像包含 `SHA256SUMS` 在内的七个原始 Release 附件。各平台及其交付基础设施分别按自身条款与隐私政策处理请求。项目运营上述路由端点，不另行承载这些清单或安装包文件。
 
 ## 5. 默认保存在本机的信息
 
@@ -147,7 +152,7 @@ Community Market 默认不需要选中远程来源。选择并使用来源后，
 
 ### 6.4 可选的上游遥测
 
-当前上游 DSH session telemetry 在 Desktop 默认组合中为 `DISABLED`。如果您或部署者显式设置 `DSH_TELEMETRY_MODE` 为 `FULL` 或 `FEEDBACK_ONLY`，原始会话遥测可能与上游匿名用户 ID 一起发送到 `https://harness-telemetry.deepseeksvc.com/v1/logs` 或您配置的 `DSH_TELEMETRY_OTLP_URL`。该处理由上游配置和接收方政策决定，与 GitHub 承载的 Desktop 更新链路相互独立。
+当前上游 DSH session telemetry 在 Desktop 默认组合中为 `DISABLED`。如果您或部署者显式设置 `DSH_TELEMETRY_MODE` 为 `FULL` 或 `FEEDBACK_ONLY`，原始会话遥测可能与上游匿名用户 ID 一起发送到 `https://harness-telemetry.deepseeksvc.com/v1/logs` 或您配置的 `DSH_TELEMETRY_OTLP_URL`。该处理由上游配置和接收方政策决定，与 Desktop 更新来源路由及所选 GitCode 或 GitHub 交付链路相互独立。
 
 ### 6.5 外部链接
 
@@ -174,14 +179,15 @@ Community Market 默认不需要选中远程来源。选择并使用来源后，
 
 我们不出售个人信息，也不向第三方提供安装 UUID 用于其广告画像。
 
-GitHub、npm、模型供应商及社区来源可能在不同国家或地区处理数据。具体位置取决于当时的服务路由、接收方和您的选择。需要跨境告知、单独同意、标准合同或其他保障时，我们及相应接收方应按适用法律完成这些要求。
+GitCode、GitHub、npm、模型供应商及社区来源可能在不同国家或地区处理数据。具体位置取决于当时的服务路由、接收方和您的选择。需要跨境告知、单独同意、标准合同或其他保障时，我们及相应接收方应按适用法律完成这些要求。
 
 ## 9. 保留期限
 
 我们按以下规则确定期限：
 
 - 本地安装 UUID、日志和诊断包按第 3 节和第 5 节所述规则保留；
-- GitHub 依据其自身政策控制清单与 Release 资产请求元数据的保留；项目维护团队不设置、也不声称能够访问这些交付日志的保留期限；
+- Desktop 不持久保存路由判断；项目自有路由基础设施若保留通常的请求日志，其保留遵循本节的目的与删除条件；
+- GitCode 和 GitHub 分别依据自身政策控制其清单与 Release 资产请求元数据的保留；项目维护团队不设置、也不声称能够访问这些交付日志的保留期限；
 - 支持邮件和问题记录保留到处理完成、争议或安全跟进不再合理需要时；公开 GitHub 内容由您和 GitHub 的控制及保留规则决定；
 - 第三方接收方按其政策和您与其之间的安排保留信息。
 
@@ -195,7 +201,7 @@ GitHub、npm、模型供应商及社区来源可能在不同国家或地区处�
 
 ## 11. 您的选择和权利
 
-根据适用法律，您可能有权请求查阅、复制、更正、删除或限制处理个人信息，撤回同意，反对特定处理，获取可携带副本，以及向主管机构投诉。请通过 [t4wefan@qq.com](mailto:t4wefan@qq.com) 联系我们。项目维护团队无法使用安装 UUID 定位 GitHub 交付日志，也不会要求您公开该值。
+根据适用法律，您可能有权请求查阅、复制、更正、删除或限制处理个人信息，撤回同意，反对特定处理，获取可携带副本，以及向主管机构投诉。请通过 [t4wefan@qq.com](mailto:t4wefan@qq.com) 联系我们。项目维护团队无法使用安装 UUID 定位 GitCode 或 GitHub 交付日志，也不会要求您公开该值。
 
 我们无法从远程替您删除本机文件。您可以在应用关闭后删除相应本地数据；删除安装 UUID 会在下次启动时生成新值。已经不可逆汇总或无法再关联到您的数据，可能无法恢复或单独删除。
 

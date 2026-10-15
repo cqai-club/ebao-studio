@@ -398,6 +398,7 @@ export function apply(ctx: Context): void {
       video:models.models.filter(isVideoCatalogEntry).map(m=>({id:m.id,name:m.name || m.id,callable:isVideoModel(m)})),
       warning:models.warning, defaultText:defaults.global.provider === 'cqaiclub' ? defaults.global.model : undefined,
       defaultImage:defaults.categories.image?.provider === 'cqaiclub' ? defaults.categories.image.model : undefined,
+      defaultVideo:defaults.categories.video?.provider === 'cqaiclub' ? defaults.categories.video.model : undefined,
     }
   }
   const verifyModels = async (draft: Draft, preparedMaterials = false) => {

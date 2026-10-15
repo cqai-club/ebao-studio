@@ -1,4 +1,4 @@
 # Bilingual-pair consistency record. Both languages carry equal authority.
 # Update both files and record their Git blob hashes after editing either side.
-PRIVACY.md: dedf0e4f6f9e08bbf05e29e2f5685d00af479f52
-PRIVACY.zh.md: bcf3834e8e6ab564e10f40827d6e1660f85eacf6
+PRIVACY.md: bf6807c4758c8ac647f0c00214de86f9d1ec224d
+PRIVACY.zh.md: cb5ae0344807bebf3d2a6a1934bcc3edb5e4ff18

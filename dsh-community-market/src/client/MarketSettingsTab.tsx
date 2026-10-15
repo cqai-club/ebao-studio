@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   Button,
   IconCheckOutlineRegular,
@@ -36,6 +36,8 @@ import type {
 } from '../api-types.js'
 import { marketMediaAssetUrl } from '../media/ref.js'
 import { MarketDescription } from './MarketDescription.js'
+import { PluginUpdatesPanel } from './PluginUpdatesPanel.js'
+import { pluginUpdatesStore, type PluginUpdatesStore } from './plugin-updates-store.js'
 import {
   executeMarketOperation,
   mutateMarketSource,
@@ -50,7 +52,7 @@ import {
 } from './api.js'
 
 type MarketItem = CatalogSnapshot['items'][number]
-export type MarketView = 'discover' | 'installable' | 'installed' | 'sources'
+export type MarketView = 'discover' | 'installable' | 'installed' | 'updates' | 'sources'
 const INSTALL_REQUIREMENTS_DOCS = {
   en: 'https://github.com/anywhere-labs/deepseek-harness-desktop/blob/master/dsh-community-market/docs/install-and-uninstall.md',
   zh: 'https://github.com/anywhere-labs/deepseek-harness-desktop/blob/master/dsh-community-market/docs/install-and-uninstall.zh.md',
@@ -169,6 +171,7 @@ export interface MarketSurfaceProps {
   readonly initialView?: MarketView
   /** Route the Installed tab to a parent plugin-management page when embedded. */
   readonly onOpenInstalled?: () => void
+  readonly updatesStore?: PluginUpdatesStore
 }
 
 function retainEnabledCatalog(
@@ -244,8 +247,10 @@ function mergeInstallablePages(
   }
 }
 
-export function MarketSurface({ initialView = 'discover', readLocale, t, showHeader = true, onOpenInstalled }: MarketSurfaceProps) {
-  const [view, setView] = useState<MarketView>(initialView)
+export function MarketSurface({ initialView = 'discover', readLocale, t, showHeader = true, onOpenInstalled, updatesStore = pluginUpdatesStore }: MarketSurfaceProps) {
+  const updatesSnapshot = useSyncExternalStore(updatesStore.subscribe, updatesStore.getSnapshot, updatesStore.getSnapshot)
+  const [view, setView] = useState<MarketView>(() => updatesSnapshot.requestedUpdatesView ? 'updates' : initialView)
+  const updatesCount = updatesSnapshot.updates.filter(update => update.updateAvailable && update.latestVersion !== undefined && update.error === undefined).length
   const [state, setState] = useState<MarketStateResponse>()
   const [catalog, setCatalog] = useState<MarketCatalogResponse>()
   const [query, setQuery] = useState('')
@@ -295,7 +300,12 @@ export function MarketSurface({ initialView = 'discover', readLocale, t, showHea
   const operationStage = useRef<'preview' | 'execute'>()
   const desktopActionRequest = useRef<AbortController>()
   const selectedKeyRef = useRef<string>()
-  const viewRef = useRef<MarketView>(initialView)
+  const viewRef = useRef<MarketView>(view)
+  useEffect(() => {
+    if (!updatesStore.getSnapshot().requestedUpdatesView) return
+    viewRef.current = 'updates'
+    setView('updates')
+  }, [updatesSnapshot.openRevision, updatesStore])
   const branding = useMemo(
     () => state?.policies?.find(policy => policy.branding !== undefined)?.branding,
     [state],
@@ -508,6 +518,8 @@ export function MarketSurface({ initialView = 'discover', readLocale, t, showHea
     if (viewRef.current === 'installable') {
       void loadState('', [], false, false)
       void loadInstallable(false, '', [])
+    } else if (viewRef.current === 'updates') {
+      void loadState('', [], false, false)
     } else {
       void loadState('', [])
     }
@@ -674,6 +686,7 @@ export function MarketSurface({ initialView = 'discover', readLocale, t, showHea
     if (viewRef.current === next) return
     viewRef.current = next
     setView(next)
+    updatesStore.clearOpenRequest()
     selectedKeyRef.current = undefined
     setSelected(undefined)
     setOperationError(undefined)
@@ -709,7 +722,7 @@ export function MarketSurface({ initialView = 'discover', readLocale, t, showHea
   }
 
   const beginOperationPreview = async (requestValue: MarketOperationPreviewRequest) => {
-    if (operationRequest.current !== undefined) return
+    if (operationRequest.current !== undefined || updatesStore.getSnapshot().operationPending) return
     const request = new AbortController()
     operationRequest.current = request
     operationStage.current = 'preview'
@@ -923,6 +936,9 @@ export function MarketSurface({ initialView = 'discover', readLocale, t, showHea
           }}>
             <IconCheckOutlineRegular size={14} /><span>{t('installed')}</span>
           </Pill>
+          <Pill active={view === 'updates'} aria-pressed={view === 'updates'} onClick={() => selectMarketView('updates')}>
+            <IconRefreshOutlineRegular size={14} /><span>{t('updates')}{updatesCount > 0 ? ` (${updatesCount})` : ''}</span>
+          </Pill>
           <Pill active={view === 'sources'} aria-pressed={view === 'sources'} onClick={() => selectMarketView('sources')}>
             <IconSettingsOutlineRegular size={14} /><span>{t('sources')}</span>
           </Pill>
@@ -1015,6 +1031,9 @@ export function MarketSurface({ initialView = 'discover', readLocale, t, showHea
             }}
             t={t}
           />
+        ) : view === 'updates' ? (
+          <PluginUpdatesPanel store={updatesStore} t={t} canRestart={state?.desktopActions.requestRestart === true}
+            disabled={operationPending || mutationPending} />
         ) : (
           <SourcesView
             state={state}

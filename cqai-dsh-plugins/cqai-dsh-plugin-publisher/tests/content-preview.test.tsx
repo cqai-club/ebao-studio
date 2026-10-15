@@ -68,4 +68,15 @@ describe('shared Publisher content preview', () => {
     expect((carousel?.props.assets as { id: string }[]).map(item => item.id)).toEqual([unusedId, coverId])
     expect(tree.some(node => node.props.className === 'pub-content-preview-tags')).toBe(true)
   })
+
+  it('keeps skipped Douyin article metadata out of the platform preview while preserving image-note tags', () => {
+    const model = previewContentModel(article, 'dy')
+    expect(model.renderedBody).toContain(article.body)
+    expect(model.renderedBody).not.toContain(article.summary)
+    const tree = elements(PublisherContentPreview({ content: article, platform: 'dy' }))
+    expect(tree.some(node => node.props.className === 'pub-content-preview-tags')).toBe(false)
+    const note = elements(PublisherContentPreview({ content: { ...article, contentType: 'image-note' }, platform: 'dy' }))
+    expect(note.some(node => node.props.className === 'pub-content-preview-tags')).toBe(true)
+    expect(article.tags).toEqual(['标签'])
+  })
 })

@@ -23,9 +23,9 @@ export interface UpstreamConfig {
    * Force the standard OpenAI image contract even when the model id resembles
    * a provider for which the standalone plugin has a native adapter.  CQAI's
    * Relay owns that provider translation and always receives the two OpenAI
-   * image endpoints.
+   * image endpoints. `cqai` uses the same facade with Relay size adaptation.
    */
-  protocol?: 'auto' | 'openai'
+  protocol?: 'auto' | 'openai' | 'cqai'
   /**
    * Optional host-side transport.  The CQAI account service uses this seam to
    * attach its short-lived OAuth credential without ever exposing it to this
@@ -188,6 +188,29 @@ const OPENAI_SIZE_BY_RATIO: Readonly<Record<string, string>> = {
   '21:9': '1792x1024',
 }
 
+/** CQAI Relay accepts the standard `size` field, not every provider's native
+ * aspect_ratio field. Keep an explicit portrait request at exactly 3:4 instead
+ * of rounding it to OpenAI's legacy 2:3 preset. Other ratios retain their
+ * existing behavior. Actual output dimensions remain the provider's result. */
+function cqaiPortraitSize(request: GenerateRequest): string {
+  const model = wireModel(request)
+  if (/^gpt-image-1(?:[.-]|$)/i.test(model) || modelFamily(model) === 'dall-e') {
+    throw new ImageGenError(
+      `模型 ${model} 的固定尺寸不支持 3:4；请选择支持自定义尺寸的模型（如 GPT Image 2）或改用该模型支持的比例。本任务不会自动改成 2:3。`,
+      'size-unsupported',
+    )
+  }
+  if (isMiniMaxImage(model)) return '864x1152'
+  if (isQwenImage(model)) return isVersionedQwenImage(model) ? '1728x2304' : '1104x1472'
+  if (isSeedream(model)) return '1728x2304'
+  // Relay's Imagen adapter accepts an aspect ratio in the standard size field.
+  if (/^imagen(?:-|$)/i.test(model)) return '3:4'
+  // GPT Image 2/2.5 support custom dimensions divisible by 16. Unknown aliases
+  // and gateway-backed families must be validated by the actual service, since
+  // the client cannot see Relay's model mapping or channel configuration.
+  return '1152x1536'
+}
+
 /** Panel ratios that need renaming for a model's vocabulary. Grok documents
  *  20:9 as its ultra-wide ratio, so the panel's 21:9 label is sent as 20:9. */
 const GROK_ASPECT_ALIASES: Readonly<Record<string, string>> = {
@@ -339,12 +362,17 @@ function effectiveParams(request: GenerateRequest, forceOpenAI = false): {
       quality: isGlmImage(model) ? 'hd' : 'standard',
     }
   }
-  // OpenAI-compatible endpoints: nearest pixel size, clarity tiers mapped to
-  // the quality levels (1k→low / 2k→medium / 4k→high), detail passthrough.
+  // GPT Image 2/2.5 accept custom sizes divisible by 16; keep an explicitly
+  // requested 3:4 image exact on direct OpenAI-compatible channels too.
+  const openaiSize = request.size.trim() === '3:4' && /^gpt-image-2(?:[.-]|$)/i.test(model)
+    ? '1152x1536'
+    : OPENAI_SIZE_BY_RATIO[request.size]
+  // Other OpenAI-compatible models keep their existing pixel presets; clarity
+  // tiers become quality levels (1k→low / 2k→medium / 4k→high).
   return {
     model,
-    ...request.size !== '' && request.size !== 'auto' && OPENAI_SIZE_BY_RATIO[request.size] !== undefined
-      ? { size: OPENAI_SIZE_BY_RATIO[request.size] }
+    ...request.size !== '' && request.size !== 'auto' && openaiSize !== undefined
+      ? { size: openaiSize }
       : {},
     ...request.quality === '1k' ? { quality: 'low' } : {},
     ...request.quality === '2k' ? { quality: 'medium' } : {},
@@ -559,7 +587,7 @@ async function requestOneImage(
   params: ReturnType<typeof effectiveParams>,
   signal?: AbortSignal,
 ): Promise<GeneratedImage[]> {
-  const forceOpenAI = upstream.protocol === 'openai'
+  const forceOpenAI = upstream.protocol === 'openai' || upstream.protocol === 'cqai'
   const headers: Record<string, string> = upstream.apiKey.trim() === ''
     ? {}
     : { authorization: `Bearer ${upstream.apiKey.trim()}` }
@@ -930,13 +958,14 @@ export async function generateImage(upstream: UpstreamConfig, request: GenerateR
   const baseUrl = upstream.apiUrl.trim().replace(/\/+$/, '')
   if (baseUrl === '') throw new ImageGenError('api_url 未配置：请先在「设置 → 插件 → 可配置」中填写', 'config-missing')
   if (upstream.apiKey.trim() === '' && upstream.request === undefined) throw new ImageGenError('api_key 未配置：请先在「设置 → 插件 → 可配置」中填写', 'config-missing')
-  const forceOpenAI = upstream.protocol === 'openai'
+  const forceOpenAI = upstream.protocol === 'openai' || upstream.protocol === 'cqai'
   if (!forceOpenAI && isQwenImage(wireModel(request))) return generateQwenImage(baseUrl, upstream, request, options)
   if (!forceOpenAI && isMiniMaxImage(wireModel(request))) return generateMiniMaxImage(baseUrl, upstream, request, options)
   if (!forceOpenAI && request.mode === 'edit' && isZhipuImage(wireModel(request))) {
     throw new ImageGenError('智谱 GLM-Image 当前仅支持文生图，请切换到文生图模式或选择支持图生图的模型', 'edit-unsupported')
   }
   const params = effectiveParams(request, forceOpenAI)
+  if (upstream.protocol === 'cqai' && request.size.trim() === '3:4') params.size = cqaiPortraitSize(request)
   const count = effectiveCount(request)
   const batches = await Promise.all(
     Array.from({ length: count }, () => requestOneImage(baseUrl, upstream, request, params, options.signal)),

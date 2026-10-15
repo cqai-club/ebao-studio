@@ -58,6 +58,9 @@ import type {
 } from './lifecycle-events.ts'
 import { FileExporter } from './file-exporter.ts'
 import { installAgentErrorLogging } from './agent-error-logging.ts'
+import { initializeDeveloperLogging, diagnosticRunId } from './developer-logging.ts'
+import { installHostDeveloperLogging } from './host-developer-logging.ts'
+import { DesktopPluginPackages } from './plugin-packages.ts'
 import { observeDesktopPreferenceSettings } from './settings-bridge.ts'
 import {
   desktopLanBrowserUrls,
@@ -96,7 +99,8 @@ import { DesktopProfileService } from './profile-service.ts'
 import { createDesktopProfileBoot } from './profile-context.ts'
 import { logInactiveStartupEntries } from './startup-audit.ts'
 import { DesktopActionsService } from './desktop-actions.ts'
-import { clearDesktopProfilePluginState, DesktopPluginsService } from './desktop-plugins.ts'
+import { clearDesktopProfileDisabledBundleNames, clearDesktopProfilePluginState, DesktopPluginsService } from './desktop-plugins.ts'
+import { completeEjianbaoDisabledBundleMigration, pendingEjianbaoDisabledBundles } from './ejianbao-migration.ts'
 import {
   desktopMarketSnapshotWithEffective,
   readDesktopMarketStateForUserData,
@@ -544,6 +548,7 @@ async function start(): Promise<void> {
     process.stderr.write(`${BIN_NAME}: file logging unavailable: ${maskSecrets(detail)}\n`)
     logSink = undefined
   }
+  initializeDeveloperLogging((level, line) => logSink?.writeRecord(level, JSON.parse(line)))
   const electronLogger = new ElectronStderrLogger(logSink)
   if (safeModeRequested) {
     safeModePaths = ensureDesktopSafeModeEnvironment(desktopUserDataDir)
@@ -1359,6 +1364,15 @@ async function start(): Promise<void> {
       marketSelection,
       preparationHooks,
     )
+    const ejianbaoLegacyDisabledBundles = pendingEjianbaoDisabledBundles(prepared.profile.dir)
+    if (ejianbaoLegacyDisabledBundles !== undefined) {
+      await clearDesktopProfileDisabledBundleNames(pluginManagementStatePath, activeProfileName, ejianbaoLegacyDisabledBundles)
+      completeEjianbaoDisabledBundleMigration(prepared.profile.dir)
+      prepared = prepareDesktopProfile(
+        process.env.DSH_TELEMETRY_DISABLED, homeDir, process.platform,
+        activeProfileName, pluginManagementStatePath, marketSelection, preparationHooks,
+      )
+    }
     let legacyPresetMigrated = false
     if (safeModePaths === undefined) {
       try {
@@ -1665,7 +1679,7 @@ async function start(): Promise<void> {
         host: { prepared, profilePreferences, homeDir, activeProfileName, pluginManagementStatePath,
           selectionStatePath, marketUserDataDir, releaseUserDataLocations, desktopLaunchEnvironment,
           desktopProxyOverlay: proxyResolution.overlay,
-          desktopPnpmBootstrap, logDirectory: join(desktopUserDataDir, 'logs', 'host') },
+          desktopPnpmBootstrap, diagnosticRunId: diagnosticRunId(), logDirectory: join(desktopUserDataDir, 'logs', 'host') },
         runtime, rendererToken: browserAccess.rendererHeader.value,
         prepareCertificate: prepareHostCertificate,
         bindHost: host => generation.bindHost(host), requestQuit,
@@ -1719,7 +1733,9 @@ async function start(): Promise<void> {
       }
       startupStage = 'host-boot'
       lifecycleRecorder.transitionStartupStage(startupStage)
-      const releasePackageResolver = installProfilePackageResolver(prepared.bareModuleBaseUrl)
+      const releasePackageResolver = installProfilePackageResolver(prepared.bareModuleBaseUrl, {
+        bundleNames: prepared.profile.layers.map(layer => layer.packageName),
+      })
       const profileBoot = createDesktopProfileBoot(prepared, desktopPnpmBootstrap)
       const ctx = await boot(
         BIN_NAME,
@@ -1749,6 +1765,8 @@ async function start(): Promise<void> {
             () => releasePackageResolver,
             'dsh-plugin-desktop: profile package resolution',
           )
+          installHostDeveloperLogging(hostCtx)
+          await hostCtx.plugin(DesktopPluginPackages)
           hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, desktopLaunchEnvironment)
           hostCtx.provide('desktopBrowserAccess', browserAccess)
           hostCtx.provide('desktopLanHttps', lanHttps)

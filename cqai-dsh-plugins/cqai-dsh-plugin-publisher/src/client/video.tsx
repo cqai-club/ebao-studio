@@ -3,12 +3,14 @@ import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   API, CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORM_LABELS, TITLE_MAX, VIDEO_PLATFORMS,
   type CreateSubmissionResult, type Platform, type PublisherAccount, type PublisherCapability,
-  type PublisherContent, type PublisherLocalVideo, type Work,
+  type PublisherContent, type PublisherContentPatch, type PublisherLocalVideo, type Work,
 } from '../protocol.ts'
 import { api, capabilityMessage, ConfirmDialog, errorMessage, PublisherModal, STATEMENT_LABELS, type PublisherConfirmation } from './shared.tsx'
 import { usePublisherTips } from './tips.tsx'
 import { PublisherContentPreview } from './content-preview.tsx'
 import { ProjectDirectoryInfo } from './project-directory-info.tsx'
+import { applyContentPatch, changedContentFields, mergeContentPatches } from './content-patch.ts'
+import { EditorMoreMenu, EditorSection } from './editor-layout.tsx'
 
 function VideoSourcePlayer({ url, kind }: { url: string; kind: 'work' | 'local' }) {
   const [failed, setFailed] = useState(false)
@@ -20,12 +22,17 @@ function VideoSourcePlayer({ url, kind }: { url: string; kind: 'work' | 'local' 
       controls playsInline preload="metadata" onError={() => setFailed(true)}>当前环境无法播放此视频。</video>
 }
 
-export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent, onSelectedContentChange, onBack }: {
+export function VideoPage({ active, selectedContentId, initialMode = 'edit', agentOpen, onToggleAgent, onDraftReady, onRestartAgent, onDeleteContent, onSelectedContentChange, onOpenWritingProfile, onBack }: {
   active: boolean
   selectedContentId: string
+  initialMode?: 'edit' | 'preview' | 'publish'
   agentOpen?: boolean
   onToggleAgent?: (content: PublisherContent) => Promise<void>
+  onDraftReady?: (content: PublisherContent) => void
+  onRestartAgent?: (content: PublisherContent) => Promise<void>
+  onDeleteContent?: (id: string) => Promise<void>
   onSelectedContentChange(id: string): void
+  onOpenWritingProfile?: () => void
   onBack(): void
 }) {
   const { showError, showSuccess, clearTip } = usePublisherTips()
@@ -34,11 +41,14 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
   const [accounts, setAccounts] = useState<PublisherAccount[]>([])
   const [draft, setDraft] = useState<PublisherContent>()
   const draftRef = useRef<PublisherContent>()
+  const serverDraftRef = useRef<PublisherContent>()
   const activeDraftRef = useRef({ selectedContentId, active, generation: 0 })
   if (activeDraftRef.current.selectedContentId !== selectedContentId || activeDraftRef.current.active !== active) {
     activeDraftRef.current = { selectedContentId, active, generation: activeDraftRef.current.generation + 1 }
   }
   const dirtyRef = useRef(false)
+  const pendingChanges = useRef<PublisherContentPatch>({})
+  const inFlightChanges = useRef<{ id: string; patch: PublisherContentPatch }>()
   const saveTask = useRef<Promise<void>>()
   const [editVersion, setEditVersion] = useState(0)
   const [tagsInput, setTagsInput] = useState('')
@@ -51,11 +61,15 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
   const [publishOpen, setPublishOpen] = useState(false)
   const [confirm, setConfirm] = useState<PublisherConfirmation>()
   const [deleteDraftId, setDeleteDraftId] = useState<string>()
+  const [restartAgent, setRestartAgent] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [loadRetry, setLoadRetry] = useState(0)
 
   useEffect(() => { setConfirm(undefined); setPublishOpen(false) }, [selectedContentId, active])
-  useEffect(() => { setPreview(false) }, [selectedContentId])
+  useEffect(() => { setPreview(initialMode === 'preview') }, [selectedContentId, initialMode])
+  useEffect(() => {
+    if (active && draft?.id === selectedContentId && initialMode === 'publish') setPublishOpen(true)
+  }, [active, draft?.id, selectedContentId, initialMode])
 
   const grouped = useMemo(() => Object.fromEntries(VIDEO_PLATFORMS.map(platform => [platform, accounts.filter(account => account.platform === platform)])) as Record<Platform, PublisherAccount[]>, [accounts])
   const selectedAccounts = VIDEO_PLATFORMS.flatMap(platform => {
@@ -64,19 +78,38 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
   })
 
   const setServerDraft = (value: PublisherContent | undefined) => {
+    const previous = serverDraftRef.current
+    if (value?.id === previous?.id && value && previous && previous.revision > value.revision) value = previous
+    serverDraftRef.current = value
     draftRef.current = value
     dirtyRef.current = false
+    pendingChanges.current = {}
+    inFlightChanges.current = undefined
     setSaveError('')
     setDraft(value)
     setTagsInput(value?.tags.join(' ') ?? '')
   }
+  const acceptServerSnapshot = (value: PublisherContent) => {
+    const previous = serverDraftRef.current
+    const latest = previous?.id === value.id && previous.revision > value.revision ? previous : value
+    serverDraftRef.current = latest
+    const local = inFlightChanges.current?.id === latest.id
+      ? mergeContentPatches(inFlightChanges.current.patch, pendingChanges.current) : pendingChanges.current
+    const merged = applyContentPatch(latest, local)
+    draftRef.current = merged
+    setDraft(merged)
+    if (!Object.hasOwn(local, 'tags')) setTagsInput(merged.tags.join(' '))
+  }
+  useEffect(() => {
+    if (active && draft?.id === selectedContentId) onDraftReady?.(draft)
+  }, [active, draft?.id, selectedContentId, onDraftReady])
   useEffect(() => {
     if (!active || !selectedContentId) return
     let live = true
     setLoadError('')
     void (async () => {
       const needsDraft = draftRef.current?.id !== selectedContentId
-      if (needsDraft && dirtyRef.current) await flush()
+      if (needsDraft && (dirtyRef.current || saveTask.current)) await flush()
       const [value, availableWorks, selected] = await Promise.all([
         api<PublisherCapability>('capability'), api<Work[]>('works'),
         needsDraft ? api<PublisherContent>(`content/${selectedContentId}`) : Promise.resolve(undefined),
@@ -102,8 +135,9 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
   const update = (patch: Partial<PublisherContent>) => {
     if (!draftRef.current) return
     const next = { ...draftRef.current, ...patch }
+    pendingChanges.current = mergeContentPatches(pendingChanges.current, changedContentFields(draftRef.current, next))
     draftRef.current = next
-    dirtyRef.current = true
+    dirtyRef.current = Object.keys(pendingChanges.current).length > 0
     setDraft(next)
     setEditVersion(version => version + 1)
   }
@@ -112,22 +146,21 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
     if (saveTask.current) await saveTask.current
     const current = draftRef.current
     if (!current || !dirtyRef.current) return current
+    const patch = pendingChanges.current
+    pendingChanges.current = {}
     dirtyRef.current = false
+    inFlightChanges.current = { id: current.id, patch }
     const task = (async () => {
       try {
-        const saved = await api<PublisherContent>('content-save', {
-          id: current.id, revision: current.revision, title: current.title,
-          body: '', summary: '', tags: current.tags, creativeStatement: current.creativeStatement,
-          description: current.description ?? '', shortTitle: current.shortTitle ?? '',
-          videoSource: current.videoSource,
-        })
+        const saved = await api<PublisherContent>('content-patch', { id: current.id, revision: current.revision, patch })
+        inFlightChanges.current = undefined
         if (draftRef.current?.id === current.id) {
-          const merged = { ...draftRef.current, revision: saved.revision, updatedAt: saved.updatedAt }
-          draftRef.current = merged
-          setDraft(merged)
+          acceptServerSnapshot(saved)
         }
         setSaveError('')
       } catch (cause) {
+        inFlightChanges.current = undefined
+        pendingChanges.current = mergeContentPatches(patch, pendingChanges.current)
         dirtyRef.current = true
         setSaveError(errorMessage(cause))
         throw cause
@@ -159,16 +192,12 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
         if (!live || busyRef.current || latest.contentType !== 'video') return
         const current = draftRef.current
         if (current?.id === latest.id && latest.revision > current.revision) {
-          if (dirtyRef.current || saveTask.current) {
-            setSaveError('草稿已在其他页面更新，请重新加载后再保存')
-          } else {
-            setServerDraft(latest)
-            if (latest.videoSource?.kind === 'work') {
-              try {
-                const availableWorks = await api<Work[]>('works')
-                if (live) setWorks(availableWorks)
-              } catch { /* Keep the saved draft visible. */ }
-            }
+          acceptServerSnapshot(latest)
+          if (latest.videoSource?.kind === 'work') {
+            try {
+              const availableWorks = await api<Work[]>('works')
+              if (live) setWorks(availableWorks)
+            } catch { /* Keep the saved draft visible. */ }
           }
         }
       } catch { /* The ordinary editor load path reports read failures. */ }
@@ -228,11 +257,9 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
     const id = deleteDraftId
     if (!id) return
     void act(async () => {
-      try { if (saveTask.current) await saveTask.current } catch { /* discard failed save */ }
-      const wasDirty = dirtyRef.current
-      dirtyRef.current = false
-      try { await api('content-delete', { id }) }
-      catch (cause) { dirtyRef.current = wasDirty; throw cause }
+      await flush()
+      if (onDeleteContent) await onDeleteContent(id)
+      else await api('content-delete', { id })
       setDeleteDraftId(undefined)
       setServerDraft(undefined)
       onBack()
@@ -286,7 +313,7 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
     {unavailable && <div className="pub-error">{unavailable}</div>}
     <div className="pub-editor-bar">
       <Button size="sm" variant="outline" className="pub-editor-back" disabled={busy} onClick={back}>← 返回视频列表</Button>
-      <span className={saveError ? 'pub-warn pub-editor-status' : 'pub-muted pub-editor-status'} role="status" aria-live="polite">{saveError ? '自动保存失败，请继续编辑以重试' : dirtyRef.current ? '自动保存中…' : '本地草稿自动保存'}</span>
+      <span className={saveError ? 'pub-warn pub-editor-status' : 'pub-muted pub-editor-status'} role="status" aria-live="polite">{saveError ? '自动保存失败，请继续编辑以重试' : dirtyRef.current || inFlightChanges.current ? '自动保存中…' : '已保存'}</span>
       <div className="pub-editor-actions">
         <div className="pub-editor-view-switch" role="group" aria-label="内容视图">
           <button type="button" aria-pressed={!preview} disabled={busy || !draft} onClick={() => setPreview(false)}>编辑</button>
@@ -295,11 +322,15 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
         {onToggleAgent && <Button size="sm" variant="outline" aria-expanded={Boolean(agentOpen)} aria-controls="pub-agent-drawer" disabled={busy || !draft || draft.id !== selectedContentId} onClick={() => void act(async () => {
           const current = await flush()
           if (!current) throw new Error('请先打开视频草稿')
-          setPreview(false)
           await onToggleAgent(current)
         })}>Agent 辅助编辑</Button>}
-        <Button size="sm" variant="outline" disabled={busy || !draft} onClick={duplicate}>复制</Button>
-        <Button size="sm" variant="outline" className="pub-danger-action" disabled={busy || !draft} onClick={remove}>删除</Button>
+        <EditorMoreMenu>
+          {onOpenWritingProfile && <Button size="sm" variant="outline" disabled={busy} onClick={onOpenWritingProfile}>写作风格</Button>}
+          <Button size="sm" variant="outline" disabled={busy || !draft || !dirtyRef.current} onClick={() => void act(async () => { await flush(); showSuccess('已保存。') })}>保存</Button>
+          {onRestartAgent && <Button size="sm" variant="outline" disabled={busy || !draft} onClick={() => setRestartAgent(true)}>重新开始对话</Button>}
+          <Button size="sm" variant="outline" disabled={busy || !draft} onClick={duplicate}>复制</Button>
+          <Button size="sm" variant="outline" className="pub-danger-action" disabled={busy || !draft} onClick={remove}>删除</Button>
+        </EditorMoreMenu>
         <Button size="sm" variant="primary" disabled={busy || draft?.id !== selectedContentId} onClick={() => setPublishOpen(true)}>发布</Button>
       </div>
     </div>
@@ -308,32 +339,42 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
       草稿已在其他页面更新。请重新加载后继续编辑；当前未保存的修改会丢失。
       <div className="pub-actions"><Button size="sm" variant="outline" disabled={busy} onClick={reloadAfterConflict}>重新加载草稿</Button></div>
     </div>}
-    {draft?.id !== selectedContentId ? <div className="pub-empty" role="status">正在打开视频草稿…</div> : <div className="pub-video-editor-main">
-    {preview ? <div className="pub-card"><h2>平台分享预览</h2><PublisherContentPreview content={draft} videoSourceName={videoSourceName} videoPreviewUrl={videoPreviewUrl}/></div> : <>
-    <div className="pub-card"><h2><span className="pub-count">01</span>选择视频素材</h2>
+    {draft?.id !== selectedContentId ? <div className="pub-empty" role="status">正在打开视频草稿…</div> : <div className="pub-grid pub-editor-grid pub-video-editor-main">
+    <div className="pub-editor-main">
+    {preview ? <div className="pub-card pub-editor-preview"><h2>平台分享预览</h2><PublisherContentPreview content={draft} videoSourceName={videoSourceName} videoPreviewUrl={videoPreviewUrl}/></div> : <>
+    <div className="pub-card"><h2>视频素材</h2>
       <div className="pub-field" aria-label="视频素材预览">
         {source && videoPreviewUrl ? <>
           <p className="pub-muted">当前视频：{videoSourceName}</p>
           <VideoSourcePlayer key={videoPreviewUrl} url={videoPreviewUrl} kind={source.kind}/>
-        </> : <div className="pub-empty" role="status">尚未选择视频。请从下方选择 e剪宝成片或本地视频，选中后可在这里播放预览。</div>}
+          {source.kind === 'local' && <small className="pub-muted">{(source.bytes / 1048576).toFixed(1)} MB · 本地文件</small>}
+        </> : <p className="pub-muted" role="status">选择 e剪宝成片或本地视频后，可在这里预览。</p>}
       </div>
-      <h3>e剪宝成片</h3>
-      {works.length === 0 ? <p className="pub-muted">暂无 e剪宝成片，也可以直接选择本地视频。</p> : works.map(work => <button className="pub-work" aria-pressed={source?.kind === 'work' && source.workId === work.id} key={work.id} onClick={() => chooseWork(work)}><strong>{work.title}</strong><small>{new Date(work.createdAt).toLocaleString()} · {(work.bytes / 1048576).toFixed(1)} MB</small></button>)}
       {source?.kind === 'work' && !works.some(work => work.id === source.workId) && <p className="pub-warn">原 e剪宝成片已不可用，请重新选择。</p>}
+      <EditorSection key={`${draft.id}-${videoPreviewUrl ?? 'empty'}`} title={source ? '更换视频' : '选择视频素材'}
+        hint={source ? 'e剪宝成片 / 本地文件' : '选择已有成片或 MP4'} defaultOpen={!source} className="pub-video-source-picker">
+      <h3>e剪宝成片</h3>
+      {works.length === 0 ? <p className="pub-muted">暂无 e剪宝成片，也可以直接选择本地视频。</p> : works.map(work => <button type="button" className="pub-work" disabled={busy} aria-pressed={source?.kind === 'work' && source.workId === work.id} key={work.id} onClick={() => chooseWork(work)}><strong>{work.title}</strong><small>{new Date(work.createdAt).toLocaleString()} · {(work.bytes / 1048576).toFixed(1)} MB</small></button>)}
       <h3>本地视频</h3>
       <Button size="sm" variant="outline" disabled={busy || capability?.supported !== true} onClick={chooseLocalVideo}>选择本地文件…</Button>
       {source?.kind === 'local' && <div className="pub-work" aria-label="已选择的本地视频"><strong>{source.fileName}</strong><small>{(source.bytes / 1048576).toFixed(1)} MB · 已选择</small></div>}
       <p className="pub-muted">目前支持 MP4；本地草稿只保存文件引用，不复制视频。提交后请保留原文件，直到平台后台确认。</p>
+      </EditorSection>
     </div>
-    <div className="pub-card"><h2><span className="pub-count">02</span>发布内容</h2>
+    <div className="pub-card"><h2>发布内容</h2>
       <div className="pub-field"><label htmlFor="pub-title">标题</label><Input id="pub-title" className="pub-text-input" maxLength={TITLE_MAX} value={draft.title} onChange={event => update({ title: event.target.value })}/></div>
       <div className="pub-field"><label htmlFor="pub-description">简介</label><textarea id="pub-description" className="pub-input" maxLength={DESCRIPTION_MAX} value={draft.description ?? ''} onChange={event => update({ description: event.target.value })}/></div>
+    </div></>}
+    </div>
+    <aside className="pub-editor-sidebar" aria-label="视频发布设置">
+    {!preview && <EditorSection title="发布信息" hint="话题、短标题与内容声明">
       <div className="pub-field"><label htmlFor="pub-tags">话题（最多 {MAX_TAGS} 个）</label><Input id="pub-tags" className="pub-text-input" value={tagsInput} onChange={event => { setTagsInput(event.target.value); update({ tags: [...new Set(event.target.value.split(/[,，\s]+/u).map(tag => tag.replace(/^#+/u, '').trim()).filter(Boolean))].slice(0, MAX_TAGS) }) }} placeholder="用空格或逗号分隔"/></div>
       <div className="pub-field"><label htmlFor="pub-short-title">视频号短标题</label><Input id="pub-short-title" className="pub-text-input" maxLength={32} value={draft.shortTitle ?? ''} onChange={event => update({ shortTitle: event.target.value })}/></div>
       <div className="pub-field"><label htmlFor="pub-statement">内容声明</label><select id="pub-statement" className="pub-input" value={draft.creativeStatement} onChange={event => update({ creativeStatement: event.target.value as PublisherContent['creativeStatement'] })}>{CREATIVE_STATEMENTS.map(value => <option value={value} key={value}>{STATEMENT_LABELS[value]}</option>)}</select></div>
       <p className="pub-muted">一期不会自动上传视频封面。</p>
-    </div></>}
+    </EditorSection>}
     <ProjectDirectoryInfo key={draft.id} contentId={draft.id}/>
+    </aside>
     </div>}
     {publishOpen && draft?.id === selectedContentId && <PublisherModal open title="发布设置" closeLabel="关闭发布设置" className="pub-modal pub-publish-modal" contentClassName="pub-modal-content"
       onClose={() => { if (!busyRef.current) setPublishOpen(false) }}
@@ -352,5 +393,6 @@ export function VideoPage({ active, selectedContentId, agentOpen, onToggleAgent,
       </fieldset>
     </PublisherModal>}
     {confirm && <ConfirmDialog contentType="video" title={confirm.title} sourceName={confirm.sourceName} mode={confirm.mode} accounts={confirm.accounts} busy={busy} onCancel={() => { setConfirm(undefined); setPublishOpen(true) }} onConfirm={submit}/>}
-    <PublisherModal open={deleteDraftId !== undefined} title="删除本地视频草稿" closeLabel="关闭删除视频草稿确认" description="删除这份本地视频草稿？已经提交的记录不受影响。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button size="sm" variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button size="sm" variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/></div>
+    <PublisherModal open={restartAgent} title="重新开始对话" closeLabel="关闭重新开始对话确认" description="保存当前对话并开启新对话？稿件、素材和平台版本都会保留。" className="pub-modal" onClose={() => { if (!busyRef.current) setRestartAgent(false) }} footer={<><Button variant="outline" data-pub-initial-focus disabled={busy} onClick={() => setRestartAgent(false)}>取消</Button><Button disabled={busy} onClick={() => void act(async () => { const current = await flush(); if (current) await onRestartAgent?.(current); setRestartAgent(false) })}>开启新对话</Button></>}/>
+    <PublisherModal open={deleteDraftId !== undefined} title="删除本地视频草稿" closeLabel="关闭删除视频草稿确认" description="将这份稿件和关联对话一起移入回收站？素材保留，稿件可恢复，已发布记录也会保留。" className="pub-modal" onClose={() => { if (!busyRef.current) setDeleteDraftId(undefined) }} footer={<><Button size="sm" variant="outline" data-pub-initial-focus disabled={busy} onClick={() => { if (!busyRef.current) setDeleteDraftId(undefined) }}>取消</Button><Button size="sm" variant="outline" className="pub-danger-action" disabled={busy} onClick={confirmRemove}>{busy ? '正在删除…' : '删除草稿'}</Button></>}/></div>
 }

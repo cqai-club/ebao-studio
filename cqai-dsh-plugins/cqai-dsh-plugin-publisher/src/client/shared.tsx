@@ -1,11 +1,12 @@
-import { useEffect, useId, useLayoutEffect, useRef, type ComponentProps } from 'react'
-import { Button, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, type ComponentProps } from 'react'
+import { Button, Modal, Tag, observeComposition } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   API, type CreativeStatement, type Platform, PLATFORM_LABELS,
   type PublisherAccount, type PublisherCapability, type PublisherContent, type PublisherContentType,
 } from '../protocol.ts'
 import { contentPreviewCss } from './content-preview-style.ts'
 import { draftGalleryCss } from './draft-gallery-style.ts'
+import { editorLayoutCss } from './editor-layout.tsx'
 import { displayArticleWarnings } from '../submission-display.ts'
 
 export const STATEMENT_LABELS: Record<CreativeStatement, string> = {
@@ -22,11 +23,12 @@ export const CONTENT_LABELS: Record<PublisherContentType, string> = {
   article: '文章', 'image-note': '图文', video: '视频',
 }
 
-export async function api<T>(action: string, data?: unknown): Promise<T> {
-  const response = await fetch(`${API}/${action}`, data === undefined ? {} : {
+export async function api<T>(action: string, data?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`${API}/${action}`, data === undefined ? { signal } : {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-ejianbao': '1' },
     body: JSON.stringify(data),
+    signal,
   })
   if (!response.headers.get('content-type')?.includes('application/json')) {
     throw new Error('多平台发布服务暂未就绪，请稍候或重启应用')
@@ -63,7 +65,7 @@ export function errorMessage(cause: unknown): string {
 }
 
 export function ConfirmDialog({
-  contentType, title, sourceName, mode, accounts, targetTitles, warnings, onCancel, onConfirm, busy,
+  contentType, title, sourceName, mode, accounts, targetTitles, targetSummaries, warnings, onCancel, onConfirm, busy,
 }: {
   contentType: PublisherContentType
   title: string
@@ -71,6 +73,7 @@ export function ConfirmDialog({
   mode: 'publish' | 'draft'
   accounts: PublisherAccount[]
   targetTitles?: Record<string, string>
+  targetSummaries?: Record<string, string>
   warnings?: string[]
   onCancel(): void
   onConfirm(): void
@@ -98,6 +101,9 @@ export function ConfirmDialog({
     </dl>
     <div className="pub-modal-target-title">目标账号 · {accounts.length} 个</div>
     <ul className="pub-modal-accounts">{accounts.map(account => <li key={account.id}><Tag tone="neutral">{PLATFORM_LABELS[account.platform]}</Tag><span>{account.displayName}{targetTitles?.[account.id] && targetTitles[account.id] !== title ? ` · ${targetTitles[account.id]}` : ''}</span></li>)}</ul>
+    {accounts.some(account => targetSummaries?.[account.id]) && <dl className="pub-modal-summary" style={{ marginTop: 16 }}>
+      {accounts.filter(account => targetSummaries?.[account.id]).map(account => <div key={account.id}><dt>{PLATFORM_LABELS[account.platform]}摘要</dt><dd>{targetSummaries![account.id]}</dd></div>)}
+    </dl>}
     {!!visibleWarnings.length && <details className="pub-modal-copy"><summary>平台调整说明 · {visibleWarnings.length} 项</summary>
       <p>平台稿件将按以下说明调整，转存草稿后请核对：</p>
       <ul className="pub-modal-accounts">{visibleWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
@@ -111,48 +117,117 @@ export interface PublisherConfirmation {
   mode: 'publish' | 'draft'
   accounts: PublisherAccount[]
   targetTitles?: Record<string, string>
+  targetSummaries?: Record<string, string>
   warnings?: string[]
   sourceName?: string
 }
 
-/** The upstream Modal supplies the visual shell; focus stays inside while it is open. */
+interface PublisherModalLayer {
+  parent: PublisherModalLayer | null
+  dialog?: HTMLElement
+  previous?: HTMLElement | null
+  lastFocused?: HTMLElement
+}
+
+const PublisherModalParent = createContext<PublisherModalLayer | null>(null)
+const publisherModalLayers = new WeakMap<Document, PublisherModalLayer[]>()
+
+function modalDescendsFrom(layer: PublisherModalLayer, ancestor: PublisherModalLayer): boolean {
+  for (let parent = layer.parent; parent; parent = parent.parent) if (parent === ancestor) return true
+  return false
+}
+
+/** The upstream Modal supplies the shell; only the foreground Publisher modal owns focus. */
 export function PublisherModal(props: ComponentProps<typeof Modal>) {
   const marker = `pub-focus-${useId().replace(/[^a-z0-9_-]/giu, '')}`
+  const parent = useContext(PublisherModalParent)
+  const layer = useRef<PublisherModalLayer>({ parent }).current
+  const composition = useRef<ReturnType<typeof observeComposition>>()
+  // Native Modal's child layout effect already moves focus. Capture the invoking control
+  // before that commit so the final dialog can return to it, including under StrictMode.
+  const beforeOpen = typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null
   useLayoutEffect(() => {
     if (!props.open) return
     const dialog = document.getElementsByClassName(marker)[0] as HTMLElement | undefined
     if (!dialog) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const owner = dialog.ownerDocument
+    const keyboardComposition = observeComposition(owner)
+    composition.current = keyboardComposition
+    const stack = publisherModalLayers.get(owner) ?? []
+    publisherModalLayers.set(owner, stack)
+    layer.parent = parent
+    layer.dialog = dialog
+    layer.previous = beforeOpen
+    const descendant = stack.findIndex(other => modalDescendsFrom(other, layer))
+    // Nested children run layout effects first. Keep their ancestor below them.
+    if (descendant < 0) stack.push(layer)
+    else stack.splice(descendant, 0, layer)
+    const isTop = () => stack.at(-1) === layer
     const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
       'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
-    )).filter(element => element.getClientRects().length > 0)
-    const initial = dialog.querySelector<HTMLElement>('[data-pub-initial-focus]')
-    const firstTarget = initial && !initial.matches(':disabled') ? initial : focusable()[0]
-    firstTarget?.focus()
+    )).filter(element => !element.closest('[hidden], [inert], [aria-hidden="true"]') && element.getClientRects().length > 0)
+    const enter = () => {
+      const items = focusable()
+      const initial = items.find(element => element.hasAttribute('data-pub-initial-focus'))
+      ;(initial ?? items[0] ?? dialog).focus()
+    }
+    const onFocusIn = (event: FocusEvent) => {
+      if (!isTop()) return
+      if (dialog.contains(event.target as Node)) layer.lastFocused = event.target as HTMLElement
+      else if (layer.lastFocused && focusable().includes(layer.lastFocused)) layer.lastFocused.focus()
+      else enter()
+    }
+    owner.addEventListener('focusin', onFocusIn)
+    if (isTop()) enter()
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return
+      if (!isTop() || event.defaultPrevented || event.key !== 'Tab' || (event.target instanceof Element && event.target.closest('[role="menu"]'))) return
       const elements = focusable()
-      if (elements.length === 0) { event.preventDefault(); return }
+      if (elements.length === 0) { event.preventDefault(); dialog.focus(); return }
       const first = elements[0]
       const last = elements[elements.length - 1]
-      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      if (event.shiftKey && (owner.activeElement === first || !dialog.contains(owner.activeElement))) {
         event.preventDefault(); last.focus()
-      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+      } else if (!event.shiftKey && (owner.activeElement === last || !dialog.contains(owner.activeElement))) {
         event.preventDefault(); first.focus()
       }
     }
-    const onFocusIn = (event: FocusEvent) => {
-      if (!dialog.contains(event.target as Node)) focusable()[0]?.focus()
-    }
-    document.addEventListener('keydown', onKeyDown, true)
-    document.addEventListener('focusin', onFocusIn)
+    owner.addEventListener('keydown', onKeyDown, true)
     return () => {
-      document.removeEventListener('keydown', onKeyDown, true)
-      document.removeEventListener('focusin', onFocusIn)
-      if (previous?.isConnected) previous.focus()
+      keyboardComposition.dispose()
+      if (composition.current === keyboardComposition) composition.current = undefined
+      owner.removeEventListener('keydown', onKeyDown, true)
+      owner.removeEventListener('focusin', onFocusIn)
+      const wasTop = isTop()
+      stack.splice(stack.indexOf(layer), 1)
+      if (!stack.length) publisherModalLayers.delete(owner)
+      if (!wasTop) return
+      const upper = stack.at(-1)
+      if (upper) {
+        const target = [layer.previous, upper.lastFocused].find(item => item?.isConnected && upper.dialog?.contains(item) && !item.matches(':disabled') && !item.closest('[hidden], [inert], [aria-hidden="true"]') && item.getClientRects().length > 0)
+        ;(target ?? upper.dialog)?.focus()
+      } else {
+        // When the whole nested tree closes in one commit, its trigger may also
+        // be disappearing. Walk back to the outermost dialog's invoking control.
+        let outer = layer
+        while (outer.parent && !stack.includes(outer.parent)) outer = outer.parent
+        if (outer.previous?.isConnected) outer.previous.focus()
+      }
     }
   }, [props.open, marker])
-  return <Modal {...props} className={`${props.className ?? ''} ${marker}`}/>
+  const isTop = () => !!layer.dialog && publisherModalLayers.get(layer.dialog.ownerDocument)?.at(-1) === layer
+  return <PublisherModalParent.Provider value={layer}><Modal {...props}
+    onClose={() => { if (isTop()) props.onClose() }}
+    onKeyDownCapture={event => {
+      if (!isTop()) return
+      const composing = composition.current?.guards(event.nativeEvent) ?? event.nativeEvent.isComposing
+      props.onKeyDownCapture?.(event)
+      if (!isTop() || event.defaultPrevented || composing || event.key !== 'Escape' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return
+      // Resolve Publisher's foreground layer before the native document
+      // listeners, whose registration order may be children-first.
+      event.preventDefault()
+      event.stopPropagation()
+      if (!event.repeat) props.onClose()
+    }} className={`${props.className ?? ''} ${marker}`}/></PublisherModalParent.Provider>
 }
 
 export function PlatformAccountSelect({
@@ -176,6 +251,33 @@ export function PlatformAccountSelect({
 }
 
 export const css = `
+.pub-surface { display: flex; height: 100%; min-height: 0; min-width: 0; overflow: hidden; container: publisher-surface / inline-size; }
+.pub-surface > .pub { flex: 1; min-width: 0; }
+.pub-agent-panel { display: flex; flex-direction: column; flex: 0 0 var(--pub-agent-width, clamp(320px, 34%, 440px)); min-height: 0; min-width: 0; overflow: hidden; background: var(--dsw-alias-bg-base, #fff); color: var(--dsw-alias-label-primary, #111318); }
+.pub-agent-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2, #e4e6e9); font-family: var(--dsw-font-family, inherit); font-size: 13px; }
+.pub-agent-header button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 20px; cursor: pointer; }
+.pub-agent-header button:hover { background: var(--dsw-alias-bg-module-platform, #f5f6f7); }
+.pub-agent-header button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
+.pub-agent-conversation { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.pub-agent-history { display: flex; flex-direction: column; flex: 1 0 auto; min-height: 0; }
+.pub-agent-shortcuts { display: flex; flex-direction: column; gap: 10px; width: min(100%, 380px); box-sizing: border-box; margin: auto; padding: 24px 20px; font-family: var(--dsw-font-family, inherit); }
+.pub-agent-shortcuts-hint { margin: 0 0 6px; color: var(--dsw-alias-label-tertiary, #777d85); font-size: 12px; line-height: 1.5; }
+.pub-agent-shortcut { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, #e4e6e9); border-radius: 12px; background: var(--dsw-alias-bg-base, #fff); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.pub-agent-shortcut:hover { background: var(--dsw-alias-bg-module-platform, #f5f6f7); }
+.pub-agent-shortcut:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
+.pub-agent-shortcut-icon { display: flex; flex: 0 0 auto; color: var(--dsw-alias-label-secondary, #535961); }
+.pub-agent-shortcut-copy { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; line-height: 1.4; }
+.pub-agent-shortcut-copy small { color: var(--dsw-alias-label-tertiary, #777d85); font-size: 11px; }
+.pub-agent-shortcut-arrow { color: var(--dsw-alias-label-tertiary, #777d85); font-size: 15px; }
+.pub-agent-shortcuts-error { margin: 4px 20px 12px; color: var(--dsw-alias-state-error-primary, #dc2626); font-size: 12px; }
+.pub-agent-conversation [data-conversation-content] { flex: 1; min-height: 0; min-width: 0; }
+@container publisher-surface (max-width: 760px) {
+  .pub-agent-panel { flex-basis: var(--pub-agent-width, 280px); }
+}
+@container publisher-surface (max-width: 620px) {
+  .pub-agent-panel { position: absolute; inset: 0; z-index: 5; border-right: 0; }
+}
+.pub-surface { position: relative; }
 .pub {
   --pub-bg: var(--dsw-alias-bg-base, #fff);
   --pub-surface: var(--dsw-alias-bg-layer-1, #fff);
@@ -195,6 +297,16 @@ export const css = `
 .pub :is(.pub-page-link, .pub-type, .pub-work):disabled { opacity: .4; cursor: not-allowed; }
 .pub :is(button, input, textarea, select):focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
 .pub-wrap { max-width: 1200px; margin: auto; padding: 32px 36px 56px; }
+.pub [hidden] { display: none !important; }
+.pub[data-editor-open=true] .pub-wrap { max-width: none; padding: 22px 24px 40px; }
+.pub-gallery-restore { margin: 0 16px 16px; padding: 8px 14px; border: 1px solid var(--pub-border); border-radius: 8px; background: var(--pub-surface); color: var(--pub-text); cursor: pointer; }
+.pub-gallery-restore:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.pub-gallery-quick-actions { display: flex; gap: 8px; margin: 0 16px 12px; }
+.pub-gallery-quick-actions button { min-height: 30px; padding: 4px 12px; border: 1px solid var(--pub-border); border-radius: 8px; background: var(--pub-surface); color: var(--pub-secondary-text); cursor: pointer; }
+.pub-gallery-quick-actions button:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.pub-gallery-publication { display: inline-block; margin-top: 6px; padding: 3px 7px; border-radius: 5px; background: var(--pub-soft); color: var(--pub-secondary-text); font-size: 12px; line-height: 1.4; }
+.pub-gallery-pending { display: block; margin-top: 6px; color: var(--dsw-alias-state-error-primary, #dc2626); font-size: 12px; line-height: 1.5; }
+.pub-gallery-restore:disabled, .pub-gallery-quick-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .pub-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
 .pub-head h1 { margin: 0 0 7px; font-size: 24px; line-height: 1.35; font-weight: 600; letter-spacing: -.02em; }
 .pub-head h2 { margin: 0 0 6px; font-size: 18px; line-height: 1.4; font-weight: 600; }
@@ -320,6 +432,7 @@ export const css = `
 .pub-version-tab:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6); outline-offset: 2px; }
 ${contentPreviewCss}
 ${draftGalleryCss}
+${editorLayoutCss}
 .pub-assets { display: flex; gap: 8px; flex-wrap: wrap; }
 .pub-no-cover { display: inline-flex; align-items: center; gap: 5px; margin: 0 0 12px; color: var(--pub-secondary-text); font-size: 13px; }
 .pub-asset { width: 130px; padding: 8px; border: 1px solid var(--pub-border); border-radius: 9px; }

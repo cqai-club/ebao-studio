@@ -15,7 +15,7 @@ import { articleSubmissionWarnings, contentSubmissionError } from './submission-
 import { displayAdjustmentMessage, isOperationTimeout, isToutiaoOnly, projectSubmissionForDisplay } from './submission-display.ts'
 import { createPublisherSubmission, validateSubmissionChoices, videoSubmissionError, type PublisherSubmissionRuntime } from './submission-service.ts'
 import {
-  PLATFORMS, PLATFORM_LABELS, type Platform, type PublisherAccount,
+  PLATFORMS, PLATFORM_LABELS, projectContentForPlatform, type Platform, type PublisherAccount,
   type PublisherContent, type PublisherPlatformCapability, type PublisherSubmission,
 } from './protocol.ts'
 import type {
@@ -29,6 +29,7 @@ const STATES = new Set(['awaiting-confirmation', 'submitting', 'submitted', 'unc
 const MAX_RECORD_BYTES = 12 * 1024 * 1024
 class StalePublicationError extends Error {}
 type Origin = { kind: 'binding'; bindingToken: string } | { kind: 'source'; sourceId: string; sourceRevision: string; candidateId?: string }
+type CompressSummary = (content: PublisherContent, signal?: AbortSignal, beforeSave?: () => void) => Promise<PublisherContent>
 interface StoredRequest extends AgentPublicationRequest {
   version: 1
   origin: Origin
@@ -38,6 +39,9 @@ interface StoredRequest extends AgentPublicationRequest {
 }
 
 function digest(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex') }
+function needsDouyinSummary(content: PublisherContent): boolean {
+  return content.contentType === 'article' && projectContentForPlatform(content, 'dy').summary.length > 30
+}
 function clean(value: unknown, max = 200): string {
   return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f-\u009f]/gu, ' ').trim().slice(0, max) : ''
 }
@@ -136,6 +140,7 @@ function safeAdjustment(value: string, platform?: Platform): string | undefined 
     '已将所选第一张图片设为封面', '已清除不在所选素材中的封面',
     '掘金分类未填写，已使用默认分类「前端」', '已将第一张可用的 JPEG/PNG 图片设为公众号封面',
     '公众号标题已截为 64 字', '公众号摘要已截为 120 字', '已以首张图片作为头条封面参考',
+    '抖音标题已截为 30 字',
     '头条封面不会自动上传，请在草稿窗口手动设置', '头条文章适配器暂不写入摘要；摘要仍保留在本地草稿',
     '该平台文章适配器暂不写入标签；标签仍保留在本地草稿',
     '头条封面需手动设置，请从发布历史打开草稿',
@@ -148,10 +153,14 @@ function safeAdjustment(value: string, platform?: Platform): string | undefined 
 
 export class AgentPublications {
   private readonly env: NodeJS.ProcessEnv
+  private readonly compressSummary?: CompressSummary
   private readonly active = new Set<string>()
 
   constructor(private readonly runtime: PublisherSubmissionRuntime, private readonly bindings: AgentDraftBindings,
-    options: { env?: NodeJS.ProcessEnv } = {}) { this.env = options.env ?? process.env }
+    options: { env?: NodeJS.ProcessEnv; compressSummary?: CompressSummary } = {}) {
+    this.env = options.env ?? process.env
+    this.compressSummary = options.compressSummary
+  }
 
   private root(): string {
     const publisher = join(resolveDshHome(undefined, this.env), 'publisher')
@@ -360,6 +369,18 @@ export class AgentPublications {
       const matching = context.accounts.filter(account => account.platform === platform && account.loginState === 'logged-in')
       return matching.length === 1 ? [matching[0].id] : []
     })
+    const requestedDouyin = platforms.includes('dy')
+      || defaults.some(id => context.accounts.find(account => account.id === id)?.platform === 'dy')
+    if (requestedDouyin && needsDouyinSummary(content)) {
+      if (!this.compressSummary) throw new Error('抖音摘要超过 30 字，请先配置模型压缩服务后重新准备发布确认')
+      content = await this.compressSummary(content, options.signal, assertPreparationOrigin)
+      options.signal?.throwIfAborted()
+      assertPreparationOrigin()
+      if (content.id !== originalContent.id || content.contentType !== 'article'
+        || !projectContentForPlatform(content, 'dy').summary.trim() || needsDouyinSummary(content)) {
+        throw new Error('模型未生成有效的 30 字内抖音摘要，请重新准备发布确认')
+      }
+    }
     const timestamp = new Date().toISOString()
     const record: StoredRequest = { version: 1, requestId: id, sessionId, callId, createdAt: timestamp, updatedAt: timestamp,
       state: 'awaiting-confirmation', content, contentHash: digest(content), origin, knownAccounts: context.accounts,
@@ -409,6 +430,12 @@ export class AgentPublications {
     const record = this.load(sessionId, id)
     if (record.state !== 'awaiting-confirmation') return this.read(sessionId, id)
     validateSubmissionChoices(choices.accountIds, choices.mode)
+    if (needsDouyinSummary(record.content)
+      && choices.accountIds.some(accountId => record.knownAccounts.find(account => account.id === accountId)?.platform === 'dy')) {
+      record.message = '抖音摘要超过 30 字，请在对话中重新准备发布确认，以便先调用模型压缩'
+      this.write(record)
+      return this.read(sessionId, id)
+    }
     const claimFile = join(this.root(), `${record.requestId}.claim`)
     if (!this.claim(claimFile, { requestId: record.requestId })) return this.read(sessionId, id)
     this.active.add(record.requestId)

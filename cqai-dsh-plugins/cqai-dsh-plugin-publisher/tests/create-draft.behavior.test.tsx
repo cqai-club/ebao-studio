@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/client/index.tsx'
 import { API, TITLE_MAX, type PublisherContentType } from '../src/protocol.ts'
 
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => ({
+  observeComposition: (await import('../../../deepseek-harness/packages/client/ui-primitives/src/keyboard-composition.ts')).observeComposition,
   Button: ({ children, size: _size, variant: _variant, ...props }: any) => <button {...props}>{children}</button>,
   Input: (props: any) => <input {...props}/>,
   Modal: ({ open, onClose, title, closeLabel, children, footer, className }: any) => open
@@ -61,7 +62,10 @@ async function renderPublisher(type: PublisherContentType = 'article') {
   let Page: (() => ReactNode) | undefined
   const list = { subscribe: () => () => {}, getSnapshot: () => ({ phase: 'ready', ids: [], items: [], archivedSessionIds: [] }) }
   apply({
-    sessions: { list }, workspaces: { list }, uiWorkspace: {}, layout: {},
+    sessions: { list }, workspaces: { list }, uiWorkspace: {},
+    layout: { panelInfo: {
+      getSnapshot: () => ({ activePanelId: 'cqai-publisher' }), subscribe: () => () => {},
+    } },
     slots: {
       inject: (_slot: string, callback: () => void) => callback(),
       register: (options: { name: string; key?: string }, renderer: () => ReactNode) => {
@@ -100,6 +104,10 @@ async function name(value: string) {
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  // jsdom has no layout; model visible controls for PublisherModal's focus trap.
+  vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(function (this: HTMLElement) {
+    return (this.closest('[hidden]') ? [] : [{}]) as unknown as DOMRectList
+  })
   request.mockReset()
   request.mockResolvedValue(response())
   vi.stubGlobal('fetch', request)
@@ -110,6 +118,7 @@ afterEach(async () => {
   await act(async () => { root?.unmount() })
   container?.remove()
   root = undefined
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 

@@ -116,19 +116,7 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: yarn workspace dsh-plugin-desktop dist:win-portable
-      - name: Verify fresh packaged Windows video environment installation
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          $app = Join-Path $PWD 'dsh-plugin-desktop/dist/win-unpacked'
-          $executables = @(Get-ChildItem -LiteralPath $app -Filter '*.exe' -File)
-          if ($executables.Count -ne 1) { throw 'Expected one packaged Desktop executable' }
-          $env:ELECTRON_RUN_AS_NODE = '1'
-          # PowerShell does not wait for a Windows GUI executable invoked with &.
-          # Wait for Electron's Node process and check its actual exit code.
-          $arguments = @('scripts/verify-media-common-tools.mjs', '--short-video', '--runtime-root', ('"{0}"' -f (Join-Path $app 'resources/app.asar')))
-          $process = Start-Process -FilePath $executables[0].FullName -ArgumentList $arguments -NoNewWindow -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Packaged Windows video environment installation failed ($($process.ExitCode))" }
+      # Electron Builder afterPack rejects the six separately installed E剪宝 packages.
       - name: Stage Windows release assets and updater metadata
         shell: pwsh
         run: |
@@ -219,8 +207,8 @@ jobs:
             output_dir='dsh-plugin-desktop/dist/mac-smoke'
           fi
           assets=(
-            "$output_dir/eBao-Studio-${version}-universal.dmg"
-            "$output_dir/eBao-Studio-${version}-universal.zip"
+            "$output_dir/eBao-Studio-${version}.dmg"
+            "$output_dir/eBao-Studio-${version}.zip"
             "$output_dir/latest-mac.yml"
           )
           mkdir -p release-assets
@@ -263,8 +251,8 @@ jobs:
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           checksum_assets=(
-            "eBao-Studio-${version}-universal.dmg"
-            "eBao-Studio-${version}-universal.zip"
+            "eBao-Studio-${version}.dmg"
+            "eBao-Studio-${version}.zip"
             "eBao-Studio-${version}-x64-Setup.exe"
             "eBao-Studio-${version}-x64-Portable.zip"
           )
@@ -310,3 +298,16 @@ jobs:
           trap 'rm -rf "$downloaded"' EXIT
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$downloaded"
           node scripts/verify-release-assets.mjs --directory "$downloaded" --version "${RELEASE_TAG#v}"
+
+  mirror-gitcode:
+    needs: publish
+    if: vars.GITCODE_SYNC_ENABLED == 'true'
+    uses: ./.github/workflows/sync-gitcode.yml
+    permissions:
+      contents: read
+    with:
+      mode: release
+      release_tag: ${{ inputs.release_tag }}
+      source_ref: ${{ github.sha }}
+    secrets:
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}

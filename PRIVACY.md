@@ -2,8 +2,8 @@
 
 [中文](PRIVACY.zh.md)
 
-- **Version:** 1.1
-- **Effective and last updated:** September 21, 2026
+- **Version:** 1.2
+- **Effective and last updated:** October 15, 2026
 
 e宝工坊 is a local-first, open-source desktop application. This policy explains what information the official e宝工坊 distribution and official online services process, why they process it, who receives it, and what choices you have.
 
@@ -15,7 +15,7 @@ For privacy questions or rights requests, email [t4wefan@qq.com](mailto:t4wefan@
 
 This policy applies to:
 
-- e宝工坊 provided through the [official GitHub repository](https://github.com/cqai-club/ebao-studio), its `release/desktop-version.json` manifest, and GitHub Release assets; and
+- e宝工坊 provided through the [official GitHub repository](https://github.com/cqai-club/ebao-studio) and the [GitCode distribution repository](https://gitcode.com/g-dxw/ebao-studio), their `release/desktop-version.json` manifest and Release assets; and
 - privacy requests, support email, or issue reports that you voluntarily send to the project maintainers.
 
 This policy does not control processing performed by third-party forks, modified builds, third-party distributors, model providers, plugins, marketplace sources, or package services. A third-party build may use different update endpoints or release assets; its distributor is responsible for disclosing that processing.
@@ -24,7 +24,7 @@ This policy does not control processing performed by third-party forks, modified
 
 - e宝工坊 profiles, settings, workspaces, sessions, logs, and crash files remain on your device by default.
 - The official update service does not require a e宝工坊 account. Its version-check code does not intentionally send prompts, responses, file contents, workspace paths, profile names, session contents, API keys, MAC addresses, or hardware serial numbers.
-- Packaged macOS and Windows builds check for updates by default and send a locally generated, persistently stored random installation UUID. This is a pseudonymous identifier that may qualify as personal data under applicable law. It is not a hardware ID and does not guarantee one value per physical machine.
+- Packaged macOS and Windows builds check for updates by default. A project-operated routing request uses the network egress IP to select GitCode only for mainland China (CN), otherwise GitHub; it sends no installation UUID. The selected version-manifest request sends a locally generated, persistently stored random installation UUID. This is a pseudonymous identifier that may qualify as personal data under applicable law. It is not a hardware ID and does not guarantee one value per physical machine.
 - Installer downloads do not receive that installation UUID from Desktop, although the website, download host, and network infrastructure still receive ordinary network metadata.
 - Diagnostic archives are created locally only when you export them and are never uploaded automatically by e宝工坊.
 - Model services, plugins, marketplace sources, and package services that you choose process data under their own terms. They do not become subject to this policy merely because e宝工坊 can connect to them.
@@ -33,24 +33,28 @@ This policy does not control processing performed by third-party forks, modified
 
 ### 3.1 When the request occurs
 
-Packaged macOS and Windows applications request the following endpoint about 60 seconds after startup by default:
+The next application release containing IP-based source selection performs the following routing request for packaged Stable and Beta macOS/Windows version checks, about 60 seconds after startup by default. The actual `platform` value is `windows` or `macos`; no `source` parameter is sent. Installed older versions retain their original GitHub endpoint (`https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json`) and do not switch automatically when repository or mirror settings change. Next retains its upstream update source.
 
 ```text
-GET https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json
+GET https://cqaiclub.asia/api/ebao-studio/download?platform=windows|macos
 ```
 
-Another check occurs about six hours after each completed check. You can also select **Check for Updates** manually. Development runs, unpackaged launches, and Linux do not currently use this packaged automatic-update flow.
+The routing request does not follow the 302 redirect. Desktop reads only `X-Download-Source`. The server uses the request's actual network egress IP and a local `geoip-country` database; it does not send an IP-location request to a third party. Only country code `CN` selects GitCode. Other regions (including HK/MO/TW), unknown locations, and failed, timed-out or invalid routing probes use GitHub. Language and time zone do not affect this selection. A successful source decision is cached only in the current process for five minutes and is not written to disk. The next selection after expiry probes again; a network change may therefore reuse a successful decision for up to five minutes.
+
+The selected manifest is `https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json` for GitHub or `https://api.gitcode.com/api/v5/repos/g-dxw/ebao-studio/raw/release%2Fdesktop-version.json?ref=master` for GitCode. Another check occurs about six hours after each completed check. You can also select **Check for Updates** manually. Development runs, unpackaged launches, and Linux do not currently use this packaged automatic-update flow.
 
 ### 3.2 What the request contains
 
-The client explicitly adds:
+The routing request uses `cache: no-store`, `credentials: omit` and `redirect: manual`. It sends no installation UUID, installed version, release channel or request body. The `platform` query value and ordinary network metadata, including the IP address and request time, are received by `cqaiclub.asia` and its delivery infrastructure to select and deliver the update source.
+
+Only the selected version-manifest request explicitly adds:
 
 - `Accept: application/json`;
 - `X-DSH-Desktop-Channel: <stable or beta>`;
 - `X-DSH-Desktop-Version: <canonical installed version>`; and
 - `X-DSH-Desktop-Installation-Id: <random UUID v4>`.
 
-The application adds no query parameters or request body to this GET request. Like every internet request, GitHub and its delivery infrastructure also receive the IP address, request time, TLS and connection details, and standard request metadata generated by the networking stack. That metadata may include a User-Agent, cookies, accepted compression, and operating-system or runtime-version information. The current code does not explicitly require the Electron network session to omit existing credentials, so we do not promise that a version request can never include session data. We also do not describe the explicitly configured headers as the only fields that leave the device.
+The GitCode manifest URL has the fixed `ref=master` query parameter, which selects the source branch. The application adds no other query parameters or request body to either manifest GET request. GitCode or GitHub, according to the selected source, and its delivery infrastructure also receive the IP address, request time, TLS and connection details, and standard request metadata generated by the networking stack. That metadata may include a User-Agent, cookies, accepted compression, and operating-system or runtime-version information. The current manifest-fetch code does not explicitly require the Electron network session to omit existing credentials, so we do not promise that a manifest request can never include session data. This differs from the routing request, which explicitly omits credentials. We also do not describe the explicitly configured headers as the only fields that leave the device.
 
 The version-check code does not intentionally attach prompts, responses, file contents, workspace paths, profile names, session contents, model credentials, MAC addresses, or hardware serial numbers.
 
@@ -76,17 +80,18 @@ Deleting this file only causes a new UUID to be generated at the next launch. It
 
 ### 3.4 Purposes
 
-The version request retrieves the repository-owned manifest and supports update notices for the selected channel. GitHub may process request metadata to deliver and protect its service under its own terms and privacy policy. The project does not operate a separate update API for this request, does not claim access to GitHub's raw delivery logs, and does not use the installation UUID for analytics, advertising profiles, cross-service tracking, or sale. A version check requires no login, and the client sends no name, email address, or e宝工坊 account ID in that request.
+The project-operated routing endpoint selects a source using the network egress IP; it does not proxy the manifest or installer download. The selected version request retrieves the repository-owned manifest and supports update notices for the selected channel. GitCode or GitHub may process request metadata to deliver and protect its service under its own terms and privacy policy. The project does not claim access to either provider's raw delivery logs and does not use the installation UUID for analytics, advertising profiles, cross-service tracking, or sale. Routing and version checks require no login, and the client sends no name, email address, or e宝工坊 account ID in either request.
 
 ## 4. Installer downloads, the website, and project communications
 
 | Scenario | Trigger | Information that may be processed | Purpose and recipients |
 | --- | --- | --- | --- |
-| Updater metadata, installer, and checksum download | You confirm a stable update, or download a release asset from the release page | IP address, time, standard network metadata, release tag, and requested `latest.yml`, `latest-mac.yml`, `SHA256SUMS`, DMG, EXE, or ZIP asset | GitHub and its delivery infrastructure use this information to deliver and protect GitHub Release assets. Desktop does not add the installation UUID to updater-metadata, checksum, or installer requests. |
+| Update-source routing | A packaged version check needs a source decision and no unexpired successful decision is cached | Network egress IP, request time, standard network metadata and `platform=windows` or `platform=macos`; no installation UUID, current version, channel or body | The project-operated `cqaiclub.asia` endpoint and its delivery infrastructure select GitCode only for CN and otherwise GitHub using a local country database. No third-party IP-location request is made. |
+| Updater metadata, installer, and checksum download | You confirm a stable update, or download a release asset from the release page | IP address, time, standard network metadata, release tag, and requested `latest.yml`, `latest-mac.yml`, `SHA256SUMS`, DMG, EXE, or ZIP asset | The selected GitCode or GitHub source and its delivery infrastructure deliver in-app update assets. Either provider also receives requests when you manually download its Release assets. Desktop does not add the installation UUID to updater-metadata, checksum, or installer requests. |
 | GitHub Issue, discussion, or contribution | You submit it | Account details, text, attachments, code, and metadata that you make public | GitHub and the project maintainers use it to process issues, contributions, and community communications. Public submissions are publicly visible. |
 | Email and support material | You send it | Email address, message, attachments, and diagnostics or environment details that you choose to provide | [QQ Mail](https://mail.qq.com/), your sending provider, and the project maintainers use it to deliver and respond to the message, investigate problems, and retain necessary correspondence. |
 
-As of this policy's effective date, GitHub is the sole official source for update discovery and release delivery: `raw.githubusercontent.com` serves the repository manifest, and `github.com` Release assets serve `SHA256SUMS` and installers. GitHub and its delivery infrastructure process requests under GitHub's own terms and privacy policy. The project does not operate a separate website or API for the Desktop update path described here.
+For applications containing IP-based source selection, GitCode serves the manifest and update assets only when the routing result explicitly selects GitCode; all other results use GitHub. After you confirm a Stable update, Electron Updater uses the confirmed version directory, `https://github.com/cqai-club/ebao-studio/releases/download/v<version>/` or `https://gitcode.com/g-dxw/ebao-studio/releases/download/v<version>/`, to request `latest.yml` or `latest-mac.yml` and the relative installer/archive files they reference. Version matching and complete-file SHA-512 validation remain required. Routing-probe failure defaults to GitHub; failure of the selected manifest or download source does not automatically switch sources. Beta checks versions without in-app installation. GitHub remains the development, packaging and original release source; GitCode mirrors the same seven original Release assets, including `SHA256SUMS`. Each provider and its delivery infrastructure process their requests under their own terms and privacy policy. The project operates the routing endpoint described above; it does not separately host these manifests or installer files.
 
 ## 5. Information stored locally by default
 
@@ -147,7 +152,7 @@ Upload a backup only to a WebDAV service or GitHub account you trust. The select
 
 ### 6.4 Optional upstream telemetry
 
-Upstream DSH session telemetry is `DISABLED` in Desktop's default composition. If you or a deployment operator explicitly sets `DSH_TELEMETRY_MODE` to `FULL` or `FEEDBACK_ONLY`, raw session telemetry may be sent with the upstream anonymous user ID to `https://harness-telemetry.deepseeksvc.com/v1/logs` or the endpoint configured in `DSH_TELEMETRY_OTLP_URL`. That processing is controlled by the upstream configuration and recipient policy and is separate from the GitHub-hosted Desktop update path.
+Upstream DSH session telemetry is `DISABLED` in Desktop's default composition. If you or a deployment operator explicitly sets `DSH_TELEMETRY_MODE` to `FULL` or `FEEDBACK_ONLY`, raw session telemetry may be sent with the upstream anonymous user ID to `https://harness-telemetry.deepseeksvc.com/v1/logs` or the endpoint configured in `DSH_TELEMETRY_OTLP_URL`. That processing is controlled by the upstream configuration and recipient policy and is separate from Desktop update-source routing and the selected GitCode or GitHub delivery path.
 
 ### 6.5 External links
 
@@ -174,14 +179,15 @@ We disclose or permit processing only in the following circumstances:
 
 We do not sell personal data or provide the installation UUID to third parties for their advertising profiles.
 
-GitHub, npm, model providers, and community sources may process data in different countries or regions. The location depends on current routing, the recipient, and your choices. Where a cross-border notice, separate consent, standard contract, or another safeguard is required, we and the relevant recipient must complete the applicable requirements.
+GitCode, GitHub, npm, model providers, and community sources may process data in different countries or regions. The location depends on current routing, the recipient, and your choices. Where a cross-border notice, separate consent, standard contract, or another safeguard is required, we and the relevant recipient must complete the applicable requirements.
 
 ## 9. Retention
 
 We determine retention as follows:
 
 - local installation UUIDs, logs, and diagnostic archives follow the rules in Sections 3 and 5;
-- GitHub controls retention of manifest and Release-asset request metadata under its own policies; the project maintainers do not set or claim access to those delivery-log retention periods;
+- Desktop does not persist routing decisions; any ordinary request logs retained by the project-operated routing infrastructure follow the purpose and deletion criteria in this section;
+- GitCode and GitHub each control retention of their manifest and Release-asset request metadata under their own policies; the project maintainers do not set or claim access to those delivery-log retention periods;
 - support email and issue records are retained until responding, dispute handling, or security follow-up no longer reasonably requires them. Public GitHub content is also subject to your controls and GitHub's retention rules; and
 - third-party recipients retain information under their own policies and your arrangements with them.
 
@@ -195,7 +201,7 @@ No measure provides absolute security. Third-party plugins, privileged local pro
 
 ## 11. Your choices and rights
 
-Depending on applicable law, you may have rights to access, copy, correct, delete, or restrict processing of personal data; withdraw consent; object to particular processing; receive a portable copy; and complain to a supervisory authority. Contact [t4wefan@qq.com](mailto:t4wefan@qq.com). The project maintainers cannot use your installation UUID to locate GitHub delivery logs and will not ask you to publish it.
+Depending on applicable law, you may have rights to access, copy, correct, delete, or restrict processing of personal data; withdraw consent; object to particular processing; receive a portable copy; and complain to a supervisory authority. Contact [t4wefan@qq.com](mailto:t4wefan@qq.com). The project maintainers cannot use your installation UUID to locate GitCode or GitHub delivery logs and will not ask you to publish it.
 
 We cannot remotely delete files on your device. You can remove relevant local data while the application is closed; deleting the installation UUID causes a new value to be generated at the next launch. Data that has already been irreversibly aggregated or can no longer be linked to you may not be recoverable or individually deletable.
 

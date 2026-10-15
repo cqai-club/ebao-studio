@@ -14,13 +14,17 @@ Electron 可执行文件只包含最小启动代码。它获取单实例锁、�
 
 desktop package 拥有普通 Host 与 Web Client 两个 face。它的 Client face 会在所有模式下校验 Host 提供的模式、平台和经过能力门槛解析的材质 marker。兼容模式把保持不变的官方呈现放在独立 Desktop frame 下方。扩展窗口会用自己独立注册的 Desktop layout 与 sidebar surface 替换官方 root layout，同时继续承载官方 sidebar、conversation 和 details occupant。增强模式保留独立的 root registration，以及最初增强模式确定的紧凑内部 caption 几何。所有模式下，第三方 Web client 都继续使用普通 DSH 模块图。
 
-托盘中的 profile 选择器会列出现有 profile，以及可延迟创建的 `desktop` 与 `web` 默认项。可选 profile 必须直接按顺序组合 `dsh-base` 与 `dsh-web-app`；headless、损坏或已经内嵌 desktop bundle 的 profile 仍会显示，但不可选择。只有 `desktop` 是 Launcher 管理的 profile：它会修复安装方拥有的前缀，同时保留第三方 bundle 的相对顺序。其他被选 profile 的 manifest、用户 patch 与依赖均保持不变。Launcher 只会为当前 generation 在 `dsh-web-app` 后插入自有 desktop layer，不会把该 layer 持久化到被选 bundle 列表。
+托盘中的 profile 选择器会列出现有 profile，以及可延迟创建的 `desktop` 与 `web` 默认项。可选 profile 必须直接按顺序组合 `dsh-base` 与 `dsh-web-app`；headless、损坏或已经内嵌 desktop bundle 的 profile 仍会显示，但不可选择。只有 `desktop` 是 Launcher 管理的 profile：它会修复安装方拥有的前缀，同时保留第三方 bundle 的相对顺序。其他被选 profile 的 manifest、用户 patch 与依赖均保持不变，唯一例外是下述旧 E剪宝预置 bundle 的一次性退役迁移。Launcher 只会为当前 generation 在 `dsh-web-app` 后插入自有 desktop layer，不会把该 layer 持久化到被选 bundle 列表。
+
+E剪宝及其三个制作引擎不再预置，也不再包含于 Desktop 发布资源。升级后首次打开某个 profile 时，会执行一次迁移，退掉旧预置 bundle，同时保留配置文件、任务、素材和账号数据。安装并启用独立的 `cqai-dsh-plugin-ejianbao` bundle 后即可重新使用这些功能；独立插件复用宿主账号。
 
 Profile 选择保存在 Electron user data 下的 desktop 自有状态中，而不是被选 profile 内的另一个字段。被接受的切换会直接持久化精确的激活 profile，并通过有序重启生效。启动失败时不会替换成 last-known-good profile，也不会自动改写配置。每次健康启动都会写入三个轮转 checkpoint 之一，其中同时包含激活 Profile 的声明式 package 与 patch 文件，以及共享 DSH home 中的 `settings.yaml` 和 `cordis.patch.yml`；恢复时始终打开恢复页面，由用户选择精确槽位。执行恢复后的下一次健康启动会跳过一次 checkpoint 替换。版本 2 的旧槽位仍可恢复，但只影响原有五个 Profile 文件。凭据、`.env`、sessions、storage、缓存和生成的依赖状态绝不会写入 checkpoint。官方 profile 默认共用同一个 DSH home 中的 sessions、settings 与 storage，因此除非用户明确恢复 checkpoint，切换 Profile 不会复制或迁移这些记录；自定义 profile patch 仍可主动重定向其中某个持久化根。
 
 Launcher 会在 Loader entry 挂载前注册作用于当前 generation 的 `ctx.desktopProfiles` service。其不可变 `current` 值包含激活 profile 的 `name` 与绝对 `dir`；`list()` 只读执行发现，`select(name)` 会串行化“先持久化、再重启”的切换，而不会就地改变当前 generation。该 service 是 Desktop Host capability，不是 renderer bridge，也不是当前上游 DSH 已提供的 active-profile API。
 
 Cordis 的裸插件导入从持久化 profile 解析。一个范围受限的 Node resolve hook 只处理由 `@deepseek-ai/cordis-plugin-loader` 发起的导入，因此即使打包后的 Electron 不暴露 Node 内部 ESM Loader，profile 本地第三方包与修复后的 launcher fallback 仍使用同一条解析路径。
+
+Desktop 也会在 Loader entry 挂载前注册官方 `pluginPackages` service。包版本、标题、说明、本地化文件与图标使用与实际导入相同的 Profile resolver，支持本地包和安装目录 fallback。`refresh()` 只使后续查找重新选择解析路径，不更新 npm 包，也不重新加载正在运行的插件树。启动时会先解除旧 `.dsh-module-fallback` 中的 symlink 与 junction，再删除临时树，保留它们指向的安装文件。
 
 在 profile 准备与 Cordis boot 之前，打包后的 macOS 或 Linux 启动会以交互式 login 模式运行用户账户配置的 shell，并恢复其导出的 `PATH`。这样可补全 Finder、LaunchServices 等图形启动方式通常传入的精简 `PATH`。除 `PATH` 外，只会从固定 allowlist 补充当前启动环境尚未定义的 locale、工具链、package manager 与虚拟环境变量；只有 `PATH` 始终采用 shell 值。该流程只支持绝对路径的 `zsh`、`bash` 与 `fish`。Bash 遵循标准 login 行为，只有 login profile 主动 source `.bashrc` 时，该文件才会参与。Windows 以及未打包或开发运行会跳过恢复；shell 不存在或不受支持、捕获超时或失败、没有可用 `PATH` 时，会静默保留原有进程环境。
 
@@ -169,13 +173,17 @@ npx dsh-plugin-desktop-beta
 
 当 Desktop 窗口没有焦点时，直接用户发起的回合到达 `completed` 会显示原生完成通知；以 `error` 或 `max-tokens` 结束时则显示需要处理的通知。后台任务完成或失败也使用同一条原生注意力路径。取消、阻塞、中断、被终止的任务、插件发起、仅 continuation、turn 不匹配及 subagent 活动都保持静默。点击通知会显示并聚焦窗口。macOS 与 Linux 会递增应用角标，Windows 会闪烁任务栏按钮；显示、聚焦或释放窗口时会清除这些提示。实时生效的 `dsh-desktop-notifications` settings namespace 提供相互独立的 `notifyOnTurnCompletion`、`notifyOnTurnFailure`、`notifyOnJobCompletion` 与 `notifyOnJobFailure` 开关，默认全部开启。通知文案刻意保持通用，不会包含提示词、回复、错误、任务标签、命令、路径、会话 ID、模型或 provider 名称、工具数据及输出。
 
-打包后的 Beta 应用仍会在启动约 60 秒后查询仓库自有清单 `https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json`，并在完成检查六小时后再次查询。每次 no-cache 请求有 15 秒期限，并标识 Beta 通道和当前安装版本。本轮刻意不发布 Beta 的 `latest*.yml` 或更新资产：Beta 检查与共享 lifecycle 保持兼容，但发现 Beta 版本时会说明其不可在应用内安装。稳定版使用稳定 edition 及其明确的 **重启并更新** 流程。开发运行、未打包启动和 Linux 不会下载安装包。
+打包后的 Beta 应用仍会在启动约 60 秒后查询按实际网络出口 IP 选择的仓库自有清单（仅 CN 使用 GitCode，其他及无法识别地区使用 GitHub，含 HK/MO/TW），并在完成检查六小时后再次查询。每次 no-cache 请求有 15 秒期限，并标识 Beta 通道和当前安装版本。本轮刻意不发布 Beta 的 `latest*.yml` 或更新资产：Beta 检查与共享 lifecycle 保持兼容，但发现 Beta 版本时会说明其不可在应用内安装。稳定版使用稳定 edition 及其明确的 **重启并更新** 流程。开发运行、未打包启动和 Linux 不会下载安装包。
 
 Beta 在本轮不提供应用内下载操作。其共享 lifecycle 保留手动检查、有界请求、通知 action 管线、版本验证与 teardown 行为，并不会声称尚未发布的 Beta 构件可以安装。
 
 当前公开清单只标记稳定版。Beta 手动检查会明确提示更新源未提供 Beta 版本信息，后台检查保持静默；网络或清单错误仍显示检查失败。只有发布 Beta 版本信息后，才能比较 Beta 更新。
 
-在单独评审 Beta 发布设计、元数据、构件、签名策略和验证 gate 之前，Release operator 不得把 Beta 版本添加到清单。稳定版 `v<version>` Release 仍是唯一官方应用内更新源。
+在单独评审 Beta 发布设计、元数据、构件、签名策略和验证 gate 之前，Release operator 不得把 Beta 版本添加到清单。稳定版 `v<version>` 在所选 GitHub 或 GitCode 来源上的 Release 仍是唯一官方应用内更新资产。
+
+更新源按实际网络出口 IP 选择。Stable 与 Beta 先请求自有路由接口 `https://cqaiclub.asia/api/ebao-studio/download?platform=windows|macos`（按系统选择 `windows` 或 `macos`），不传 `source`，不跟随 302 跳转，仅读取 `X-Download-Source`。服务端使用本地 `geoip-country` 识别 IP，仅 `CN` 使用 GitCode；其他地区（包括 HK/MO/TW）、无法识别，以及客户端探测失败、超时或无效响应，均使用 GitHub。此判断不使用语言或时区。成功的来源判断仅在当前进程缓存五分钟，不写入磁盘；缓存过期后在下次判断时重新探测，网络出口变化最多沿用五分钟内的成功判断。
+
+按 IP 选择来源随包含这些代码的下一版应用生效；已安装旧版不会自动切换。GitHub 仍是开发、打包和原始发布源。面向中国大陆分发时，必须启用 GitCode 同步，并将源码、版本清单及全部七个原始 Release 附件镜像和验证；源码与清单可能先于附件同步完成。所选清单或下载源本身失败时不自动跨源回退。Next 继续使用其上游更新源。
 
 在 macOS 与 Windows 上，**打开 DSH 终端** 会打开以当前激活 profile 为工作目录的系统终端。未打包的开发启动会在设置页标题区显示 **导出诊断信息**、**打开 DSH 终端** 和包含 **重启 Desktop**、**重启到恢复模式** 的重启菜单；正式打包版默认不注册这组设置页操作，等效的诊断与恢复能力仍保留在托盘中。任何重启路径都会先显示确认，再开始有序 Cordis shutdown 和 Electron relaunch。终端欢迎信息会显示应用版本、当前 profile、profile 目录与 DSH home，并列出配置与插件管理命令。在该终端内，裸 `dsh`、`dsh --dump-config`，以及没有选择 profile 的 plugin 子命令都会默认使用当前激活 profile；显式 `--profile` 与上游 `web` alias 会保留原有含义。e宝工坊 会在自身 user-data 目录下按 profile 生成私有 `dsh`、`pnpm` 与 `node` shim，设置 `DSH_HOME`，使用当前 profile 作为工作目录，并且只在该终端的 `PATH` 前置 shim 目录；之后切换 profile 不会改变已经打开的终端命令。它不会修改全局环境或 shell 启动文件。macOS launcher 会先保留用户的交互式 zsh 或 bash 设置，再恢复 desktop 自有变量。Windows 会依次选择 PowerShell 7、Windows PowerShell 或命令提示符，并在新的 Windows Terminal 窗口中打开；如果 `wt.exe` 不可用，则由私有 `cmd start` broker 创建可见控制台。同步启动失败与 broker 非正常退出会使用 Desktop dialog surface。Linux 不组合该终端命令。
 
@@ -187,7 +195,7 @@ Desktop 的确认、警告、错误与结果统一使用基于 shadcn 的 `Deskt
 
 启动健康后，主进程每五秒检查一次可见应用内容。连续两次页面为空或探测无响应，即使渲染进程未退出，也会触发有次数上限的自动恢复；无响应的渲染进程会被终止并在新进程中重载。可见窗口恢复成功还要求视口中存在有效内容，不能仅凭插件激活就判定成功。隐藏、最小化、页面导航以及恢复时页面或 Loader 尚未就绪期间暂停检查。每次探测限时十秒，并丢弃过期导航结果和长时间休眠后的超时结果。探测检查 DOM 可见性，不检查截图像素，不能诊断仅发生在 GPU 显示链路中的故障。
 
-启动健康后，如果界面进程意外退出（包括内存不足），应用会静默重载现有窗口，不重启 Host、不弹窗，也不唤起已隐藏的窗口。只有页面加载完成且客户端 Loader 上报健康，才算恢复成功；恢复尝试在 30 秒内未完成则视为超时。最多自动尝试三次：首次不延迟，后续分别等待一秒、三秒；恢复后保持健康满一分钟才重置重试次数。连续失败时暂停自动恢复，并打开系统原生兜底提示：**再次尝试恢复** 授权新一轮有次数上限的恢复，**暂不处理** 则保留后台服务运行。可从托盘选择 **打开 e宝工坊** 再次打开提示，或选择 **导出诊断信息…** 继续调查。重载期间画面可能短暂中断，未发送的输入可能丢失；此机制不修复崩溃或内存增长的根因。启动失败仍使用既有恢复流程；主动终止 renderer 和应用退出期间不会发起自动恢复。
+启动健康后，如果界面进程意外退出（包括内存不足），应用会静默重载现有窗口，不重启 Host、不弹窗，也不唤起已隐藏的窗口。只有页面加载完成且客户端 Loader 上报健康，才算恢复成功；恢复尝试在 120 秒内未完成则视为超时。最多自动尝试三次：首次不延迟，后续分别等待一秒、三秒；恢复后保持健康满一分钟才重置重试次数。连续失败时暂停自动恢复，并打开系统原生兜底提示：**再次尝试恢复** 授权新一轮有次数上限的恢复，**暂不处理** 则保留后台服务运行。可从托盘选择 **打开 e宝工坊** 再次打开提示，或选择 **导出诊断信息…** 继续调查。重载期间画面可能短暂中断，未发送的输入可能丢失；此机制不修复崩溃或内存增长的根因。启动失败仍使用既有恢复流程；主动终止 renderer 和应用退出期间不会发起自动恢复。
 
 e宝工坊 Beta 将 UTF-8 日志写入独立的 Electron 用户数据目录：Windows 位于 `%APPDATA%\易宝工坊 Beta\logs`，macOS 位于 `~/Library/Application Support/易宝工坊 Beta/logs`。完整日志使用 `dsh-YYYY-MM-DD.log`，warning 与 error 还会写入 `dsh-YYYY-MM-DD.error.log`。单文件达到 10 MiB 后轮转，启动时删除七天前的文件，整个目录保持在 200 MiB 以下。`dsh-desktop.logLevel` 设置控制详细程度，默认为 `info`。
 
@@ -196,6 +204,8 @@ e宝工坊 Beta 将 UTF-8 日志写入独立的 Electron 用户数据目录：Wi
 macOS 的实际应用包仍为 `易宝工坊 Beta.app`，可执行文件仍为 `Contents/MacOS/易宝工坊 Beta`，以便更新器能够重新启动已有安装。英文与简体中文的 `InfoPlist.strings` 将显示名称本地化为 e宝工坊 Beta；原始 `CFBundleDisplayName` 保留 易宝工坊 Beta，与应用包文件名对应，`CFBundleName` 使用 e宝工坊 Beta。Windows 的可执行文件名称为 `e宝工坊 Beta.exe`。
 
 在 macOS 与 Windows 上，从托盘选择 **导出诊断信息…**，应用会在相邻的 `diagnostics` 目录创建 ZIP，并在系统文件管理器中定位它。导出在 Electron 主线程之外执行，会在共享的 50 MiB evidence cap 内收集最近的自有日志和本地 Crashpad `.dmp`，并在存在时包含 `crash-evidence/active-run.json` 标记，同时加入 `system-info.txt`，只保留最新三份 ZIP。创建任何文件前，确认对话框会说明隐私边界。系统会脱敏可识别的凭据，但日志仍可能包含本地路径、工作区 ID、会话 ID、提示词、工具输出或第三方插件消息；crash dump 可能包含进程内存片段。分享诊断包前应先检查内容，公开上传时尤其如此。
+
+桌面设置 → 日志 → **开发者日志** 可即时开启元数据追踪，默认关闭。记录插件生命周期、Agent turn/step、模型耗时与分块数、工具状态、重试决策、Host/Electron IPC 名称和 HTTP 路由、状态与耗时；不会主动采集提示词、模型输出、工具参数或结果、请求头及消息正文。控制台和进程文本仍可能包含第三方输出，记录会脱敏并限制长度；关闭追踪时仍保留错误。Electron 与独立 Host 日志使用相同 run ID，沿用现有轮转与诊断 ZIP 导出。
 
 ## 原生生命周期
 
@@ -274,7 +284,7 @@ corepack.cmd yarn dist:win-portable
 - macOS 与 Windows 托盘终端会提供私有 `dsh`、`pnpm` 与 `node` shim。除此之外，Host runtime 会在当前 Electron 进程的 `PATH` 中公开内置 `pnpm` 命令作为 ambient compatibility，并提供受管 `desktopPnpm` service；这些命令都不会加入系统 `PATH`，Linux 目前也没有 desktop 终端命令。
 - 在 Windows 上，ambient `pnpm` 命令与 lifecycle Node helper 是 `.cmd` shim。`desktopPnpm.run()` 会启动准确的已打包 pnpm entry，从而避免 manager process 的 shell lookup；上游 `dsh plugin`、PowerShell 与命令提示符则可通过 command interpreter 解析 ambient shim。第三方插件直接调用 Node `spawn('pnpm', { shell: false })`，或 lifecycle script 直接以 `shell: false` 执行其 `.cmd` `npm_node_execpath`，仍属于不可移植行为，应改用该 service 或 shell-aware 启动路径。
 - `dshmarket@1.2.3` 仍是用户可选安装的第三方 package，而不是内置 marketplace。只有重新审计的版本同时消费可选 Desktop service、保留普通 DSH fallback，并包含再分发所需的完整 license notice 后，才会重新评估预装。
-- Beta 没有对应的 GitHub Release 更新构件，不会在应用内暂存或替换自身；请手动下载新版 Beta。仅稳定版的 Electron Updater 暂存还要受发布者身份、macOS Developer ID 签名与公证、Windows Authenticode/SmartScreen 策略以及原生升级测试共同约束。
+- Beta 没有对应的 Release 更新构件，不会在应用内暂存或替换自身；请手动下载新版 Beta。仅稳定版的 Electron Updater 暂存还要受发布者身份、macOS Developer ID 签名与公证、Windows Authenticode/SmartScreen 策略以及原生升级测试共同约束。
 - 共享 carrier 使用 HTTP 与 WebSocket，而不是 Electron IPC；默认只绑定 loopback，并支持经过明确确认的全接口局域网监听。替换 carrier 需要上游 DSH 提供 transport 扩展点，不属于该独立包的范围。
-- Beta 使用固定官方 release 源码构建的 DSH `0.1.6-alpha.2` 运行时分发包；桌面构建解析这些包接口，不直接链接源码 checkout。历史会话由上游迁移到 V3，自动转换旧 PTC 事件和 `code` 预设引用并保留原日志，桌面端不再生成预设别名。旧运行时无法读取 V3 会话。扩展和增强模式接入右侧 Sidebar 的文档预览、分栏和全屏，并通过 keyed `main` 槽位支持独立于会话选择的全局插件面板。
+- Stable 与 Beta 保持官方 DSH `0.2.0-rc.2` 运行时及其源码 pin，Desktop 修复独立选择性移植；桌面构建解析这些包接口，不直接链接源码 checkout。历史会话由上游迁移到 V3，自动转换旧 PTC 事件和 `code` 预设引用并保留原日志，桌面端不再生成预设别名。旧运行时无法读取 V3 会话。扩展和增强模式接入右侧 Sidebar 的文档预览、分栏和全屏，并通过 keyed `main` 槽位支持独立于会话选择的全局插件面板。
 - `package:dir` 是用于 smoke 的未封装产物。`dist:win` 会额外生成未签名的 NSIS 测试安装包，但不会建立 Authenticode 身份或 SmartScreen 信誉。安装与升级行为、原生通知与终端、Windows ACL sandbox，以及每台目标机器上的原生材质外观仍属于目标平台验证边界。

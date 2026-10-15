@@ -9,9 +9,11 @@ import {
   ARTICLE_THEMES, CREATIVE_STATEMENTS, DESCRIPTION_MAX, MAX_TAGS, PLATFORMS, TITLE_MAX,
   type Platform, type PublisherAsset, type PublisherContent, type PublisherContentCard,
   type PublisherContentQueryRequest, type PublisherContentQueryResult, type PublisherContentType,
+  type PublisherContentPatch,
   type PublisherPlatformVariant, type PublisherVideoSource,
 } from './protocol.ts'
 import { discardEmptyProjectWorkspace, ensureProjectWorkspace } from './project-workspace.ts'
+import { readContentLifecycleRecord } from './content-lifecycle-record.ts'
 
 export const CONTENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 export const MAX_BODY_BYTES = 2 * 1024 * 1024
@@ -68,7 +70,7 @@ export function directoryFor(id: string, env: NodeJS.ProcessEnv = process.env): 
   return directory
 }
 
-function readManifest(directory: string): PublisherContent {
+function readManifest(directory: string, includeTrash = false): PublisherContent {
   const file = join(directory, 'manifest.json')
   if (lstatSync(file).isSymbolicLink() || statSync(file).size > MAX_MANIFEST_BYTES) throw new Error('草稿数据无效')
   const value: unknown = JSON.parse(readFileSync(file, 'utf8'))
@@ -78,6 +80,9 @@ function readManifest(directory: string): PublisherContent {
     || !['article', 'image-note', 'video'].includes(content.contentType)
     || !Number.isSafeInteger(content.revision) || content.revision < 1
     || typeof content.createdAt !== 'string' || typeof content.updatedAt !== 'string'
+    || (content.workflowVersion !== undefined && content.workflowVersion !== 2)
+    || (content.trashedAt !== undefined && (typeof content.trashedAt !== 'string'
+      || !Number.isFinite(Date.parse(content.trashedAt))))
     || typeof content.title !== 'string' || content.title.length > TITLE_MAX
     || typeof content.body !== 'string' || Buffer.byteLength(content.body, 'utf8') > MAX_BODY_BYTES
     || typeof content.summary !== 'string' || content.summary.length > 2000
@@ -111,6 +116,10 @@ function readManifest(directory: string): PublisherContent {
     try { cleanVariants(content.platformVariants, content.assets.map(asset => asset.id)) }
     catch { throw new Error('草稿数据无效') }
   }
+  if (!includeTrash && content.trashedAt) throw new Error('草稿不存在，内容已移入回收站')
+  if (!includeTrash && readContentLifecycleRecord(directory)?.status === 'pending') {
+    throw new Error('内容回收或恢复尚未完成，请先重试该操作')
+  }
   return content
 }
 
@@ -131,11 +140,20 @@ export function readContent(id: string, env: NodeJS.ProcessEnv = process.env): P
   return readManifest(directoryFor(id, env))
 }
 
-export function listContents(env: NodeJS.ProcessEnv = process.env): PublisherContent[] {
+/** Lifecycle metadata can be inspected while the content is unavailable to editors/tools. */
+export function readStoredContent(id: string, env: NodeJS.ProcessEnv = process.env): PublisherContent {
+  return readManifest(directoryFor(id, env), true)
+}
+
+export function listContents(env: NodeJS.ProcessEnv = process.env, trash = false): PublisherContent[] {
   const root = contentsRoot(env)
   if (!existsSync(root)) return []
   return readdirSync(root).flatMap(id => {
-    try { return [readContent(id, env)] } catch { return [] }
+    try {
+      const content = readStoredContent(id, env)
+      const pending = readContentLifecycleRecord(directoryFor(id, env))?.status === 'pending'
+      return content.workflowVersion === 2 && (Boolean(content.trashedAt) || pending) === trash ? [content] : []
+    } catch { return [] }
   }).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 }
 
@@ -173,10 +191,11 @@ export function queryContents(
 ): PublisherContentQueryResult {
   if (!input || !['article', 'image-note', 'video'].includes(input.contentType)) throw new Error('内容类型无效')
   if (typeof input.query !== 'string' || input.query.length > CONTENT_QUERY_MAX_LENGTH) throw new Error('搜索关键词无效')
+  if (input.trash !== undefined && typeof input.trash !== 'boolean') throw new Error('回收站查询无效')
   const query = input.query.trim().toLowerCase()
-  const queryDigest = createHash('sha256').update(query).digest('hex')
+  const queryDigest = createHash('sha256').update(JSON.stringify([query, input.trash === true])).digest('hex')
   const cursor = parseContentQueryCursor(input.cursor, input.contentType, queryDigest)
-  const matches = listContents(env).filter(content => {
+  const matches = listContents(env, input.trash === true).filter(content => {
     if (content.contentType !== input.contentType) return false
     const searched = content.contentType === 'article' ? content.summary
       : content.contentType === 'image-note' ? content.body : content.description ?? ''
@@ -194,6 +213,7 @@ export function queryContents(
       excerpt: excerpt.replace(/\s+/gu, ' ').trim().slice(0, 240),
       ...(coverAssetId ? { coverAssetId } : {}),
       ...(content.contentType === 'video' && content.videoSource ? { videoSource: content.videoSource } : {}),
+      ...(content.trashedAt ? { trashedAt: content.trashedAt } : {}),
     }
   })
   const last = page.at(-1)
@@ -219,7 +239,7 @@ export function createContent(
     mkdirSync(join(directory, 'assets'), { mode: 0o700 })
     const now = new Date().toISOString()
     const content: PublisherContent = {
-      id, contentType, revision: 1, createdAt: now, updatedAt: now,
+      id, workflowVersion: 2, contentType, revision: 1, createdAt: now, updatedAt: now,
       title: initialTitle.trim(), body: '', summary: '', tags: [], creativeStatement: 'none',
       // The source document preview uses the same classic reader layout.
       ...(contentType === 'article' ? { articleTheme: 'classic' as const } : {}),
@@ -370,6 +390,97 @@ export function saveContent(id: string, input: SaveContentInput, env: NodeJS.Pro
   return next
 }
 
+export interface PatchContentInput {
+  revision: number
+  patch: PublisherContentPatch
+}
+
+/** Apply only this writer's changes to the latest revision; each successful save is ordered. */
+export function patchContent(id: string, input: PatchContentInput, env: NodeJS.ProcessEnv = process.env): PublisherContent {
+  const current = readContent(id, env)
+  if (!Number.isSafeInteger(input.revision) || input.revision < 1 || input.revision > current.revision) {
+    throw new Error('草稿版本无效，请重新读取草稿')
+  }
+  const patch = input.patch
+  const allowed = ['title', 'body', 'summary', 'tags', 'creativeStatement', 'articleTheme', 'coverAssetId',
+    'assetOrder', 'platformFields', 'platformVariants', 'unsetVariantFields', 'description', 'shortTitle', 'videoSource']
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)
+    || Object.keys(patch).some(key => !allowed.includes(key))) throw new Error('草稿修改字段无效')
+  const fields = { ...current.platformFields }
+  if (patch.platformFields !== undefined) {
+    if (!patch.platformFields || typeof patch.platformFields !== 'object' || Array.isArray(patch.platformFields)) {
+      throw new Error('平台字段无效')
+    }
+    for (const [platform, changes] of Object.entries(patch.platformFields)) {
+      if (!(PLATFORMS as readonly string[]).includes(platform)) throw new Error('平台字段无效')
+      if (changes === null) { delete fields[platform as Platform]; continue }
+      if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('平台字段无效')
+      const row = { ...fields[platform as Platform] }
+      for (const [key, value] of Object.entries(changes)) {
+        if (!/^[a-z][a-zA-Z0-9]{0,39}$/u.test(key)) throw new Error('平台字段无效')
+        if (value === null) delete row[key]
+        else if (typeof value === 'string') row[key] = value
+        else throw new Error('平台字段无效')
+      }
+      fields[platform as Platform] = row
+    }
+  }
+  const variants = { ...current.platformVariants }
+  if (patch.platformVariants !== undefined) {
+    if (!patch.platformVariants || typeof patch.platformVariants !== 'object' || Array.isArray(patch.platformVariants)) {
+      throw new Error('平台版本无效')
+    }
+    for (const [platform, changes] of Object.entries(patch.platformVariants)) {
+      if (!(PLATFORMS as readonly string[]).includes(platform)) throw new Error('平台版本无效')
+      if (changes === null) { delete variants[platform as Platform]; continue }
+      if (!changes || typeof changes !== 'object' || Array.isArray(changes)
+        || Object.keys(changes).some(key => !['title', 'body', 'summary', 'tags', 'coverAssetId', 'assetOrder'].includes(key))) {
+        throw new Error('平台版本字段无效')
+      }
+      const row: Record<string, unknown> = { ...variants[platform as Platform] }
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === null && key !== 'coverAssetId') delete row[key]
+        else if (value !== undefined) row[key] = value
+      }
+      variants[platform as Platform] = row as PublisherPlatformVariant
+    }
+  }
+  if (patch.unsetVariantFields !== undefined) {
+    if (!patch.unsetVariantFields || typeof patch.unsetVariantFields !== 'object' || Array.isArray(patch.unsetVariantFields)) {
+      throw new Error('平台版本字段无效')
+    }
+    for (const [platform, keys] of Object.entries(patch.unsetVariantFields)) {
+      if (!(PLATFORMS as readonly string[]).includes(platform) || !Array.isArray(keys)
+        || keys.some(key => !['title', 'body', 'summary', 'tags', 'coverAssetId', 'assetOrder'].includes(key))) {
+        throw new Error('平台版本字段无效')
+      }
+      const row = { ...variants[platform as Platform] }
+      for (const key of keys) delete row[key]
+      variants[platform as Platform] = row
+    }
+  }
+  const merged: SaveContentInput = {
+    ...current, revision: current.revision, assetOrder: current.assets.map(asset => asset.id),
+    platformFields: fields, platformVariants: variants,
+  }
+  for (const key of ['title', 'body', 'summary', 'tags', 'creativeStatement', 'articleTheme',
+    'description', 'shortTitle', 'assetOrder'] as const) {
+    if (patch[key] !== undefined) (merged as unknown as Record<string, unknown>)[key] = patch[key]
+  }
+  if (patch.assetOrder !== undefined && input.revision < current.revision) {
+    if (!Array.isArray(patch.assetOrder) || new Set(patch.assetOrder).size !== patch.assetOrder.length
+      || patch.assetOrder.some(assetId => typeof assetId !== 'string' || !CONTENT_ID.test(assetId))) {
+      throw new Error('素材顺序无效')
+    }
+    const ids = current.assets.map(asset => asset.id)
+    const requested = patch.assetOrder.filter(assetId => ids.includes(assetId))
+    merged.assetOrder = [...requested, ...ids.filter(assetId => !requested.includes(assetId))]
+  }
+  if (patch.coverAssetId !== undefined) merged.coverAssetId = patch.coverAssetId ?? undefined
+  if (patch.videoSource !== undefined) merged.videoSource = patch.videoSource ?? undefined
+  return saveContent(id, merged, env)
+}
+
 export function duplicateContent(id: string, env: NodeJS.ProcessEnv = process.env): PublisherContent {
   const source = readContent(id, env)
   const copyTitle = source.title ? `${source.title.slice(0, TITLE_MAX - 4).replace(/[\uD800-\uDBFF]$/u, '')}（副本）` : ''
@@ -381,7 +492,7 @@ export function duplicateContent(id: string, env: NodeJS.ProcessEnv = process.en
       const sourceAsset = safeAssetPath(origin, asset.id)
       copyFileSync(sourceAsset, join(target, 'assets', asset.id))
     }
-    const copy = { ...source, id: created.id, revision: 1, createdAt: created.createdAt, updatedAt: created.updatedAt, title: copyTitle }
+    const copy = { ...source, workflowVersion: 2 as const, id: created.id, revision: 1, createdAt: created.createdAt, updatedAt: created.updatedAt, title: copyTitle }
     writeManifest(target, copy)
     return copy
   } catch (error) {
@@ -392,7 +503,33 @@ export function duplicateContent(id: string, env: NodeJS.ProcessEnv = process.en
 }
 
 export function deleteContent(id: string, env: NodeJS.ProcessEnv = process.env): void {
-  rmSync(directoryFor(id, env), { recursive: true })
+  const directory = directoryFor(id, env)
+  const content = readManifest(directory, true)
+  if (content.workflowVersion !== 2) throw new Error('旧版内容不支持此操作')
+  if (content.trashedAt) return
+  const now = new Date().toISOString()
+  writeManifest(directory, { ...content, trashedAt: now, updatedAt: now, revision: content.revision + 1 })
+}
+
+export function restoreStoredContent(id: string, env: NodeJS.ProcessEnv = process.env): PublisherContent {
+  const directory = directoryFor(id, env)
+  const content = readManifest(directory, true)
+  if (content.workflowVersion !== 2) throw new Error('旧版内容不支持此操作')
+  if (!content.trashedAt) return content
+  const next = { ...content, revision: content.revision + 1, updatedAt: new Date().toISOString() }
+  delete next.trashedAt
+  writeManifest(directory, next)
+  return next
+}
+
+/** Internal creation rollback only: never remove content already associated with a conversation. */
+export function discardContent(id: string, env: NodeJS.ProcessEnv = process.env): void {
+  const directory = directoryFor(id, env)
+  const content = readManifest(directory)
+  if (content.workflowVersion !== 2 || existsSync(join(directory, 'agent-session.json'))
+    || existsSync(join(directory, 'content-lifecycle.json'))) throw new Error('内容已有对话或回收记录，不能回滚创建')
+  discardEmptyProjectWorkspace(id, env)
+  rmSync(directory, { recursive: true })
 }
 
 function imageType(data: Buffer): PublisherAsset['mime'] | undefined {
@@ -524,9 +661,11 @@ export function removeAsset(
   return next
 }
 
-export function readAsset(id: string, assetId: string, env: NodeJS.ProcessEnv = process.env): { data: Buffer; mime: PublisherAsset['mime'] } {
+export function readAsset(
+  id: string, assetId: string, env: NodeJS.ProcessEnv = process.env, options: { includeTrash?: boolean } = {},
+): { data: Buffer; mime: PublisherAsset['mime'] } {
   const directory = directoryFor(id, env)
-  const content = readManifest(directory)
+  const content = readManifest(directory, options.includeTrash === true)
   const asset = content.assets.find(item => item.id === assetId)
   if (!asset) throw new Error('素材不存在')
   const file = safeAssetPath(directory, assetId)

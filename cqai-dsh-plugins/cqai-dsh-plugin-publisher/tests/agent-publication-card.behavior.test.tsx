@@ -211,6 +211,22 @@ describe('Agent publication tool card', () => {
     expect(queryApi).toHaveBeenCalledOnce()
   })
 
+  it('keeps the selected Douyin summary visible when the full preview is folded', async () => {
+    const value = publication({
+      requestedPlatforms: ['dy'], accountIds: ['dy-a'],
+      accounts: [{ id: 'dy-a', platform: 'dy', displayName: '抖音文章账号', loginState: 'logged-in' }],
+      capabilities: [{ platform: 'dy', contentTypes: ['article'], modes: { article: ['publish', 'draft'] }, requiredFields: {} }],
+    })
+    value.content = { ...value.content, platformVariants: { dy: { summary: '适合周末的徒步路线' } } }
+    queryApi.mockResolvedValue(value)
+    await renderTool()
+    const summary = container.querySelector('[aria-label="本次抖音摘要"]')!
+    expect(summary.textContent).toContain('适合周末的徒步路线')
+    expect(summary.closest('details')).toBeNull()
+    expect(container.querySelector<HTMLDetailsElement>('.pub-agent-publication-preview')!.open).toBe(false)
+    expect(button('确认发布 · 1 个账号').disabled).toBe(false)
+  })
+
   it('keeps card layout styles owned by Publisher when another client module is materialized and unloaded', async () => {
     await renderTool()
     const card = container.querySelector<HTMLElement>('[aria-label="Agent 发布确认"]')!

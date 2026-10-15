@@ -16,6 +16,7 @@ import { errorMessage, tt } from './helpers.ts'
 import { TemplateLibrary } from './TemplateLibrary.tsx'
 import { GooeyNav } from './GooeyNav.tsx'
 import { CanvasWorkspace } from './CanvasWorkspace.tsx'
+import { ImageEditorDialog } from './ImageEditorDialog.tsx'
 import { EcommerceHistoryMenu } from './EcommerceHistoryMenu.tsx'
 import { ecommerceHistoryCopy as ec } from './ecommerce-history-copy.ts'
 import { useEcommerceHistory } from './use-ecommerce-history.ts'
@@ -485,6 +486,8 @@ export function ImageGenPanel(props: {
   const [historyModelFilter, setHistoryModelFilter] = useState('all')
   const [historyRatioFilter, setHistoryRatioFilter] = useState('all')
   const [preview, setPreview] = useState<{ images: GeneratedImage[]; index: number } | null>(null)
+  const [editorPreview, setEditorPreview] = useState<{ images: GeneratedImage[]; index: number } | null>(null)
+  const editorCompleted = useRef(false)
   const [previewScale, setPreviewScale] = useState(1)
   const [promptCopied, setPromptCopied] = useState(false)
   const [libraryOpen, setLibraryOpen] = useState(false)
@@ -2793,6 +2796,24 @@ export function ImageGenPanel(props: {
         </div>, document.body) : null}
 
       {/* -------------------------------------------------- preview overlay */}
+      {editorPreview !== null && editorPreview.images[editorPreview.index] !== undefined ? <ImageEditorDialog
+        source={{ previewUrl: srcOf(editorPreview.images[editorPreview.index]), name: `dsh-image-${editorPreview.index + 1}.${extensionOf(editorPreview.images[editorPreview.index].mime)}` }}
+        api={api}
+        scope={scope}
+        initialSelection={{ model: model || automaticModel, channelId: providerId, quality, detail }}
+        onClose={() => {
+          if (!editorCompleted.current) openPreview(editorPreview.images, editorPreview.index)
+          setEditorPreview(null)
+        }}
+        onComplete={result => {
+          editorCompleted.current = true
+          setGallery(result.gallery)
+          if (result.history !== undefined) setHistory(result.history)
+          setOverviewRefresh(value => value + 1)
+          setGalleryMessage('编辑结果已另存到 e图库')
+          openPreview([result.image], 0)
+        }}
+      /> : null}
       {preview !== null && previewImage !== null
         ? createPortal(
           <div
@@ -2865,6 +2886,11 @@ export function ImageGenPanel(props: {
               <div className={css.lightboxMeta}>
                 <span className={css.lightboxIndex}>{tt('preview.index', { index: preview.index + 1, total: preview.images.length })}</span>
                 <span className={css.lightboxActions}>
+                  <button type="button" className={css.lightboxEdit} onClick={() => {
+                    editorCompleted.current = false
+                    setEditorPreview(preview)
+                    closePreview()
+                  }}>{tt('preview.editImage')}</button>
                   <button type="button" className={css.lightboxEdit} disabled={conversationBusy} title={tt('conversation.addHint')} onClick={() => { void addImageToConversation(previewImage, preview.index) }}>
                     {addingToConversation === preview.index ? tt('conversation.adding') : tt('conversation.add')}
                   </button>
