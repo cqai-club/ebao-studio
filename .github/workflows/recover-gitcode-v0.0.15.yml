@@ -202,15 +202,28 @@ jobs:
               const missing = CAP_ASSETS.filter(asset => !present.some(entry => entry.name === asset.name))
               const assets = []
               for (const asset of missing) {
+                phase = 'capability inventory stability verification'
                 const current = capAssertOwnedRelease(await api(endpoint, undefined, true), source, marker)
                 if (current.length !== present.length || current.some(entry => !present.some(verified => verified.name === entry.name))) throw new Error('Attachment inventory changed during capability issuance; rerun preflight')
-                const cap = await api(`releases/${CAP_TAG}/upload_url?file_name=${encodeURIComponent(asset.name)}`)
+                phase = 'temporary upload URL API request'
+                let cap
+                try {
+                  cap = await api(`releases/${CAP_TAG}/upload_url?file_name=${encodeURIComponent(asset.name)}`)
+                } catch (error) {
+                  const safeStatus = /^GitCode API HTTP ([0-9]{3}) at releases\/v0\.0\.15\/upload_url$/u.exec(typeof error?.message === 'string' ? error.message : '')
+                  console.error(safeStatus ? `Capability upload URL API HTTP ${safeStatus[1]}` : 'Capability upload URL API request failed')
+                  throw new Error('Capability upload URL API request stopped')
+                }
+                phase = 'capability target and header validation'
                 capValidateTarget(cap)
+                phase = 'persistent credential exclusion'
                 capAssertNoPersistentToken(cap, config.token)
                 assets.push({ ...asset, method: 'PUT', cap: { url: cap.url, headers: cap.headers } })
               }
               const payload = { source, assets }
+              phase = 'final payload validation'
               capValidatePayload(payload, original.validateMirrorSource)
+              phase = 'final payload persistent credential exclusion'
               capAssertNoPersistentToken({ url: JSON.stringify(payload), headers: {} }, config.token)
               phase = 'encrypting one-session capabilities'
               if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(env.CAP_PUBLIC_KEY_B64 || '')) throw new Error('Missing recipient public SPKI key')
