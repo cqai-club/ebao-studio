@@ -37,11 +37,117 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22.23.2
-      - name: Supplement existing verified release and anonymously verify every asset
+      - name: Verify cURL availability
+        run: curl --disable --version
+      - name: Supplement verified release using cURL and anonymously verify every asset
         env:
           SOURCE_REPOSITORY: cqai-club/ebao-studio
           GITCODE_REPOSITORY: g-dxw/ebao-studio
           RELEASE_TAG: v0.0.15
           GH_TOKEN: ${{ github.token }}
           GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-        run: node scripts/sync-gitcode-release.mjs
+        run: |
+          node --input-type=module <<'NODE'
+          /** Contingency transport only. Run from an unchanged checkout of SOURCE_SHA. */
+          import { execFile, spawn } from 'node:child_process'
+          import { ReadStream } from 'node:fs'
+          import { stat } from 'node:fs/promises'
+          import { resolve } from 'node:path'
+          import { promisify } from 'node:util'
+          import { pathToFileURL } from 'node:url'
+
+          const SOURCE_SHA = 'd5a9fa00f091e54f1c64f9641831b85c00e5bd0d'
+          const SOURCE_FILES = ['scripts/sync-gitcode-release.mjs', 'scripts/release-flow.mjs', 'scripts/verify-release-assets.mjs']
+          const exec = promisify(execFile)
+          const quote = value => `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\t', '\\t').replaceAll('\r', '\\r').replaceAll('\n', '\\n')}"`
+          const aborted = () => Object.assign(new Error('cURL upload aborted by the original deadline'), { name: 'AbortError' })
+
+          // Injection points are for offline tests. Production uses the defaults below.
+          export function createCurlPutFetch({ fetchImpl = globalThis.fetch, spawnImpl = spawn, curlExecutable = 'curl', onMetrics = metrics => console.log(JSON.stringify(metrics)) } = {}) {
+            return async function curlPutFetch(input, init) {
+              if (init?.method !== 'PUT' || !(init.body instanceof ReadStream)) return fetchImpl(input, init)
+              const filePath = init.body.path
+              init.body.on('error', () => {}) // Asynchronous open can still fail after destroy; stat/cURL own the real error path.
+              init.body.destroy() // cURL opens the same already-verified file; do not leak the unused Node stream.
+              let url
+              try { url = new URL(input) } catch { throw new Error('Invalid cURL upload target') }
+              if (url.protocol !== 'https:' || url.username || url.password || typeof filePath !== 'string') throw new Error('Invalid cURL upload target')
+              if (!init.headers || Object.getPrototypeOf(init.headers) !== Object.prototype) throw new Error('Invalid cURL upload headers')
+              const headers = Object.entries(init.headers)
+              if (headers.some(([name, value]) => !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(name) || typeof value !== 'string' || /[\r\n\0]/u.test(value))) throw new Error('Invalid cURL upload headers')
+              const lengths = headers.filter(([name]) => name.toLowerCase() === 'content-length')
+              if (lengths.length !== 1 || !/^(0|[1-9][0-9]*)$/u.test(lengths[0][1])) throw new Error('Invalid cURL upload size')
+              const expectedBytes = Number(lengths[0][1])
+              const file = await stat(filePath)
+              if (!Number.isSafeInteger(expectedBytes) || !file.isFile() || file.size !== expectedBytes) throw new Error('Verified cURL upload file changed')
+              if (init.signal?.aborted) throw aborted()
+              const config = [
+                'silent', 'show-error', 'globoff', 'proto = "=https"', 'request = "PUT"',
+                `url = ${quote(url.href)}`, `upload-file = ${quote(filePath)}`,
+                ...headers.map(([name, value]) => `header = ${quote(value === '' ? `${name};` : `${name}: ${value}`)}`),
+                `output = ${quote(process.platform === 'win32' ? 'NUL' : '/dev/null')}`,
+                'connect-timeout = "30"', 'speed-limit = "16384"', 'speed-time = "90"', 'max-time = "1800"',
+                `write-out = ${quote('{"httpCode":"%{http_code}","uploadedBytes":%{size_upload}}\n')}`,
+              ].join('\n') + '\n'
+              const childEnv = { ...process.env }
+              for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'GITCODE_TOKEN']) delete childEnv[name]
+              const result = await new Promise((accept, reject) => {
+                let child
+                try { child = spawnImpl(curlExecutable, ['--disable', '--config', '-'], { stdio: ['pipe', 'pipe', 'ignore'], env: childEnv, windowsHide: true }) }
+                catch { reject(new Error('Unable to start cURL upload')); return }
+                let output = '', wasAborted = false, oversized = false, killTimer
+                const terminate = () => {
+                  child.kill('SIGTERM')
+                  killTimer ??= setTimeout(() => child.kill('SIGKILL'), 2000)
+                  killTimer.unref()
+                }
+                const abort = () => {
+                  if (wasAborted) return
+                  wasAborted = true
+                  terminate()
+                }
+                const cleanup = () => { init.signal?.removeEventListener('abort', abort); clearTimeout(killTimer) }
+                init.signal?.addEventListener('abort', abort, { once: true })
+                if (init.signal?.aborted) abort()
+                child.stdout.on('data', bytes => {
+                  if (output.length + bytes.length > 4096) { oversized = true; terminate() }
+                  else output += bytes.toString('utf8')
+                })
+                child.stdin.on('error', () => {}) // EPIPE is represented by the child's safe exit result.
+                child.once('error', () => { cleanup(); reject(new Error('Unable to start cURL upload')) })
+                child.once('close', (code, signal) => {
+                  cleanup()
+                  if (wasAborted) { reject(aborted()); return }
+                  if (oversized) { reject(new Error('Unexpected cURL upload metrics')); return }
+                  let metrics
+                  try { metrics = JSON.parse(output) } catch { reject(new Error(`cURL upload ended without valid metrics (exit ${Number.isInteger(code) ? code : 'signal'})`)); return }
+                  if (!metrics || !/^[0-9]{3}$/u.test(metrics.httpCode) || !Number.isSafeInteger(metrics.uploadedBytes) || metrics.uploadedBytes < 0 || metrics.uploadedBytes > expectedBytes) { reject(new Error('Unexpected cURL upload metrics')); return }
+                  const safeMetrics = { httpCode: metrics.httpCode, uploadedBytes: metrics.uploadedBytes }
+                  try { onMetrics(safeMetrics) } catch { reject(new Error('Unable to report safe cURL metrics')); return }
+                  if (code !== 0 || signal) { reject(new Error(`cURL upload transport failure (exit ${Number.isInteger(code) ? code : 'signal'})`)); return }
+                  const status = Number(metrics.httpCode)
+                  if (status < 200 || status > 599) { reject(new Error('Invalid cURL upload HTTP status')); return }
+                  if (status >= 200 && status < 300 && metrics.uploadedBytes !== expectedBytes) { reject(new Error('Incomplete cURL upload byte count')); return }
+                  accept({ status })
+                })
+                child.stdin.end(config)
+              })
+              // The original function consumes and discards the callback body. cURL already discards it.
+              return new Response(null, { status: result.status })
+            }
+          }
+
+          export async function runFixedMain(directory = process.cwd()) {
+            try {
+              const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: directory })
+              if (stdout.trim() !== SOURCE_SHA) throw new Error('Source SHA differs')
+              await exec('git', ['diff', '--quiet', SOURCE_SHA, '--', ...SOURCE_FILES], { cwd: directory })
+            } catch { throw new Error('The driver requires the unchanged fixed d5a9fa0 execution source') }
+            const { main } = await import(pathToFileURL(resolve(directory, SOURCE_FILES[0])).href)
+            const originalFetch = globalThis.fetch
+            globalThis.fetch = createCurlPutFetch({ fetchImpl: originalFetch })
+            try { await main() } finally { globalThis.fetch = originalFetch }
+          }
+
+          await runFixedMain()
+          NODE
