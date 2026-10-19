@@ -1,0 +1,41 @@
+# e研宝
+
+面向在职研究生与博士生的 DeepSeek Harness 研究写作工作台。它以一个侧栏入口承载：
+
+- 一句话查文献
+- 一句话生成文献综述
+- 一句话生成期刊论文
+- 一句话生成研究论文
+- 一句话生成毕业论文
+- 一句话生成期刊排版
+- 一句话生成毕业论文排版
+- 本科、硕士、博士三种学位论文排版基线
+
+## 功能边界
+
+检索通过 OpenAlex 完成，Crossref 作为回退来源；生成使用 DSH 当前默认文字模型。来源列表、正文、引用和排版设置保存在
+`$DSH_HOME/eyanbao/projects/<id>/project.json`。生成的正文只使用本次检索到的来源，证据不足时模型必须明确说明，不会伪造引用。
+
+排版导出为 DOCX。内置模板是通用学术基线，不等同于任何具体学校的强制规范；学校或期刊另有模板时，应以其最新文件为准。
+
+## 开发
+
+从仓库根目录运行：
+
+```sh
+corepack yarn workspace cqai-dsh-plugin-eyanbao typecheck
+corepack yarn workspace cqai-dsh-plugin-eyanbao test
+corepack yarn workspace cqai-dsh-plugin-eyanbao build
+```
+
+插件不修改 `deepseek-harness` 子模块，也不依赖 e剪宝或任何视频插件。
+
+## 在 e宝工坊中加载
+
+先完成构建，再从 DSH Terminal 把本地插件包加入一个非 `desktop` 的开发 Profile：
+
+```sh
+dsh plugin --profile <profile> add "D:/path/to/ebao-studio/cqai-dsh-plugins/cqai-dsh-plugin-eyanbao"
+```
+
+重启应用后，侧栏会出现独立的「e研宝」入口。默认使用当前 Profile 的默认文字模型，不需要另填 API Key。

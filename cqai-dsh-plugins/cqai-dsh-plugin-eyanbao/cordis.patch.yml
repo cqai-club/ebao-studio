@@ -1,0 +1,5 @@
+# Mount e研宝 as an independent research workspace. The plugin reuses the
+# host's configured text model and does not require the video plugins.
+- insert:
+    - id: cqai-eyanbao
+      name: cqai-dsh-plugin-eyanbao
