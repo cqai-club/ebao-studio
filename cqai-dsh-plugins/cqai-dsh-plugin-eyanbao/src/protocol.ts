@@ -27,6 +27,9 @@ export type LiteratureScope = typeof LITERATURE_SCOPES[number]
 export const JOURNAL_QUALITIES = ['any', 'top-preferred', 'top-only'] as const
 export type JournalQuality = typeof JOURNAL_QUALITIES[number]
 
+export const ASSIST_ACTIONS = ['refine', 'keywords', 'method', 'outline'] as const
+export type AssistAction = typeof ASSIST_ACTIONS[number]
+
 export const PROJECT_STATUSES = ['draft', 'running', 'complete', 'error'] as const
 export type ProjectStatus = typeof PROJECT_STATUSES[number]
 
@@ -103,6 +106,17 @@ export interface RunRequest {
   journalName: string
 }
 
+export interface AssistRequest {
+  action: AssistAction
+  prompt: string
+  kind: TaskKind
+  degree: Degree
+  discipline: string
+  language: Language
+  literatureScope: LiteratureScope
+  journalQuality: JournalQuality
+}
+
 export interface HealthResponse {
   ok: boolean
   modelReady: boolean
@@ -119,12 +133,19 @@ export type StreamEvent =
   | { type: 'result'; project: ScholarProject }
   | { type: 'error'; message: string; project?: ScholarProject }
 
+export type AssistEvent =
+  | { type: 'status'; message: string }
+  | { type: 'delta'; text: string }
+  | { type: 'result'; text: string }
+  | { type: 'error'; message: string }
+
 const TASK_KIND_SET = new Set<string>(TASK_KINDS)
 const DEGREE_SET = new Set<string>(DEGREES)
 const CITATION_STYLE_SET = new Set<string>(CITATION_STYLES)
 const LANGUAGE_SET = new Set<string>(LANGUAGES)
 const LITERATURE_SCOPE_SET = new Set<string>(LITERATURE_SCOPES)
 const JOURNAL_QUALITY_SET = new Set<string>(JOURNAL_QUALITIES)
+const ASSIST_ACTION_SET = new Set<string>(ASSIST_ACTIONS)
 
 export function taskKind(value: unknown): TaskKind {
   if (typeof value !== 'string' || !TASK_KIND_SET.has(value)) throw new Error('研究任务类型无效')
@@ -158,6 +179,11 @@ export function literatureScope(value: unknown): LiteratureScope {
 export function journalQuality(value: unknown): JournalQuality {
   if (typeof value !== 'string' || !JOURNAL_QUALITY_SET.has(value)) throw new Error('期刊层级无效')
   return value as JournalQuality
+}
+
+export function assistAction(value: unknown): AssistAction {
+  if (typeof value !== 'string' || !ASSIST_ACTION_SET.has(value)) throw new Error('AI 辅助类型无效')
+  return value as AssistAction
 }
 
 export function parseRunRequest(value: unknown): RunRequest {
@@ -195,6 +221,25 @@ export function parseRunRequest(value: unknown): RunRequest {
     author: clean('author', 80),
     affiliation: clean('affiliation', 160),
     journalName: clean('journalName', 120),
+  }
+}
+
+export function parseAssistRequest(value: unknown): AssistRequest {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('AI 辅助请求格式无效')
+  const body = value as Record<string, unknown>
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+  if (prompt.length < 4) throw new Error('请先输入至少四个字的研究需求')
+  if (prompt.length > 4000) throw new Error('研究需求不能超过 4000 个字符')
+  const discipline = typeof body.discipline === 'string' ? body.discipline.trim().slice(0, 80) : ''
+  return {
+    action: assistAction(body.action),
+    prompt,
+    kind: taskKind(body.kind),
+    degree: degree(body.degree ?? 'master'),
+    discipline,
+    language: language(body.language ?? 'zh'),
+    literatureScope: literatureScope(body.literatureScope ?? 'mixed'),
+    journalQuality: journalQuality(body.journalQuality ?? 'any'),
   }
 }
 

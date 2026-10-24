@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseRunRequest, safeFileStem } from '../src/protocol.ts'
+import { parseAssistRequest, parseRunRequest, safeFileStem } from '../src/protocol.ts'
 
 describe('research requests', () => {
   it('normalizes valid input and preserves optional filters', () => {
@@ -44,5 +44,25 @@ describe('research requests', () => {
 
   it('removes path-invalid characters from export names', () => {
     expect(safeFileStem('AI: 论文/综述?*')).toBe('AI- 论文-综述--')
+  })
+
+  it('validates AI assist requests', () => {
+    expect(parseAssistRequest({
+      action: 'method',
+      prompt: '研究生成式 AI 对研究生写作的影响',
+      kind: 'research',
+      degree: 'master',
+      discipline: '教育学',
+      language: 'zh',
+      literatureScope: 'foreign',
+      journalQuality: 'top-preferred',
+    })).toMatchObject({
+      action: 'method',
+      kind: 'research',
+      literatureScope: 'foreign',
+      journalQuality: 'top-preferred',
+    })
+    expect(() => parseAssistRequest({ action: 'unknown', prompt: '有效研究主题', kind: 'search' })).toThrow('AI 辅助类型')
+    expect(() => parseAssistRequest({ action: 'refine', prompt: 'abc', kind: 'search' })).toThrow('四个字')
   })
 })

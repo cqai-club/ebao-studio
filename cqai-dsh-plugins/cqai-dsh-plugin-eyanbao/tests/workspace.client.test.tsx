@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   getProject: vi.fn(),
   patchProject: vi.fn(),
   runResearch: vi.fn(),
+  runAssist: vi.fn(),
   exportUrl: vi.fn((id: string, format: string) => `/api/cqai-eyanbao/projects/${id}/export.${format}`),
 }))
 
@@ -124,5 +125,29 @@ describe('e研宝 workspace', () => {
     const change = api.patchProject.mock.calls[0]![1]
     expect(change.content).toContain('新增正文。')
     expect(change.layout?.template).toBe('thesis')
+  })
+
+  it('opens the AI assistant from the task row and applies a refined prompt', async () => {
+    await render()
+    const prompt = container!.querySelector<HTMLTextAreaElement>('#ey-research-prompt')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(prompt, '研究生成式 AI 对学术写作的影响')
+      prompt.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const trigger = container!.querySelector<HTMLButtonElement>('[aria-label="打开 AI 研究助手"]')!
+    await act(async () => trigger.click())
+    expect(container!.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    api.runAssist.mockImplementation(async (_request, onEvent) => {
+      onEvent({ type: 'status', message: '正在分析当前研究需求' })
+      onEvent({ type: 'delta', text: '研究生成式 AI 对在职研究生学术写作投入与证据核验的影响。' })
+      onEvent({ type: 'result', text: '研究生成式 AI 对在职研究生学术写作投入与证据核验的影响。' })
+    })
+    await act(async () => findButton('生成建议')!.click())
+    expect(api.runAssist).toHaveBeenCalledOnce()
+    expect(container!.querySelector('.ey-ai-result')?.textContent).toContain('证据核验')
+    await act(async () => findButton('替换研究需求')!.click())
+    expect(prompt.value).toBe('研究生成式 AI 对在职研究生学术写作投入与证据核验的影响。')
+    expect(container!.querySelector('[role="dialog"]')).toBeNull()
   })
 })

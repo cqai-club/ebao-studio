@@ -5,15 +5,18 @@ import {
   generateEnglishSearchQuery,
   initialProject,
   ResearchGenerationError,
+  streamResearchAssist,
   streamProjectDraft,
   type ResearchModelServices,
 } from './generation.ts'
 import { searchLiterature, type LiteratureSearchResult } from './literature.ts'
 import {
   API,
+  parseAssistRequest,
   isTaskKind,
   parseRunRequest,
   safeFileStem,
+  type AssistEvent,
   type HealthResponse,
   type ScholarProject,
   type StreamEvent,
@@ -118,7 +121,7 @@ function searchText(project: ScholarProject): string {
   return [project.prompt, project.discipline].filter(Boolean).join(' ')
 }
 
-async function writeEvent(res: ServerResponse, event: StreamEvent): Promise<void> {
+async function writeEvent(res: ServerResponse, event: StreamEvent | AssistEvent): Promise<void> {
   if (res.destroyed || res.writableEnded) return
   const canContinue = res.write(`${JSON.stringify(event)}\n`)
   if (!canContinue) {
@@ -131,6 +134,44 @@ async function writeEvent(res: ServerResponse, event: StreamEvent): Promise<void
       res.once('drain', done)
       res.once('close', done)
     })
+  }
+}
+
+async function runAssist(
+  req: IncomingMessage,
+  res: ServerResponse,
+  options: RoutesOptions,
+): Promise<void> {
+  const request = parseAssistRequest(await readJson(req, MAX_JSON_BODY))
+  res.writeHead(200, {
+    'content-type': 'application/x-ndjson; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'x-accel-buffering': 'no',
+  })
+  res.flushHeaders()
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new Error('AI 辅助超时，请重试。')), 3 * 60 * 1000)
+  timer.unref?.()
+  const closed = () => {
+    if (!res.writableEnded) controller.abort(new Error('AI 辅助已取消。'))
+  }
+  res.once('close', closed)
+  try {
+    await writeEvent(res, { type: 'status', message: '正在分析当前研究需求' })
+    const text = await streamResearchAssist(
+      request,
+      options.services(),
+      async text => writeEvent(res, { type: 'delta', text }),
+      controller.signal,
+    )
+    await writeEvent(res, { type: 'result', text })
+  } catch (error) {
+    await writeEvent(res, { type: 'error', message: messageOf(error) })
+  } finally {
+    clearTimeout(timer)
+    res.off('close', closed)
+    if (!res.writableEnded) res.end()
   }
 }
 
@@ -367,6 +408,10 @@ export function createRouteHandler(options: RoutesOptions) {
       }
       if (req.method === 'POST' && action === 'run') {
         await runProject(req, res, options)
+        return
+      }
+      if (req.method === 'POST' && action === 'assist') {
+        await runAssist(req, res, options)
         return
       }
       const match = /^projects\/([^/]+)(?:\/(export\.docx|export\.md))?$/u.exec(action)

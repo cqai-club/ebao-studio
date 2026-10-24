@@ -1,5 +1,7 @@
 import {
   API,
+  type AssistEvent,
+  type AssistRequest,
   type HealthResponse,
   type ProjectSummary,
   type RunRequest,
@@ -80,6 +82,40 @@ export async function runResearch(
   }
   buffer += decoder.decode()
   if (buffer.trim() !== '') onEvent(JSON.parse(buffer) as StreamEvent)
+}
+
+export async function runAssist(
+  request: AssistRequest,
+  onEvent: (event: AssistEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${API}/assist`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-eyanbao': '1' },
+    body: JSON.stringify(request),
+    signal,
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string }
+    throw new Error(payload.error ?? `AI 辅助请求失败（HTTP ${response.status}）`)
+  }
+  if (response.body === null) throw new Error('AI 辅助没有返回可读取的数据流。')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (line.trim() === '') continue
+      onEvent(JSON.parse(line) as AssistEvent)
+    }
+  }
+  buffer += decoder.decode()
+  if (buffer.trim() !== '') onEvent(JSON.parse(buffer) as AssistEvent)
 }
 
 export function exportUrl(id: string, format: 'docx' | 'md'): string {

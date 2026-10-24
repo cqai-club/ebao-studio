@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ResearchModelServices } from '../src/generation.ts'
-import { API, type ScholarProject, type StreamEvent } from '../src/protocol.ts'
+import { API, type AssistEvent, type ScholarProject, type StreamEvent } from '../src/protocol.ts'
 import { createRouteHandler } from '../src/routes.ts'
 
 const roots: string[] = []
@@ -139,5 +139,36 @@ describe('e研宝 HTTP routes', () => {
       status: 'complete',
     })
     expect(result.project.keywords).toEqual(['生成式 AI', '学术写作'])
+  })
+
+  it('streams AI research assistance without creating a project', async () => {
+    const { base } = await fixture({
+      stream: async function* () {
+        yield { type: 'text-delta', text: '## 研究设计\n\n建议采用混合研究方法。' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      },
+    })
+    const response = await fetch(`${base}${API}/assist`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-eyanbao': '1' },
+      body: JSON.stringify({
+        action: 'method',
+        prompt: '研究生成式 AI 对研究生学术写作的影响',
+        kind: 'research',
+        degree: 'master',
+        language: 'zh',
+        literatureScope: 'foreign',
+        journalQuality: 'top-preferred',
+      }),
+    })
+    expect(response.status).toBe(200)
+    const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line) as AssistEvent)
+    expect(events.some(event => event.type === 'delta')).toBe(true)
+    expect(events.find(event => event.type === 'result')).toEqual({
+      type: 'result',
+      text: '## 研究设计\n\n建议采用混合研究方法。',
+    })
+    const listed = await fetch(`${base}${API}/projects`)
+    expect((await listed.json() as { projects: unknown[] }).projects).toHaveLength(0)
   })
 })

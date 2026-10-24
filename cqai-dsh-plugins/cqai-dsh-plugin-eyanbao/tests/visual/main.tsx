@@ -136,6 +136,21 @@ if (params.get('quality') === 'top-only') {
     }
   }, 300)
 }
+if (params.get('ai') === 'open') {
+  window.setTimeout(() => {
+    const prompt = document.querySelector<HTMLTextAreaElement>('#ey-research-prompt')
+    if (prompt !== null) {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        prompt,
+        '研究生成式 AI 对在职研究生学术写作投入与证据核验的影响',
+      )
+      prompt.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  }, 220)
+  window.setTimeout(() => {
+    document.querySelector<HTMLButtonElement>('[aria-label="打开 AI 研究助手"]')?.click()
+  }, 350)
+}
 if (params.get('state') === 'document') {
   window.setTimeout(() => {
     const row = document.querySelector<HTMLButtonElement>('.ey-project')

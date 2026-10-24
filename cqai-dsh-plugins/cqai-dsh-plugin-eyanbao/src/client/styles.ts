@@ -108,7 +108,10 @@ export const workspaceStyles = String.raw`
   position: relative; border: 1px solid var(--ey-border-strong); border-radius: 8px; background: var(--ey-panel); box-shadow: var(--ey-shadow);
   overflow: hidden;
 }
-.ey-task-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 10px; border-bottom: 1px solid var(--ey-border); scrollbar-width: thin; }
+.ey-composer-nav { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border-bottom: 1px solid var(--ey-border); }
+.ey-task-tabs { display: flex; flex: 1; gap: 4px; overflow-x: auto; padding: 2px 2px 2px 0; scrollbar-width: thin; }
+.ey-ai-trigger { flex: none; color: var(--ey-accent); background: var(--ey-accent-soft); border-color: color-mix(in srgb, var(--ey-accent) 30%, var(--ey-border)); }
+.ey-ai-trigger[aria-expanded="true"] { color: var(--ey-on-accent, #fff); background: var(--ey-accent); border-color: var(--ey-accent); }
 .ey-task { min-width: max-content; min-height: 44px; display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; color: var(--ey-muted); background: transparent; font-size: 13px; font-weight: 600; }
 .ey-task:hover { color: var(--ey-text); background: var(--ey-hover); }
 .ey-task[aria-pressed="true"] { color: var(--ey-ink); background: var(--ey-selected); border-color: var(--ey-border); }
@@ -119,6 +122,34 @@ export const workspaceStyles = String.raw`
   color: var(--ey-text); background: color-mix(in srgb, var(--ey-bg) 58%, var(--ey-panel)); line-height: 1.65; font-size: 16px;
 }
 .ey-prompt::placeholder { color: color-mix(in srgb, var(--ey-muted) 82%, transparent); }
+.ey-ai-panel {
+  position: absolute; z-index: 20; left: 12px; top: 64px; width: min(440px, calc(100% - 24px));
+  max-height: min(580px, calc(100dvh - 220px)); overflow: auto; display: grid; gap: 12px; padding: 14px;
+  border: 1px solid var(--ey-border-strong); border-radius: 8px; background: var(--ey-panel);
+  box-shadow: 0 18px 42px rgba(20, 34, 43, .18);
+}
+.ey-ai-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ey-ai-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ey-ai-mark { width: 34px; height: 34px; flex: none; display: grid; place-items: center; color: var(--ey-accent); background: var(--ey-accent-soft); border-radius: 7px; }
+.ey-ai-title h3 { margin: 0; font-size: 15px; line-height: 1.35; }
+.ey-ai-title p { margin: 3px 0 0; color: var(--ey-muted); font-size: 11px; line-height: 1.45; }
+.ey-ai-header .ey-icon-button { min-width: 44px; }
+.ey-ai-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.ey-ai-action { min-height: 42px; display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px; padding: 8px 10px; border: 1px solid var(--ey-border); border-radius: 7px; color: var(--ey-muted); background: var(--ey-panel); font-size: 12px; font-weight: 650; }
+.ey-ai-action:hover { color: var(--ey-text); background: var(--ey-hover); }
+.ey-ai-action[aria-pressed="true"] { color: var(--ey-accent); background: var(--ey-accent-soft); border-color: color-mix(in srgb, var(--ey-accent) 28%, var(--ey-border)); }
+.ey-ai-context { padding: 9px 10px; border: 1px solid var(--ey-border); border-radius: 7px; color: var(--ey-muted); background: var(--ey-bg); font-size: 12px; line-height: 1.5; max-height: 74px; overflow: auto; overflow-wrap: anywhere; }
+.ey-ai-status { min-height: 28px; display: flex; align-items: center; gap: 7px; color: var(--ey-muted); font-size: 12px; }
+.ey-ai-result { min-height: 112px; max-height: 240px; overflow: auto; padding: 10px 12px; border: 1px solid var(--ey-border); border-radius: 7px; background: var(--ey-bg); color: var(--ey-text); font-size: 13px; line-height: 1.65; }
+.ey-ai-result.is-empty { display: grid; place-items: center; color: var(--ey-muted); text-align: center; }
+.ey-ai-result h1, .ey-ai-result h2, .ey-ai-result h3, .ey-ai-result h4 { margin: 14px 0 6px; color: var(--ey-text); line-height: 1.4; letter-spacing: 0; }
+.ey-ai-result h1 { font-size: 18px; }
+.ey-ai-result h2 { font-size: 16px; }
+.ey-ai-result h3, .ey-ai-result h4 { font-size: 14px; }
+.ey-ai-result p { margin: 0 0 8px; }
+.ey-ai-result blockquote { margin: 8px 0; padding: 7px 10px; border-left: 2px solid var(--ey-accent); color: var(--ey-muted); }
+.ey-ai-result ul, .ey-ai-result ol { margin: 6px 0; padding-left: 20px; }
+.ey-ai-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .ey-compose-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0 16px 14px; }
 .ey-suggestions { display: flex; flex: 1; flex-wrap: wrap; gap: 6px; min-width: 220px; }
 .ey-chip { min-height: 34px; padding: 5px 9px; border: 1px solid var(--ey-border); border-radius: 999px; color: var(--ey-muted); background: transparent; font-size: 12px; }
@@ -268,8 +299,10 @@ export const workspaceStyles = String.raw`
   .ey-main-inner { padding: 20px 12px 40px; }
   .ey-compose-head { align-items: flex-start; flex-direction: column; gap: 8px; }
   .ey-compose-head h2 { font-size: 26px; }
-  .ey-task-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; padding: 8px; }
+  .ey-task-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; padding: 0; }
   .ey-task { min-width: 0; justify-content: flex-start; }
+  .ey-composer-nav { padding: 6px; }
+  .ey-ai-panel { left: 8px; right: 8px; top: 58px; width: auto; max-height: calc(100dvh - 140px); }
   .ey-prompt-wrap { padding: 12px 12px 10px; }
   .ey-prompt { font-size: 16px; }
   .ey-compose-footer, .ey-submit-row { padding-left: 12px; padding-right: 12px; }

@@ -5,6 +5,7 @@
 - 一句话查文献
 - 中外文、中文、外文三种文献范围
 - 外文文献支持全部期刊、顶刊优先、仅顶级期刊三档
+- AI 研究助手支持优化研究需求、生成检索词、推荐研究方法和论文提纲
 - 一句话生成文献综述
 - 一句话生成期刊论文
 - 一句话生成研究论文
@@ -22,6 +23,8 @@
 “顶刊优先”使用跨学科精选顶刊库并结合被引次数排序；“仅顶级期刊”只保留精选库中的来源。Nature、Science、Cell、
 The Lancet、Academy of Management Journal、MIS Quarterly、American Economic Review、Review of Educational Research、
 IEEE TPAMI 等均在库中，完整分组见 [顶级外文期刊库](./docs/top-journals.md)。
+
+任务栏左侧的 AI 研究助手围绕当前需求提供研究规划建议。结果可以替换或追加到研究需求；它不会把建议自动当作检索证据。
 
 排版导出为 DOCX。内置模板是通用学术基线，不等同于任何具体学校的强制规范；学校或期刊另有模板时，应以其最新文件为准。
 

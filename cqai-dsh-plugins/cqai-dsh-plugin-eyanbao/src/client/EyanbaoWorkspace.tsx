@@ -17,6 +17,7 @@ import {
   Plus,
   Search,
   Settings2,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -51,6 +52,7 @@ import {
   patchProject,
   runResearch,
 } from './api.ts'
+import { AiAssistant } from './AiAssistant.tsx'
 import { MarkdownDocument } from './markdown.tsx'
 import { workspaceStyles } from './styles.ts'
 
@@ -282,8 +284,10 @@ export function EyanbaoWorkspace() {
   const [loadingProject, setLoadingProject] = useState(false)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [toast, setToast] = useState('')
+  const [aiOpen, setAiOpen] = useState(false)
   const abortRef = useRef<AbortController>()
   const promptRef = useRef<HTMLTextAreaElement>(null)
+  const aiTriggerRef = useRef<HTMLButtonElement>(null)
   const taskRefs = useRef<Partial<Record<TaskKind, HTMLButtonElement>>>({})
   const deferredFilter = useDeferredValue(projectFilter)
   const setProject = (next: ScholarProject) => {
@@ -344,6 +348,21 @@ export function EyanbaoWorkspace() {
     setStage(undefined)
     setError('')
     setRailOpen(false)
+    setAiOpen(false)
+    window.setTimeout(() => promptRef.current?.focus(), 0)
+  }
+
+  const closeAssistant = () => {
+    setAiOpen(false)
+    window.setTimeout(() => aiTriggerRef.current?.focus(), 0)
+  }
+
+  const applyAssistant = (text: string, replace: boolean) => {
+    setRequest(current => ({
+      ...current,
+      prompt: replace ? text : `${current.prompt.trim()}\n\n${text}`,
+    }))
+    closeAssistant()
     window.setTimeout(() => promptRef.current?.focus(), 0)
   }
 
@@ -550,26 +569,57 @@ export function EyanbaoWorkspace() {
         </div>
       </div>
       <section className="ey-composer" aria-label="研究任务">
-        <div className="ey-task-tabs" role="group" aria-label="研究任务类型">
-          {TASKS.map((task, index) => {
-            const Icon = task.icon
-            return (
-              <button
-                type="button"
-                className="ey-task"
-                key={task.id}
-                id={`ey-task-${task.id}`}
-                ref={element => { if (element) taskRefs.current[task.id] = element }}
-                aria-pressed={request.kind === task.id}
-                onClick={() => selectTask(task.id)}
-                onKeyDown={event => onTaskKey(event, index)}
-              >
-                <Icon size={17} aria-hidden="true" />
-                {task.label}
-              </button>
-            )
-          })}
+        <div className="ey-composer-nav">
+          <button
+            ref={aiTriggerRef}
+            type="button"
+            className="ey-icon-button ey-ai-trigger"
+            aria-label="打开 AI 研究助手"
+            aria-expanded={aiOpen}
+            aria-controls="ey-ai-assistant"
+            title="AI 研究助手"
+            onClick={() => setAiOpen(current => !current)}
+          >
+            <Sparkles size={19} aria-hidden="true" />
+          </button>
+          <div className="ey-task-tabs" role="group" aria-label="研究任务类型">
+            {TASKS.map((task, index) => {
+              const Icon = task.icon
+              return (
+                <button
+                  type="button"
+                  className="ey-task"
+                  key={task.id}
+                  id={`ey-task-${task.id}`}
+                  ref={element => { if (element) taskRefs.current[task.id] = element }}
+                  aria-pressed={request.kind === task.id}
+                  onClick={() => selectTask(task.id)}
+                  onKeyDown={event => onTaskKey(event, index)}
+                >
+                  <Icon size={17} aria-hidden="true" />
+                  {task.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
+        {aiOpen && (
+          <div id="ey-ai-assistant">
+            <AiAssistant
+              context={{
+                prompt: request.prompt,
+                kind: request.kind,
+                degree: request.degree,
+                discipline: request.discipline,
+                language: request.language,
+                literatureScope: request.literatureScope,
+                journalQuality: request.journalQuality,
+              }}
+              onApply={applyAssistant}
+              onClose={closeAssistant}
+            />
+          </div>
+        )}
         <div className="ey-prompt-wrap">
           <label className="ey-label" htmlFor="ey-research-prompt">研究主题或要求</label>
           <textarea

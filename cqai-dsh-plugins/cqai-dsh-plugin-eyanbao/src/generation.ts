@@ -1,5 +1,7 @@
 import { createUserMessage, type GenerateOptions, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import {
+  type AssistAction,
+  type AssistRequest,
   type LiteratureSource,
   type RunRequest,
   type ScholarProject,
@@ -55,6 +57,13 @@ const JOURNAL_QUALITY_LABELS = {
   'top-preferred': '顶刊优先',
   'top-only': '仅顶级期刊',
 } as const
+
+const ASSIST_INSTRUCTIONS: Record<AssistAction, string> = {
+  refine: '把研究需求改写成一句更清晰、可执行的研究问题。明确研究对象、核心问题、范围或时间、可能的证据类型。只输出改写后的这一句，不要标题、解释或列表。',
+  keywords: '生成检索策略。分为“中文关键词”“英文关键词”“布尔检索式”三部分，每部分使用短列表或单行内容。不要生成不存在的文献或 DOI。',
+  method: '推荐可执行的研究设计。包括研究问题拆解、数据或材料来源、方法选择、分析步骤、效度或可信度、伦理风险与局限。使用简洁 Markdown。',
+  outline: '生成论文或研究稿提纲。至少包含摘要、引言、文献综述或理论框架、研究设计、分析、讨论、结论与参考文献占位；结合当前论文类型和学位层次。使用 Markdown 标题与短说明。',
+}
 
 export function taskLabel(kind: TaskKind): string {
   return TASK_LABELS[kind]
@@ -217,6 +226,78 @@ export async function generateEnglishSearchQuery(
   } catch {
     return undefined
   }
+}
+
+export async function streamResearchAssist(
+  request: AssistRequest,
+  services: ResearchModelServices,
+  onDelta: (text: string) => void | Promise<void>,
+  signal: AbortSignal,
+): Promise<string> {
+  if (services.defaultModel === undefined || services.llm === undefined) {
+    throw new ResearchGenerationError('默认文字模型尚未就绪，请先配置文字模型。', 'model-missing')
+  }
+  const selected = services.defaultModel.currentSelection()
+  if (typeof selected?.provider !== 'string' || selected.provider.trim() === ''
+    || typeof selected.model !== 'string' || selected.model.trim() === '') {
+    throw new ResearchGenerationError('请先配置默认文字模型。', 'model-missing')
+  }
+  const task = TASK_LABELS[request.kind]
+  const degree = DEGREE_LABELS[request.degree]
+  const scope = SCOPE_LABELS[request.literatureScope]
+  const quality = request.literatureScope === 'foreign'
+    ? JOURNAL_QUALITY_LABELS[request.journalQuality]
+    : '全部期刊'
+  signal.throwIfAborted()
+  let output = ''
+  let finished = false
+  for await (const chunk of services.llm.stream({
+    ...selected,
+    system: `你是 e研宝的 AI 研究教练，服务在职研究生、硕士生和博士生。当前任务类型：${task}。学位层次：${degree}。文献范围：${scope}。期刊层级：${quality}。写作语言：${request.language === 'zh' ? '中文' : '英文'}。你只提供研究规划和方法建议，不虚构文献、数据、实验结果或引用。${ASSIST_INSTRUCTIONS[request.action]}`,
+    messages: [createUserMessage({
+      content: [{
+        type: 'text',
+        text: `研究需求：${request.prompt}${request.discipline === '' ? '' : `\n学科领域：${request.discipline}`}`,
+      }],
+      source: { kind: 'user' },
+    })],
+    temperature: 0.3,
+    maxTokens: 2200,
+    signal,
+  })) {
+    signal.throwIfAborted()
+    if (finished && chunk.type !== 'usage') {
+      throw new ResearchGenerationError('AI 辅助响应格式异常，请重试。', 'assist-incomplete')
+    }
+    if (chunk.type === 'tool-call-delta'
+      || (chunk.type === 'block-start' && chunk.blockType === 'tool-call')
+      || (chunk.type === 'block-end' && chunk.block.type === 'tool-call')) {
+      throw new ResearchGenerationError('AI 辅助返回了工具调用，请重试。', 'assist-tool-call')
+    }
+    if (chunk.type === 'text-delta') {
+      output += chunk.text
+      await onDelta(chunk.text)
+      if (output.length > 40_000) {
+        throw new ResearchGenerationError('AI 辅助结果过长，已停止生成。', 'assist-output-too-long')
+      }
+    }
+    if (chunk.type === 'finish') {
+      if (chunk.reason.kind !== 'stop') {
+        throw new ResearchGenerationError(
+          chunk.reason.kind === 'aborted'
+            ? 'AI 辅助已取消。'
+            : 'AI 辅助未完整结束，请重试。',
+          chunk.reason.kind === 'aborted' ? 'cancelled' : 'assist-incomplete',
+        )
+      }
+      finished = true
+    }
+  }
+  signal.throwIfAborted()
+  if (!finished) throw new ResearchGenerationError('AI 辅助响应中断，请重试。', 'assist-incomplete')
+  const text = output.trim()
+  if (text === '') throw new ResearchGenerationError('AI 辅助没有返回内容，请重试。', 'assist-empty')
+  return text
 }
 
 export async function streamProjectDraft(

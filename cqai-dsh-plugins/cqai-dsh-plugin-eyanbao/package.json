@@ -1,6 +1,6 @@
 {
   "name": "cqai-dsh-plugin-eyanbao",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "e研宝：面向在职研究生与博士生的 DeepSeek Harness 研究写作工作台",
   "license": "MIT",
