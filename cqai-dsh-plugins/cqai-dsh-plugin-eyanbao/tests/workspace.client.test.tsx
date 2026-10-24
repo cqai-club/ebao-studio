@@ -7,6 +7,7 @@ import { project } from './fixtures.ts'
 
 const api = vi.hoisted(() => ({
   getHealth: vi.fn(),
+  getDatabases: vi.fn(),
   listProjects: vi.fn(),
   getProject: vi.fn(),
   patchProject: vi.fn(),
@@ -38,6 +39,16 @@ function findButton(label: string): HTMLButtonElement | undefined {
 async function render() {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   api.getHealth.mockResolvedValue({ ok: true, modelReady: true, provider: 'demo', model: 'demo' })
+  api.getDatabases.mockResolvedValue([
+    { id: 'openalex', label: 'OpenAlex', available: true, requiresConfiguration: false },
+    { id: 'crossref', label: 'Crossref', available: true, requiresConfiguration: false },
+    { id: 'pubmed', label: 'PubMed', available: true, requiresConfiguration: false },
+    { id: 'web-of-science', label: 'Web of Science', available: false, requiresConfiguration: true, reason: '需要 Clarivate WOS_API_KEY' },
+    { id: 'scopus', label: 'Scopus', available: false, requiresConfiguration: true, reason: '需要 Elsevier SCOPUS_API_KEY' },
+    { id: 'google-scholar', label: 'Google Scholar', available: false, requiresConfiguration: true, reason: '需要 SerpAPI Google Scholar 密钥' },
+    { id: 'cnki', label: 'CNKI 中国知网', available: false, requiresConfiguration: true, reason: '需要 CNKI 企业 API 网关地址' },
+    { id: 'wanfang', label: '万方数据', available: false, requiresConfiguration: true, reason: '需要万方数据 API 网关地址' },
+  ])
   api.listProjects.mockResolvedValue([])
   api.patchProject.mockImplementation(async (_id, change) => ({ ...project(), ...change }))
   container = document.createElement('div')
@@ -59,6 +70,10 @@ describe('e研宝 workspace', () => {
     const scope = container!.querySelector<HTMLSelectElement>('#ey-literature-scope')!
     expect(scope.value).toBe('mixed')
     expect([...scope.options].map(option => option.textContent)).toEqual(['中外文混合', '中文文献', '外文文献'])
+    expect(container!.querySelector('.ey-database-picker summary')?.textContent).toContain('3 个已选')
+    const wos = [...container!.querySelectorAll<HTMLLabelElement>('.ey-database-option')]
+      .find(option => option.textContent?.includes('Web of Science'))!
+    expect(wos.querySelector('input')?.disabled).toBe(true)
   })
 
   it('streams a draft into the document view and exposes export actions', async () => {
@@ -79,6 +94,9 @@ describe('e研宝 workspace', () => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(quality, 'top-only')
       quality.dispatchEvent(new Event('change', { bubbles: true }))
     })
+    const pubmed = [...container!.querySelectorAll<HTMLLabelElement>('.ey-database-option')]
+      .find(option => option.textContent?.includes('PubMed'))!
+    await act(async () => pubmed.querySelector<HTMLInputElement>('input')!.click())
     const result = project({ title: '生成式 AI 对学术写作的影响', content: '# 生成式 AI 对学术写作的影响\n\n## 引言\n\n正文。' })
     api.runResearch.mockImplementation(async (_request, onEvent: (event: StreamEvent) => void) => {
       onEvent({ type: 'project', project: { ...result, status: 'running', content: '' } })
@@ -89,7 +107,11 @@ describe('e研宝 workspace', () => {
     })
     await act(async () => findButton('开始研究')!.click())
     expect(api.runResearch).toHaveBeenCalledOnce()
-    expect(api.runResearch.mock.calls[0]![0]).toMatchObject({ literatureScope: 'foreign', journalQuality: 'top-only' })
+    expect(api.runResearch.mock.calls[0]![0]).toMatchObject({
+      literatureScope: 'foreign',
+      journalQuality: 'top-only',
+      databases: ['openalex', 'crossref'],
+    })
     expect(container!.querySelector('.ey-document h1')?.textContent).toBe('生成式 AI 对学术写作的影响')
     expect([...container!.querySelectorAll('a')].some(link => link.textContent?.includes('DOCX'))).toBe(true)
     expect(container!.querySelector('#ey-heading-1')?.textContent).toBe('引言')

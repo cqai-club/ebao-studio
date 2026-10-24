@@ -171,6 +171,18 @@ export const workspaceStyles = String.raw`
 .ey-error { color: var(--ey-danger); background: var(--ey-danger-soft); border: 1px solid color-mix(in srgb, var(--ey-danger) 24%, transparent); }
 .ey-warning { color: #6c4a06; background: var(--ey-accent-soft); border: 1px solid color-mix(in srgb, var(--ey-accent) 25%, transparent); }
 .ey-compose-error { margin-top: 10px; }
+.ey-database-picker { margin-top: 14px; padding: 0 16px 14px; border-top: 1px solid var(--ey-border); }
+.ey-database-picker summary { min-height: 44px; display: flex; align-items: center; gap: 7px; color: var(--ey-muted); font-size: 13px; font-weight: 600; cursor: pointer; }
+.ey-database-picker summary strong { margin-left: auto; color: var(--ey-text); font-size: 12px; }
+.ey-database-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ey-database-option { min-height: 54px; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--ey-border); border-radius: 7px; background: var(--ey-panel); cursor: pointer; }
+.ey-database-option:has(input:checked) { border-color: color-mix(in srgb, var(--ey-focus) 45%, var(--ey-border)); background: var(--ey-selected); }
+.ey-database-option[data-available="false"] { opacity: .58; cursor: not-allowed; background: var(--ey-bg); }
+.ey-database-option input { width: 18px; height: 18px; margin: 0; accent-color: var(--ey-focus); }
+.ey-database-option span { min-width: 0; }
+.ey-database-option strong { display: block; color: var(--ey-text); font-size: 12px; line-height: 1.4; }
+.ey-database-option small { display: block; margin-top: 2px; color: var(--ey-muted); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.ey-database-picker > p { margin: 9px 0 0; color: var(--ey-muted); font-size: 11px; line-height: 1.5; }
 .ey-advanced { margin-top: 14px; border-top: 1px solid var(--ey-border); padding-top: 14px; }
 .ey-compose-advanced { padding-left: 16px; padding-right: 16px; padding-bottom: 10px; }
 .ey-advanced summary { min-height: 44px; display: flex; align-items: center; gap: 7px; color: var(--ey-muted); font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -308,6 +320,7 @@ export const workspaceStyles = String.raw`
   .ey-compose-footer, .ey-submit-row { padding-left: 12px; padding-right: 12px; }
   .ey-controls { grid-template-columns: minmax(0, 1fr); padding: 12px; }
   .ey-advanced-grid { grid-template-columns: minmax(0, 1fr); }
+  .ey-database-options { grid-template-columns: minmax(0, 1fr); }
   .ey-doc-topbar { flex-direction: column; }
   .ey-doc-actions { width: 100%; justify-content: flex-start; }
   .ey-run-banner { align-items: flex-start; flex-wrap: wrap; }

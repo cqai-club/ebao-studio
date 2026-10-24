@@ -6,6 +6,7 @@
 - 中外文、中文、外文三种文献范围
 - 外文文献支持全部期刊、顶刊优先、仅顶级期刊三档
 - AI 研究助手支持优化研究需求、生成检索词、推荐研究方法和论文提纲
+- 多数据库检索：OpenAlex、Crossref、PubMed、Web of Science、Scopus、Google Scholar、CNKI、万方
 - 一句话生成文献综述
 - 一句话生成期刊论文
 - 一句话生成研究论文
@@ -25,6 +26,9 @@ The Lancet、Academy of Management Journal、MIS Quarterly、American Economic R
 IEEE TPAMI 等均在库中，完整分组见 [顶级外文期刊库](./docs/top-journals.md)。
 
 任务栏左侧的 AI 研究助手围绕当前需求提供研究规划建议。结果可以替换或追加到研究需求；它不会把建议自动当作检索证据。
+
+OpenAlex、Crossref 和 PubMed 无需配置即可使用。Web of Science、Scopus、Google Scholar、CNKI 和万方需要在宿主环境配置
+供应商 API 凭据或企业网关；未配置的数据库会在选择器中显示原因并禁用。配置方法见 [数据库接入](./docs/databases.md)。
 
 排版导出为 DOCX。内置模板是通用学术基线，不等同于任何具体学校的强制规范；学校或期刊另有模板时，应以其最新文件为准。
 

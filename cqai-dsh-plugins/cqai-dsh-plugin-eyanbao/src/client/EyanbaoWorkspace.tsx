@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   CircleStop,
+  Database,
   Download,
   Eye,
   FilePenLine,
@@ -34,6 +35,8 @@ import {
   JOURNAL_QUALITIES,
   LITERATURE_SCOPES,
   type Degree,
+  type DatabaseId,
+  type DatabaseStatus,
   type HealthResponse,
   type JournalQuality,
   type LiteratureScope,
@@ -47,6 +50,7 @@ import {
 import {
   exportUrl,
   getHealth,
+  getDatabases,
   getProject,
   listProjects,
   patchProject,
@@ -98,6 +102,17 @@ const JOURNAL_QUALITY_LABELS: Record<JournalQuality, string> = {
   'top-only': '仅顶级期刊',
 }
 
+const DATABASE_LABELS: Record<DatabaseId, string> = {
+  openalex: 'OpenAlex',
+  crossref: 'Crossref',
+  pubmed: 'PubMed',
+  'web-of-science': 'Web of Science',
+  scopus: 'Scopus',
+  'google-scholar': 'Google Scholar',
+  cnki: '中国知网',
+  wanfang: '万方',
+}
+
 const STAGES = [
   { id: 'search', label: '检索' },
   { id: 'evidence', label: '证据' },
@@ -118,6 +133,7 @@ const DEFAULT_REQUEST: RunRequest = {
   language: 'zh',
   literatureScope: 'mixed',
   journalQuality: 'any',
+  databases: ['openalex', 'crossref', 'pubmed'],
   citationStyle: 'gb7714',
   sourceCount: 12,
   author: '',
@@ -271,6 +287,7 @@ export function EyanbaoWorkspace() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [project, setProjectState] = useState<ScholarProject>()
   const [health, setHealth] = useState<HealthResponse>()
+  const [databases, setDatabases] = useState<DatabaseStatus[]>([])
   const [request, setRequest] = useState<RunRequest>(DEFAULT_REQUEST)
   const [view, setView] = useState<'composer' | 'document'>('composer')
   const [detailTab, setDetailTab] = useState<DetailTab>('sources')
@@ -298,10 +315,15 @@ export function EyanbaoWorkspace() {
 
   useEffect(() => {
     const controller = new AbortController()
-    void Promise.all([listProjects(controller.signal), getHealth(controller.signal)]).then(
-      ([rows, nextHealth]) => {
+    void Promise.all([listProjects(controller.signal), getHealth(controller.signal), getDatabases(controller.signal)]).then(
+      ([rows, nextHealth, nextDatabases]) => {
         setProjects(rows)
         setHealth(nextHealth)
+        setDatabases(nextDatabases)
+        const available = nextDatabases.filter(item => item.available).map(item => item.id)
+        if (available.length > 0) {
+          setRequest(current => ({ ...current, databases: available }))
+        }
       },
       () => setHealth({ ok: false, modelReady: false, message: '无法连接 e研宝服务。' }),
     )
@@ -336,6 +358,7 @@ export function EyanbaoWorkspace() {
   const outline = useMemo(() => outlineOf(displayedContent), [displayedContent])
   const canExport = project !== undefined && project.content.trim() !== '' && !busy
   const modelUnavailable = request.kind !== 'search' && health?.modelReady === false
+  const selectedDatabases = request.databases
 
   const newStudy = () => {
     abortRef.current?.abort()
@@ -383,6 +406,7 @@ export function EyanbaoWorkspace() {
         language: next.language,
         literatureScope: next.literatureScope ?? 'mixed',
         journalQuality: next.journalQuality ?? 'any',
+        databases: next.databases ?? ['openalex', 'crossref'],
         citationStyle: next.citationStyle,
         yearFrom: next.yearFrom,
         sourceCount: next.sourceCount,
@@ -409,6 +433,16 @@ export function EyanbaoWorkspace() {
     setRequest(current => ({ ...current, kind }))
   }
 
+  const toggleDatabase = (id: DatabaseId) => {
+    if (busy || databases.find(item => item.id === id)?.available === false) return
+    setRequest(current => ({
+      ...current,
+      databases: current.databases.includes(id)
+        ? current.databases.filter(item => item !== id)
+        : [...current.databases, id],
+    }))
+  }
+
   const onTaskKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next = index
     if (event.key === 'ArrowRight') next = (index + 1) % TASKS.length
@@ -430,6 +464,10 @@ export function EyanbaoWorkspace() {
     }
     if (modelUnavailable) {
       setError(health?.message ?? '请先在模型设置中配置默认文字模型。')
+      return
+    }
+    if (request.databases.length === 0) {
+      setError('请至少选择一个文献数据库。')
       return
     }
     const controller = new AbortController()
@@ -614,6 +652,7 @@ export function EyanbaoWorkspace() {
                 language: request.language,
                 literatureScope: request.literatureScope,
                 journalQuality: request.journalQuality,
+                databases: request.databases,
               }}
               onApply={applyAssistant}
               onClose={closeAssistant}
@@ -646,7 +685,7 @@ export function EyanbaoWorkspace() {
           <button
             type="button"
             className="ey-button ey-button-primary"
-            disabled={request.prompt.trim().length < 4 || modelUnavailable}
+            disabled={request.prompt.trim().length < 4 || modelUnavailable || request.databases.length === 0}
             onClick={() => void startResearch()}
           >
             <BookOpenText size={17} aria-hidden="true" />
@@ -762,6 +801,44 @@ export function EyanbaoWorkspace() {
             />
           </div>
         </div>
+        <details className="ey-database-picker">
+          <summary>
+            <Database size={16} aria-hidden="true" />
+            <span>文献数据库</span>
+            <strong>{selectedDatabases.length} 个已选</strong>
+          </summary>
+          <div className="ey-database-options">
+            {(databases.length === 0
+              ? Object.entries(DATABASE_LABELS).map(([id, label]) => ({
+                  id: id as DatabaseId,
+                  label,
+                  available: ['openalex', 'crossref', 'pubmed'].includes(id),
+                  requiresConfiguration: !['openalex', 'crossref', 'pubmed'].includes(id),
+                  reason: ['openalex', 'crossref', 'pubmed'].includes(id) ? undefined : '需要配置 API 凭据',
+                }))
+              : databases
+            ).map(database => (
+              <label
+                className="ey-database-option"
+                key={database.id}
+                data-available={database.available ? 'true' : 'false'}
+                title={database.reason}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedDatabases.includes(database.id)}
+                  disabled={busy || !database.available}
+                  onChange={() => toggleDatabase(database.id)}
+                />
+                <span>
+                  <strong>{database.label}</strong>
+                  <small>{database.available ? '已连接' : database.reason ?? '未配置'}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+          <p>可选数据库会合并去重；未配置的数据库不会发起请求。</p>
+        </details>
         <details className="ey-advanced ey-compose-advanced">
           <summary><Settings2 size={15} aria-hidden="true" />论文信息</summary>
           <div className="ey-advanced-grid">
@@ -821,6 +898,7 @@ export function EyanbaoWorkspace() {
               <h4 className="ey-source-title">[{index + 1}] {source.title}</h4>
               <div className="ey-source-meta">
                 {source.topJournal === true && <span className="ey-source-language" data-top="true">顶刊</span>}
+                <span>{DATABASE_LABELS[source.source]}</span>
                 <span className="ey-source-language" data-foreign={isForeignSource(source) ? 'true' : undefined}>
                   {sourceLanguageLabel(source)}
                 </span>
@@ -933,6 +1011,7 @@ export function EyanbaoWorkspace() {
                 <span className="ey-status" data-status={project.status}>{statusText(project, busy)}</span>
                 <span>{definition.label}</span>
                 <span>{project.sources.length} 篇来源</span>
+                <span>{project.databases?.length ?? 2} 个数据库</span>
                 <span>{LITERATURE_SCOPE_LABELS[project.literatureScope ?? 'mixed']}</span>
                 {project.literatureScope === 'foreign' && project.journalQuality !== 'any' && (
                   <span>{JOURNAL_QUALITY_LABELS[project.journalQuality]}</span>

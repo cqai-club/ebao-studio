@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createDocxBuffer, docxFileName } from './docx.ts'
+import { databaseLabel, databaseStatuses } from './database-connectors.ts'
 import {
   finalizeProject,
   generateEnglishSearchQuery,
@@ -193,6 +194,8 @@ async function searchSources(
     ...project.yearFrom === undefined ? {} : { yearFrom: project.yearFrom },
     scope,
     journalQuality: scope === 'foreign' ? project.journalQuality : 'any',
+    databases: project.databases ?? ['openalex', 'crossref'],
+    env: options.env,
     signal,
     ...options.fetcher === undefined ? {} : { fetcher: options.fetcher },
   })
@@ -207,7 +210,8 @@ function searchStatus(project: ScholarProject, verify = false): string {
   const quality = project.literatureScope === 'foreign' && project.journalQuality !== 'any'
     ? `，${project.journalQuality === 'top-only' ? '仅限顶级期刊' : '顶刊优先'}`
     : ''
-  return `正在检索${scope}${quality}${verify ? '，并核对来源' : ''}`
+  const databases = (project.databases ?? ['openalex', 'crossref']).map(databaseLabel).join('、')
+  return `正在检索${scope}${quality}${verify ? '，并核对来源' : ''}（${databases}）`
 }
 
 async function runProject(
@@ -400,6 +404,10 @@ export function createRouteHandler(options: RoutesOptions) {
     try {
       if (req.method === 'GET' && action === 'health') {
         json(res, 200, modelHealth(options.services()))
+        return
+      }
+      if (req.method === 'GET' && action === 'databases') {
+        json(res, 200, { databases: databaseStatuses(options.env ?? process.env) })
         return
       }
       if (req.method === 'GET' && action === 'projects') {

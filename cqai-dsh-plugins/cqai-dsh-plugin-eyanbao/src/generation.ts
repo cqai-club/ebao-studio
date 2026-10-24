@@ -7,6 +7,7 @@ import {
   type ScholarProject,
   type TaskKind,
 } from './protocol.ts'
+import { databaseLabel } from './database-connectors.ts'
 import { newProjectId } from './store.ts'
 
 export interface ResearchModelServices {
@@ -81,6 +82,7 @@ export function initialProject(request: RunRequest): ScholarProject {
     language: request.language,
     literatureScope: request.literatureScope,
     journalQuality: request.journalQuality,
+    databases: request.databases,
     citationStyle: request.citationStyle,
     ...request.yearFrom === undefined ? {} : { yearFrom: request.yearFrom },
     sourceCount: request.sourceCount,
@@ -110,6 +112,7 @@ function sourceContext(sources: LiteratureSource[]): string {
     const abstract = source.abstract === undefined ? '' : source.abstract.slice(0, 900)
     return [
       `[${index + 1}]`,
+      `数据库：${databaseLabel(source.source)}`,
       `题名：${source.title}`,
       `作者：${source.authors.join('、') || '未知'}`,
       source.language === undefined ? '' : `语言：${source.language}`,
@@ -161,6 +164,7 @@ function userPrompt(project: ScholarProject, sources: LiteratureSource[]): strin
     `学位层次：${degree}`,
     `文献范围：${SCOPE_LABELS[project.literatureScope]}`,
     `期刊层级：${project.literatureScope === 'foreign' ? JOURNAL_QUALITY_LABELS[project.journalQuality] : '全部期刊'}`,
+    `数据库：${(project.databases ?? ['openalex', 'crossref']).map(databaseLabel).join('、')}`,
     `起始年份：${project.yearFrom ?? '不限'}`,
     project.layout.author === '' ? '' : `作者：${project.layout.author}`,
     project.layout.affiliation === '' ? '' : `单位：${project.layout.affiliation}`,
@@ -248,12 +252,13 @@ export async function streamResearchAssist(
   const quality = request.literatureScope === 'foreign'
     ? JOURNAL_QUALITY_LABELS[request.journalQuality]
     : '全部期刊'
+  const databases = request.databases.map(databaseLabel).join('、')
   signal.throwIfAborted()
   let output = ''
   let finished = false
   for await (const chunk of services.llm.stream({
     ...selected,
-    system: `你是 e研宝的 AI 研究教练，服务在职研究生、硕士生和博士生。当前任务类型：${task}。学位层次：${degree}。文献范围：${scope}。期刊层级：${quality}。写作语言：${request.language === 'zh' ? '中文' : '英文'}。你只提供研究规划和方法建议，不虚构文献、数据、实验结果或引用。${ASSIST_INSTRUCTIONS[request.action]}`,
+    system: `你是 e研宝的 AI 研究教练，服务在职研究生、硕士生和博士生。当前任务类型：${task}。学位层次：${degree}。文献范围：${scope}。期刊层级：${quality}。数据库：${databases}。写作语言：${request.language === 'zh' ? '中文' : '英文'}。你只提供研究规划和方法建议，不虚构文献、数据、实验结果或引用。${ASSIST_INSTRUCTIONS[request.action]}`,
     messages: [createUserMessage({
       content: [{
         type: 'text',

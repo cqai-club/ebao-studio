@@ -30,6 +30,26 @@ export type JournalQuality = typeof JOURNAL_QUALITIES[number]
 export const ASSIST_ACTIONS = ['refine', 'keywords', 'method', 'outline'] as const
 export type AssistAction = typeof ASSIST_ACTIONS[number]
 
+export const DATABASE_IDS = [
+  'openalex',
+  'crossref',
+  'pubmed',
+  'web-of-science',
+  'scopus',
+  'google-scholar',
+  'cnki',
+  'wanfang',
+] as const
+export type DatabaseId = typeof DATABASE_IDS[number]
+
+export interface DatabaseStatus {
+  id: DatabaseId
+  label: string
+  available: boolean
+  requiresConfiguration: boolean
+  reason?: string
+}
+
 export const PROJECT_STATUSES = ['draft', 'running', 'complete', 'error'] as const
 export type ProjectStatus = typeof PROJECT_STATUSES[number]
 
@@ -45,7 +65,7 @@ export interface LiteratureSource {
   language?: string
   topJournal?: boolean
   citedBy?: number
-  source: 'openalex' | 'crossref'
+  source: DatabaseId
 }
 
 export interface LayoutSettings {
@@ -65,6 +85,7 @@ export interface ScholarProject {
   language: Language
   literatureScope: LiteratureScope
   journalQuality: JournalQuality
+  databases: DatabaseId[]
   citationStyle: CitationStyle
   yearFrom?: number
   sourceCount: number
@@ -98,6 +119,7 @@ export interface RunRequest {
   language: Language
   literatureScope: LiteratureScope
   journalQuality: JournalQuality
+  databases: DatabaseId[]
   citationStyle: CitationStyle
   yearFrom?: number
   sourceCount: number
@@ -115,6 +137,7 @@ export interface AssistRequest {
   language: Language
   literatureScope: LiteratureScope
   journalQuality: JournalQuality
+  databases: DatabaseId[]
 }
 
 export interface HealthResponse {
@@ -146,6 +169,7 @@ const LANGUAGE_SET = new Set<string>(LANGUAGES)
 const LITERATURE_SCOPE_SET = new Set<string>(LITERATURE_SCOPES)
 const JOURNAL_QUALITY_SET = new Set<string>(JOURNAL_QUALITIES)
 const ASSIST_ACTION_SET = new Set<string>(ASSIST_ACTIONS)
+const DATABASE_ID_SET = new Set<string>(DATABASE_IDS)
 
 export function taskKind(value: unknown): TaskKind {
   if (typeof value !== 'string' || !TASK_KIND_SET.has(value)) throw new Error('研究任务类型无效')
@@ -186,6 +210,18 @@ export function assistAction(value: unknown): AssistAction {
   return value as AssistAction
 }
 
+export function databaseId(value: unknown): DatabaseId {
+  if (typeof value !== 'string' || !DATABASE_ID_SET.has(value)) throw new Error('文献数据库无效')
+  return value as DatabaseId
+}
+
+export function databaseIds(value: unknown): DatabaseId[] {
+  if (!Array.isArray(value) || value.length === 0) throw new Error('请至少选择一个文献数据库')
+  const ids = [...new Set(value.map(databaseId))]
+  if (ids.length > DATABASE_IDS.length) throw new Error('文献数据库数量无效')
+  return ids
+}
+
 export function parseRunRequest(value: unknown): RunRequest {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('研究请求格式无效')
   const body = value as Record<string, unknown>
@@ -215,6 +251,7 @@ export function parseRunRequest(value: unknown): RunRequest {
     language: language(body.language ?? 'zh'),
     literatureScope: literatureScope(body.literatureScope ?? 'mixed'),
     journalQuality: journalQuality(body.journalQuality ?? 'any'),
+    databases: databaseIds(body.databases ?? ['openalex', 'crossref']),
     citationStyle: citationStyle(body.citationStyle ?? 'gb7714'),
     ...year === undefined ? {} : { yearFrom: year },
     sourceCount,
@@ -240,6 +277,7 @@ export function parseAssistRequest(value: unknown): AssistRequest {
     language: language(body.language ?? 'zh'),
     literatureScope: literatureScope(body.literatureScope ?? 'mixed'),
     journalQuality: journalQuality(body.journalQuality ?? 'any'),
+    databases: databaseIds(body.databases ?? ['openalex', 'crossref']),
   }
 }
 

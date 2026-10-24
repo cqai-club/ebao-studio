@@ -96,6 +96,20 @@ window.fetch = async (input, init) => {
   if (url.includes('/api/cqai-eyanbao/health')) {
     return payload({ ok: true, modelReady: true, provider: 'DeepSeek', model: 'deepseek-chat' })
   }
+  if (url.endsWith('/api/cqai-eyanbao/databases')) {
+    return payload({
+      databases: [
+        { id: 'openalex', label: 'OpenAlex', available: true, requiresConfiguration: false },
+        { id: 'crossref', label: 'Crossref', available: true, requiresConfiguration: false },
+        { id: 'pubmed', label: 'PubMed', available: true, requiresConfiguration: false },
+        { id: 'web-of-science', label: 'Web of Science', available: false, requiresConfiguration: true, reason: '需要 Clarivate WOS_API_KEY' },
+        { id: 'scopus', label: 'Scopus', available: false, requiresConfiguration: true, reason: '需要 Elsevier SCOPUS_API_KEY' },
+        { id: 'google-scholar', label: 'Google Scholar', available: false, requiresConfiguration: true, reason: '需要 SerpAPI Google Scholar 密钥' },
+        { id: 'cnki', label: 'CNKI 中国知网', available: false, requiresConfiguration: true, reason: '需要 CNKI 企业 API 网关地址' },
+        { id: 'wanfang', label: '万方数据', available: false, requiresConfiguration: true, reason: '需要万方数据 API 网关地址' },
+      ],
+    })
+  }
   if (url.endsWith('/api/cqai-eyanbao/projects')) {
     return payload({
       projects: [{
@@ -149,6 +163,11 @@ if (params.get('ai') === 'open') {
   }, 220)
   window.setTimeout(() => {
     document.querySelector<HTMLButtonElement>('[aria-label="打开 AI 研究助手"]')?.click()
+  }, 350)
+}
+if (params.get('databases') === 'open') {
+  window.setTimeout(() => {
+    document.querySelector<HTMLElement>('.ey-database-picker summary')?.click()
   }, 350)
 }
 if (params.get('state') === 'document') {

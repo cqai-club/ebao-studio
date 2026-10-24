@@ -2,6 +2,7 @@ import {
   API,
   type AssistEvent,
   type AssistRequest,
+  type DatabaseStatus,
   type HealthResponse,
   type ProjectSummary,
   type RunRequest,
@@ -18,6 +19,12 @@ async function jsonResponse<T>(response: Response): Promise<T> {
 export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
   const response = await fetch(`${API}/health`, { cache: 'no-store', signal })
   return await jsonResponse<HealthResponse>(response)
+}
+
+export async function getDatabases(signal?: AbortSignal): Promise<DatabaseStatus[]> {
+  const response = await fetch(`${API}/databases`, { cache: 'no-store', signal })
+  const payload = await jsonResponse<{ databases: DatabaseStatus[] }>(response)
+  return payload.databases
 }
 
 export async function listProjects(signal?: AbortSignal): Promise<ProjectSummary[]> {

@@ -24,6 +24,7 @@ export function project(overrides: Partial<ScholarProject> = {}): ScholarProject
     language: 'zh',
     literatureScope: 'mixed',
     journalQuality: 'any',
+    databases: ['openalex', 'crossref', 'pubmed'],
     citationStyle: 'gb7714',
     sourceCount: 12,
     status: 'complete',

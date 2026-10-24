@@ -11,6 +11,7 @@ describe('research requests', () => {
       language: 'zh',
       literatureScope: 'foreign',
       journalQuality: 'top-preferred',
+      databases: ['openalex', 'pubmed', 'scopus'],
       citationStyle: 'gb7714',
       sourceCount: 18,
       yearFrom: 2020,
@@ -25,6 +26,7 @@ describe('research requests', () => {
       language: 'zh',
       literatureScope: 'foreign',
       journalQuality: 'top-preferred',
+      databases: ['openalex', 'pubmed', 'scopus'],
       citationStyle: 'gb7714',
       sourceCount: 18,
       yearFrom: 2020,
@@ -56,13 +58,16 @@ describe('research requests', () => {
       language: 'zh',
       literatureScope: 'foreign',
       journalQuality: 'top-preferred',
+      databases: ['openalex', 'pubmed'],
     })).toMatchObject({
       action: 'method',
       kind: 'research',
       literatureScope: 'foreign',
       journalQuality: 'top-preferred',
+      databases: ['openalex', 'pubmed'],
     })
     expect(() => parseAssistRequest({ action: 'unknown', prompt: '有效研究主题', kind: 'search' })).toThrow('AI 辅助类型')
     expect(() => parseAssistRequest({ action: 'refine', prompt: 'abc', kind: 'search' })).toThrow('四个字')
+    expect(() => parseAssistRequest({ action: 'refine', prompt: '有效研究主题', kind: 'search', databases: ['unknown'] })).toThrow('文献数据库')
   })
 })

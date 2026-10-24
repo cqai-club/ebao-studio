@@ -1,4 +1,5 @@
-import type { JournalQuality, Language, LiteratureScope, LiteratureSource } from './protocol.ts'
+import { databaseStatuses, searchExternalDatabase } from './database-connectors.ts'
+import type { DatabaseId, JournalQuality, Language, LiteratureScope, LiteratureSource } from './protocol.ts'
 import { isTopForeignJournal } from './top-journals.ts'
 
 export interface LiteratureSearchOptions {
@@ -6,6 +7,8 @@ export interface LiteratureSearchOptions {
   yearFrom?: number
   scope: LiteratureScope
   journalQuality?: JournalQuality
+  databases?: DatabaseId[]
+  env?: NodeJS.ProcessEnv
   signal?: AbortSignal
   fetcher?: typeof fetch
 }
@@ -230,45 +233,52 @@ export async function searchLiterature(
     .map(item => item.trim())
     .filter(Boolean))]
   if (queries.length === 0) throw new Error('文献检索主题不能为空')
-  const collected: LiteratureSource[] = []
-  let partialFailure = false
-  for (const normalized of queries) {
-    try {
-      collected.push(...await searchOpenAlex(normalized, options))
-    } catch {
-      partialFailure = true
-    }
-  }
-  const openAlexSources = uniqueSources(collected, options.limit, options.journalQuality)
-  if (openAlexSources.length > 0) {
-    return {
-      sources: openAlexSources,
-      ...partialFailure ? { warning: '部分检索请求失败，结果可能不完整。' } : {},
-    }
-  }
+  const statuses = databaseStatuses(options.env ?? process.env)
+  const requested = options.databases ?? ['openalex', 'crossref']
+  const available = requested.filter(id => statuses.find(status => status.id === id)?.available === true)
+  const unavailable = requested.filter(id => !available.includes(id))
+  if (available.length === 0) throw new Error('所选文献数据库均未配置或不可用')
 
-  const crossref: LiteratureSource[] = []
-  let crossrefFailed = false
-  for (const normalized of queries) {
-    try {
-      crossref.push(...await searchCrossref(normalized, options))
-    } catch {
-      crossrefFailed = true
+  const collected: LiteratureSource[] = []
+  const failed: DatabaseId[] = []
+  await Promise.all(available.map(async database => {
+    for (const normalized of queries) {
+      try {
+        const sources = database === 'openalex'
+          ? await searchOpenAlex(normalized, options)
+          : database === 'crossref'
+            ? await searchCrossref(normalized, options)
+            : await searchExternalDatabase(database, normalized, {
+                limit: options.limit,
+                scope: options.scope,
+                journalQuality: options.journalQuality,
+                signal: options.signal,
+                fetcher: options.fetcher,
+                env: options.env,
+              })
+        collected.push(...sources.filter(source => matchesScope(source, options.scope))
+          .filter(source => matchesJournalQuality(source, options.journalQuality)))
+      } catch {
+        failed.push(database)
+      }
     }
-  }
-  const crossrefSources = uniqueSources(crossref, options.limit, options.journalQuality)
-  if (crossrefSources.length > 0) {
+  }))
+  const sources = uniqueSources(collected, options.limit, options.journalQuality)
+  if (sources.length > 0) {
+    const successfulLabels = [...new Set(available.filter(database => !failed.includes(database)))]
+      .map(database => statuses.find(status => status.id === database)?.label ?? database)
+    const warnings = [
+      ...successfulLabels.length === 0 ? [] : [`已使用 ${successfulLabels.join('、')} 结果`],
+      ...failed.length === 0 ? [] : [`${[...new Set(failed)].map(database => statuses.find(status => status.id === database)?.label ?? database).join('、')} 检索失败`],
+      ...unavailable.length === 0 ? [] : [`${unavailable.map(database => statuses.find(status => status.id === database)?.label ?? database).join('、')} 尚未配置`],
+    ]
     return {
-      sources: crossrefSources,
-      warning: partialFailure
-        ? 'OpenAlex 暂不可用，本次文献结果来自 Crossref。'
-        : crossrefFailed
-          ? 'Crossref 部分请求失败，本次结果可能不完整。'
-          : '本次文献结果来自 Crossref。',
+      sources,
+      ...warnings.length === 0 ? {} : { warning: `${warnings.join('；')}，结果可能不完整。` },
     }
   }
-  if (crossrefFailed && partialFailure) {
-    throw new Error('文献检索服务暂时不可用，请稍后重试。')
+  if (failed.length > 0) {
+    throw new Error(`${[...new Set(failed)].map(database => statuses.find(status => status.id === database)?.label ?? database).join('、')} 检索失败，请检查网络或数据库凭据`)
   }
   return {
     sources: [],

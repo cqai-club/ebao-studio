@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react'
 import type {
   AssistAction,
   AssistRequest,
+  DatabaseId,
   Degree,
   JournalQuality,
   Language,
@@ -31,6 +32,7 @@ interface AssistContext {
   language: Language
   literatureScope: LiteratureScope
   journalQuality: JournalQuality
+  databases: DatabaseId[]
 }
 
 interface ActionDefinition {

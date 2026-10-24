@@ -48,6 +48,15 @@ async function fixture(options: { stream?: (request: unknown) => AsyncGenerator<
 }
 
 describe('e研宝 HTTP routes', () => {
+  it('reports database availability', async () => {
+    const { base } = await fixture()
+    const response = await fetch(`${base}${API}/databases`)
+    expect(response.status).toBe(200)
+    const payload = await response.json() as { databases: Array<{ id: string; available: boolean }> }
+    expect(payload.databases.find(item => item.id === 'openalex')?.available).toBe(true)
+    expect(payload.databases.find(item => item.id === 'pubmed')?.available).toBe(true)
+  })
+
   it('streams a literature search, persists the project, edits it, and exports DOCX', async () => {
     const { base } = await fixture()
     const response = await fetch(`${base}${API}/run`, {
