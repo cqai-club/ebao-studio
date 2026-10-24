@@ -24,6 +24,9 @@ export type Language = typeof LANGUAGES[number]
 export const LITERATURE_SCOPES = ['mixed', 'zh', 'foreign'] as const
 export type LiteratureScope = typeof LITERATURE_SCOPES[number]
 
+export const JOURNAL_QUALITIES = ['any', 'top-preferred', 'top-only'] as const
+export type JournalQuality = typeof JOURNAL_QUALITIES[number]
+
 export const PROJECT_STATUSES = ['draft', 'running', 'complete', 'error'] as const
 export type ProjectStatus = typeof PROJECT_STATUSES[number]
 
@@ -37,6 +40,7 @@ export interface LiteratureSource {
   url?: string
   abstract?: string
   language?: string
+  topJournal?: boolean
   citedBy?: number
   source: 'openalex' | 'crossref'
 }
@@ -57,6 +61,7 @@ export interface ScholarProject {
   discipline: string
   language: Language
   literatureScope: LiteratureScope
+  journalQuality: JournalQuality
   citationStyle: CitationStyle
   yearFrom?: number
   sourceCount: number
@@ -89,6 +94,7 @@ export interface RunRequest {
   discipline: string
   language: Language
   literatureScope: LiteratureScope
+  journalQuality: JournalQuality
   citationStyle: CitationStyle
   yearFrom?: number
   sourceCount: number
@@ -118,6 +124,7 @@ const DEGREE_SET = new Set<string>(DEGREES)
 const CITATION_STYLE_SET = new Set<string>(CITATION_STYLES)
 const LANGUAGE_SET = new Set<string>(LANGUAGES)
 const LITERATURE_SCOPE_SET = new Set<string>(LITERATURE_SCOPES)
+const JOURNAL_QUALITY_SET = new Set<string>(JOURNAL_QUALITIES)
 
 export function taskKind(value: unknown): TaskKind {
   if (typeof value !== 'string' || !TASK_KIND_SET.has(value)) throw new Error('研究任务类型无效')
@@ -148,6 +155,11 @@ export function literatureScope(value: unknown): LiteratureScope {
   return value as LiteratureScope
 }
 
+export function journalQuality(value: unknown): JournalQuality {
+  if (typeof value !== 'string' || !JOURNAL_QUALITY_SET.has(value)) throw new Error('期刊层级无效')
+  return value as JournalQuality
+}
+
 export function parseRunRequest(value: unknown): RunRequest {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('研究请求格式无效')
   const body = value as Record<string, unknown>
@@ -176,6 +188,7 @@ export function parseRunRequest(value: unknown): RunRequest {
     discipline: clean('discipline', 80),
     language: language(body.language ?? 'zh'),
     literatureScope: literatureScope(body.literatureScope ?? 'mixed'),
+    journalQuality: journalQuality(body.journalQuality ?? 'any'),
     citationStyle: citationStyle(body.citationStyle ?? 'gb7714'),
     ...year === undefined ? {} : { yearFrom: year },
     sourceCount,

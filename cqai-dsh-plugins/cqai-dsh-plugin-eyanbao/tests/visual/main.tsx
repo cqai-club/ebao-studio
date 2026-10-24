@@ -57,7 +57,11 @@ const demoProject: ScholarProject = project({
   abstract: '本文基于 2021 年以来的实证研究，分析生成式 AI 对在职研究生学术写作投入、证据组织与学术规范的影响。',
   keywords: ['生成式 AI', '学术写作', '在职研究生', '研究能力'],
   sources: [
-    ...project().sources,
+    {
+      ...project().sources[0]!,
+      venue: 'Academy of Management Journal',
+      topJournal: true,
+    },
     {
       id: 'crossref-2',
       title: 'Writing with generative systems',
@@ -122,6 +126,15 @@ if (params.get('scope') === 'foreign') {
       scope.dispatchEvent(new Event('change', { bubbles: true }))
     }
   }, 150)
+}
+if (params.get('quality') === 'top-only') {
+  window.setTimeout(() => {
+    const quality = document.querySelector<HTMLSelectElement>('#ey-journal-quality')
+    if (quality !== null) {
+      quality.value = 'top-only'
+      quality.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+  }, 300)
 }
 if (params.get('state') === 'document') {
   window.setTimeout(() => {

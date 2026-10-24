@@ -1,9 +1,11 @@
-import type { Language, LiteratureScope, LiteratureSource } from './protocol.ts'
+import type { JournalQuality, Language, LiteratureScope, LiteratureSource } from './protocol.ts'
+import { isTopForeignJournal } from './top-journals.ts'
 
 export interface LiteratureSearchOptions {
   limit: number
   yearFrom?: number
   scope: LiteratureScope
+  journalQuality?: JournalQuality
   signal?: AbortSignal
   fetcher?: typeof fetch
 }
@@ -67,7 +69,11 @@ function cleanAbstract(value: string | undefined): string | undefined {
   return text === '' ? undefined : text
 }
 
-function uniqueSources(sources: LiteratureSource[], limit: number): LiteratureSource[] {
+function uniqueSources(
+  sources: LiteratureSource[],
+  limit: number,
+  quality: JournalQuality = 'any',
+): LiteratureSource[] {
   const seen = new Set<string>()
   const unique: LiteratureSource[] = []
   for (const source of sources) {
@@ -75,9 +81,12 @@ function uniqueSources(sources: LiteratureSource[], limit: number): LiteratureSo
     if (seen.has(key)) continue
     seen.add(key)
     unique.push(source)
-    if (unique.length >= limit) break
   }
-  return unique
+  if (quality !== 'any') {
+    unique.sort((left, right) => Number(right.topJournal === true) - Number(left.topJournal === true)
+      || (right.citedBy ?? 0) - (left.citedBy ?? 0))
+  }
+  return unique.slice(0, limit)
 }
 
 function normalizedLanguage(value: string | undefined): string | undefined {
@@ -98,6 +107,10 @@ function isChineseSource(source: LiteratureSource): boolean {
 function matchesScope(source: LiteratureSource, scope: LiteratureScope): boolean {
   if (scope === 'mixed') return true
   return scope === 'zh' ? isChineseSource(source) : !isChineseSource(source)
+}
+
+function matchesJournalQuality(source: LiteratureSource, quality: JournalQuality | undefined): boolean {
+  return quality !== 'top-only' || source.topJournal === true
 }
 
 async function fetchJson(
@@ -156,11 +169,13 @@ export async function searchOpenAlex(
         ...reconstructAbstract(work.abstract_inverted_index) === undefined
           ? {}
           : { abstract: reconstructAbstract(work.abstract_inverted_index) },
+        topJournal: isTopForeignJournal(work.primary_location?.source?.display_name),
         ...work.cited_by_count === undefined ? {} : { citedBy: work.cited_by_count },
         source: 'openalex',
       }
     })
     .filter(source => matchesScope(source, options.scope))
+    .filter(source => matchesJournalQuality(source, options.journalQuality))
 }
 
 export async function searchCrossref(
@@ -196,6 +211,7 @@ export async function searchCrossref(
         ...doi === undefined ? {} : { doi },
         ...item.URL === undefined ? {} : { url: item.URL },
         ...cleanAbstract(item.abstract) === undefined ? {} : { abstract: cleanAbstract(item.abstract) },
+        topJournal: isTopForeignJournal(item['container-title']?.[0]),
         ...item['is-referenced-by-count'] === undefined
           ? {}
           : { citedBy: item['is-referenced-by-count'] },
@@ -203,6 +219,7 @@ export async function searchCrossref(
       }
     })
     .filter(source => matchesScope(source, options.scope))
+    .filter(source => matchesJournalQuality(source, options.journalQuality))
 }
 
 export async function searchLiterature(
@@ -222,7 +239,7 @@ export async function searchLiterature(
       partialFailure = true
     }
   }
-  const openAlexSources = uniqueSources(collected, options.limit)
+  const openAlexSources = uniqueSources(collected, options.limit, options.journalQuality)
   if (openAlexSources.length > 0) {
     return {
       sources: openAlexSources,
@@ -239,7 +256,7 @@ export async function searchLiterature(
       crossrefFailed = true
     }
   }
-  const crossrefSources = uniqueSources(crossref, options.limit)
+  const crossrefSources = uniqueSources(crossref, options.limit, options.journalQuality)
   if (crossrefSources.length > 0) {
     return {
       sources: crossrefSources,
@@ -256,7 +273,9 @@ export async function searchLiterature(
   return {
     sources: [],
     warning: options.scope === 'foreign'
-      ? '没有检索到外文文献，请改用更明确的英文关键词或扩大年份范围。'
+      ? options.journalQuality === 'top-only'
+        ? '没有检索到匹配的顶级外文期刊，请改用更宽泛的英文关键词或切换为“顶刊优先”。'
+        : '没有检索到外文文献，请改用更明确的英文关键词或扩大年份范围。'
       : options.scope === 'zh'
         ? '没有检索到中文文献，请尝试更具体的中文研究主题。'
         : '两个文献服务都没有返回匹配结果，请尝试更具体的研究主题。',

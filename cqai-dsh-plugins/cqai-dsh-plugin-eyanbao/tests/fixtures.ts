@@ -23,6 +23,7 @@ export function project(overrides: Partial<ScholarProject> = {}): ScholarProject
     discipline: '教育学',
     language: 'zh',
     literatureScope: 'mixed',
+    journalQuality: 'any',
     citationStyle: 'gb7714',
     sourceCount: 12,
     status: 'complete',

@@ -72,6 +72,12 @@ describe('e研宝 workspace', () => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(scope, 'foreign')
       scope.dispatchEvent(new Event('change', { bubbles: true }))
     })
+    const quality = container!.querySelector<HTMLSelectElement>('#ey-journal-quality')!
+    expect([...quality.options].map(option => option.textContent)).toEqual(['全部期刊', '顶刊优先', '仅顶级期刊'])
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(quality, 'top-only')
+      quality.dispatchEvent(new Event('change', { bubbles: true }))
+    })
     const result = project({ title: '生成式 AI 对学术写作的影响', content: '# 生成式 AI 对学术写作的影响\n\n## 引言\n\n正文。' })
     api.runResearch.mockImplementation(async (_request, onEvent: (event: StreamEvent) => void) => {
       onEvent({ type: 'project', project: { ...result, status: 'running', content: '' } })
@@ -82,7 +88,7 @@ describe('e研宝 workspace', () => {
     })
     await act(async () => findButton('开始研究')!.click())
     expect(api.runResearch).toHaveBeenCalledOnce()
-    expect(api.runResearch.mock.calls[0]![0]).toMatchObject({ literatureScope: 'foreign' })
+    expect(api.runResearch.mock.calls[0]![0]).toMatchObject({ literatureScope: 'foreign', journalQuality: 'top-only' })
     expect(container!.querySelector('.ey-document h1')?.textContent).toBe('生成式 AI 对学术写作的影响')
     expect([...container!.querySelectorAll('a')].some(link => link.textContent?.includes('DOCX'))).toBe(true)
     expect(container!.querySelector('#ey-heading-1')?.textContent).toBe('引言')

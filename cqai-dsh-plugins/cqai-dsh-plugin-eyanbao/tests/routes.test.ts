@@ -27,7 +27,7 @@ async function fixture(options: { stream?: (request: unknown) => AsyncGenerator<
       language: 'en',
       publication_year: 2025,
       authorships: [{ author: { display_name: 'Test Author' } }],
-      primary_location: { source: { display_name: 'Test Journal' } },
+      primary_location: { source: { display_name: 'Academy of Management Journal' } },
     }],
   }), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch
   const handler = createRouteHandler({
@@ -60,6 +60,7 @@ describe('e研宝 HTTP routes', () => {
         discipline: '管理学',
         language: 'zh',
         literatureScope: 'foreign',
+        journalQuality: 'top-only',
         citationStyle: 'gb7714',
         sourceCount: 8,
       }),
@@ -73,6 +74,7 @@ describe('e研宝 HTTP routes', () => {
     expect(result.project.sources).toHaveLength(1)
     expect(result.project.status).toBe('complete')
     expect(result.project.literatureScope).toBe('foreign')
+    expect(result.project.sources[0]?.topJournal).toBe(true)
 
     const patched = await fetch(`${base}${API}/projects/${result.project.id}`, {
       method: 'PATCH',

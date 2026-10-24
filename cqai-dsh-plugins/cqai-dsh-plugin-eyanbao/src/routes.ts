@@ -151,6 +151,7 @@ async function searchSources(
     limit: project.sourceCount,
     ...project.yearFrom === undefined ? {} : { yearFrom: project.yearFrom },
     scope,
+    journalQuality: scope === 'foreign' ? project.journalQuality : 'any',
     signal,
     ...options.fetcher === undefined ? {} : { fetcher: options.fetcher },
   })
@@ -162,7 +163,10 @@ function searchStatus(project: ScholarProject, verify = false): string {
     : project.literatureScope === 'zh'
       ? '中文文献'
       : '中外文文献，必要时生成英文检索词'
-  return `正在检索${scope}${verify ? '，并核对来源' : ''}`
+  const quality = project.literatureScope === 'foreign' && project.journalQuality !== 'any'
+    ? `，${project.journalQuality === 'top-only' ? '仅限顶级期刊' : '顶刊优先'}`
+    : ''
+  return `正在检索${scope}${quality}${verify ? '，并核对来源' : ''}`
 }
 
 async function runProject(
@@ -204,7 +208,7 @@ async function runProject(
         status: 'complete',
         content: result.sources.map((source, index) => {
           const authors = source.authors.join('、') || '佚名'
-          return `### [${index + 1}] ${source.title}\n\n${authors}${source.language === undefined ? '' : ` · ${source.language}`}${source.year === undefined ? '' : ` · ${source.year}`}${
+          return `### [${index + 1}] ${source.title}\n\n${authors}${source.language === undefined ? '' : ` · ${source.language}`}${source.topJournal === true ? ' · 顶级期刊' : ''}${source.year === undefined ? '' : ` · ${source.year}`}${
             source.venue === undefined ? '' : ` · ${source.venue}`
           }${source.citedBy === undefined ? '' : ` · 被引 ${source.citedBy}`}\n\n${
             source.abstract === undefined ? '暂无摘要。' : source.abstract

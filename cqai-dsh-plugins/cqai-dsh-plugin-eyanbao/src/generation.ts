@@ -50,6 +50,12 @@ const SCOPE_LABELS = {
   foreign: '外文文献',
 } as const
 
+const JOURNAL_QUALITY_LABELS = {
+  any: '全部期刊',
+  'top-preferred': '顶刊优先',
+  'top-only': '仅顶级期刊',
+} as const
+
 export function taskLabel(kind: TaskKind): string {
   return TASK_LABELS[kind]
 }
@@ -65,6 +71,7 @@ export function initialProject(request: RunRequest): ScholarProject {
     discipline: request.discipline,
     language: request.language,
     literatureScope: request.literatureScope,
+    journalQuality: request.journalQuality,
     citationStyle: request.citationStyle,
     ...request.yearFrom === undefined ? {} : { yearFrom: request.yearFrom },
     sourceCount: request.sourceCount,
@@ -97,6 +104,7 @@ function sourceContext(sources: LiteratureSource[]): string {
       `题名：${source.title}`,
       `作者：${source.authors.join('、') || '未知'}`,
       source.language === undefined ? '' : `语言：${source.language}`,
+      source.topJournal === true ? '期刊层级：顶级期刊' : '',
       source.year === undefined ? '' : `年份：${source.year}`,
       source.venue === undefined ? '' : `来源：${source.venue}`,
       source.doi === undefined ? '' : `DOI：${source.doi}`,
@@ -111,10 +119,13 @@ function systemFor(project: ScholarProject): string {
   const degree = DEGREE_LABELS[project.layout.degree]
   const citation = CITATION_LABELS[project.citationStyle]
   const scope = SCOPE_LABELS[project.literatureScope]
+  const quality = project.literatureScope === 'foreign'
+    ? JOURNAL_QUALITY_LABELS[project.journalQuality]
+    : '全部期刊'
   const formatting = project.layout.template === 'journal'
     ? `期刊排版：${project.layout.journalName || '通用中文学术期刊'}。`
     : `${degree}学位论文排版。`
-  return `你是 e研宝的学术研究与写作助手，服务在职研究生、硕士生和博士生。当前任务：${task}。使用${language}写作，引用格式：${citation}。文献范围：${scope}。${formatting}
+  return `你是 e研宝的学术研究与写作助手，服务在职研究生、硕士生和博士生。当前任务：${task}。使用${language}写作，引用格式：${citation}。文献范围：${scope}。期刊层级：${quality}。${formatting}
 
 必须遵守：
 1. 只使用用户消息中来源清单提供的事实与文献；不得虚构作者、题名、DOI、数据、实验或引用。
@@ -140,6 +151,7 @@ function userPrompt(project: ScholarProject, sources: LiteratureSource[]): strin
     project.discipline === '' ? '' : `学科领域：${project.discipline}`,
     `学位层次：${degree}`,
     `文献范围：${SCOPE_LABELS[project.literatureScope]}`,
+    `期刊层级：${project.literatureScope === 'foreign' ? JOURNAL_QUALITY_LABELS[project.journalQuality] : '全部期刊'}`,
     `起始年份：${project.yearFrom ?? '不限'}`,
     project.layout.author === '' ? '' : `作者：${project.layout.author}`,
     project.layout.affiliation === '' ? '' : `单位：${project.layout.affiliation}`,

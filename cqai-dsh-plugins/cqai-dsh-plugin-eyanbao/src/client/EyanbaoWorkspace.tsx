@@ -30,9 +30,11 @@ import {
 import {
   DEGREES,
   CITATION_STYLES,
+  JOURNAL_QUALITIES,
   LITERATURE_SCOPES,
   type Degree,
   type HealthResponse,
+  type JournalQuality,
   type LiteratureScope,
   type LiteratureSource,
   type ProjectSummary,
@@ -88,6 +90,12 @@ const LITERATURE_SCOPE_LABELS: Record<LiteratureScope, string> = {
   foreign: '外文文献',
 }
 
+const JOURNAL_QUALITY_LABELS: Record<JournalQuality, string> = {
+  any: '全部期刊',
+  'top-preferred': '顶刊优先',
+  'top-only': '仅顶级期刊',
+}
+
 const STAGES = [
   { id: 'search', label: '检索' },
   { id: 'evidence', label: '证据' },
@@ -107,6 +115,7 @@ const DEFAULT_REQUEST: RunRequest = {
   discipline: '',
   language: 'zh',
   literatureScope: 'mixed',
+  journalQuality: 'any',
   citationStyle: 'gb7714',
   sourceCount: 12,
   author: '',
@@ -318,6 +327,7 @@ export function EyanbaoWorkspace() {
 
   const currentTask = taskDefinition(request.kind)
   const degreeVisible = request.kind === 'thesis' || request.kind === 'thesis-layout'
+  const journalQualityVisible = request.literatureScope === 'foreign'
   const displayedContent = busy ? liveText : project?.content ?? ''
   const outline = useMemo(() => outlineOf(displayedContent), [displayedContent])
   const canExport = project !== undefined && project.content.trim() !== '' && !busy
@@ -353,6 +363,7 @@ export function EyanbaoWorkspace() {
         discipline: next.discipline,
         language: next.language,
         literatureScope: next.literatureScope ?? 'mixed',
+        journalQuality: next.journalQuality ?? 'any',
         citationStyle: next.citationStyle,
         yearFrom: next.yearFrom,
         sourceCount: next.sourceCount,
@@ -623,6 +634,24 @@ export function EyanbaoWorkspace() {
               ))}
             </select>
           </div>
+          {journalQualityVisible && (
+            <div className="ey-field">
+              <label htmlFor="ey-journal-quality">期刊层级</label>
+              <select
+                id="ey-journal-quality"
+                className="ey-select"
+                value={request.journalQuality}
+                onChange={event => setRequest(current => ({
+                  ...current,
+                  journalQuality: event.target.value as JournalQuality,
+                }))}
+              >
+                {JOURNAL_QUALITIES.map(quality => (
+                  <option key={quality} value={quality}>{JOURNAL_QUALITY_LABELS[quality]}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {degreeVisible ? (
             <div className="ey-field">
               <span className="ey-field-label" id="ey-degree-label">论文层次</span>
@@ -741,6 +770,7 @@ export function EyanbaoWorkspace() {
             <article className="ey-source" key={source.id}>
               <h4 className="ey-source-title">[{index + 1}] {source.title}</h4>
               <div className="ey-source-meta">
+                {source.topJournal === true && <span className="ey-source-language" data-top="true">顶刊</span>}
                 <span className="ey-source-language" data-foreign={isForeignSource(source) ? 'true' : undefined}>
                   {sourceLanguageLabel(source)}
                 </span>
@@ -854,6 +884,9 @@ export function EyanbaoWorkspace() {
                 <span>{definition.label}</span>
                 <span>{project.sources.length} 篇来源</span>
                 <span>{LITERATURE_SCOPE_LABELS[project.literatureScope ?? 'mixed']}</span>
+                {project.literatureScope === 'foreign' && project.journalQuality !== 'any' && (
+                  <span>{JOURNAL_QUALITY_LABELS[project.journalQuality]}</span>
+                )}
                 <span>{CITATION_LABELS[project.citationStyle]}</span>
                 {project.layout.template === 'thesis' && <span>{DEGREE_LABELS[project.layout.degree]}论文</span>}
               </div>

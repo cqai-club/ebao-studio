@@ -107,4 +107,47 @@ describe('literature search', () => {
     })
     expect(result.sources.map(source => source.title)).toEqual(['中文结果', 'English result'])
   })
+
+  it('marks and prioritizes curated top foreign journals', async () => {
+    const fetcher = vi.fn(async () => response({
+      results: [
+        {
+          id: 'W-regular',
+          doi: '10.1/regular',
+          title: 'Regular journal article',
+          language: 'en',
+          cited_by_count: 500,
+          authorships: [{ author: { display_name: 'Regular Author' } }],
+          primary_location: { source: { display_name: 'Regional Studies Quarterly' } },
+        },
+        {
+          id: 'W-top',
+          doi: '10.1/top',
+          title: 'Top journal article',
+          language: 'en',
+          cited_by_count: 5,
+          authorships: [{ author: { display_name: 'Top Author' } }],
+          primary_location: { source: { display_name: 'Academy of Management Journal' } },
+        },
+      ],
+    })) as unknown as typeof fetch
+    const preferred = await searchLiterature('management', {
+      limit: 10,
+      scope: 'foreign',
+      journalQuality: 'top-preferred',
+      fetcher,
+    })
+    expect(preferred.sources.map(source => source.title)).toEqual([
+      'Top journal article',
+      'Regular journal article',
+    ])
+    expect(preferred.sources[0]?.topJournal).toBe(true)
+    const topOnly = await searchLiterature('management', {
+      limit: 10,
+      scope: 'foreign',
+      journalQuality: 'top-only',
+      fetcher,
+    })
+    expect(topOnly.sources.map(source => source.title)).toEqual(['Top journal article'])
+  })
 })

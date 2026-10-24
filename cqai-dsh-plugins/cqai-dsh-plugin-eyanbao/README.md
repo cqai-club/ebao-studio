@@ -4,6 +4,7 @@
 
 - 一句话查文献
 - 中外文、中文、外文三种文献范围
+- 外文文献支持全部期刊、顶刊优先、仅顶级期刊三档
 - 一句话生成文献综述
 - 一句话生成期刊论文
 - 一句话生成研究论文
@@ -17,6 +18,10 @@
 检索通过 OpenAlex 完成，Crossref 作为回退来源；生成使用 DSH 当前默认文字模型。外文或混合检索会优先使用模型生成英文检索词，
 并在结果中过滤出对应语言的来源，来源卡会显示语言标识。来源列表、正文、引用和排版设置保存在
 `$DSH_HOME/eyanbao/projects/<id>/project.json`。生成的正文只使用本次检索到的来源，证据不足时模型必须明确说明，不会伪造引用。
+
+“顶刊优先”使用跨学科精选顶刊库并结合被引次数排序；“仅顶级期刊”只保留精选库中的来源。Nature、Science、Cell、
+The Lancet、Academy of Management Journal、MIS Quarterly、American Economic Review、Review of Educational Research、
+IEEE TPAMI 等均在库中，完整分组见 [顶级外文期刊库](./docs/top-journals.md)。
 
 排版导出为 DOCX。内置模板是通用学术基线，不等同于任何具体学校的强制规范；学校或期刊另有模板时，应以其最新文件为准。
 
