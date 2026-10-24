@@ -19,7 +19,7 @@ describe('literature search', () => {
         primary_location: { landing_page_url: 'https://example.test/paper', source: { display_name: 'Demo Journal' } },
       }],
     }))
-    const sources = await searchOpenAlex('evidence', { limit: 5, language: 'zh', fetcher: fetcher as unknown as typeof fetch })
+    const sources = await searchOpenAlex('evidence', { limit: 5, scope: 'mixed', fetcher: fetcher as unknown as typeof fetch })
     expect(sources[0]).toMatchObject({
       title: 'A useful paper',
       doi: '10.1000/demo',
@@ -47,7 +47,7 @@ describe('literature search', () => {
         }] },
       })
     }) as unknown as typeof fetch
-    const result = await searchLiterature('fallback', { limit: 5, language: 'zh', fetcher })
+    const result = await searchLiterature('fallback', { limit: 5, scope: 'mixed', fetcher })
     expect(result.sources[0]).toMatchObject({ title: 'Crossref fallback', year: 2022, source: 'crossref' })
     expect(result.warning).toContain('Crossref')
   })
@@ -62,8 +62,49 @@ describe('literature search', () => {
         ] },
       })
     })
-    const result = await searchLiterature('same', { limit: 10, language: 'en', fetcher: fetcher as unknown as typeof fetch })
+    const result = await searchLiterature('same', { limit: 10, scope: 'mixed', fetcher: fetcher as unknown as typeof fetch })
     expect(result.sources).toHaveLength(1)
     expect(result.sources[0].title).toBe('First')
+  })
+
+  it('filters Chinese and foreign sources by literature scope', async () => {
+    const fetcher = vi.fn(async () => response({
+      results: [
+        {
+          id: 'W-zh',
+          title: '生成式人工智能与学术写作',
+          language: 'zh',
+          authorships: [{ author: { display_name: '张三' } }],
+        },
+        {
+          id: 'W-en',
+          title: 'Generative AI and academic writing',
+          language: 'en',
+          authorships: [{ author: { display_name: 'Ada Lovelace' } }],
+        },
+      ],
+    })) as unknown as typeof fetch
+    const foreign = await searchOpenAlex('writing', { limit: 10, scope: 'foreign', fetcher })
+    const chinese = await searchOpenAlex('writing', { limit: 10, scope: 'zh', fetcher })
+    expect(foreign.map(source => source.title)).toEqual(['Generative AI and academic writing'])
+    expect(chinese.map(source => source.title)).toEqual(['生成式人工智能与学术写作'])
+  })
+
+  it('merges bilingual queries without duplicating DOI records', async () => {
+    const fetcher = vi.fn(async input => response({
+      results: [{
+        id: `W-${String(input).includes('english') ? 'en' : 'zh'}`,
+        doi: String(input).includes('english') ? '10.1/english' : '10.1/chinese',
+        title: String(input).includes('english') ? 'English result' : '中文结果',
+        language: String(input).includes('english') ? 'en' : 'zh',
+        authorships: [{ author: { display_name: 'Author' } }],
+      }],
+    })) as unknown as typeof fetch
+    const result = await searchLiterature(['生成式 AI', 'generative AI english'], {
+      limit: 10,
+      scope: 'mixed',
+      fetcher,
+    })
+    expect(result.sources.map(source => source.title)).toEqual(['中文结果', 'English result'])
   })
 })

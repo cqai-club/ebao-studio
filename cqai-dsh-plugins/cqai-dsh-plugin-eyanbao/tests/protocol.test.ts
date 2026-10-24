@@ -9,6 +9,7 @@ describe('research requests', () => {
       degree: 'doctoral',
       discipline: ' 教育学 ',
       language: 'zh',
+      literatureScope: 'foreign',
       citationStyle: 'gb7714',
       sourceCount: 18,
       yearFrom: 2020,
@@ -21,6 +22,7 @@ describe('research requests', () => {
       degree: 'doctoral',
       discipline: '教育学',
       language: 'zh',
+      literatureScope: 'foreign',
       citationStyle: 'gb7714',
       sourceCount: 18,
       yearFrom: 2020,
@@ -34,6 +36,7 @@ describe('research requests', () => {
     expect(() => parseRunRequest({ prompt: 'abc', kind: 'search' })).toThrow('四个字')
     expect(() => parseRunRequest({ prompt: '有效研究主题', kind: 'unknown' })).toThrow('任务类型')
     expect(() => parseRunRequest({ prompt: '有效研究主题', kind: 'search', sourceCount: 50 })).toThrow('3 到 30')
+    expect(() => parseRunRequest({ prompt: '有效研究主题', kind: 'search', literatureScope: 'other' })).toThrow('文献范围')
   })
 
   it('removes path-invalid characters from export names', () => {

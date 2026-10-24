@@ -30,8 +30,10 @@ import {
 import {
   DEGREES,
   CITATION_STYLES,
+  LITERATURE_SCOPES,
   type Degree,
   type HealthResponse,
+  type LiteratureScope,
   type LiteratureSource,
   type ProjectSummary,
   type RunRequest,
@@ -80,6 +82,12 @@ const CITATION_LABELS = {
   chicago17: 'Chicago 17',
 } as const
 
+const LITERATURE_SCOPE_LABELS: Record<LiteratureScope, string> = {
+  mixed: '中外文混合',
+  zh: '中文文献',
+  foreign: '外文文献',
+}
+
 const STAGES = [
   { id: 'search', label: '检索' },
   { id: 'evidence', label: '证据' },
@@ -98,6 +106,7 @@ const DEFAULT_REQUEST: RunRequest = {
   degree: 'master',
   discipline: '',
   language: 'zh',
+  literatureScope: 'mixed',
   citationStyle: 'gb7714',
   sourceCount: 12,
   author: '',
@@ -159,6 +168,22 @@ function sourceHref(source: LiteratureSource): string | undefined {
   } catch {
     return undefined
   }
+}
+
+function sourceLanguageLabel(source: LiteratureSource): string {
+  const language = source.language?.toLocaleLowerCase()
+  if (language?.startsWith('zh') || (language === undefined && /\p{Script=Han}/u.test(source.title))) return '中文'
+  if (language?.startsWith('en')) return '英文'
+  if (language?.startsWith('de')) return '德文'
+  if (language?.startsWith('fr')) return '法文'
+  if (language?.startsWith('es')) return '西班牙文'
+  if (language?.startsWith('ja')) return '日文'
+  if (language?.startsWith('ko')) return '韩文'
+  return language === undefined ? '外文' : language.slice(0, 5).toLocaleUpperCase()
+}
+
+function isForeignSource(source: LiteratureSource): boolean {
+  return sourceLanguageLabel(source) !== '中文'
 }
 
 function layoutMetrics(project: ScholarProject): Array<{ label: string; value: string }> {
@@ -327,6 +352,7 @@ export function EyanbaoWorkspace() {
         degree: next.layout.degree,
         discipline: next.discipline,
         language: next.language,
+        literatureScope: next.literatureScope ?? 'mixed',
         citationStyle: next.citationStyle,
         yearFrom: next.yearFrom,
         sourceCount: next.sourceCount,
@@ -581,6 +607,22 @@ export function EyanbaoWorkspace() {
               {CITATION_STYLES.map(style => <option key={style} value={style}>{CITATION_LABELS[style]}</option>)}
             </select>
           </div>
+          <div className="ey-field">
+            <label htmlFor="ey-literature-scope">文献范围</label>
+            <select
+              id="ey-literature-scope"
+              className="ey-select"
+              value={request.literatureScope}
+              onChange={event => setRequest(current => ({
+                ...current,
+                literatureScope: event.target.value as LiteratureScope,
+              }))}
+            >
+              {LITERATURE_SCOPES.map(scope => (
+                <option key={scope} value={scope}>{LITERATURE_SCOPE_LABELS[scope]}</option>
+              ))}
+            </select>
+          </div>
           {degreeVisible ? (
             <div className="ey-field">
               <span className="ey-field-label" id="ey-degree-label">论文层次</span>
@@ -699,6 +741,9 @@ export function EyanbaoWorkspace() {
             <article className="ey-source" key={source.id}>
               <h4 className="ey-source-title">[{index + 1}] {source.title}</h4>
               <div className="ey-source-meta">
+                <span className="ey-source-language" data-foreign={isForeignSource(source) ? 'true' : undefined}>
+                  {sourceLanguageLabel(source)}
+                </span>
                 {source.authors.slice(0, 4).join('、') || '佚名'}
                 {source.year === undefined ? '' : ` · ${source.year}`}
                 {source.venue === undefined ? '' : ` · ${source.venue}`}
@@ -808,6 +853,7 @@ export function EyanbaoWorkspace() {
                 <span className="ey-status" data-status={project.status}>{statusText(project, busy)}</span>
                 <span>{definition.label}</span>
                 <span>{project.sources.length} 篇来源</span>
+                <span>{LITERATURE_SCOPE_LABELS[project.literatureScope ?? 'mixed']}</span>
                 <span>{CITATION_LABELS[project.citationStyle]}</span>
                 {project.layout.template === 'thesis' && <span>{DEGREE_LABELS[project.layout.degree]}论文</span>}
               </div>

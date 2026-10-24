@@ -1,9 +1,9 @@
-import type { Language, LiteratureSource } from './protocol.ts'
+import type { Language, LiteratureScope, LiteratureSource } from './protocol.ts'
 
 export interface LiteratureSearchOptions {
   limit: number
   yearFrom?: number
-  language: Language
+  scope: LiteratureScope
   signal?: AbortSignal
   fetcher?: typeof fetch
 }
@@ -19,6 +19,7 @@ interface OpenAlexWork {
   title?: string
   display_name?: string
   publication_year?: number
+  language?: string
   cited_by_count?: number
   abstract_inverted_index?: Record<string, number[]>
   authorships?: Array<{ author?: { display_name?: string } }>
@@ -33,6 +34,7 @@ interface CrossrefItem {
   'container-title'?: string[]
   abstract?: string
   URL?: string
+  language?: string
   'is-referenced-by-count'?: number
 }
 
@@ -78,6 +80,26 @@ function uniqueSources(sources: LiteratureSource[], limit: number): LiteratureSo
   return unique
 }
 
+function normalizedLanguage(value: string | undefined): string | undefined {
+  const language = value?.trim().toLocaleLowerCase()
+  return language === undefined || language === '' ? undefined : language
+}
+
+function hasHanText(value: string): boolean {
+  return /\p{Script=Han}/u.test(value)
+}
+
+function isChineseSource(source: LiteratureSource): boolean {
+  const language = normalizedLanguage(source.language)
+  if (language !== undefined && language !== 'und') return language.startsWith('zh')
+  return hasHanText(source.title)
+}
+
+function matchesScope(source: LiteratureSource, scope: LiteratureScope): boolean {
+  if (scope === 'mixed') return true
+  return scope === 'zh' ? isChineseSource(source) : !isChineseSource(source)
+}
+
 async function fetchJson(
   url: string,
   fetcher: typeof fetch,
@@ -86,7 +108,7 @@ async function fetchJson(
   const response = await fetcher(url, {
     headers: {
       accept: 'application/json',
-      'user-agent': 'eYanBao/0.1 (DeepSeek Harness academic workspace)',
+      'user-agent': 'eYanBao/0.2 (DeepSeek Harness academic workspace)',
     },
     signal,
   })
@@ -103,7 +125,7 @@ export async function searchOpenAlex(
   url.searchParams.set('search', query)
   url.searchParams.set('per-page', String(Math.min(30, Math.max(options.limit * 2, 10))))
   url.searchParams.set('sort', 'relevance_score:desc')
-  url.searchParams.set('select', 'id,doi,title,display_name,publication_year,cited_by_count,abstract_inverted_index,authorships,primary_location')
+  url.searchParams.set('select', 'id,doi,title,display_name,publication_year,language,cited_by_count,abstract_inverted_index,authorships,primary_location')
   const filters = ['is_retracted:false']
   if (options.yearFrom !== undefined) filters.push(`from_publication_date:${options.yearFrom}-01-01`)
   url.searchParams.set('filter', filters.join(','))
@@ -122,6 +144,7 @@ export async function searchOpenAlex(
         id: work.id ?? doi ?? `openalex-${index}`,
         title,
         authors,
+        ...normalizedLanguage(work.language) === undefined ? {} : { language: normalizedLanguage(work.language) },
         ...work.publication_year === undefined ? {} : { year: work.publication_year },
         ...work.primary_location?.source?.display_name === undefined
           ? {}
@@ -137,6 +160,7 @@ export async function searchOpenAlex(
         source: 'openalex',
       }
     })
+    .filter(source => matchesScope(source, options.scope))
 }
 
 export async function searchCrossref(
@@ -166,6 +190,7 @@ export async function searchCrossref(
         id: doi ?? `crossref-${index}`,
         title: item.title?.[0]?.replace(/\s+/gu, ' ').trim() ?? '',
         authors,
+        ...normalizedLanguage(item.language) === undefined ? {} : { language: normalizedLanguage(item.language) },
         ...year === undefined ? {} : { year },
         ...item['container-title']?.[0] === undefined ? {} : { venue: item['container-title'][0] },
         ...doi === undefined ? {} : { doi },
@@ -177,30 +202,64 @@ export async function searchCrossref(
         source: 'crossref',
       }
     })
+    .filter(source => matchesScope(source, options.scope))
 }
 
 export async function searchLiterature(
-  query: string,
+  query: string | string[],
   options: LiteratureSearchOptions,
 ): Promise<LiteratureSearchResult> {
-  const normalized = query.trim()
-  if (normalized === '') throw new Error('文献检索主题不能为空')
-  try {
-    const sources = uniqueSources(await searchOpenAlex(normalized, options), options.limit)
-    if (sources.length > 0) return { sources }
-  } catch {
-    // Crossref is a deliberate fallback when OpenAlex is unavailable.
-  }
-  try {
-    const sources = uniqueSources(await searchCrossref(normalized, options), options.limit)
-    return {
-      sources,
-      ...sources.length === 0 ? { warning: '两个文献服务都没有返回匹配结果，请尝试更具体的研究主题。' } : {
-        warning: '本次文献结果来自 Crossref。',
-      },
+  const queries = [...new Set((Array.isArray(query) ? query : [query])
+    .map(item => item.trim())
+    .filter(Boolean))]
+  if (queries.length === 0) throw new Error('文献检索主题不能为空')
+  const collected: LiteratureSource[] = []
+  let partialFailure = false
+  for (const normalized of queries) {
+    try {
+      collected.push(...await searchOpenAlex(normalized, options))
+    } catch {
+      partialFailure = true
     }
-  } catch {
+  }
+  const openAlexSources = uniqueSources(collected, options.limit)
+  if (openAlexSources.length > 0) {
+    return {
+      sources: openAlexSources,
+      ...partialFailure ? { warning: '部分检索请求失败，结果可能不完整。' } : {},
+    }
+  }
+
+  const crossref: LiteratureSource[] = []
+  let crossrefFailed = false
+  for (const normalized of queries) {
+    try {
+      crossref.push(...await searchCrossref(normalized, options))
+    } catch {
+      crossrefFailed = true
+    }
+  }
+  const crossrefSources = uniqueSources(crossref, options.limit)
+  if (crossrefSources.length > 0) {
+    return {
+      sources: crossrefSources,
+      warning: partialFailure
+        ? 'OpenAlex 暂不可用，本次文献结果来自 Crossref。'
+        : crossrefFailed
+          ? 'Crossref 部分请求失败，本次结果可能不完整。'
+          : '本次文献结果来自 Crossref。',
+    }
+  }
+  if (crossrefFailed && partialFailure) {
     throw new Error('文献检索服务暂时不可用，请稍后重试。')
+  }
+  return {
+    sources: [],
+    warning: options.scope === 'foreign'
+      ? '没有检索到外文文献，请改用更明确的英文关键词或扩大年份范围。'
+      : options.scope === 'zh'
+        ? '没有检索到中文文献，请尝试更具体的中文研究主题。'
+        : '两个文献服务都没有返回匹配结果，请尝试更具体的研究主题。',
   }
 }
 

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createDocxBuffer, docxFileName } from './docx.ts'
 import {
   finalizeProject,
+  generateEnglishSearchQuery,
   initialProject,
   ResearchGenerationError,
   streamProjectDraft,
@@ -138,13 +139,30 @@ async function searchSources(
   options: RoutesOptions,
   signal: AbortSignal,
 ): Promise<LiteratureSearchResult> {
-  return await searchLiterature(searchText(project), {
+  const scope = project.literatureScope ?? 'mixed'
+  let queries = [searchText(project)]
+  if (scope !== 'zh') {
+    const english = await generateEnglishSearchQuery(searchText(project), options.services(), signal)
+    if (english !== undefined) {
+      queries = scope === 'foreign' ? [english, ...queries] : [...queries, english]
+    }
+  }
+  return await searchLiterature(queries, {
     limit: project.sourceCount,
     ...project.yearFrom === undefined ? {} : { yearFrom: project.yearFrom },
-    language: project.language,
+    scope,
     signal,
     ...options.fetcher === undefined ? {} : { fetcher: options.fetcher },
   })
+}
+
+function searchStatus(project: ScholarProject, verify = false): string {
+  const scope = project.literatureScope === 'foreign'
+    ? '外文文献，必要时生成英文检索词'
+    : project.literatureScope === 'zh'
+      ? '中文文献'
+      : '中外文文献，必要时生成英文检索词'
+  return `正在检索${scope}${verify ? '，并核对来源' : ''}`
 }
 
 async function runProject(
@@ -177,7 +195,7 @@ async function runProject(
   let content = ''
   try {
     if (request.kind === 'search') {
-      await writeEvent(res, { type: 'status', stage: 'search', message: '正在检索学术来源' })
+      await writeEvent(res, { type: 'status', stage: 'search', message: searchStatus(project) })
       const result = await searchSources(project, options, controller.signal)
       project = {
         ...project,
@@ -186,7 +204,7 @@ async function runProject(
         status: 'complete',
         content: result.sources.map((source, index) => {
           const authors = source.authors.join('、') || '佚名'
-          return `### [${index + 1}] ${source.title}\n\n${authors}${source.year === undefined ? '' : ` · ${source.year}`}${
+          return `### [${index + 1}] ${source.title}\n\n${authors}${source.language === undefined ? '' : ` · ${source.language}`}${source.year === undefined ? '' : ` · ${source.year}`}${
             source.venue === undefined ? '' : ` · ${source.venue}`
           }${source.citedBy === undefined ? '' : ` · 被引 ${source.citedBy}`}\n\n${
             source.abstract === undefined ? '暂无摘要。' : source.abstract
@@ -200,7 +218,7 @@ async function runProject(
       return
     }
 
-    await writeEvent(res, { type: 'status', stage: 'search', message: '正在检索并核对学术来源' })
+    await writeEvent(res, { type: 'status', stage: 'search', message: searchStatus(project, true) })
     const result = await searchSources(project, options, controller.signal)
     project = {
       ...project,

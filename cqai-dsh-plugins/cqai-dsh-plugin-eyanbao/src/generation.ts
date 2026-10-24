@@ -44,6 +44,12 @@ const CITATION_LABELS = {
   chicago17: 'Chicago 17',
 } as const
 
+const SCOPE_LABELS = {
+  mixed: '中外文混合',
+  zh: '仅中文文献',
+  foreign: '外文文献',
+} as const
+
 export function taskLabel(kind: TaskKind): string {
   return TASK_LABELS[kind]
 }
@@ -58,6 +64,7 @@ export function initialProject(request: RunRequest): ScholarProject {
     kind: request.kind,
     discipline: request.discipline,
     language: request.language,
+    literatureScope: request.literatureScope,
     citationStyle: request.citationStyle,
     ...request.yearFrom === undefined ? {} : { yearFrom: request.yearFrom },
     sourceCount: request.sourceCount,
@@ -89,6 +96,7 @@ function sourceContext(sources: LiteratureSource[]): string {
       `[${index + 1}]`,
       `题名：${source.title}`,
       `作者：${source.authors.join('、') || '未知'}`,
+      source.language === undefined ? '' : `语言：${source.language}`,
       source.year === undefined ? '' : `年份：${source.year}`,
       source.venue === undefined ? '' : `来源：${source.venue}`,
       source.doi === undefined ? '' : `DOI：${source.doi}`,
@@ -102,10 +110,11 @@ function systemFor(project: ScholarProject): string {
   const task = TASK_LABELS[project.kind]
   const degree = DEGREE_LABELS[project.layout.degree]
   const citation = CITATION_LABELS[project.citationStyle]
+  const scope = SCOPE_LABELS[project.literatureScope]
   const formatting = project.layout.template === 'journal'
     ? `期刊排版：${project.layout.journalName || '通用中文学术期刊'}。`
     : `${degree}学位论文排版。`
-  return `你是 e研宝的学术研究与写作助手，服务在职研究生、硕士生和博士生。当前任务：${task}。使用${language}写作，引用格式：${citation}。${formatting}
+  return `你是 e研宝的学术研究与写作助手，服务在职研究生、硕士生和博士生。当前任务：${task}。使用${language}写作，引用格式：${citation}。文献范围：${scope}。${formatting}
 
 必须遵守：
 1. 只使用用户消息中来源清单提供的事实与文献；不得虚构作者、题名、DOI、数据、实验或引用。
@@ -114,6 +123,7 @@ function systemFor(project: ScholarProject): string {
 4. 区分文献结论、作者观点与你的分析。不得把推测写成既有研究结论。
 5. 输出完整 Markdown 正文：第一行是一级标题；随后是摘要和关键词；再按任务组织正文与参考文献。
 6. 不输出思考过程、写作说明、免责声明或代码围栏，直接输出可编辑稿件。
+7. 外文文献可保留原文题名和作者，但正文论述使用要求的写作语言；不得自行翻译 DOI 或期刊名。
 
 ${project.kind === 'review' ? '文献综述应综合主题脉络、方法差异、争议、证据缺口与未来方向，避免逐篇摘要拼接。' : ''}
 ${project.kind === 'journal' || project.kind === 'journal-layout' ? '期刊论文应包含标题、摘要、关键词、引言、方法、结果或分析、讨论、结论与参考文献。' : ''}
@@ -129,6 +139,7 @@ function userPrompt(project: ScholarProject, sources: LiteratureSource[]): strin
     `任务：${TASK_LABELS[project.kind]}`,
     project.discipline === '' ? '' : `学科领域：${project.discipline}`,
     `学位层次：${degree}`,
+    `文献范围：${SCOPE_LABELS[project.literatureScope]}`,
     `起始年份：${project.yearFrom ?? '不限'}`,
     project.layout.author === '' ? '' : `作者：${project.layout.author}`,
     project.layout.affiliation === '' ? '' : `单位：${project.layout.affiliation}`,
@@ -139,6 +150,61 @@ function userPrompt(project: ScholarProject, sources: LiteratureSource[]): strin
     '',
     `请根据以上来源完成${TASK_LABELS[project.kind]}。正文需要足够完整以便继续编辑和排版。`,
   ].filter(line => line !== '').join('\n')
+}
+
+export async function generateEnglishSearchQuery(
+  query: string,
+  services: ResearchModelServices,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  if (!/\p{Script=Han}/u.test(query) || services.defaultModel === undefined || services.llm === undefined) {
+    return undefined
+  }
+  try {
+    const selected = services.defaultModel.currentSelection()
+    if (typeof selected?.provider !== 'string' || selected.provider.trim() === ''
+      || typeof selected.model !== 'string' || selected.model.trim() === '') {
+      return undefined
+    }
+    let output = ''
+    let finished = false
+    for await (const chunk of services.llm.stream({
+      ...selected,
+      system: 'You translate Chinese academic research topics into concise English bibliographic search keywords. Preserve named entities, dates, methods, and scope qualifiers. Return only one search query, no quotes, labels, explanation, or Markdown.',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: query.slice(0, 1000) }],
+        source: { kind: 'user' },
+      })],
+      temperature: 0.1,
+      maxTokens: 300,
+      signal,
+    })) {
+      signal.throwIfAborted()
+      if (chunk.type === 'tool-call-delta'
+        || (chunk.type === 'block-start' && chunk.blockType === 'tool-call')
+        || (chunk.type === 'block-end' && chunk.block.type === 'tool-call')) {
+        return undefined
+      }
+      if (chunk.type === 'text-delta') output += chunk.text
+      if (chunk.type === 'finish') {
+        if (chunk.reason.kind !== 'stop') return undefined
+        finished = true
+      }
+    }
+    if (!finished) return undefined
+    const normalized = output
+      .replace(/^```[a-z]*\s*/iu, '')
+      .replace(/```$/u, '')
+      .replace(/^["'“”]+|["'“”]+$/gu, '')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .slice(0, 300)
+    return normalized !== '' && /[A-Za-z]/u.test(normalized) && !/\p{Script=Han}/u.test(normalized)
+      ? normalized
+      : undefined
+  } catch {
+    return undefined
+  }
 }
 
 export async function streamProjectDraft(

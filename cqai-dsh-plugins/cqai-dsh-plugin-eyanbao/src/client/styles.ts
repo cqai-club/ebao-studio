@@ -123,7 +123,7 @@ export const workspaceStyles = String.raw`
 .ey-suggestions { display: flex; flex: 1; flex-wrap: wrap; gap: 6px; min-width: 220px; }
 .ey-chip { min-height: 34px; padding: 5px 9px; border: 1px solid var(--ey-border); border-radius: 999px; color: var(--ey-muted); background: transparent; font-size: 12px; }
 .ey-chip:hover { color: var(--ey-text); background: var(--ey-hover); }
-.ey-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 14px 16px; border-top: 1px solid var(--ey-border); background: color-mix(in srgb, var(--ey-bg) 45%, var(--ey-panel)); }
+.ey-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; padding: 14px 16px; border-top: 1px solid var(--ey-border); background: color-mix(in srgb, var(--ey-bg) 45%, var(--ey-panel)); }
 .ey-field { min-width: 0; }
 .ey-field > label, .ey-field-label { display: block; margin-bottom: 6px; color: var(--ey-muted); font-size: 12px; font-weight: 600; }
 .ey-input, .ey-select {
@@ -187,7 +187,9 @@ export const workspaceStyles = String.raw`
 .ey-source:first-child { padding-top: 0; }
 .ey-source:last-child { border-bottom: 0; padding-bottom: 0; }
 .ey-source-title { margin: 0; font-size: 13px; line-height: 1.5; font-weight: 650; }
-.ey-source-meta { color: var(--ey-muted); font-size: 11px; line-height: 1.5; }
+.ey-source-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--ey-muted); font-size: 11px; line-height: 1.5; }
+.ey-source-language { display: inline-flex; align-items: center; min-height: 20px; padding: 1px 7px; border: 1px solid var(--ey-border); border-radius: 999px; color: var(--ey-muted); background: var(--ey-panel); font-size: 10px; font-weight: 650; }
+.ey-source-language[data-foreign="true"] { color: var(--ey-accent); background: var(--ey-accent-soft); border-color: color-mix(in srgb, var(--ey-accent) 25%, transparent); }
 .ey-source-abstract { margin: 0; color: var(--ey-muted); font-size: 12px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .ey-source-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; color: var(--ey-focus); font-size: 12px; text-decoration: none; }
 .ey-source-link:hover { text-decoration: underline; }
@@ -244,6 +246,7 @@ export const workspaceStyles = String.raw`
   .ey-paper { order: -1; }
   .ey-side-panel { position: static; }
   .ey-side-body { max-height: none; }
+  .ey-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 980px) {
   .ey-body { grid-template-columns: minmax(0, 1fr); }

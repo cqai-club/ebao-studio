@@ -114,6 +114,15 @@ window.fetch = async (input, init) => {
 const params = new URLSearchParams(location.search)
 const root = createRoot(document.querySelector('#root')!)
 root.render(<EyanbaoWorkspace />)
+if (params.get('scope') === 'foreign') {
+  window.setTimeout(() => {
+    const scope = document.querySelector<HTMLSelectElement>('#ey-literature-scope')
+    if (scope !== null) {
+      scope.value = 'foreign'
+      scope.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+  }, 150)
+}
 if (params.get('state') === 'document') {
   window.setTimeout(() => {
     const row = document.querySelector<HTMLButtonElement>('.ey-project')

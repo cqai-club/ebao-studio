@@ -24,6 +24,7 @@ async function fixture(options: { stream?: (request: unknown) => AsyncGenerator<
       id: 'https://openalex.org/W7',
       doi: 'https://doi.org/10.1000/route',
       title: 'Route test source',
+      language: 'en',
       publication_year: 2025,
       authorships: [{ author: { display_name: 'Test Author' } }],
       primary_location: { source: { display_name: 'Test Journal' } },
@@ -58,6 +59,7 @@ describe('e研宝 HTTP routes', () => {
         degree: 'master',
         discipline: '管理学',
         language: 'zh',
+        literatureScope: 'foreign',
         citationStyle: 'gb7714',
         sourceCount: 8,
       }),
@@ -70,6 +72,7 @@ describe('e研宝 HTTP routes', () => {
     if (result?.type !== 'result') throw new Error('missing result')
     expect(result.project.sources).toHaveLength(1)
     expect(result.project.status).toBe('complete')
+    expect(result.project.literatureScope).toBe('foreign')
 
     const patched = await fetch(`${base}${API}/projects/${result.project.id}`, {
       method: 'PATCH',

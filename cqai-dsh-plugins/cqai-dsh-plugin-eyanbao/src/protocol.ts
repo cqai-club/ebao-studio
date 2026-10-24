@@ -21,6 +21,9 @@ export type CitationStyle = typeof CITATION_STYLES[number]
 export const LANGUAGES = ['zh', 'en'] as const
 export type Language = typeof LANGUAGES[number]
 
+export const LITERATURE_SCOPES = ['mixed', 'zh', 'foreign'] as const
+export type LiteratureScope = typeof LITERATURE_SCOPES[number]
+
 export const PROJECT_STATUSES = ['draft', 'running', 'complete', 'error'] as const
 export type ProjectStatus = typeof PROJECT_STATUSES[number]
 
@@ -33,6 +36,7 @@ export interface LiteratureSource {
   doi?: string
   url?: string
   abstract?: string
+  language?: string
   citedBy?: number
   source: 'openalex' | 'crossref'
 }
@@ -52,6 +56,7 @@ export interface ScholarProject {
   kind: TaskKind
   discipline: string
   language: Language
+  literatureScope: LiteratureScope
   citationStyle: CitationStyle
   yearFrom?: number
   sourceCount: number
@@ -83,6 +88,7 @@ export interface RunRequest {
   degree: Degree
   discipline: string
   language: Language
+  literatureScope: LiteratureScope
   citationStyle: CitationStyle
   yearFrom?: number
   sourceCount: number
@@ -111,6 +117,7 @@ const TASK_KIND_SET = new Set<string>(TASK_KINDS)
 const DEGREE_SET = new Set<string>(DEGREES)
 const CITATION_STYLE_SET = new Set<string>(CITATION_STYLES)
 const LANGUAGE_SET = new Set<string>(LANGUAGES)
+const LITERATURE_SCOPE_SET = new Set<string>(LITERATURE_SCOPES)
 
 export function taskKind(value: unknown): TaskKind {
   if (typeof value !== 'string' || !TASK_KIND_SET.has(value)) throw new Error('研究任务类型无效')
@@ -134,6 +141,11 @@ export function citationStyle(value: unknown): CitationStyle {
 export function language(value: unknown): Language {
   if (typeof value !== 'string' || !LANGUAGE_SET.has(value)) throw new Error('写作语言无效')
   return value as Language
+}
+
+export function literatureScope(value: unknown): LiteratureScope {
+  if (typeof value !== 'string' || !LITERATURE_SCOPE_SET.has(value)) throw new Error('文献范围无效')
+  return value as LiteratureScope
 }
 
 export function parseRunRequest(value: unknown): RunRequest {
@@ -163,6 +175,7 @@ export function parseRunRequest(value: unknown): RunRequest {
     degree: degree(body.degree ?? 'master'),
     discipline: clean('discipline', 80),
     language: language(body.language ?? 'zh'),
+    literatureScope: literatureScope(body.literatureScope ?? 'mixed'),
     citationStyle: citationStyle(body.citationStyle ?? 'gb7714'),
     ...year === undefined ? {} : { yearFrom: year },
     sourceCount,

@@ -3,6 +3,7 @@
 面向在职研究生与博士生的 DeepSeek Harness 研究写作工作台。它以一个侧栏入口承载：
 
 - 一句话查文献
+- 中外文、中文、外文三种文献范围
 - 一句话生成文献综述
 - 一句话生成期刊论文
 - 一句话生成研究论文
@@ -13,7 +14,8 @@
 
 ## 功能边界
 
-检索通过 OpenAlex 完成，Crossref 作为回退来源；生成使用 DSH 当前默认文字模型。来源列表、正文、引用和排版设置保存在
+检索通过 OpenAlex 完成，Crossref 作为回退来源；生成使用 DSH 当前默认文字模型。外文或混合检索会优先使用模型生成英文检索词，
+并在结果中过滤出对应语言的来源，来源卡会显示语言标识。来源列表、正文、引用和排版设置保存在
 `$DSH_HOME/eyanbao/projects/<id>/project.json`。生成的正文只使用本次检索到的来源，证据不足时模型必须明确说明，不会伪造引用。
 
 排版导出为 DOCX。内置模板是通用学术基线，不等同于任何具体学校的强制规范；学校或期刊另有模板时，应以其最新文件为准。
@@ -35,7 +37,7 @@ corepack yarn workspace cqai-dsh-plugin-eyanbao build
 先完成构建，再从 DSH Terminal 把本地插件包加入一个非 `desktop` 的开发 Profile：
 
 ```sh
-dsh plugin --profile <profile> add "D:/path/to/ebao-studio/cqai-dsh-plugins/cqai-dsh-plugin-eyanbao"
+dsh plugin --profile <profile> add "/path/to/Chongqing-AI-Innovation-Sharing-Club-Public-Plugin/plugins/cqai-dsh-plugin-eyanbao"
 ```
 
 重启应用后，侧栏会出现独立的「e研宝」入口。默认使用当前 Profile 的默认文字模型，不需要另填 API Key。
