@@ -231,6 +231,10 @@ export const workspaceStyles = String.raw`
 .ey-source:last-child { border-bottom: 0; padding-bottom: 0; }
 .ey-source-title { margin: 0; font-size: 13px; line-height: 1.5; font-weight: 650; }
 .ey-source-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--ey-muted); font-size: 11px; line-height: 1.5; }
+.ey-source-stats { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 11px; border-bottom: 1px solid var(--ey-border); }
+.ey-source-stat { min-height: 24px; display: inline-flex; align-items: center; padding: 2px 8px; border: 1px solid var(--ey-border); border-radius: 999px; color: var(--ey-muted); background: var(--ey-bg); font-size: 11px; font-weight: 650; white-space: nowrap; }
+.ey-source-stats + .ey-source { padding-top: 12px; }
+.ey-source-database { min-height: 20px; display: inline-flex; align-items: center; padding: 1px 7px; border: 1px solid color-mix(in srgb, var(--ey-focus) 26%, var(--ey-border)); border-radius: 999px; color: var(--ey-ink); background: var(--ey-ink-soft); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .ey-source-language { display: inline-flex; align-items: center; min-height: 20px; padding: 1px 7px; border: 1px solid var(--ey-border); border-radius: 999px; color: var(--ey-muted); background: var(--ey-panel); font-size: 10px; font-weight: 650; }
 .ey-source-language[data-foreign="true"] { color: var(--ey-accent); background: var(--ey-accent-soft); border-color: color-mix(in srgb, var(--ey-accent) 25%, transparent); }
 .ey-source-language[data-top="true"] { color: var(--ey-green); background: var(--ey-green-soft); border-color: color-mix(in srgb, var(--ey-green) 24%, transparent); }

@@ -16,7 +16,12 @@ const options = (env: NodeJS.ProcessEnv, fetcher: typeof fetch) => ({
 describe('database connectors', () => {
   it('reports subscribed providers as unavailable until credentials are configured', () => {
     const empty = databaseStatuses({} as NodeJS.ProcessEnv)
-    expect(empty.filter(item => item.available).map(item => item.id)).toEqual(['openalex', 'crossref', 'pubmed'])
+    expect(empty.filter(item => item.available).map(item => item.id)).toEqual([
+      'openalex',
+      'crossref',
+      'pubmed',
+      'semantic-scholar',
+    ])
     const configured = databaseStatuses({
       WOS_API_KEY: 'wos',
       SCOPUS_API_KEY: 'scopus',
@@ -51,6 +56,32 @@ describe('database connectors', () => {
       venue: 'The Lancet',
       doi: '10.1/medical',
       source: 'pubmed',
+    })
+  })
+
+  it('parses Semantic Scholar without requiring an API key', async () => {
+    const fetcher = vi.fn(async () => response({
+      data: [{
+        paperId: 's2-paper-1',
+        title: 'Open science and research integrity',
+        authors: [{ name: 'Ada Lovelace' }, { name: 'Alan Turing' }],
+        year: 2025,
+        venue: 'Research Policy',
+        externalIds: { DOI: '10.1/s2-paper' },
+        abstract: 'A study of open science practices.',
+        citationCount: 18,
+      }],
+    })) as unknown as typeof fetch
+    const sources = await searchExternalDatabase('semantic-scholar', 'open science', options({}, fetcher))
+    expect(sources[0]).toMatchObject({
+      id: 's2-paper-1',
+      title: 'Open science and research integrity',
+      authors: ['Ada Lovelace', 'Alan Turing'],
+      year: 2025,
+      venue: 'Research Policy',
+      doi: '10.1/s2-paper',
+      citedBy: 18,
+      source: 'semantic-scholar',
     })
   })
 

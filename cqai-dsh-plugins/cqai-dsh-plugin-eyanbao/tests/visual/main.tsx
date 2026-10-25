@@ -82,6 +82,17 @@ const demoProject: ScholarProject = project({
       abstract: 'The paper argues that traceable evidence is a precondition for trustworthy digital scholarship.',
       source: 'crossref',
     },
+    {
+      id: 's2-4',
+      title: 'Evidence traceability in generative research workflows',
+      authors: ['Fei-Fei Li'],
+      year: 2025,
+      venue: 'Nature Machine Intelligence',
+      doi: '10.1000/example.2025.4',
+      abstract: 'The article studies provenance, verification, and accountability in AI-assisted research.',
+      source: 'semantic-scholar',
+      topJournal: true,
+    },
   ],
 })
 
@@ -102,6 +113,7 @@ window.fetch = async (input, init) => {
         { id: 'openalex', label: 'OpenAlex', available: true, requiresConfiguration: false },
         { id: 'crossref', label: 'Crossref', available: true, requiresConfiguration: false },
         { id: 'pubmed', label: 'PubMed', available: true, requiresConfiguration: false },
+        { id: 'semantic-scholar', label: 'Semantic Scholar', available: true, requiresConfiguration: false },
         { id: 'web-of-science', label: 'Web of Science', available: false, requiresConfiguration: true, reason: '需要 Clarivate WOS_API_KEY' },
         { id: 'scopus', label: 'Scopus', available: false, requiresConfiguration: true, reason: '需要 Elsevier SCOPUS_API_KEY' },
         { id: 'google-scholar', label: 'Google Scholar', available: false, requiresConfiguration: true, reason: '需要 SerpAPI Google Scholar 密钥' },

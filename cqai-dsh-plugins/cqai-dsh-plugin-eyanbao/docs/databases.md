@@ -1,12 +1,30 @@
-# 文献数据库接入
+# 文献数据库与来源标识
 
 e研宝通过 Host 环境变量读取数据库凭据。密钥不会发送到浏览器。
 
-## 无需配置
+## 学术技能中的开放索引
+
+`academic-research-skills:deep-research` 的文献工作流使用可复核检索协议，而不是一个内置的“万能期刊搜索按钮”。其中的机器可读开放索引包括 OpenAlex、Crossref、Semantic Scholar、arXiv；引用核验还使用 DOI、OpenAlex、Crossref 和 Semantic Scholar。
+
+e研宝已把这些索引中适合期刊发现的部分接入一句话检索：
+
+- **OpenAlex**：跨学科期刊、作者、机构、摘要和被引元数据。
+- **Crossref**：DOI 注册信息和出版社元数据。
+- **Semantic Scholar**：跨学科论文元数据、摘要、被引次数和 DOI。
+- **PubMed**：生物医学与生命科学文献。
+
+每条结果都在来源统计和文献卡片上标明具体数据库。生成正文时，来源数据库也会作为证据上下文传入模型。
+
+arXiv 属于预印本索引，不是期刊数据库，因此不会混入“外文期刊”来源统计；它的论文若同时被 OpenAlex 或 Semantic Scholar 索引，会按实际返回的索引标注来源。
+
+## 无需密钥
 
 - **OpenAlex**：主检索源。
 - **Crossref**：DOI 与出版元数据。
 - **PubMed**：NCBI E-utilities。可选 `NCBI_API_KEY` 提高请求配额。
+- **Semantic Scholar**：Academic Graph API。可选 `S2_API_KEY` 提高请求配额。
+
+OpenAlex 还可选配置 `OPENALEX_API_KEY` 提高每日预算，或配置 `OPENALEX_POLITE_EMAIL` 使用礼貌请求标识。
 
 ## 需要供应商凭据
 

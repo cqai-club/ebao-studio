@@ -7,7 +7,8 @@ The workspace uses the `ui-ux-pro-max` Swiss Modernism recommendation as its str
 - The institutional navy, amber accent, and research green are exposed as semantic CSS variables. Application surfaces continue to inherit DSH theme tokens for light and dark modes.
 - UI labels use the desktop system sans-serif stack. The manuscript preview uses a Chinese serif stack and remains light so it matches the exported document.
 - Seven task types form one wrapped control at tablet and mobile widths instead of a horizontal scroller.
-- Literature scope stays in the primary filter row; source cards use a compact language badge instead of a second modal.
+- Literature scope stays in the primary filter row; source cards use a source badge and a compact language badge instead of a second modal.
+- Source provenance is summarized above the result list and repeated per item so OpenAlex, Crossref, PubMed, and Semantic Scholar results are never visually merged.
 - Journal level appears only for foreign literature, and curated top-journal sources use a separate green badge.
 - The AI assistant is a non-modal popover anchored to the task-row trigger; Escape closes it and focus returns to the trigger.
 - Database selection is progressive disclosure: a compact summary opens a checkbox grid, with unavailable providers visibly disabled and explained.

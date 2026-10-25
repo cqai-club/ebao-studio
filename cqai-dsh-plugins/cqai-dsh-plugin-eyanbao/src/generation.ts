@@ -164,7 +164,7 @@ function userPrompt(project: ScholarProject, sources: LiteratureSource[]): strin
     `学位层次：${degree}`,
     `文献范围：${SCOPE_LABELS[project.literatureScope]}`,
     `期刊层级：${project.literatureScope === 'foreign' ? JOURNAL_QUALITY_LABELS[project.journalQuality] : '全部期刊'}`,
-    `数据库：${(project.databases ?? ['openalex', 'crossref']).map(databaseLabel).join('、')}`,
+    `数据库：${(project.databases ?? ['openalex', 'crossref', 'semantic-scholar']).map(databaseLabel).join('、')}`,
     `起始年份：${project.yearFrom ?? '不限'}`,
     project.layout.author === '' ? '' : `作者：${project.layout.author}`,
     project.layout.affiliation === '' ? '' : `单位：${project.layout.affiliation}`,

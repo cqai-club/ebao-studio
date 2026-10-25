@@ -194,7 +194,7 @@ async function searchSources(
     ...project.yearFrom === undefined ? {} : { yearFrom: project.yearFrom },
     scope,
     journalQuality: scope === 'foreign' ? project.journalQuality : 'any',
-    databases: project.databases ?? ['openalex', 'crossref'],
+    databases: project.databases ?? ['openalex', 'crossref', 'semantic-scholar'],
     env: options.env,
     signal,
     ...options.fetcher === undefined ? {} : { fetcher: options.fetcher },
@@ -210,7 +210,7 @@ function searchStatus(project: ScholarProject, verify = false): string {
   const quality = project.literatureScope === 'foreign' && project.journalQuality !== 'any'
     ? `，${project.journalQuality === 'top-only' ? '仅限顶级期刊' : '顶刊优先'}`
     : ''
-  const databases = (project.databases ?? ['openalex', 'crossref']).map(databaseLabel).join('、')
+  const databases = (project.databases ?? ['openalex', 'crossref', 'semantic-scholar']).map(databaseLabel).join('、')
   return `正在检索${scope}${quality}${verify ? '，并核对来源' : ''}（${databases}）`
 }
 

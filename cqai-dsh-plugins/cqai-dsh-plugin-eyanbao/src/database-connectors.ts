@@ -20,6 +20,7 @@ const LABELS: Record<DatabaseId, string> = {
   openalex: 'OpenAlex',
   crossref: 'Crossref',
   pubmed: 'PubMed',
+  'semantic-scholar': 'Semantic Scholar',
   'web-of-science': 'Web of Science',
   scopus: 'Scopus',
   'google-scholar': 'Google Scholar',
@@ -36,6 +37,12 @@ export function databaseStatuses(env: NodeJS.ProcessEnv = process.env): Database
     { id: 'openalex', label: LABELS.openalex, available: true, requiresConfiguration: false },
     { id: 'crossref', label: LABELS.crossref, available: true, requiresConfiguration: false },
     { id: 'pubmed', label: LABELS.pubmed, available: true, requiresConfiguration: false },
+    {
+      id: 'semantic-scholar',
+      label: LABELS['semantic-scholar'],
+      available: true,
+      requiresConfiguration: false,
+    },
     {
       id: 'web-of-science',
       label: LABELS['web-of-science'],
@@ -95,6 +102,7 @@ function text(value: unknown): string | undefined {
 }
 
 function numberValue(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined
   const number = Number(value)
   return Number.isFinite(number) ? number : undefined
 }
@@ -110,7 +118,7 @@ async function fetchJson(
     signal,
     headers: {
       accept: 'application/json',
-      'user-agent': 'eYanBao/0.5 (DeepSeek Harness academic workspace)',
+      'user-agent': 'eYanBao/0.6 (DeepSeek Harness academic workspace)',
       ...init.headers,
     },
   })
@@ -277,6 +285,53 @@ async function searchGoogleScholar(query: string, options: DatabaseSearchOptions
     .slice(0, options.limit)
 }
 
+async function searchSemanticScholar(query: string, options: DatabaseSearchOptions): Promise<LiteratureSource[]> {
+  const env = options.env ?? process.env
+  const url = new URL('https://api.semanticscholar.org/graph/v1/paper/search')
+  url.searchParams.set('query', query)
+  url.searchParams.set('limit', String(Math.min(20, Math.max(options.limit, 10))))
+  url.searchParams.set(
+    'fields',
+    'paperId,title,authors,year,venue,externalIds,abstract,citationCount,url,journal',
+  )
+  const apiKey = env.S2_API_KEY?.trim()
+  const headers: Record<string, string> = {}
+  if (apiKey !== undefined && apiKey !== '') headers['x-api-key'] = apiKey
+  const payload = record(await fetchJson(
+    url.toString(),
+    options.fetcher ?? fetch,
+    options.signal ?? new AbortController().signal,
+    Object.keys(headers).length === 0 ? {} : { headers },
+  ))
+  const entries = Array.isArray(payload?.data) ? payload.data : []
+  return entries.map(record).filter((item): item is Record<string, unknown> => item !== undefined)
+    .map((item, index): LiteratureSource => {
+      const externalIds = record(item.externalIds)
+      const journal = record(item.journal)
+      const doi = normalizeDoi(externalIds?.DOI)
+      const authors = (Array.isArray(item.authors) ? item.authors : [])
+        .map(record)
+        .map(author => text(author?.name))
+        .filter((name): name is string => name !== undefined)
+      const venue = text(journal?.name) ?? text(item.venue)
+      const urlValue = text(item.url)
+      return {
+        id: text(item.paperId) ?? doi ?? `semantic-scholar-${index}`,
+        title: text(item.title) ?? `Semantic Scholar ${index + 1}`,
+        authors,
+        ...numberValue(item.year) === undefined ? {} : { year: numberValue(item.year) },
+        ...venue === undefined ? {} : { venue },
+        ...doi === undefined ? {} : { doi, url: `https://doi.org/${doi}` },
+        ...doi !== undefined || urlValue === undefined ? {} : { url: urlValue },
+        ...text(item.abstract) === undefined ? {} : { abstract: text(item.abstract) },
+        ...numberValue(item.citationCount) === undefined ? {} : { citedBy: numberValue(item.citationCount) },
+        topJournal: isTopForeignJournal(venue),
+        source: 'semantic-scholar',
+      }
+    })
+    .slice(0, options.limit)
+}
+
 function gatewayEndpoint(envValue: string): string {
   return /\/search(?:\?|$)/u.test(envValue) ? envValue : `${envValue.replace(/\/$/u, '')}/search`
 }
@@ -333,6 +388,7 @@ export async function searchExternalDatabase(
     case 'web-of-science': return await searchWebOfScience(query, options)
     case 'scopus': return await searchScopus(query, options)
     case 'google-scholar': return await searchGoogleScholar(query, options)
+    case 'semantic-scholar': return await searchSemanticScholar(query, options)
     case 'cnki': return await searchSubscriptionGateway('cnki', query, options)
     case 'wanfang': return await searchSubscriptionGateway('wanfang', query, options)
   }

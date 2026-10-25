@@ -43,6 +43,7 @@ async function render() {
     { id: 'openalex', label: 'OpenAlex', available: true, requiresConfiguration: false },
     { id: 'crossref', label: 'Crossref', available: true, requiresConfiguration: false },
     { id: 'pubmed', label: 'PubMed', available: true, requiresConfiguration: false },
+    { id: 'semantic-scholar', label: 'Semantic Scholar', available: true, requiresConfiguration: false },
     { id: 'web-of-science', label: 'Web of Science', available: false, requiresConfiguration: true, reason: '需要 Clarivate WOS_API_KEY' },
     { id: 'scopus', label: 'Scopus', available: false, requiresConfiguration: true, reason: '需要 Elsevier SCOPUS_API_KEY' },
     { id: 'google-scholar', label: 'Google Scholar', available: false, requiresConfiguration: true, reason: '需要 SerpAPI Google Scholar 密钥' },
@@ -70,7 +71,7 @@ describe('e研宝 workspace', () => {
     const scope = container!.querySelector<HTMLSelectElement>('#ey-literature-scope')!
     expect(scope.value).toBe('mixed')
     expect([...scope.options].map(option => option.textContent)).toEqual(['中外文混合', '中文文献', '外文文献'])
-    expect(container!.querySelector('.ey-database-picker summary')?.textContent).toContain('3 个已选')
+    expect(container!.querySelector('.ey-database-picker summary')?.textContent).toContain('4 个已选')
     const wos = [...container!.querySelectorAll<HTMLLabelElement>('.ey-database-option')]
       .find(option => option.textContent?.includes('Web of Science'))!
     expect(wos.querySelector('input')?.disabled).toBe(true)
@@ -110,7 +111,7 @@ describe('e研宝 workspace', () => {
     expect(api.runResearch.mock.calls[0]![0]).toMatchObject({
       literatureScope: 'foreign',
       journalQuality: 'top-only',
-      databases: ['openalex', 'crossref'],
+      databases: ['openalex', 'crossref', 'semantic-scholar'],
     })
     expect(container!.querySelector('.ey-document h1')?.textContent).toBe('生成式 AI 对学术写作的影响')
     expect([...container!.querySelectorAll('a')].some(link => link.textContent?.includes('DOCX'))).toBe(true)

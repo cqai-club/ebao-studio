@@ -106,6 +106,7 @@ const DATABASE_LABELS: Record<DatabaseId, string> = {
   openalex: 'OpenAlex',
   crossref: 'Crossref',
   pubmed: 'PubMed',
+  'semantic-scholar': 'Semantic Scholar',
   'web-of-science': 'Web of Science',
   scopus: 'Scopus',
   'google-scholar': 'Google Scholar',
@@ -133,7 +134,7 @@ const DEFAULT_REQUEST: RunRequest = {
   language: 'zh',
   literatureScope: 'mixed',
   journalQuality: 'any',
-  databases: ['openalex', 'crossref', 'pubmed'],
+  databases: ['openalex', 'crossref', 'pubmed', 'semantic-scholar'],
   citationStyle: 'gb7714',
   sourceCount: 12,
   author: '',
@@ -406,7 +407,7 @@ export function EyanbaoWorkspace() {
         language: next.language,
         literatureScope: next.literatureScope ?? 'mixed',
         journalQuality: next.journalQuality ?? 'any',
-        databases: next.databases ?? ['openalex', 'crossref'],
+        databases: next.databases ?? ['openalex', 'crossref', 'semantic-scholar'],
         citationStyle: next.citationStyle,
         yearFrom: next.yearFrom,
         sourceCount: next.sourceCount,
@@ -812,9 +813,11 @@ export function EyanbaoWorkspace() {
               ? Object.entries(DATABASE_LABELS).map(([id, label]) => ({
                   id: id as DatabaseId,
                   label,
-                  available: ['openalex', 'crossref', 'pubmed'].includes(id),
-                  requiresConfiguration: !['openalex', 'crossref', 'pubmed'].includes(id),
-                  reason: ['openalex', 'crossref', 'pubmed'].includes(id) ? undefined : '需要配置 API 凭据',
+                  available: ['openalex', 'crossref', 'pubmed', 'semantic-scholar'].includes(id),
+                  requiresConfiguration: !['openalex', 'crossref', 'pubmed', 'semantic-scholar'].includes(id),
+                  reason: ['openalex', 'crossref', 'pubmed', 'semantic-scholar'].includes(id)
+                    ? undefined
+                    : '需要配置 API 凭据',
                 }))
               : databases
             ).map(database => (
@@ -888,17 +891,31 @@ export function EyanbaoWorkspace() {
     </div>
   )
 
-  const renderSources = () => (
-    project?.sources.length === 0 ? <div className="ey-rail-empty">尚未检索到来源</div> : (
+  const renderSources = () => {
+    if (project === undefined || project.sources.length === 0) {
+      return <div className="ey-rail-empty">尚未检索到来源</div>
+    }
+    const databaseCounts = new Map<DatabaseId, number>()
+    for (const source of project.sources) {
+      databaseCounts.set(source.source, (databaseCounts.get(source.source) ?? 0) + 1)
+    }
+    return (
       <div>
-        {project?.sources.map((source: LiteratureSource, index) => {
+        <div className="ey-source-stats" role="group" aria-label="文献来源统计">
+          {[...databaseCounts.entries()].map(([database, count]) => (
+            <span className="ey-source-stat" key={database}>
+              {DATABASE_LABELS[database]} {count} 篇
+            </span>
+          ))}
+        </div>
+        {project.sources.map((source: LiteratureSource, index) => {
           const href = sourceHref(source)
           return (
             <article className="ey-source" key={source.id}>
               <h4 className="ey-source-title">[{index + 1}] {source.title}</h4>
               <div className="ey-source-meta">
+                <span className="ey-source-database">{DATABASE_LABELS[source.source]}</span>
                 {source.topJournal === true && <span className="ey-source-language" data-top="true">顶刊</span>}
-                <span>{DATABASE_LABELS[source.source]}</span>
                 <span className="ey-source-language" data-foreign={isForeignSource(source) ? 'true' : undefined}>
                   {sourceLanguageLabel(source)}
                 </span>
@@ -917,7 +934,7 @@ export function EyanbaoWorkspace() {
         })}
       </div>
     )
-  )
+  }
 
   const renderOutline = () => (
     outline.length === 0 ? <div className="ey-rail-empty">正文生成后显示章节结构</div> : (

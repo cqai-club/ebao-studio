@@ -45,6 +45,7 @@ cqai-dsh-plugin-example/
 图像 Provider，同时保留需要用户显式选择的自定义渠道；插件本身不再实现第二套登录、Token 存储或账号设置页。
 
 `cqai-dsh-plugin-eyanbao` 是独立的 e研宝研究工作台，提供一句话文献检索、中外文/中文/外文文献范围、外文顶刊优先与仅顶刊、
-多数据库聚合检索（OpenAlex、Crossref、PubMed、Web of Science、Scopus、Google Scholar、CNKI、万方）、AI 研究助手、
+多数据库聚合检索（OpenAlex、Crossref、PubMed、Semantic Scholar、Web of Science、Scopus、Google Scholar、CNKI、万方）、
+逐条来源数据库标识、AI 研究助手、
 综述与论文生成，以及期刊、本科、硕士和博士学位论文的 DOCX 排版导出。它复用宿主默认文字模型，可作为普通 DSH bundle 安装，
 不依赖 e剪宝或视频插件。

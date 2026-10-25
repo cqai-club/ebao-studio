@@ -124,7 +124,7 @@ async function fetchJson(
   const response = await fetcher(url, {
     headers: {
       accept: 'application/json',
-      'user-agent': 'eYanBao/0.2 (DeepSeek Harness academic workspace)',
+      'user-agent': 'eYanBao/0.6 (DeepSeek Harness academic workspace)',
     },
     signal,
   })
@@ -137,11 +137,16 @@ export async function searchOpenAlex(
   options: LiteratureSearchOptions,
 ): Promise<LiteratureSource[]> {
   const fetcher = options.fetcher ?? fetch
+  const env = options.env ?? process.env
   const url = new URL('https://api.openalex.org/works')
   url.searchParams.set('search', query)
   url.searchParams.set('per-page', String(Math.min(30, Math.max(options.limit * 2, 10))))
   url.searchParams.set('sort', 'relevance_score:desc')
   url.searchParams.set('select', 'id,doi,title,display_name,publication_year,language,cited_by_count,abstract_inverted_index,authorships,primary_location')
+  const apiKey = env.OPENALEX_API_KEY?.trim()
+  if (apiKey !== undefined && apiKey !== '') url.searchParams.set('api_key', apiKey)
+  const politeEmail = env.OPENALEX_POLITE_EMAIL?.trim()
+  if (politeEmail !== undefined && politeEmail !== '') url.searchParams.set('mailto', politeEmail)
   const filters = ['is_retracted:false']
   if (options.yearFrom !== undefined) filters.push(`from_publication_date:${options.yearFrom}-01-01`)
   url.searchParams.set('filter', filters.join(','))
@@ -234,7 +239,7 @@ export async function searchLiterature(
     .filter(Boolean))]
   if (queries.length === 0) throw new Error('文献检索主题不能为空')
   const statuses = databaseStatuses(options.env ?? process.env)
-  const requested = options.databases ?? ['openalex', 'crossref']
+  const requested = options.databases ?? ['openalex', 'crossref', 'semantic-scholar']
   const available = requested.filter(id => statuses.find(status => status.id === id)?.available === true)
   const unavailable = requested.filter(id => !available.includes(id))
   if (available.length === 0) throw new Error('所选文献数据库均未配置或不可用')

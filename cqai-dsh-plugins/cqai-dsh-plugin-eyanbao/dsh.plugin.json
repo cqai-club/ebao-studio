@@ -1,6 +1,6 @@
 {
   "id": "cqai-dsh-plugin-eyanbao",
-  "version": "0.5.0",
+  "version": "0.6.1",
   "main": "./lib/index.js",
   "description": "e研宝 research writing studio",
   "engines": {

@@ -34,6 +34,7 @@ export const DATABASE_IDS = [
   'openalex',
   'crossref',
   'pubmed',
+  'semantic-scholar',
   'web-of-science',
   'scopus',
   'google-scholar',
@@ -251,7 +252,7 @@ export function parseRunRequest(value: unknown): RunRequest {
     language: language(body.language ?? 'zh'),
     literatureScope: literatureScope(body.literatureScope ?? 'mixed'),
     journalQuality: journalQuality(body.journalQuality ?? 'any'),
-    databases: databaseIds(body.databases ?? ['openalex', 'crossref']),
+    databases: databaseIds(body.databases ?? ['openalex', 'crossref', 'semantic-scholar']),
     citationStyle: citationStyle(body.citationStyle ?? 'gb7714'),
     ...year === undefined ? {} : { yearFrom: year },
     sourceCount,
@@ -277,7 +278,7 @@ export function parseAssistRequest(value: unknown): AssistRequest {
     language: language(body.language ?? 'zh'),
     literatureScope: literatureScope(body.literatureScope ?? 'mixed'),
     journalQuality: journalQuality(body.journalQuality ?? 'any'),
-    databases: databaseIds(body.databases ?? ['openalex', 'crossref']),
+    databases: databaseIds(body.databases ?? ['openalex', 'crossref', 'semantic-scholar']),
   }
 }
 
