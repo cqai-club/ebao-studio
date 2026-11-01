@@ -82,6 +82,13 @@ export const styles = `
 .ejb-covers img { height: 100px; border-radius: var(--dsw-radius-sm); }
 .ejb details summary { cursor: pointer; font-size: 13px; color: var(--ejb-muted); margin: 20px 0 8px; }
 .ejb progress { width: 100%; accent-color: var(--ejb-accent); height: 6px; }
+.ejb-dh { display: grid; grid-template-columns: minmax(0, 620px); justify-content: center; }
+.ejb-dh-card { border: 1px solid var(--ejb-border); background: var(--ejb-surface); border-radius: var(--dsw-radius-lg); padding: 24px; }
+.ejb-dh-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 24px; }
+.ejb-dh-field { margin-bottom: 20px; }
+.ejb-dh-field .ejb-textarea { min-height: 180px; }
+.ejb-dh-files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.ejb-dh-files .ejb-upload { margin: 0; height: 100%; }
 @container ejianbao (max-width: 880px) { .ejb-grid { grid-template-columns: 1fr; } }
 @container ejianbao (max-width: 560px) {
   .ejb-wrap { padding: 20px 16px 32px; }
@@ -91,5 +98,7 @@ export const styles = `
   .ejb-job, .ejb-summary { flex-wrap: wrap; }
   .ejb-modes { grid-template-columns: 1fr; }
   .ejb-mode { min-height: 40px; text-align: left; padding-inline: 12px; }
+  .ejb-dh-card { padding: 18px; }
+  .ejb-dh-modes, .ejb-dh-files { grid-template-columns: 1fr; }
 }
 `
