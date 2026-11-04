@@ -7,6 +7,7 @@ import { DEFAULT_PREFERENCES, SAFE_MODE_PREFERENCES } from '../src/desktop-contr
 import type { NextDesktopRuntime } from '../src/desktop-runtime.ts'
 import { NEXT_PACKAGE, NextProfiles } from '../src/profiles.ts'
 import { NextRecovery } from '../src/recovery.ts'
+import { DESKTOP_PRODUCT_NAME } from '../src/product-identity.ts'
 
 const originalMonitors = new Set(process.listeners('uncaughtExceptionMonitor'))
 afterEach(() => { for (const listener of process.listeners('uncaughtExceptionMonitor')) if (!originalMonitors.has(listener)) process.off('uncaughtExceptionMonitor', listener) })
@@ -132,6 +133,7 @@ vi.mock('electron', async () => {
     setVibrancy() {}
     setBackgroundColor() {}
     setBackgroundMaterial() {}
+    setTitle = vi.fn()
     setTitleBarOverlay = vi.fn()
     setProgressBar = vi.fn()
     async loadURL(url: string) {
@@ -195,6 +197,42 @@ beforeEach(async () => {
 afterEach(() => {
   for (const window of fixture.windows) if (!window.destroyed) window.destroy()
   rmSync(fixture.locationRoot, { recursive: true, force: true })
+})
+
+it('keeps product window titles through upstream session-title changes without renaming other pages', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'ebao-native-title-'))
+  vi.stubEnv('DSH_DESKTOP_HOME', home)
+  try {
+    await import('../src/main.ts')
+    await vi.waitFor(() => expect(fixture.windows).toHaveLength(1))
+    const main = fixture.windows[0]
+    for (const [source, expected] of [
+      ['DeepSeek Harness', DESKTOP_PRODUCT_NAME],
+      ['Session title — DeepSeek Harness', `Session title — ${DESKTOP_PRODUCT_NAME}`],
+      ['Notes about DeepSeek Harness — DeepSeek Harness', `Notes about DeepSeek Harness — ${DESKTOP_PRODUCT_NAME}`],
+    ]) {
+      main.setTitle.mockClear()
+      const preventDefault = vi.fn()
+      main.emit('page-title-updated', { preventDefault }, source)
+      expect(preventDefault).toHaveBeenCalledOnce()
+      expect(main.setTitle).toHaveBeenCalledExactlyOnceWith(expected)
+    }
+    for (const title of ['DeepSeek Harness notes', 'A session — Another product', DESKTOP_PRODUCT_NAME]) {
+      main.setTitle.mockClear()
+      const preventDefault = vi.fn()
+      main.emit('page-title-updated', { preventDefault }, title)
+      expect(preventDefault).not.toHaveBeenCalled()
+      expect(main.setTitle).not.toHaveBeenCalled()
+    }
+    const sender = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
+    await fixture.handlers.get('dsh-next:command')!(sender, { type: 'controls', page: 'create-profile' })
+    await vi.waitFor(() => expect(fixture.windows).toHaveLength(2))
+    const auxiliary = fixture.windows[1]
+    const preventDefault = vi.fn()
+    auxiliary.emit('page-title-updated', { preventDefault }, 'DeepSeek Harness')
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(auxiliary.setTitle).not.toHaveBeenCalled()
+  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) }
 })
 
 it('repairs a crashed renderer and fences old document reports while preserving its Host', async () => {

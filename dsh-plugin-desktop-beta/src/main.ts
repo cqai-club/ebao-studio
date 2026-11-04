@@ -1,7 +1,7 @@
 import { isEbaoExternalDestination } from './ebao-runtime-bridge.ts'
 import { PublisherSupervisor } from '../../dsh-desktop-shared/src/publisher-supervisor.ts'
 import { isPublisherWorkerMethod } from '../../dsh-desktop-shared/src/publisher-runtime.ts'
-import { DESKTOP_PROTOCOL_SCHEME } from './product-identity.ts'
+import { DESKTOP_PRODUCT_NAME, DESKTOP_PROTOCOL_SCHEME } from './product-identity.ts'
 /** Official Desktop transport with a Host-independent native shell. */
 import { installDesktopShortcuts } from './keyboard.ts'
 import { spawn } from 'node:child_process'
@@ -426,6 +426,14 @@ function createWindow(preload: string, primary = false): BrowserWindow {
     // `webviewTag` only on the application document: every attachment is still refused unless
     // `DesktopBrowserGuests` issued the lease, and the guest itself never gets the tag.
     webPreferences: { preload: join(root, 'lib', preload), contextIsolation: true, sandbox: true, nodeIntegration: false, webviewTag: primary },
+  })
+  if (primary) window.on('page-title-updated', (event, title) => {
+    const suffix = ' — DeepSeek Harness'
+    const ownedTitle = title === 'DeepSeek Harness' ? DESKTOP_PRODUCT_NAME
+      : title.endsWith(suffix) ? `${title.slice(0, -suffix.length)} — ${DESKTOP_PRODUCT_NAME}` : undefined
+    if (ownedTitle === undefined) return
+    event.preventDefault()
+    window.setTitle(ownedTitle)
   })
   let intervalStart = Date.now()
   let count = 0
