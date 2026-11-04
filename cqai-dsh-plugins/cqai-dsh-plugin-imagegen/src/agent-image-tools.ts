@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
+import type { ToolRegistrationOptions, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 import type { AttachmentStore, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -382,7 +382,8 @@ function presentImageResult(_args: unknown, result: ToolResult): ToolResultView 
 }
 
 /** Register image tools in the calling scope and return their disposer. */
-export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRuntime, resolve: () => AgentImageToolConfig): () => void {
+export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRuntime, resolve: () => AgentImageToolConfig,
+  options: ToolRegistrationOptions = {}): () => void {
   const attachmentRefs = new Map<string, Promise<AgentImageRef[]>>()
   const ensureConfigured = (): void => { ensureAgentImageConfigured(resolve()) }
   const materializeTaskImages = (task: GenerationTask): Promise<AgentImageRef[]> => {
@@ -434,7 +435,7 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
           providers: config.channels.map(channel => publicImageProvider(channel, cqai)),
         }
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'generate_image',
       description: 'Generate images using the selected provider and model. Waits for completion by default; returns image references with results displayed beside this call.',
@@ -472,7 +473,7 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
         const task = runtime.queue.submit(request)
         return taskResult(args.wait_for_completion === false ? task : await waitForTask(task.id, exec.signal))
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'edit_image',
       description: 'Edit an existing image from its complete attachment reference. Waits for completion by default; returns new image references with results beside this call.',
@@ -516,7 +517,7 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
         const task = runtime.queue.submit(request)
         return taskResult(args.wait_for_completion === false ? task : await waitForTask(task.id, exec.signal))
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'get_image_generation_task',
       description: 'Read an image task status and completed image references for recovery or explicit status checks.',
@@ -531,7 +532,7 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
         ensureConfigured()
         return taskResult(findTask(args.task_id))
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'cancel_image_generation_task',
       description: 'Cancel a queued or running image generation task.',
@@ -548,7 +549,7 @@ export function registerAgentImageTools(ctx: Context, runtime: ImageGenerationRu
         if (task === undefined) throw new ImageGenError(`Image generation task ${args.task_id} was not found.`, 'task-not-found')
         return taskResult(task)
       },
-    })),
+    }), options),
   ]
   return () => {
     for (const dispose of disposers) dispose()

@@ -1,37 +1,32 @@
-; Check both app filenames before launching the quit handoff. This preserves
+; Check the exact app process before launching the quit handoff. This preserves
 ; the #469 fix: unrelated helpers under $INSTDIR must never block an upgrade.
 Var pid
-Var dshInstallerExecutable
 
 !macro customCheckAppRunning
+  ${if} ${isUpdated}
+  ${andIfNot} ${Silent}
+    ; Ensure the installer progress window is visible and focused even when an
+    ; older updater (<= 2.0.18-next) spawned the installer with windowsHide: true.
+    ShowWindow $HWNDPARENT ${SW_SHOW}
+    BringToFront
+  ${endIf}
   !insertmacro IS_POWERSHELL_AVAILABLE
+  !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+  ${if} $R0 != 0
+    Goto dsh_installer_app_stopped
+  ${endIf}
 
-  dsh_installer_detect_app:
-    !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
-    ${if} $R0 == 0
-      StrCpy $dshInstallerExecutable "${APP_EXECUTABLE_FILENAME}"
-      Goto dsh_installer_request_quit
-    ${endIf}
-    ; Renamed releases retain the AppId and install location of older releases.
-    !insertmacro FIND_PROCESS "易宝工坊 Beta.exe" $R0
-    ${if} $R0 != 0
-      Goto dsh_installer_app_stopped
-    ${endIf}
-    StrCpy $dshInstallerExecutable "易宝工坊 Beta.exe"
-
-  dsh_installer_request_quit:
-    IfFileExists "$INSTDIR\$dshInstallerExecutable" 0 dsh_installer_scoped_fallback
-      ; Newer versions receive this through Electron's single-instance channel.
-      ; 2.0.2 ignores it, so the scoped builder fallback remains necessary for
-      ; the first upgrade to a version that supports orderly shutdown.
-      ExecWait '"$INSTDIR\$dshInstallerExecutable" --dsh-installer-quit'
-      StrCpy $R1 0
+  IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 dsh_installer_scoped_fallback
+    ; Newer versions receive this through Electron's single-instance channel.
+    ; 2.0.2 ignores it, so the scoped builder fallback remains necessary for
+    ; the first upgrade to a version that supports orderly shutdown.
+    ExecWait '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --dsh-installer-quit'
+    StrCpy $R1 0
 
   dsh_installer_wait_for_exit:
-    !insertmacro FIND_PROCESS "$dshInstallerExecutable" $R0
+    !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
     ${if} $R0 != 0
-      ; Check the other filename too if both generations were running.
-      Goto dsh_installer_detect_app
+      Goto dsh_installer_app_stopped
     ${endIf}
     IntOp $R1 $R1 + 1
     ; Slow disks, antivirus hooks, and a large physical runtime can keep the
@@ -43,8 +38,8 @@ Var dshInstallerExecutable
     ${endIf}
 
   dsh_installer_scoped_fallback:
-    ; The patched builder macros match only the selected app filename, never
-    ; every executable below $INSTDIR. They also handle pre-handoff releases.
+    ; The patched builder macros match e宝工坊 Beta.exe, not every executable
+    ; below $INSTDIR. They handle pre-handoff releases and stubborn processes.
     MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK dsh_installer_stop_app
     Quit
 
@@ -53,14 +48,14 @@ Var dshInstallerExecutable
     ; KILL_PROCESS's tasklist fallback excludes $pid. The installer never has
     ; the application executable name, so zero is a safe sentinel here.
     StrCpy $pid 0
-    !insertmacro KILL_PROCESS "$dshInstallerExecutable" 0
+    !insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}" 0
     Sleep 500
     StrCpy $R1 0
 
   dsh_installer_wait_for_fallback:
-    !insertmacro FIND_PROCESS "$dshInstallerExecutable" $R0
+    !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
     ${if} $R0 != 0
-      Goto dsh_installer_detect_app
+      Goto dsh_installer_app_stopped
     ${endIf}
     IntOp $R1 $R1 + 1
     ${if} $R1 > 1
@@ -68,9 +63,50 @@ Var dshInstallerExecutable
       Quit
     ${endIf}
     Sleep 1000
-    !insertmacro KILL_PROCESS "$dshInstallerExecutable" 1
+    !insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}" 1
     Sleep 500
     Goto dsh_installer_wait_for_fallback
 
   dsh_installer_app_stopped:
+!macroend
+
+; Override /S when an older updater (<= 2.0.18-next) launches an in-app update
+; with ['/S', '--updated', '--force-run'], so the new installer still displays
+; the visible extraction progress window.
+!macro customInit
+  !ifndef BUILD_UNINSTALLER
+    ${if} ${isUpdated}
+    ${andIf} ${isForceRun}
+      SetSilent normal
+    ${endIf}
+  !endif
+!macroend
+
+; Skip the install-mode wizard page during in-app updates while preserving
+; the existing per-machine or per-user installation scope, so the installer
+; opens directly to the visible extraction progress window.
+!macro customInstallMode
+  !ifndef BUILD_UNINSTALLER
+    ${if} ${isUpdated}
+      ${if} $hasPerMachineInstallation == "1"
+      ${andIf} $hasPerUserInstallation == "0"
+        StrCpy $isForceMachineInstall "1"
+      ${else}
+        StrCpy $isForceCurrentInstall "1"
+      ${endIf}
+    ${endIf}
+  !endif
+!macroend
+
+; When launched visibly by an in-app update (--updated --force-run), relaunch
+; the updated application and close the installer as soon as extraction finishes
+; without stopping on the Finish wizard page.
+!macro customInstall
+  ${if} ${isUpdated}
+  ${andIf} ${isForceRun}
+  ${andIfNot} ${Silent}
+    HideWindow
+    ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "--updated"
+    !insertmacro quitSuccess
+  ${endIf}
 !macroend

@@ -4,7 +4,7 @@ This repository owns the desktop product around an unmodified DeepSeek Harness c
 
 ## Prerequisites and setup
 
-- Use Node.js `^22.19.0` or `>=24.0.0` and the root Yarn `4.18.0` release through Corepack.
+- Use Node.js `>=24.9.0` and the root Yarn `4.18.0` release through Corepack. The current official Harness runtime requires Node 24.
 - Initialize the pinned upstream checkout with `git submodule update --init --recursive`.
 - Install root dependencies with `corepack yarn install --immutable`.
 - Yarn lifecycle scripts are disabled; Desktop builds explicitly restore the vendored Agents Anywhere `uv` executable bit before verification or packaging.
@@ -23,8 +23,9 @@ This repository owns the desktop product around an unmodified DeepSeek Harness c
 - Run upstream operations through the root scripts, such as `corepack yarn upstream:build`.
 
 - `deepseek-harness/` is a pinned upstream Git submodule. Never edit files inside it from a desktop feature branch.
-- `dsh-plugin-desktop/` owns the Cordis Host and Client faces, Electron bootstrap, packaging, and release tests.
-- `dsh-desktop-next/` owns the separate experimental Desktop shell, Profiles and recovery, and adapters for the existing AA bridge and Community Market. Next-only changes do not belong in the Stable/Beta variant mirror. Keep its upstream reference and published runtime versions aligned; do not fork the official main frontend.
+- `dsh-plugin-desktop/` and `dsh-plugin-desktop-beta/` use the modern isolated Host shell, official Web frontend, Profiles and recovery. Preserve their source mirror and product identities.
+- `dsh-desktop-shared/` owns private shared native controls, recovery UI and utility source retained from the legacy shell. It must not declare a loadable application or DSH entrypoint. Its build-time dependencies follow the same official runtime family as the application channels.
+- `dsh-desktop-next/` owns the separate experimental Desktop channel and adapters for the existing AA bridge and Community Market. Next-only changes do not belong in the Stable/Beta variant mirror. Keep its upstream reference and published runtime versions aligned; do not fork the official main frontend.
 - `dsh-community-fabric/` owns the community interoperability RFC. Until schemas and a reviewed reference adapter exist, it remains a private documentation scaffold and must not declare loadable DSH or package entry points.
 - `dsh-community-market/` owns the loadable community-market runtime and its source, install, and network boundaries.
 - The outer repository and all owned packages use the root Yarn release with `nodeLinker: node-modules`.

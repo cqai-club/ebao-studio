@@ -39,7 +39,8 @@ function sendJson(res: ServerResponse, status: number, value: unknown): void {
   res.end(JSON.stringify(value))
 }
 
-function localRequest(req: IncomingMessage, port: number, mutation: boolean): boolean {
+function localRequest(req: IncomingMessage, port: number | undefined, mutation: boolean): boolean {
+  if (port === undefined || !Number.isInteger(port) || port < 1) return false
   const remote = req.socket.remoteAddress ?? ''
   if (remote !== '::1' && !remote.startsWith('127.') && !remote.startsWith('::ffff:127.')) return false
   const host = req.headers.host
@@ -80,10 +81,9 @@ function exactFields(input: Record<string, unknown>, fields: readonly string[]):
 
 /** A narrow same-origin bridge for Desktop-shipped feature bundles. */
 export function registerPluginManagementRoutes(ctx: Context, plugins: DesktopPlugins): () => void {
-  const port = ctx.webServer.port
   const previews = new Map<string, { action: 'enable' | 'disable'; bundleId: string; packageName: string; expiresAt: number }>()
   const disposeList = ctx.webServer.register({ kind: 'exact', path: `${PREFIX}/bundles`, handler: (req, res) => {
-    if (req.method !== 'GET' || !localRequest(req, port, false)) {
+    if (req.method !== 'GET' || !localRequest(req, ctx.webServer.port, false)) {
       sendJson(res, 405, { error: 'local GET required' })
       return
     }
@@ -96,7 +96,7 @@ export function registerPluginManagementRoutes(ctx: Context, plugins: DesktopPlu
     }
   } })
   const disposePreview = ctx.webServer.register({ kind: 'exact', path: `${PREFIX}/preview`, handler: async (req, res) => {
-    if (req.method !== 'POST' || !localRequest(req, port, true)) {
+    if (req.method !== 'POST' || !localRequest(req, ctx.webServer.port, true)) {
       sendJson(res, 405, { error: 'local POST required' })
       return
     }
@@ -126,7 +126,7 @@ export function registerPluginManagementRoutes(ctx: Context, plugins: DesktopPlu
     }
   } })
   const disposeExecute = ctx.webServer.register({ kind: 'exact', path: `${PREFIX}/execute`, handler: async (req, res) => {
-    if (req.method !== 'POST' || !localRequest(req, port, true)) {
+    if (req.method !== 'POST' || !localRequest(req, ctx.webServer.port, true)) {
       sendJson(res, 405, { error: 'local POST required' })
       return
     }

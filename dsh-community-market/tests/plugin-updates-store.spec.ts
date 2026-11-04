@@ -10,7 +10,7 @@ const updates: MarketPluginUpdate[] = [
 const response = (items = updates): MarketUpdatesResponse => ({ updates: items, checkedAt: '2026-10-14T00:00:00.000Z' })
 const previews: MarketOperationPreviewResponse[] = updates.map(update => ({
   action: 'update', profileName: 'web', packageName: update.packageName, displayName: update.packageName,
-  currentVersion: update.currentVersion, version: update.latestVersion!, expiresAt: '2026-10-14T00:05:00.000Z', previewId: update.bundleId,
+  fromVersion: update.currentVersion, version: update.latestVersion!, expiresAt: '2026-10-14T00:05:00.000Z', previewId: update.bundleId,
 }))
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
@@ -76,17 +76,17 @@ describe('shared plugin update checks', () => {
     store.dispose()
   })
 
-  it('preserves completed updates and their restart grants when a batch stops at the first failure', async () => {
+  it('preserves completed updates and their application states when a batch stops at the first failure', async () => {
     const read = vi.fn().mockResolvedValue(response())
     const execute = vi.fn()
-      .mockResolvedValueOnce({ action: 'update', packageName: 'dsh-plugin-one', version: '2.0.0', restartToken: 'restart-one' })
+      .mockResolvedValueOnce({ action: 'update', packageName: 'dsh-plugin-one', version: '2.0.0', outcome: 'updated', fromVersion: '1.0.0', application: 'applied' })
       .mockRejectedValueOnce(new Error('installation failed'))
     const store = createPluginUpdatesStore({ read, execute })
     await store.check()
     read.mockResolvedValue(response([{ ...updates[0]!, currentVersion: '2.0.0', updateAvailable: false }, ...updates.slice(1)]))
     await store.executeReviewed(previews)
     expect(execute.mock.calls.map(call => call[0])).toEqual(['one', 'two'])
-    expect(store.getSnapshot().completed).toEqual([expect.objectContaining({ packageName: 'dsh-plugin-one', version: '2.0.0', restartToken: 'restart-one' })])
+    expect(store.getSnapshot().completed).toEqual([expect.objectContaining({ packageName: 'dsh-plugin-one', version: '2.0.0', application: 'applied' })])
     expect(store.getSnapshot().operationFailure).toEqual({ packageName: 'dsh-plugin-two', message: 'installation failed', notStarted: ['dsh-plugin-three'] })
     expect(store.getSnapshot().operationPending).toBe(false)
     expect(read.mock.calls.at(-1)?.[1]).toBe(true)
@@ -104,9 +104,9 @@ describe('shared plugin update checks', () => {
 
   it('shares one in-flight check and prevents duplicate batch execution', async () => {
     let finishRead!: (value: MarketUpdatesResponse) => void
-    let finishExecute!: (value: { action: 'update'; packageName: string; version: string; restartToken: string }) => void
+    let finishExecute!: (value: { action: 'update'; packageName: string; version: string; outcome: 'updated'; fromVersion: string; application: 'applied' }) => void
     const read = vi.fn(() => new Promise<MarketUpdatesResponse>(resolve => { finishRead = resolve }))
-    const execute = vi.fn(() => new Promise<{ action: 'update'; packageName: string; version: string; restartToken: string }>(resolve => { finishExecute = resolve }))
+    const execute = vi.fn(() => new Promise<{ action: 'update'; packageName: string; version: string; outcome: 'updated'; fromVersion: string; application: 'applied' }>(resolve => { finishExecute = resolve }))
     const store = createPluginUpdatesStore({ read, execute })
     const first = store.check()
     const second = store.check()
@@ -118,7 +118,7 @@ describe('shared plugin update checks', () => {
     const running = store.executeReviewed([previews[0]!])
     await store.executeReviewed([previews[0]!])
     expect(execute).toHaveBeenCalledTimes(1)
-    finishExecute({ action: 'update', packageName: 'dsh-plugin-one', version: '2.0.0', restartToken: 'restart' })
+    finishExecute({ action: 'update', packageName: 'dsh-plugin-one', version: '2.0.0', outcome: 'updated', fromVersion: '1.0.0', application: 'applied' })
     await running
     store.dispose()
   })

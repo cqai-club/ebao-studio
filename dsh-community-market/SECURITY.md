@@ -11,18 +11,18 @@ Installed plugins and their dependency trees run locally with the user's permiss
 ## Package-operation boundary
 
 - Installation, update, and uninstallation start only after explicit user confirmation. Scheduled checks and update notices never authorize a package mutation.
-- The confirmation shows the Host-resolved npm package, npm `latest` stable version, and active Profile. Update confirmations also show the verified installed version.
+- The confirmation shows the Host-resolved npm package, exact target version, and active Profile. Update confirmations also show the verified installed version and registry selected by the official plugin manager.
 - Provider commands, scripts, HTML, headers, credentials, and package-manager argv are never accepted from catalog data.
 - Automatic installation requires one valid npm package identity and a valid `dsh.bundle.patch` declaration in the official npm `latest` manifest.
 - Source-provided versions and verification claims are not installation authority.
-- Market package changes use only `desktopPnpm.run(argv)` and run one at a time.
-- The Renderer submits source/item identities for install or an opaque Desktop `bundleId` for update and uninstall; it never chooses an arbitrary package name at execution time.
-- Installed inventory comes from current Profile direct dependencies, so packages installed by other markets or the DSH CLI are visible. Removable direct dependencies offer uninstall, and eligible mutable direct npm bundles offer update. Market exposes no enable or disable operation.
-- Update targets come from Host-owned inventory and actual installed versions. Product-owned core bundles and local or Git dependencies are skipped; unknown installed versions produce an error and cannot be updated. npm stable `latest` and semver comparison exclude downgrades and prereleases.
+- Market package changes use the official plugin manager and run one at a time.
+- The Renderer submits source/item identities for install or a package name from the official inventory for update and uninstall. The Host rechecks eligibility and determines the exact target; execution accepts only a one-shot preview identity.
+- Installed inventory comes from the official manager, so community packages installed by other markets or the DSH CLI are visible. Its eligibility flags control enable, disable, update and uninstall actions; official and shipped product bundles remain on the official Plugins page.
+- Update targets come from the manager's installed inventory and version listing. Product-owned core bundles and local or Git dependencies are skipped. The selected version must declare a bundle, accept the running DSH version, and be neither deprecated nor a prerelease.
 - Update previews bind the active Profile, package, and exact old and new versions to a short-lived one-shot token. The Host rechecks these facts before execution and retains bundle references and configuration.
-- Market creates no install receipt, install-specific snapshot, retry, cleanup, or rollback. An update failure does trigger an attempt to reinstall the previous exact version. If that attempt fails, the error directs the user to Desktop's unified three-slot healthy-start checkpoints; checkpoint restoration remains explicit.
+- Market creates no install receipt, install-specific snapshot, retry, cleanup, or rollback. The manager restores its Profile snapshot when needed and attempts to reinstall the previous exact version if the update target fails. The result distinguishes restoration from a broken installation; Desktop checkpoint restoration remains explicit.
 - Update all runs individual confirmed updates, not an atomic transaction. It stops at the first failure, retains successful items, and identifies the failed and unattempted items for another review before retry.
-- A successful mutation may issue a short-lived one-shot restart grant. Restart remains an explicit user action.
+- Successful changes apply live when supported. A manager result of `restart-required` displays a restart instruction; the Market does not restart Desktop.
 - **Open DSH Terminal** carries an empty body and only opens Desktop's terminal; it never pastes or executes a displayed command.
 
 These rules constrain authority and identity. They do not make a third-party plugin safe.

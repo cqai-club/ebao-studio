@@ -6,15 +6,15 @@ import { PluginUpdatesPanel } from '../src/client/PluginUpdatesPanel.js'
 import { PluginUpdatesSummary, type PluginUpdatesSummaryProps } from '../src/client/PluginUpdatesSummary.js'
 import { MarketUpdateNotice, type MarketUpdateNoticeProps } from '../src/client/MarketUpdateNotice.js'
 import { MarketSurface, type MarketSettingsTabProps } from '../src/client/MarketSettingsTab.js'
-import { previewMarketOperation, readMarketState, requestMarketRestart } from '../src/client/api.js'
-import { createPluginUpdatesStore, UPDATE_RESTART_TOKEN_TTL_MS } from '../src/client/plugin-updates-store.js'
+import { previewMarketOperation, readMarketState } from '../src/client/api.js'
+import { createPluginUpdatesStore } from '../src/client/plugin-updates-store.js'
 import { en, type MarketLocaleKey } from '../src/client/locales.js'
 
 vi.mock('../src/client/api.js', async importOriginal => ({
   ...await importOriginal<typeof import('../src/client/api.js')>(),
   previewMarketOperation: vi.fn(),
   readMarketState: vi.fn(),
-  requestMarketRestart: vi.fn(),
+
 }))
 
 afterEach(() => { cleanup(); vi.resetAllMocks(); vi.useRealTimers() })
@@ -28,30 +28,28 @@ const updates: MarketPluginUpdate[] = [
 const response = (items = updates): MarketUpdatesResponse => ({ updates: items, checkedAt: '2026-10-14T00:00:00.000Z' })
 function preview(update: MarketPluginUpdate): MarketOperationPreviewResponse {
   return {
-    action: 'update', packageName: update.packageName, displayName: update.packageName, currentVersion: update.currentVersion,
+    action: 'update', packageName: update.packageName, displayName: update.packageName, fromVersion: update.currentVersion,
     version: update.latestVersion!, profileName: 'web', previewId: update.bundleId, expiresAt: '2026-10-14T00:05:00.000Z',
   }
 }
 
 describe('plugin update UI', () => {
-  it('reviews exact versions before a single update, then offers the returned restart grant', async () => {
+  it('reviews exact versions before a single update, then reports live application', async () => {
     const read = vi.fn().mockResolvedValue(response([updates[0]!]))
     const execute = vi.fn(async () => {
       read.mockResolvedValue(response([{ ...updates[0]!, currentVersion: '2.0.0', updateAvailable: false }]))
-      return { action: 'update' as const, packageName: 'dsh-plugin-one', version: '2.0.0', restartToken: 'restart-one' }
+      return { action: 'update' as const, packageName: 'dsh-plugin-one', version: '2.0.0', outcome: 'updated' as const, fromVersion: '1.0.0', application: 'applied' as const }
     })
     const store = createPluginUpdatesStore({ read, execute })
     vi.mocked(previewMarketOperation).mockResolvedValue(preview(updates[0]!))
-    vi.mocked(requestMarketRestart).mockResolvedValue({ ok: true })
-    render(<PluginUpdatesPanel store={store} t={t} canRestart />)
+    render(<PluginUpdatesPanel store={store} t={t} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Update: dsh-plugin-one' }))
     const dialog = await screen.findByRole('dialog', { name: en.confirmUpdateTitle })
     expect(within(dialog).getByText('1.0.0 → 2.0.0')).toBeTruthy()
     expect(execute).not.toHaveBeenCalled()
     fireEvent.click(within(dialog).getByRole('button', { name: en.confirmUpdate }))
     await waitFor(() => expect(store.getSnapshot().completed).toHaveLength(1))
-    fireEvent.click(await screen.findByRole('button', { name: en.restartNow }))
-    await waitFor(() => expect(requestMarketRestart).toHaveBeenCalledWith('restart-one', expect.any(AbortSignal)))
+    expect(screen.queryByText(en.restartHint)).toBeNull()
     store.dispose()
   })
 
@@ -60,14 +58,14 @@ describe('plugin update UI', () => {
     const execute = vi.fn()
       .mockImplementationOnce(async () => {
         read.mockResolvedValue(response([{ ...updates[0]!, currentVersion: '2.0.0', updateAvailable: false }, ...updates.slice(1)]))
-        return { action: 'update', packageName: 'dsh-plugin-one', version: '2.0.0', restartToken: 'restart-one' }
+        return { action: 'update', packageName: 'dsh-plugin-one', version: '2.0.0', outcome: 'updated' as const, fromVersion: '1.0.0', application: 'applied' as const }
       }).mockRejectedValueOnce(new Error('installation failed'))
     const store = createPluginUpdatesStore({ read, execute })
     vi.mocked(previewMarketOperation).mockImplementation(async (request: MarketOperationPreviewRequest) => {
       if (request.action !== 'update') throw new Error('unexpected request')
-      return preview(updates.find(update => update.bundleId === request.bundleId)!)
+      return preview(updates.find(update => update.packageName === request.packageName)!)
     })
-    const panel = render(<PluginUpdatesPanel store={store} t={t} canRestart />)
+    const panel = render(<PluginUpdatesPanel store={store} t={t} />)
     fireEvent.click(await screen.findByRole('button', { name: en.updateAll }))
     const dialog = await screen.findByRole('dialog', { name: en.confirmUpdateTitle })
     expect(within(dialog).getAllByRole('listitem')).toHaveLength(3)
@@ -77,14 +75,13 @@ describe('plugin update UI', () => {
     expect(execute.mock.calls.map(call => call[0])).toEqual(['one', 'two'])
     expect(screen.getByText('Not updated: dsh-plugin-three')).toBeTruthy()
     expect(screen.getByText('dsh-plugin-one · 2.0.0')).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.restartNow })).toBeTruthy()
     // Navigating away and returning preserves successful updates and retry controls.
     panel.unmount()
-    render(<PluginUpdatesPanel store={store} t={t} canRestart />)
+    render(<PluginUpdatesPanel store={store} t={t} />)
     expect(screen.getByText('dsh-plugin-one · 2.0.0')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Update: dsh-plugin-three' }))
     expect(await screen.findByRole('dialog', { name: en.confirmUpdateTitle })).toBeTruthy()
-    expect(previewMarketOperation).toHaveBeenLastCalledWith({ action: 'update', bundleId: 'three' }, expect.any(AbortSignal))
+    expect(previewMarketOperation).toHaveBeenLastCalledWith({ action: 'update', packageName: 'dsh-plugin-three' }, expect.any(AbortSignal))
     store.dispose()
   })
 
@@ -92,7 +89,7 @@ describe('plugin update UI', () => {
     const execute = vi.fn()
     const store = createPluginUpdatesStore({ read: vi.fn().mockResolvedValue(response()), execute })
     vi.mocked(previewMarketOperation).mockRejectedValue(new Error('offline'))
-    render(<PluginUpdatesPanel store={store} t={t} canRestart={false} />)
+    render(<PluginUpdatesPanel store={store} t={t} />)
     fireEvent.click(await screen.findByRole('button', { name: en.updateAll }))
     expect(await screen.findByText(en.updatePreviewFailed)).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -103,7 +100,7 @@ describe('plugin update UI', () => {
   it('keeps failed checks distinct from up-to-date results and allows a forced retry', async () => {
     const read = vi.fn().mockResolvedValue(response([{ ...updates[0]!, updateAvailable: false, error: 'offline' }]))
     const store = createPluginUpdatesStore({ read })
-    render(<PluginUpdatesPanel store={store} t={t} canRestart={false} />)
+    render(<PluginUpdatesPanel store={store} t={t} />)
     await screen.findAllByText(en.updateCheckItemFailed)
     expect(screen.queryByText(en.pluginsUpToDate)).toBeNull()
     expect(screen.queryByText(en.pluginUpToDate)).toBeNull()
@@ -123,7 +120,7 @@ describe('plugin update UI', () => {
     fireEvent.click(screen.getByRole('button', { name: en.viewUpdates }))
     expect(open).toHaveBeenCalledTimes(1)
     expect(store.getSnapshot().requestedUpdatesView).toBe(true)
-    vi.mocked(readMarketState).mockResolvedValue({ sources: [], builtIns: [], desktopActions: { openTerminal: true, requestRestart: true } })
+    vi.mocked(readMarketState).mockResolvedValue({ sources: [], builtIns: [], desktopActions: { openTerminal: true } })
     render(<MarketSurface t={t} readLocale={() => 'en'} onOpenInstalled={nativeInstalled} updatesStore={store} />)
     expect(await screen.findByRole('button', { name: 'Update: dsh-plugin-one' })).toBeTruthy()
     expect(nativeInstalled).not.toHaveBeenCalled()
@@ -149,18 +146,13 @@ describe('plugin update UI', () => {
     store.dispose()
   })
 
-  it('replaces expired quick-restart controls with a menu restart instruction', async () => {
+  it('reports a restart requirement only when the official manager requests it', async () => {
     const read = vi.fn().mockResolvedValue(response([{ ...updates[0]!, currentVersion: '2.0.0', updateAvailable: false }]))
-    const execute = vi.fn().mockResolvedValue({ action: 'update', packageName: 'dsh-plugin-one', version: '2.0.0', restartToken: 'restart-one' })
+    const execute = vi.fn().mockResolvedValue({ action: 'update', packageName: 'dsh-plugin-one', version: '2.0.0', fromVersion: '1.0.0', outcome: 'updated', application: 'restart-required' })
     const store = createPluginUpdatesStore({ read, execute })
-    vi.useFakeTimers()
     await store.executeReviewed([preview(updates[0]!)])
-    render(<PluginUpdatesPanel store={store} t={t} canRestart />)
-    expect(screen.getByRole('button', { name: en.restartNow })).toBeTruthy()
-    await act(async () => { await vi.advanceTimersByTimeAsync(UPDATE_RESTART_TOKEN_TTL_MS) })
-    expect(screen.queryByRole('button', { name: en.restartNow })).toBeNull()
-    expect(screen.getByText(en.updateRestartExpired)).toBeTruthy()
-    expect(requestMarketRestart).not.toHaveBeenCalled()
+    render(<PluginUpdatesPanel store={store} t={t} />)
+    expect(screen.getByText(en.restartHint)).toBeTruthy()
     store.dispose()
   })
 })

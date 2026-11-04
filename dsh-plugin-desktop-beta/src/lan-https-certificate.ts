@@ -19,8 +19,7 @@ const PRIVATE_DIRECTORY_MODE = 0o700
 const PRIVATE_FILE_MODE = 0o600
 const MAX_STATE_BYTES = 128 * 1024
 const MAX_ADDRESSES = 64
-// Keep the existing certificate identity valid on devices that already trust it.
-const CA_COMMON_NAME = '易宝工坊 Local CA'
+const CA_COMMON_NAME = 'DeepSeek Harness Desktop Local CA'
 const CA_VALIDITY_DAYS = 3650
 const LEAF_VALIDITY_DAYS = 30
 const RSA_KEY_SIZE = 2048
@@ -49,6 +48,12 @@ export class DesktopLanHttpsCertificateError extends Error {
     this.name = 'DesktopLanHttpsCertificateError'
     this.code = code
   }
+}
+
+/** Log only the certificate boundary's controlled description, never a raw OS error or key material. */
+export function lanHttpsCertificateDiagnostic(error: unknown): string {
+  if (!(error instanceof DesktopLanHttpsCertificateError)) return 'LAN HTTPS certificate setup failed (unexpected error)'
+  return `LAN HTTPS certificate setup failed (${error.code}): ${error.message}`
 }
 
 /** OS-backed protection supplied by the Electron boundary. */
@@ -86,7 +91,7 @@ function certificateError(
 ): DesktopLanHttpsCertificateError {
   return new DesktopLanHttpsCertificateError(
     code,
-    `dsh-plugin-desktop: ${message}`,
+    `dsh-plugin-desktop-beta: ${message}`,
     cause === undefined ? {} : { cause },
   )
 }
@@ -184,7 +189,7 @@ async function requireAvailableProtector(
     }
   } catch (cause) {
     if (cause instanceof DesktopLanHttpsCertificateError) throw cause
-    throw certificateError('certificate-unavailable', 'LAN HTTPS private-key protection is unavailable.', cause)
+    throw certificateError('certificate-unavailable', 'LAN HTTPS private-key protection check failed.', cause)
   }
   return protector
 }

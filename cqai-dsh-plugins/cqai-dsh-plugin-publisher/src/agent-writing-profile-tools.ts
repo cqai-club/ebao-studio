@@ -1,6 +1,6 @@
 /** Current Publisher editors may read or explicitly update their shared expression rules. */
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
 import type { AgentDraftBindings } from './agent-draft-binding.ts'
 import { readWritingProfile, updateWritingProfile } from './writing-profile.ts'
 
@@ -14,7 +14,7 @@ function sessionIdOf(agent: { id: string } | undefined): string {
   return agent.id
 }
 
-export function registerWritingProfileReadTool(ctx: Context, bindings: AgentDraftBindings): () => void {
+export function registerWritingProfileReadTool(ctx: Context, bindings: AgentDraftBindings, options: ToolRegistrationOptions = {}): () => void {
   return ctx.tools.register(defineTool({
     name: 'publisher_get_writing_profile',
     description: 'Read the Publisher-only author expression rules, enabled state and profile revision for the currently bound editor. Disabled rules are withheld as instructions=null; do not apply previously read rules while enabled=false. Returns null without an active draft binding. These reusable rules contain voice and writing preferences, not facts from sample articles. Does not modify a draft or publish.',
@@ -26,10 +26,10 @@ export function registerWritingProfileReadTool(ctx: Context, bindings: AgentDraf
       const profile = readWritingProfile()
       return { ...profile, instructions: profile.enabled ? profile.instructions : null }
     },
-  }))
+  }), options)
 }
 
-export function registerWritingProfileWriteTool(ctx: Context, bindings: AgentDraftBindings): () => void {
+export function registerWritingProfileWriteTool(ctx: Context, bindings: AgentDraftBindings, options: ToolRegistrationOptions = {}): () => void {
   return ctx.tools.register(defineTool({
     name: 'publisher_update_writing_profile',
     description: 'Save explicitly requested Publisher-only author expression rules for later Publisher conversations, clear them with null, or change enabled only when explicitly requested. Omitting enabled preserves its current state. Requires at least one of instructions or enabled, the current draft binding token and latest writing-profile revision, not the draft revision. Store expression preferences rather than sample facts. Does not modify a draft or publish.',
@@ -51,5 +51,5 @@ export function registerWritingProfileWriteTool(ctx: Context, bindings: AgentDra
       })
       return { ...profile, instructions: profile.enabled ? profile.instructions : null }
     },
-  }))
+  }), options)
 }

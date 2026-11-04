@@ -9,7 +9,7 @@ import {
   PublisherSupervisor,
   PublisherWorkerError,
   resolvePublisherWorker,
-} from '../src/publisher-supervisor.ts'
+} from '../../dsh-desktop-shared/src/publisher-supervisor.ts'
 
 interface Frame { id: string; method: string; params: unknown }
 

@@ -3,7 +3,7 @@ import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, type TurnEndReason, type UserMessage } from '@deepseek-ai/dsh-session'
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,7 +15,7 @@ const cleanup: (() => Promise<void> | void)[] = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 
 async function fixture(maintenance = false) {
-  const home = mkdtempSync(join(tmpdir(), 'publisher-delegation-'))
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'publisher-delegation-')))
   const env = { DSH_HOME: home }
   const ctx = new Context()
   await ctx.plugin(SessionStore)

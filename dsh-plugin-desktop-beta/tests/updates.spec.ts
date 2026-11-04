@@ -1,849 +1,222 @@
-import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
-import type {
-  ConnectionRequestRejection,
-  ConnectionTrustRequest,
-} from '@deepseek-ai/dsh-client-connection'
-import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import type {
-  DesktopNotification,
-  DesktopRuntime,
-  DesktopTrayItem,
-} from '../src/runtime.ts'
-import {
-  DESKTOP_RELEASE_CHANNEL_HEADER,
-  type UpdateCheckResult,
-} from '../src/update-checker.ts'
-import { DESKTOP_UPDATE_CHECK_PATH } from '../src/desktop-settings-contract.ts'
-import { DESKTOP_UPDATE_STATUS_PATH, type DesktopUpdateStatus } from '../src/desktop-update-status.ts'
-import { apply, Config, inject, type Config as UpdateConfig } from '../src/updates.ts'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { afterEach, expect, it, vi } from 'vitest'
+import { NextUpdateSettings } from '../src/client/updates.tsx'
+import { DEFAULT_PREFERENCES, type DesktopState } from '../src/desktop-contract.ts'
+import { NextUpdates, type NextUpdateOptions } from '../src/updates.ts'
+import { serveMacUpdate } from '../src/mac-update-feed.ts'
+import { releaseNotesUrl, updateAction, updateLabel, type NextUpdateState } from '../src/update-state.ts'
+import type { UpdateRequest } from '../../dsh-desktop-shared/src/update-checker.ts'
+import type { UpdateArtifactRequest } from '../../dsh-desktop-shared/src/update-download.ts'
 
-const testConfig: UpdateConfig = {
-  enabled: true,
-  initialDelayMs: 10,
-  intervalMs: 1000,
-  requestTimeoutMs: 1000,
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  Button: ({ children, ...props }: Record<string, unknown>) => createElement('button', props, children as never),
+}))
+
+const roots: string[] = []
+const owners: NextUpdates[] = []
+afterEach(async () => { for (const owner of owners.splice(0)) await owner.dispose(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); vi.useRealTimers() })
+async function fixture(overrides: Partial<NextUpdateOptions> = {}) {
+  const home = await mkdtemp(join(tmpdir(), 'next-updates-test-')); roots.push(home)
+  const artifact = Buffer.alloc(1024); artifact.write('koly', 512)
+  const request = vi.fn<UpdateRequest>(async url => url.includes('desktop-version.json')
+    ? Response.json({ version: '2.0.20-beta.2', channel: 'beta' }) : new Response(artifact, { headers: { 'content-length': '1024' } }))
+  const artifactRequest = vi.fn<UpdateArtifactRequest>(async (url, init) => ({ response: await request(url, init), finalUrl: url }))
+  const options: NextUpdateOptions = { userData: home, version: '2.0.14-beta.1', platform: 'darwin', packaged: true,
+    request, artifactRequest, prepare: vi.fn(async path => { expect(await readFile(path)).toEqual(artifact) }), install: vi.fn(async () => {}),
+    changed: vi.fn(), log: vi.fn(), ...overrides }
+  const updates = new NextUpdates(options); owners.push(updates)
+  return { updates, options, request, artifactRequest }
 }
 
-function versionResponse(version: unknown): Response {
-  return Response.json({ version })
-}
-
-interface Harness {
-  readonly statePath: string
-  readonly tray: DesktopTrayItem
-  readonly trays: readonly DesktopTrayItem[]
-  readonly notifications: DesktopNotification[]
-  readonly warnings: unknown[][]
-  readonly confirmDownload: ReturnType<typeof vi.fn>
-  readonly showManualCheckResult: ReturnType<typeof vi.fn>
-  readonly downloadAndInstall: ReturnType<typeof vi.fn>
-  readonly registerNotificationAction: ReturnType<typeof vi.fn>
-  readonly notificationActionRelease: ReturnType<typeof vi.fn>
-  clickUpdateNotification(): Promise<void>
-  readonly refresh: ReturnType<typeof vi.fn>
-  readonly registrationDispose: ReturnType<typeof vi.fn>
-  readonly requestRejection: ReturnType<typeof vi.fn<(
-    request: ConnectionTrustRequest,
-  ) => ConnectionRequestRejection>>
-  readonly route: WebRoute
-  readonly statusRoute: WebRoute
-  readonly routeDisposers: readonly ReturnType<typeof vi.fn>[]
-  dispose(): Promise<void>
-}
-
-async function createHarness(options: {
-  readonly packaged?: boolean
-  readonly canDownload?: boolean
-  readonly config?: UpdateConfig
-  readonly request?: DesktopRuntime['updates']['request']
-  readonly releaseChannel?: 'stable' | 'beta'
-  readonly currentVersion?: string
-  readonly confirmDownload?: (version: string, channel?: 'stable' | 'beta') => Promise<boolean>
-  readonly showManualCheckResult?: (result: UpdateCheckResult | null) => Promise<void>
-  readonly downloadAndInstall?: (version: string, signal: AbortSignal, channel?: 'stable' | 'beta') => Promise<void>
-  readonly notify?: (notification: DesktopNotification) => void
-  readonly locale?: DesktopRuntime['locale']
-  readonly state?: string
-} = {}): Promise<Harness> {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-updates-'))
-  const statePath = join(root, 'private', 'state.json')
-  if (options.state !== undefined) {
-    await mkdir(join(root, 'private'), { recursive: true })
-    await writeFile(statePath, options.state, { mode: 0o600 })
-  }
-  const notifications: DesktopNotification[] = []
-  const warnings: unknown[][] = []
-  const refresh = vi.fn()
-  const registrationDispose = vi.fn()
-  const confirmDownload = vi.fn(options.confirmDownload ?? (async () => false))
-  const showManualCheckResult = vi.fn(options.showManualCheckResult ?? (async () => {}))
-  const downloadAndInstall = vi.fn(options.downloadAndInstall ?? (async () => {}))
-  const notificationActionRelease = vi.fn()
-  let notificationAction: (() => void | Promise<void>) | undefined
-  const registerNotificationAction = vi.fn((_action: 'open-update', handler: () => void | Promise<void>) => {
-    notificationAction = handler
-    return notificationActionRelease
-  })
-  const requestRejection = vi.fn<(
-    request: ConnectionTrustRequest,
-  ) => ConnectionRequestRejection>(() => undefined)
-  let tray: DesktopTrayItem | undefined
-  const trays: DesktopTrayItem[] = []
-  const routes = new Map<string, WebRoute>()
-  const routeDisposers: ReturnType<typeof vi.fn>[] = []
-  let disposer: (() => void | Promise<void>) | undefined
-  const runtime = {
-    locale: options.locale ?? 'en',
-    updates: {
-      isPackaged: options.packaged ?? true,
-      currentVersion: options.currentVersion ?? '2.0.0',
-      ...(options.releaseChannel === undefined ? {} : { releaseChannel: options.releaseChannel }),
-      statePath,
-      canDownload: options.canDownload ?? true,
-      request: options.request ?? (async () => versionResponse('2.0.0')),
-      confirmDownload,
-      showManualCheckResult,
-      downloadAndInstall,
-      registerNotificationAction,
-      notify: options.notify ?? ((notification: DesktopNotification) => { notifications.push(notification) }),
-    },
-    registerTrayItem: (item: DesktopTrayItem) => {
-      tray ??= item
-      trays.push(item)
-      return { refresh, dispose: registrationDispose }
-    },
-  } as unknown as DesktopRuntime
-  const ctx = {
-    desktopRuntime: runtime,
-    webServer: {
-      port: 43120,
-      register: (registered: WebRoute) => {
-        routes.set(registered.path, registered)
-        const unregister = vi.fn()
-        routeDisposers.push(unregister)
-        return unregister
-      },
-    },
-    connection: { requestRejection },
-    logger: { warn: (...args: unknown[]) => { warnings.push(args) } },
-    effect: (register: () => (() => void | Promise<void>)) => {
-      disposer = register()
-      return disposer
-    },
-  } as unknown as Context
-
-  apply(ctx, options.config ?? testConfig)
-  if (tray === undefined) throw new Error('Update tray item was not registered.')
-  const route = routes.get(DESKTOP_UPDATE_CHECK_PATH)
-  const statusRoute = routes.get(DESKTOP_UPDATE_STATUS_PATH)
-  if (route === undefined || statusRoute === undefined) throw new Error('Update routes were not registered.')
-  return {
-    statePath,
-    tray,
-    trays,
-    notifications,
-    warnings,
-    confirmDownload,
-    showManualCheckResult,
-    downloadAndInstall,
-    registerNotificationAction,
-    notificationActionRelease,
-    clickUpdateNotification: async () => { await notificationAction?.() },
-    refresh,
-    registrationDispose,
-    requestRejection,
-    route,
-    statusRoute,
-    routeDisposers,
-    dispose: async () => { await disposer?.() },
-  }
-}
-
-function statusRequest(headers: IncomingMessage['headers'] = {}): IncomingMessage {
-  return {
-    method: 'GET',
-    headers: { host: '127.0.0.1:43120', origin: 'http://127.0.0.1:43120', ...headers },
-    socket: { remoteAddress: '127.0.0.1' },
-  } as IncomingMessage
-}
-
-async function readStatus(harness: Harness): Promise<DesktopUpdateStatus> {
-  let body = ''
-  const res = {
-    statusCode: 200,
-    setHeader: vi.fn(),
-    end: vi.fn((value?: string) => { body = value ?? '' }),
-  } as unknown as ServerResponse
-  await harness.statusRoute.handler(statusRequest(), res)
-  expect(res.statusCode).toBe(200)
-  return JSON.parse(body) as DesktopUpdateStatus
-}
-
-afterEach(() => {
-  vi.useRealTimers()
+it('checks without downloading; download completion waits for an explicit installation', async () => {
+  const { updates, options, request } = await fixture()
+  await updates.check()
+  expect(updates.snapshot().phase).toBe('available')
+  expect(request).toHaveBeenCalledTimes(1)
+  await Promise.all([updates.download(), updates.download()])
+  expect(updates.snapshot()).toMatchObject({ phase: 'ready', received: 1024, total: 1024 })
+  expect(options.prepare).toHaveBeenCalledOnce()
+  expect(options.install).not.toHaveBeenCalled()
+  await updates.install()
+  expect(options.install).toHaveBeenCalledOnce()
+  expect(updates.snapshot().phase).toBe('installing')
 })
-
-describe('desktop update Host plugin', () => {
-  it.each([true, false])('reads a supported=%s idle snapshot without polling or prompting', async canDownload => {
-    const request = vi.fn(async () => versionResponse('2.1.0'))
-    const harness = await createHarness({ packaged: false, canDownload, request })
-
-    expect(harness.statusRoute.path).toBe('/api/desktop/updates/status')
-    for (let read = 0; read < 3; read++) {
-      expect(await readStatus(harness)).toEqual({
-        supported: canDownload, currentVersion: '2.0.0', availableVersion: null, checking: false, downloading: false,
-      })
-    }
-    expect(request).not.toHaveBeenCalled()
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    await harness.dispose()
+it('does not confuse an unpublished channel, invalid response or network failure with up to date', async () => {
+  for (const response of [new Response('', { status: 400 }), new Response('', { status: 503 }), Response.json({ version: '2.0.20', channel: 'stable' })]) {
+    const { updates } = await fixture({ request: async () => response })
+    await updates.check()
+    expect(updates.snapshot()).toMatchObject({ phase: 'error', error: 'service' })
+  }
+})
+it('allows checks in development, but never downloads or replaces the development application', async () => {
+  const { updates, options, request } = await fixture({ packaged: false })
+  await updates.check(); await updates.download()
+  expect(updates.snapshot()).toMatchObject({ installable: false, error: 'development' })
+  expect(request).toHaveBeenCalledOnce(); expect(options.prepare).not.toHaveBeenCalled()
+})
+it('polls on Linux without the installation UUID, notifies once and leaves the download to the release page', async () => {
+  const mac = await fixture()
+  await mac.updates.check()
+  expect(new Headers(mac.request.mock.calls[0]![1].headers).get('X-DSH-Desktop-Installation-Id')).toMatch(/^[0-9a-f-]{36}$/)
+  vi.useFakeTimers()
+  const available = vi.fn()
+  const { updates, options, request } = await fixture({ platform: 'linux', packaged: true, available })
+  updates.start()
+  await vi.advanceTimersByTimeAsync(30_000)
+  await vi.waitFor(() => expect(updates.snapshot().phase).toBe('available'))
+  expect(request).toHaveBeenCalledOnce()
+  const headers = new Headers(request.mock.calls[0]![1].headers)
+  expect(headers.get('X-DSH-Desktop-Channel')).toBe('beta')
+  expect(headers.has('X-DSH-Desktop-Installation-Id')).toBe(false)
+  expect(existsSync(join(options.userData, 'identity'))).toBe(false)
+  expect(updates.snapshot()).toMatchObject({ version: '2.0.20-beta.2', installable: false })
+  expect(available).toHaveBeenCalledExactlyOnceWith('2.0.20-beta.2')
+  await updates.download()
+  expect(updates.snapshot()).toMatchObject({ phase: 'error', error: 'unsupported' })
+  expect(request).toHaveBeenCalledOnce()
+})
+it('rechecks the selected version before downloading, and preserves preparation failures for retry', async () => {
+  const { updates, options } = await fixture({ prepare: async () => { throw new Error('Signature mismatch') } })
+  await updates.download()
+  expect(updates.snapshot()).toMatchObject({ phase: 'error', error: 'prepare' })
+  await updates.install(); expect(options.install).not.toHaveBeenCalled()
+  expect(updateAction(updates.snapshot())).toBe('download-update')
+})
+it('stops polling and aborts an active request on shutdown', async () => {
+  const request = vi.fn<UpdateRequest>(async (_url, init) => new Promise((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true })))
+  const { updates } = await fixture({ request, packaged: false })
+  const check = updates.check()
+  await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
+  await updates.dispose(); await check
+  expect(request.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
+})
+it('shows progress and an actionable downloaded state in both languages', () => {
+  expect(updateLabel({ phase: 'downloading', installable: true, received: 25, total: 100 }, 'zh-CN')).toContain('25%')
+  expect(updateLabel({ phase: 'downloading', installable: true, received: 2 * 1048576 }, 'en')).toContain('2 MB')
+  expect(updateAction({ phase: 'preparing', installable: true })).toBeUndefined()
+  expect(updateAction({ phase: 'ready', installable: true })).toBe('install-update')
+})
+it('downloads a Next installer through the injected artifact transport', async () => {
+  const cdn = 'https://cdn-lfs-cn-1.modelscope.cn/prod/lfs-objects/next.dmg'
+  const artifact = Buffer.alloc(1024); artifact.write('koly', 512)
+  const request = vi.fn<UpdateRequest>(async () => Response.json({ version: '2.0.20-beta.2', channel: 'beta' }))
+  const artifactRequest = vi.fn<UpdateArtifactRequest>(async () => ({ response: new Response(artifact), finalUrl: cdn }))
+  const { updates, options } = await fixture({ request, artifactRequest })
+  await updates.download()
+  expect(updates.snapshot()).toMatchObject({ phase: 'ready', version: '2.0.20-beta.2' })
+  expect(artifactRequest).toHaveBeenCalledOnce()
+  expect(options.prepare).toHaveBeenCalledOnce()
+})
+it('serves only the private archive to the native updater and closes its loopback listener', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'next-feed-test-')); roots.push(root)
+  const path = join(root, 'update.zip'); await writeFile(path, 'test archive')
+  const feed = await serveMacUpdate(path, '2.0.20-beta.2')
+  try {
+    const metadata = await (await fetch(feed.url)).json() as { url: string; name: string }
+    expect(metadata.name).toBe('2.0.20-beta.2')
+    expect(await (await fetch(metadata.url)).text()).toBe('test archive')
+    expect((await fetch(new URL('/update.zip', feed.url))).status).toBe(404)
+    expect((await fetch(feed.url, { method: 'POST' })).status).toBe(404)
+  } finally { await feed.close() }
+  await expect(fetch(feed.url)).rejects.toThrow()
+})
+it('notifies once per newly discovered background update version and persists notifiedVersion across restarts', async () => {
+  let latestVersion = '2.0.20-beta.2'
+  const available = vi.fn()
+  const { updates, options } = await fixture({
+    available,
+    request: async () => Response.json({ version: latestVersion, channel: 'beta' }),
   })
-
-  it('reflects an in-flight check without starting another version request', async () => {
-    let finishCheck!: (response: Response) => void
-    const request = vi.fn(() => new Promise<Response>(resolve => { finishCheck = resolve }))
-    const harness = await createHarness({ packaged: false, request })
-    const checking = harness.tray.invoke()
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce() })
-
-    expect(await readStatus(harness)).toEqual({
-      supported: true, currentVersion: '2.0.0', availableVersion: null, checking: true, downloading: false,
-    })
-    expect(request).toHaveBeenCalledOnce()
-    finishCheck(versionResponse('2.0.0'))
-    await checking
-    expect((await readStatus(harness)).checking).toBe(false)
-    await harness.dispose()
-  })
-
-  it.each(['complete', 'failed'] as const)('keeps an available update after confirmation cancellation and a %s download', async outcome => {
-    let finishDownload!: () => void
-    let failDownload!: (cause: Error) => void
-    const download = new Promise<void>((resolve, reject) => { finishDownload = resolve; failDownload = reject })
-    const confirmDownload = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
-    const request = vi.fn(async () => versionResponse('2.1.0'))
-    const harness = await createHarness({ packaged: false, request, confirmDownload, downloadAndInstall: async () => download })
-
-    await harness.tray.invoke()
-    expect(await readStatus(harness)).toEqual({
-      supported: true, currentVersion: '2.0.0', availableVersion: '2.1.0', checking: false, downloading: false,
-    })
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    const accepted = harness.tray.invoke()
-    await vi.waitFor(() => { expect(harness.downloadAndInstall).toHaveBeenCalledOnce() })
-    expect(await readStatus(harness)).toEqual({
-      supported: true, currentVersion: '2.0.0', availableVersion: '2.1.0', checking: false, downloading: true,
-    })
-    expect(request).toHaveBeenCalledTimes(2)
-    if (outcome === 'complete') finishDownload()
-    else failDownload(new Error('private download error /private/state'))
-    await accepted
-
-    expect(await readStatus(harness)).toEqual({
-      supported: true, currentVersion: '2.0.0', availableVersion: '2.1.0', checking: false, downloading: false,
-    })
-    expect(request).toHaveBeenCalledTimes(2)
-    await harness.dispose()
-  })
-
-  it.each([401, 403] as const)('applies Connection %i rejection before reading update status', async rejection => {
-    const request = vi.fn(async () => versionResponse('2.1.0'))
-    const harness = await createHarness({ packaged: false, request })
-    harness.requestRejection.mockReturnValue(rejection)
-    const req = statusRequest()
-    const res = { writeHead: vi.fn(), end: vi.fn() } as unknown as ServerResponse
-
-    await harness.statusRoute.handler(req, res)
-
-    expect(harness.requestRejection).toHaveBeenCalledWith(req)
-    expect(res.writeHead).toHaveBeenCalledWith(rejection)
-    expect(res.end).toHaveBeenCalledWith(rejection === 401 ? 'unauthorized' : 'forbidden')
-    expect(request).not.toHaveBeenCalled()
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    await harness.dispose()
-  })
-
-  it('releases both routes and hides stale availability immediately when the generation is disposed', async () => {
-    const request = vi.fn(async () => versionResponse('2.1.0'))
-    const harness = await createHarness({ packaged: false, request })
-    await harness.tray.invoke()
-    expect((await readStatus(harness)).availableVersion).toBe('2.1.0')
-
-    await harness.dispose()
-    await harness.dispose()
-
-    expect(harness.routeDisposers).toHaveLength(2)
-    for (const unregister of harness.routeDisposers) expect(unregister).toHaveBeenCalledOnce()
-    expect(await readStatus(harness)).toEqual({
-      supported: false, currentVersion: '2.0.0', availableVersion: null, checking: false, downloading: false,
-    })
-    await harness.tray.invoke()
-    expect(request).toHaveBeenCalledOnce()
-  })
-
-  it('reports a stable-only feed to Beta without offering a stable installer', async () => {
-    const request = vi.fn(async () => Response.json({ channel: 'stable', version: '0.0.8' }))
-    const harness = await createHarness({
-      packaged: false,
-      canDownload: false,
-      releaseChannel: 'beta',
-      currentVersion: '0.0.8-beta.1',
-      request,
-    })
-
-    await harness.tray.invoke()
-
-    expect(request).toHaveBeenCalledOnce()
-    expect(harness.showManualCheckResult).toHaveBeenCalledWith({
-      status: 'channel-unavailable',
-      currentVersion: '0.0.8-beta.1',
-    })
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    await harness.dispose()
-  })
-
-  it('checks Beta automatically and installs an older stable release only through the explicit action', async () => {
-    const request = vi.fn(async (_url: string, init: RequestInit) => {
-      const channel = new Headers(init.headers).get(DESKTOP_RELEASE_CHANNEL_HEADER)
-      return Response.json(channel === 'beta'
-        ? { version: '2.0.6-beta.1', channel: 'beta' }
-        : { version: '2.0.4', channel: 'stable' })
-    })
-    const harness = await createHarness({
-      releaseChannel: 'beta',
-      currentVersion: '2.0.6-beta.1',
-      request,
-      confirmDownload: async () => true,
-    })
-
-    expect(harness.trays).toHaveLength(2)
-    await harness.tray.invoke()
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-
-    await harness.trays[1]!.invoke()
-    expect(harness.confirmDownload).toHaveBeenCalledWith('2.0.4', 'stable')
-    expect(harness.downloadAndInstall).toHaveBeenCalledWith(
-      '2.0.4',
-      expect.any(AbortSignal),
-      'stable',
-    )
-    const channels = request.mock.calls.map(([, init]) => new Headers(init.headers).get(DESKTOP_RELEASE_CHANNEL_HEADER))
-    expect(channels).toContain('beta')
-    expect(channels).toContain('stable')
-    await harness.dispose()
-  })
-
-  it('exposes the packaged 60-second and six-hour background policy', () => {
-    expect(inject).toEqual(['desktopRuntime', 'webServer', 'connection'])
-    expect(Config({} as UpdateConfig)).toEqual({
-      enabled: true,
-      initialDelayMs: 60_000,
-      intervalMs: 21_600_000,
-      requestTimeoutMs: 15_000,
-    })
-    expect(() => Config({ intervalMs: 0 } as UpdateConfig)).toThrow()
-    expect(() => Config({ requestTimeoutMs: 0 } as UpdateConfig)).toThrow()
-  })
-
-  it.each([
-    [401, 'unauthorized'],
-    [403, 'forbidden'],
-  ] as const)('applies the Connection %i rejection before the interactive update route', async (
-    status,
-    body,
-  ) => {
-    const request = vi.fn(async () => versionResponse('2.0.0'))
-    const harness = await createHarness({ packaged: false, request })
-    harness.requestRejection.mockReturnValue(status)
-    const req = { headers: {} } as IncomingMessage
-    const writeHead = vi.fn()
-    const end = vi.fn()
-    const res = { writeHead, end } as unknown as ServerResponse
-
-    await harness.route.handler(req, res)
-
-    expect(harness.requestRejection).toHaveBeenCalledWith(req)
-    expect(writeHead).toHaveBeenCalledWith(status)
-    expect(end).toHaveBeenCalledWith(body)
-    expect(request).not.toHaveBeenCalled()
-    expect(harness.showManualCheckResult).not.toHaveBeenCalled()
-    await harness.dispose()
-  })
-
-  it('passes an authenticated interactive update request to the existing route handler', async () => {
-    const request = vi.fn(async () => versionResponse('2.0.0'))
-    const harness = await createHarness({ packaged: false, request })
-    const req = {
-      method: 'POST',
-      headers: {
-        host: '127.0.0.1:43120',
-        origin: 'http://127.0.0.1:43120',
-        'content-type': 'application/json',
-      },
-      socket: { remoteAddress: '127.0.0.1' },
-      async * [Symbol.asyncIterator]() { yield Buffer.from('{}') },
-    } as unknown as IncomingMessage
-    let body = ''
-    const res = {
-      statusCode: 200,
-      setHeader: vi.fn(),
-      end: vi.fn((value?: string) => { body = value ?? '' }),
-    } as unknown as ServerResponse
-
-    await harness.route.handler(req, res)
-
-    expect(harness.requestRejection).toHaveBeenCalledWith(req)
-    expect(request).toHaveBeenCalledOnce()
-    expect(harness.showManualCheckResult).toHaveBeenCalledWith({
-      status: 'up-to-date',
-      currentVersion: '2.0.0',
-      latestVersion: '2.0.0',
-    })
-    expect(res.statusCode).toBe(200)
-    expect(JSON.parse(body)).toEqual({ accepted: true })
-    await harness.dispose()
-  })
-
-  it('renders the update tray command in the active native locale', async () => {
-    const harness = await createHarness({ packaged: false, locale: 'zh' })
-
-    expect(harness.tray.label()).toBe('检查更新…')
-
-    await harness.dispose()
-  })
-
-  it.each([
-    { packaged: false, enabled: true },
-    { packaged: true, enabled: false },
-  ])('reports a manual up-to-date result while automatic polling is disabled: %#', async ({ packaged, enabled }) => {
-    vi.useFakeTimers()
-    const request = vi.fn(async () => versionResponse('2.0.0'))
-    const harness = await createHarness({
-      packaged,
-      request,
-      config: { ...testConfig, enabled },
-    })
-
-    await vi.advanceTimersByTimeAsync(testConfig.intervalMs)
-    expect(request).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('Check for Updates…')
-    await harness.tray.invoke()
-    expect(request).toHaveBeenCalledOnce()
-    expect(harness.showManualCheckResult).toHaveBeenCalledWith({
-      status: 'up-to-date',
-      currentVersion: '2.0.0',
-      latestVersion: '2.0.0',
-    })
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    expect(harness.notifications).toEqual([])
-    expect(harness.warnings).toEqual([])
-  })
-
-  it('announces a background update once without opening a confirmation dialog', async () => {
-    vi.useFakeTimers()
-    const request = vi.fn(async () => versionResponse('2.1.0'))
-    const harness = await createHarness({ request })
-
-    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
-    await vi.waitFor(() => {
-      expect(harness.notifications).toEqual([{
-        title: 'e宝工坊 Update Available',
-        body: 'Version 2.1.0 is ready to download. Click this notification to review the update.',
-        action: 'open-update',
-      }])
-    })
-    expect(harness.registerNotificationAction).toHaveBeenCalledWith('open-update', expect.any(Function))
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
-    await vi.waitFor(async () => {
-      expect(JSON.parse(await readFile(harness.statePath, 'utf8'))).toEqual({
-        version: 3,
-        lastNotifiedVersion: '2.1.0',
-      })
-    })
-    if (process.platform !== 'win32') {
-      expect((await stat(harness.statePath)).mode & 0o777).toBe(0o600)
-    }
-
-    await vi.advanceTimersByTimeAsync(testConfig.intervalMs)
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledTimes(2) })
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.notifications).toHaveLength(1)
-    expect(harness.warnings).toEqual([])
-  })
-
-  it('clicking the background update notification reuses confirmation and recheck', async () => {
-    vi.useFakeTimers()
-    const request = vi.fn(async () => versionResponse('2.1.0'))
-    const harness = await createHarness({
-      request,
-      confirmDownload: async () => true,
-    })
-
-    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
-    await vi.waitFor(() => { expect(harness.notifications).toHaveLength(1) })
-    await harness.clickUpdateNotification()
-
-    expect(request).toHaveBeenCalledTimes(2)
-    expect(harness.confirmDownload).toHaveBeenCalledWith('2.1.0')
-    expect(harness.downloadAndInstall).toHaveBeenCalledWith('2.1.0', expect.any(AbortSignal))
-  })
-
-  it('coalesces repeated notification clicks into one confirmation and download', async () => {
-    vi.useFakeTimers()
-    let resolveDownload!: () => void
-    const pendingDownload = new Promise<void>(resolve => { resolveDownload = resolve })
-    const harness = await createHarness({
-      request: async () => versionResponse('2.1.0'),
-      confirmDownload: async () => true,
-      downloadAndInstall: async () => pendingDownload,
-    })
-
-    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
-    await vi.waitFor(() => { expect(harness.notifications).toHaveLength(1) })
-    const firstClick = harness.clickUpdateNotification()
-    const secondClick = harness.clickUpdateNotification()
-    await vi.waitFor(() => {
-      expect(harness.confirmDownload).toHaveBeenCalledOnce()
-      expect(harness.downloadAndInstall).toHaveBeenCalledOnce()
-    })
-
-    resolveDownload()
-    await Promise.all([firstClick, secondClick])
-  })
-
-  it('does not download when the notification confirmation is cancelled', async () => {
-    vi.useFakeTimers()
-    const harness = await createHarness({
-      request: async () => versionResponse('2.1.0'),
-      confirmDownload: async () => false,
-    })
-
-    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
-    await vi.waitFor(() => { expect(harness.notifications).toHaveLength(1) })
-    await harness.clickUpdateNotification()
-
-    expect(harness.confirmDownload).toHaveBeenCalledOnce()
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-  })
-
-  it('downloads and opens only after confirmation', async () => {
-    vi.useFakeTimers()
-    let resolveDownload!: () => void
-    const download = new Promise<void>(resolve => { resolveDownload = resolve })
-    const harness = await createHarness({
-      packaged: false,
-      request: async () => versionResponse('2.1.0'),
-      confirmDownload: async () => true,
-      downloadAndInstall: async () => download,
-    })
-
-    const pending = harness.tray.invoke()
-    await vi.waitFor(() => { expect(harness.downloadAndInstall).toHaveBeenCalledOnce() })
-    const [version, signal] = harness.downloadAndInstall.mock.calls[0] as [string, AbortSignal]
-    expect(version).toBe('2.1.0')
-    expect(signal).toBeInstanceOf(AbortSignal)
-    expect(signal.aborted).toBe(false)
-    expect(harness.tray.label()).toBe('Downloading e宝工坊 2.1.0…')
-    expect(harness.notifications).toEqual([])
-
-    resolveDownload()
-    await pending
-    await vi.waitFor(() => { expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available') })
-    expect(harness.notifications).toEqual([])
-    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
-  })
-
-  it('treats a manual available-version selection as a fresh confirmation', async () => {
-    const confirmDownload = vi.fn()
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true)
-    const harness = await createHarness({
-      packaged: false,
-      request: async () => versionResponse('2.1.0'),
-      confirmDownload,
-    })
-
-    await harness.tray.invoke()
-    expect(confirmDownload).toHaveBeenCalledOnce()
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
-
-    await harness.tray.invoke()
-    expect(confirmDownload).toHaveBeenCalledTimes(2)
-    expect(harness.downloadAndInstall).toHaveBeenCalledOnce()
-    expect(harness.showManualCheckResult).not.toHaveBeenCalled()
-  })
-
-  it('rechecks the version after confirmation and skips a rotated download', async () => {
-    const request = vi.fn()
-      .mockResolvedValueOnce(versionResponse('2.1.0'))
-      .mockResolvedValueOnce(versionResponse('2.2.0'))
-    const harness = await createHarness({
-      packaged: false,
-      request,
-      confirmDownload: async () => true,
-    })
-
-    await harness.tray.invoke()
-
-    expect(request).toHaveBeenCalledTimes(2)
-    expect(harness.confirmDownload).toHaveBeenCalledWith('2.1.0')
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    expect(harness.showManualCheckResult).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('e宝工坊 2.2.0 Available')
-  })
-
-  it.each([
-    ['up-to-date', async () => versionResponse('2.0.0')],
-    ['failed', async () => new Response('unavailable', { status: 503 })],
-  ] as const)('keeps an automatic %s result silent', async (_case, request) => {
-    vi.useFakeTimers()
-    const requestSpy = vi.fn(request)
-    const harness = await createHarness({ request: requestSpy })
-
-    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
-    await vi.waitFor(() => { expect(requestSpy).toHaveBeenCalledOnce() })
-
-    expect(harness.showManualCheckResult).not.toHaveBeenCalled()
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    ['same version', async () => versionResponse('2.0.0'), {
-      status: 'up-to-date', currentVersion: '2.0.0', latestVersion: '2.0.0',
-    }],
-    ['older version', async () => versionResponse('1.9.9'), {
-      status: 'up-to-date', currentVersion: '2.0.0', latestVersion: '1.9.9',
-    }],
-    ['invalid version', async () => versionResponse('v2.1.0'), null],
-    ['service unavailable', async () => new Response('unavailable', { status: 503 }), null],
-    ['network failure', async () => { throw new TypeError('offline') }, null],
-  ] as const)('reports a manual %s result without prompting or downloading', async (_case, request, expected) => {
-    const harness = await createHarness({ packaged: false, request })
-
-    await harness.tray.invoke()
-
-    expect(harness.showManualCheckResult).toHaveBeenCalledWith(expected)
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    expect(harness.notifications).toEqual([])
-    expect(harness.warnings).toEqual([])
-    expect(harness.tray.label()).toBe('Check for Updates…')
-  })
-
-  it('silently resets invalid legacy state before announcing the available version', async () => {
-    vi.useFakeTimers()
-    const harness = await createHarness({
-      request: async () => versionResponse('2.1.0'),
-      state: JSON.stringify({
-        version: 1,
-        checkedVersion: '2.0.0',
-        etag: '"legacy"',
-        lastNotifiedVersion: '2.1.0',
-        availableRelease: {
-          tagName: 'v2.1.0',
-          version: '2.1.0',
-          htmlUrl: 'https://example.test/legacy',
-        },
-      }),
-    })
-
-    expect(harness.tray.label()).toBe('Check for Updates…')
-    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
-    await vi.waitFor(() => { expect(harness.notifications).toHaveLength(1) })
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    await vi.waitFor(async () => {
-      expect(JSON.parse(await readFile(harness.statePath, 'utf8'))).toEqual({
-        version: 3,
-        lastNotifiedVersion: '2.1.0',
-      })
-    })
-    expect(harness.warnings).toEqual([])
-  })
-
-  it('migrates v2 prompt history without repeating the same background announcement', async () => {
-    vi.useFakeTimers()
-    const harness = await createHarness({
-      request: async () => versionResponse('2.1.0'),
-      state: JSON.stringify({ version: 2, lastPromptedVersion: '2.1.0' }),
-    })
-
-    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
-    await vi.waitFor(async () => {
-      expect(JSON.parse(await readFile(harness.statePath, 'utf8'))).toEqual({
-        version: 3,
-        lastNotifiedVersion: '2.1.0',
-      })
-    })
-
-    expect(harness.notifications).toEqual([])
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
-  })
-
-  it('does not prompt on a platform without a fixed download entry', async () => {
-    const harness = await createHarness({
-      packaged: false,
-      canDownload: false,
-      request: async () => versionResponse('2.1.0'),
-    })
-
-    await harness.tray.invoke()
-
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.showManualCheckResult).toHaveBeenCalledWith({
-      status: 'update-available',
-      currentVersion: '2.0.0',
-      latestVersion: '2.1.0',
-    })
-    expect(harness.downloadAndInstall).not.toHaveBeenCalled()
-    expect(harness.notifications).toEqual([])
-    expect(harness.tray.label()).toBe('Check for Updates…')
-  })
-
-  it('shares one pending download and silently restores availability after failure', async () => {
-    let rejectDownload!: (cause: Error) => void
-    const download = new Promise<void>((_resolve, reject) => { rejectDownload = reject })
-    const harness = await createHarness({
-      packaged: false,
-      request: async () => versionResponse('2.1.0'),
-      confirmDownload: async () => true,
-      downloadAndInstall: async () => download,
-    })
-
-    const first = harness.tray.invoke()
-    await vi.waitFor(() => { expect(harness.downloadAndInstall).toHaveBeenCalledOnce() })
-    const second = harness.tray.invoke()
-    expect(harness.downloadAndInstall).toHaveBeenCalledOnce()
-    rejectDownload(new Error('offline'))
-    await Promise.all([first, second])
-
-    expect(harness.downloadAndInstall).toHaveBeenCalledOnce()
-    expect(harness.notifications).toEqual([])
-    expect(harness.warnings).toEqual([])
-    expect(harness.tray.label()).toBe('e宝工坊 2.1.0 Available')
-  })
-
-  it('aborts checks and downloads and removes the tray item on effect disposal', async () => {
-    let checkSignal: AbortSignal | undefined
-    const checking = await createHarness({
-      packaged: false,
-      request: async (_url, init) => new Promise<Response>((_resolve, reject) => {
-        checkSignal = init.signal as AbortSignal
-        checkSignal.addEventListener('abort', () => {
-          reject(new DOMException('disposed', 'AbortError'))
-        }, { once: true })
-      }),
-    })
-    const pendingCheck = checking.tray.invoke()
-    await vi.waitFor(() => { expect(checkSignal).toBeDefined() })
-    await checking.dispose()
-    expect(await readStatus(checking)).toEqual({ supported: false, currentVersion: '2.0.0', availableVersion: null, checking: false, downloading: false })
-    await pendingCheck
-    expect(checkSignal?.aborted).toBe(true)
-    expect(checking.registrationDispose).toHaveBeenCalledOnce()
-    expect(checking.notifications).toEqual([])
-
-    let downloadSignal: AbortSignal | undefined
-    const downloading = await createHarness({
-      packaged: false,
-      request: async () => versionResponse('2.1.0'),
-      confirmDownload: async () => true,
-      downloadAndInstall: async (_version, signal) => new Promise<void>((_resolve, reject) => {
-        downloadSignal = signal
-        signal.addEventListener('abort', () => {
-          reject(new DOMException('disposed', 'AbortError'))
-        }, { once: true })
-      }),
-    })
-    const pendingDownload = downloading.tray.invoke()
-    await vi.waitFor(() => { expect(downloadSignal).toBeDefined() })
-    await downloading.dispose()
-    expect(await readStatus(downloading)).toEqual({ supported: false, currentVersion: '2.0.0', availableVersion: null, checking: false, downloading: false })
-    await pendingDownload
-    expect(downloadSignal?.aborted).toBe(true)
-    expect(downloading.registrationDispose).toHaveBeenCalledOnce()
-    expect(downloading.notifications).toEqual([])
-    expect(downloading.warnings).toEqual([])
-  })
-
-  it('releases one update generation once and does not restart background polling', async () => {
-    vi.useFakeTimers()
-    const request = vi.fn(async () => versionResponse('2.0.0'))
-    const harness = await createHarness({ request })
-
-    await harness.dispose()
-    await harness.dispose()
-    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs + testConfig.intervalMs)
-
-    expect(request).not.toHaveBeenCalled()
-    expect(harness.registrationDispose).toHaveBeenCalledOnce()
-    expect(harness.notificationActionRelease).not.toHaveBeenCalled()
-  })
-
-  it('releases a registered notification action with the update generation', async () => {
-    vi.useFakeTimers()
-    const harness = await createHarness({ request: async () => versionResponse('2.1.0') })
-    await vi.advanceTimersByTimeAsync(testConfig.initialDelayMs)
-    await vi.waitFor(() => { expect(harness.registerNotificationAction).toHaveBeenCalledOnce() })
-
-    await harness.dispose()
-
-    expect(harness.notificationActionRelease).toHaveBeenCalledOnce()
-  })
-
-  it('does not wait for an open manual result dialog during disposal', async () => {
-    let closeDialog!: () => void
-    const dialog = new Promise<void>(resolve => { closeDialog = resolve })
-    const harness = await createHarness({
-      packaged: false,
-      showManualCheckResult: async () => dialog,
-    })
-    const pending = harness.tray.invoke()
-    await vi.waitFor(() => { expect(harness.showManualCheckResult).toHaveBeenCalledOnce() })
-
-    await harness.dispose()
-    expect(harness.registrationDispose).toHaveBeenCalledOnce()
-
-    closeDialog()
-    await pending
-  })
-
-  it('reports a timed-out shared manual request and restores the idle tray label', async () => {
-    vi.useFakeTimers()
-    const signals: AbortSignal[] = []
-    const request = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
-      const signal = init.signal as AbortSignal
-      signals.push(signal)
-      signal.addEventListener('abort', () => {
-        reject(new DOMException('cancelled', 'AbortError'))
-      }, { once: true })
-    }))
-    const harness = await createHarness({ packaged: false, request })
-
-    const first = harness.tray.invoke()
-    const second = harness.tray.invoke()
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce() })
-    expect(harness.tray.label()).toBe('Checking for Updates…')
-    await vi.advanceTimersByTimeAsync(testConfig.requestTimeoutMs)
-    await Promise.all([first, second])
-
-    expect(signals[0]?.aborted).toBe(true)
-    expect(harness.confirmDownload).not.toHaveBeenCalled()
-    expect(harness.showManualCheckResult).toHaveBeenCalledWith(null)
-    expect(harness.notifications).toEqual([])
-    expect(harness.warnings).toEqual([])
-    expect(harness.tray.label()).toBe('Check for Updates…')
-  })
+  await updates.check(true)
+  expect(available).toHaveBeenCalledTimes(1)
+  expect(available).toHaveBeenCalledWith('2.0.20-beta.2')
+
+  // Subsequent background poll of the same version does not re-notify.
+  await updates.check(true)
+  expect(available).toHaveBeenCalledTimes(1)
+
+  // A new NextUpdates instance reading the same userData also skips duplicate notification.
+  const secondAvailable = vi.fn()
+  const restarted = new NextUpdates({ ...options, available: secondAvailable })
+  owners.push(restarted)
+  await restarted.check(true)
+  expect(secondAvailable).not.toHaveBeenCalled()
+
+  // When a newer version is published, background check notifies once for the new version.
+  latestVersion = '2.0.21-beta.2'
+  await restarted.check(true)
+  expect(secondAvailable).toHaveBeenCalledTimes(1)
+  expect(secondAvailable).toHaveBeenCalledWith('2.0.21-beta.2')
+})
+const baseState: DesktopState = {
+  selected: 'desktop', profiles: ['desktop'], unavailableProfiles: [],
+  features: { market: false, remoteControl: false }, preferences: { ...DEFAULT_PREFERENCES },
+  phase: 'ready', busy: false, failure: '', safeMode: false, home: '/fixture',
+  platform: 'linux', version: '2.0.20-beta.1', trayAvailable: true, notificationsAvailable: true,
+  browserUrl: null, lan: null, checkpoint: null, logs: '',
+  updates: { phase: 'idle', installable: false },
+}
+it('shows update status and controls on every platform, and sends Linux to the release page to download', () => {
+  const render = (platform: string, updates: NextUpdateState) =>
+    renderToStaticMarkup(createElement(NextUpdateSettings, { state: { ...baseState, platform, updates }, language: 'zh-CN', run: vi.fn() }))
+  const linuxHtml = render('linux', { phase: 'idle', installable: false })
+  expect(linuxHtml).toContain('应用更新')
+  expect(linuxHtml).toContain('e宝工坊 Beta · 2.0.20-beta.1')
+  expect(linuxHtml).toMatch(/<button[^>]*>检查更新<\/button>/)
+  expect(linuxHtml).not.toMatch(/<button[^>]*disabled/)
+  expect(linuxHtml).toContain('Linux 版需要手动更新：在发布页下载与当前安装方式相同的安装包（deb、AppImage 或 tar.gz）。')
+  expect(linuxHtml).not.toContain('应用内安装更新需要使用 macOS 或 Windows 安装版。')
+  const linuxAvailable = render('linux', { phase: 'available', version: '2.0.21-beta.1', installable: false })
+  expect(linuxAvailable).toContain('发现新版本 2.0.21-beta.1')
+  expect(linuxAvailable).toMatch(/<button[^>]*>前往下载<\/button>/)
+  expect(linuxAvailable).not.toMatch(/<button[^>]*disabled/)
+
+  const macHtml = render('darwin', { phase: 'idle', installable: false })
+  expect(macHtml).toContain('应用更新')
+  expect(macHtml).toContain('e宝工坊 Beta · 2.0.20-beta.1')
+  expect(macHtml).toContain('检查更新')
+  expect(macHtml).toContain('应用内安装更新需要使用 macOS 或 Windows 安装版。')
+  expect(macHtml).not.toContain('Linux 版需要手动更新')
+  // A development build cannot download, but it is not sent elsewhere either.
+  expect(render('darwin', { phase: 'available', version: '2.0.21-beta.1', installable: false })).toMatch(/<button[^>]*disabled=""[^>]*>下载更新<\/button>/)
+})
+it('names the release notes page after the latest channel version reported by the update service', () => {
+  const releases = 'https://github.com/cqai-club/ebao-studio/releases'
+  expect(releaseNotesUrl()).toBe(releases)
+  for (const version of ['2.0.19-beta.1', '2.0.20-beta.2']) expect(releaseNotesUrl(version)).toBe(`${releases}/tag/v${version}`)
+  // The version comes from a remote response and must not be able to leave the tag path.
+  const hostile = new URL(releaseNotesUrl('9.9.9/../../x?y#z'))
+  expect([hostile.search, hostile.hash]).toEqual(['', ''])
+  expect(hostile.pathname).toMatch(/^\/cqai-club\/ebao-studio\/releases\/tag\/v[^/]+$/)
+})
+it('links the release notes beside the update controls in both languages', () => {
+  const releases = 'https://github.com/cqai-club/ebao-studio/releases'
+  const installed = baseState.version
+  // An installed build ahead of the last release (a source run) is reported the older, published version.
+  const current: NextUpdateState = { phase: 'current', version: '2.0.19-beta.1', installable: true }
+  const ready: NextUpdateState = { phase: 'ready', version: '2.0.21-beta.1', installable: true }
+  const render = (platform: string, language: string, updates: NextUpdateState) =>
+    renderToStaticMarkup(createElement(NextUpdateSettings, { state: { ...baseState, platform, updates }, language, run: vi.fn() }))
+  const cases: [string, string, NextUpdateState, string, string][] = [
+    // Until the service has reported a version, and after a failed check cleared it, the installed version names the page.
+    ['darwin', 'zh-CN', { phase: 'idle', installable: true }, '更新公告', `${releases}/tag/v${installed}`],
+    ['darwin', 'zh-CN', { phase: 'error', error: 'service', installable: true }, '更新公告', `${releases}/tag/v${installed}`],
+    // A reported version wins over the installed one, whether it is older or newer.
+    ['darwin', 'zh-CN', current, '更新公告', `${releases}/tag/v${current.version}`],
+    ['win32', 'en', ready, 'Release notes', `${releases}/tag/v${ready.version}`],
+    // Linux downloads every package from the same page.
+    ['linux', 'zh-CN', { ...ready, phase: 'available', installable: false }, '更新公告', `${releases}/tag/v${ready.version}`],
+  ]
+  for (const [platform, language, updates, label, href] of cases) {
+    const anchor = render(platform, language, updates).match(/<a [^>]*>[^<]*<\/a>/)?.[0]
+    expect(anchor).toContain(`href="${href}"`)
+    expect(anchor).toContain('target="_blank"')
+    expect(anchor).toContain('rel="noopener noreferrer"')
+    expect(anchor).toContain(`>${label}</a>`)
+  }
 })

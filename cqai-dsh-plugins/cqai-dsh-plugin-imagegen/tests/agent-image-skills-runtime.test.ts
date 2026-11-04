@@ -7,7 +7,9 @@ import { Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
 import SkillRegistry, { isModelInvocable, isUserInvocable, type SkillDefinition } from '@deepseek-ai/dsh-skill'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineTool, type ResolvedToolSet, type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import * as PtcExecutor from '@deepseek-ai/dsh-tool-executor-ptc'
 import type { AgentImageToolConfig } from '../src/agent-image-tools.ts'
 import { AGENT_IMAGE_SKILL } from '../src/agent-image-skill.ts'
 import { AgentImageSkills } from '../src/agent-image-skills.ts'
@@ -42,7 +44,8 @@ async function fixture(mode: 'native' | 'ptc' = 'native', mountLoader = true) {
     })),
   }
   if (mode === 'ptc') ctx.provide('ptcRuntime' as never, programs as never)
-  await ctx.plugin(ToolRuntime, { mode })
+  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(mode === 'native' ? NativeExecutor : PtcExecutor)
   await ctx.plugin(SkillRegistry)
   const attachments = { readImage: vi.fn(), saveImages: vi.fn() }
   ctx.provide('attachments', attachments as never)
@@ -51,6 +54,7 @@ async function fixture(mode: 'native' | 'ptc' = 'native', mountLoader = true) {
   ctx.provide('sessionProjections', {} as never)
   const agents = new Map<string, Agent>()
   ctx.provide('agents', { list: () => [...agents.values()], get: (id: string) => agents.get(id) } as never)
+  ctx.provide('workingDirectory', { ensure: async (agent: Agent) => agent.session.header.cwd ?? process.cwd() } as never)
   if (mountLoader) await ctx.plugin(ToolSkill)
   ctx.tools.register(defineTool({
     name: 'ordinary_read', description: 'An unrelated read capability.', parameters: {},
@@ -100,17 +104,34 @@ async function fixture(mode: 'native' | 'ptc' = 'native', mountLoader = true) {
     agentEvents(ctx, agent).emit('agent/inbox/claimed', { message, turn: 1 })
     return message
   }
-  const names = (agent: Agent) => ctx.tools.schemas(agent).map(tool => tool.name).filter(name => IMAGE_TOOLS.includes(name)).sort()
-  const assembly = (agent: Agent, signal?: AbortSignal) => ctx.systemPrompt.assemble(assembleContextFor(agent, signal))
-  const load = (agent: Agent, signal = new AbortController().signal) => ctx.tools.execute({
-    agent, name: 'skill', arguments: { name: AGENT_IMAGE_SKILL.name }, callId: ToolCallId(`skill-${++calls}`), signal,
-  })
-  const run = (agent: Agent, signal = new AbortController().signal) => ctx.tools.execute({
-    agent, name: 'run_code', arguments: { code: 'return await tools.skill({name:"ebao-imagegen"})', description: 'Load image workflow instructions.' },
-    callId: ToolCallId(`program-${++calls}`), signal,
-  })
+  const modelSelection = { provider: 'fixture', model: 'fixture-model' }
+  const admission = (agent: Agent, signal = new AbortController().signal) => ctx.tools.resolve({ agent, modelSelection, signal })
+  const names = async (agent: Agent) => {
+    const toolSet = await admission(agent)
+    try { return ctx.tools.schemas(agent, toolSet).map(tool => tool.name).filter(name => IMAGE_TOOLS.includes(name)).sort() }
+    finally { toolSet.dispose() }
+  }
+  const assembly = async (agent: Agent, signal = new AbortController().signal) => {
+    const toolSet = await admission(agent, signal)
+    cleanups.push(() => toolSet.dispose())
+    return ctx.systemPrompt.assemble({ ...assembleContextFor(agent, signal), modelSelection, toolSet })
+  }
+  const execute = async (agent: Agent, name: string, args: unknown, signal = new AbortController().signal, toolSet?: ResolvedToolSet): Promise<ToolExecutionResult> => {
+    const selected = toolSet ?? await admission(agent, signal)
+    const id = ToolCallId(`call-${++calls}`)
+    try {
+      const result = await ctx.tools.execute({ agent, calls: [{ type: 'tool-call', id, name, arguments: JSON.stringify(args) }], toolSet: selected, signal })
+      expect(result.results).toHaveLength(1)
+      expect(result.results[0]?.callId).toBe(id)
+      return result.results[0]!.result
+    } finally { if (toolSet === undefined) selected.dispose() }
+  }
+  const load = (agent: Agent, signal = new AbortController().signal) => execute(agent, 'skill', { name: AGENT_IMAGE_SKILL.name }, signal)
+  const run = (agent: Agent, signal = new AbortController().signal) => execute(agent, 'run_code', {
+    code: 'return await tools.skill({name:"ebao-imagegen"})', description: 'Load image workflow instructions.',
+  }, signal)
   const preStep = (agent: Agent, messages: UserMessage[], signal = new AbortController().signal) => agentEvents(ctx, agent).waterfall('agent/pre-step', {
-    messages, turn: 1, step: 1, signal,
+    messages, turn: 1, step: 1, signal, modelSelection,
   }, async (): Promise<PreStepDecision> => ({ kind: 'enter', messages }))
   const skillView = (agent: Agent) => createScope(imageCtx, agent).ctx.skills
   const overrideSkill = (agent: Agent, definition: SkillDefinition, get = async () => definition) => {
@@ -120,7 +141,7 @@ async function fixture(mode: 'native' | 'ptc' = 'native', mountLoader = true) {
       get,
     }))
   }
-  return { ctx, owner, agents, config, queue, attachments, programs, mint, claim, names, assembly, load, run, preStep, overrideSkill }
+  return { ctx, owner, agents, config, queue, attachments, programs, mint, claim, names, assembly, admission, execute, load, run, preStep, overrideSkill }
 }
 
 function textOf(messages: readonly UserMessage[]): string {
@@ -138,7 +159,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     const agent = await test.mint('ordinary')
     const human = test.claim(agent, '讨论图片设计方案，不生成图片')
     const before = await test.assembly(agent)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     expect(renderPrompt(before)).toBe('')
     const catalog = admitted(await test.preStep(agent, [human])).filter(message => message.source.kind === 'skill-catalog')
     expect(catalog).toHaveLength(1)
@@ -159,11 +180,10 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
       name: AGENT_IMAGE_SKILL.name, provider: AGENT_IMAGE_SKILL.provider, content: AGENT_IMAGE_SKILL.content,
     } })
     expect(result.content).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text', text: expect.stringContaining(AGENT_IMAGE_SKILL.content) })]))
-    expect(test.names(agent)).toEqual(IMAGE_TOOLS)
-    expect(test.names(sibling)).toEqual([])
+    expect(await test.names(agent)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(sibling)).toEqual([])
     expect(renderPrompt(await test.assembly(agent))).toBe('')
-    const models = await test.ctx.tools.execute({ agent, name: 'list_image_generation_models', arguments: {},
-      callId: ToolCallId('models'), signal: new AbortController().signal })
+    const models = await test.execute(agent, 'list_image_generation_models', {})
     expect(models).toMatchObject({ isError: false, value: { default_provider: 'custom:test', providers: [
       { id: 'custom:test', models: [{ alias: 'test-image', id: 'upstream-image' }], selection: 'single' },
     ] } })
@@ -176,11 +196,11 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     const agent = await test.mint('real-human-required')
     test.claim(agent, '/ebao-imagegen 生图', 'skill-invocation')
     expect((await test.load(agent)).isError).toBe(true)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     test.claim(agent)
     test.agents.delete(agent.id)
     expect((await test.load(agent)).isError).toBe(true)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
   })
 
   it('does not activate an unrelated provider publishing the same Skill name', async () => {
@@ -189,7 +209,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     test.overrideSkill(agent, { ...AGENT_IMAGE_SKILL, provider: 'unrelated-image-plugin' })
     test.claim(agent)
     expect((await test.load(agent)).isError).toBe(false)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
   })
 
   it('does not activate when a shadow loader returns official identity without delivering the Skill body', async () => {
@@ -202,7 +222,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
       execute: async () => ({ name: AGENT_IMAGE_SKILL.name, provider: AGENT_IMAGE_SKILL.provider, content: AGENT_IMAGE_SKILL.content }),
     }))
     expect((await test.load(agent)).isError).toBe(false)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
   })
 
   it('does not activate when the native Skill loader fails', async () => {
@@ -215,7 +235,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
       execute: async () => { throw new Error('Skill body is unavailable') },
     }))
     expect((await test.load(agent)).isError).toBe(true)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
   })
 
   it('expires execution tools at idle or new human input while retaining the Skill catalog', async () => {
@@ -224,15 +244,15 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     test.claim(agent)
     await test.load(agent)
     test.claim(agent, 'Skill正文', 'skill-invocation')
-    expect(test.names(agent)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(agent)).toEqual(IMAGE_TOOLS)
     agentEvents(test.ctx, agent).emit('agent/status', { status: 'idle' })
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     expect((await test.ctx.skills.list({ scope: agent })).map(skill => skill.name)).toContain(AGENT_IMAGE_SKILL.name)
     expect((await test.load(agent)).isError).toBe(true)
     test.claim(agent)
     await test.load(agent)
     test.claim(agent, '先讨论文字')
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
   })
 
   it.each(['enabled', 'allowAgentImageGeneration', 'announceToAgent'] as const)('revokes loaded image tools when %s is disabled', async field => {
@@ -240,14 +260,14 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     const agent = await test.mint(`settings-${field}`)
     test.claim(agent)
     await test.load(agent)
-    expect(test.names(agent)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(agent)).toEqual(IMAGE_TOOLS)
     test.config[field] = false
     test.owner.sync()
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     expect((await test.load(agent)).isError).toBe(true)
     test.config[field] = true
     test.owner.sync()
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     test.claim(agent)
     expect((await test.load(agent)).isError).toBe(false)
   })
@@ -267,7 +287,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     else test.owner.dispose()
     resolve(AGENT_IMAGE_SKILL)
     await pending
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
   })
 
   it('does not install image tools for a canceled native Skill read', async () => {
@@ -276,8 +296,8 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     test.claim(agent)
     const controller = new AbortController()
     controller.abort()
-    expect((await test.load(agent, controller.signal)).isError).toBe(true)
-    expect(test.names(agent)).toEqual([])
+    await expect(test.load(agent, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(await test.names(agent)).toEqual([])
   })
 
   it('isolates ordinary subagents and forked conversations before and after primary activation', async () => {
@@ -288,9 +308,9 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     await test.load(parent)
     const laterChild = await test.mint('child-after', { parent })
     const fork = await test.mint('fork', { forkOf: parent })
-    expect(test.names(fork)).toEqual([])
+    expect(await test.names(fork)).toEqual([])
     for (const delegated of [child, laterChild]) {
-      expect(test.names(delegated)).toEqual([])
+      expect(await test.names(delegated)).toEqual([])
       expect(test.ctx.tools.get('ordinary_read', delegated)).toBeDefined()
       const skill = await test.ctx.skills.get(AGENT_IMAGE_SKILL.name, { scope: delegated })
       expect(skill).toBeDefined()
@@ -298,8 +318,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
       expect(isUserInvocable(skill!)).toBe(false)
       test.claim(delegated)
       expect((await test.load(delegated)).isError).toBe(true)
-      const denied = await test.ctx.tools.execute({ agent: delegated, name: 'generate_image', arguments: { prompt: 'cat' },
-        callId: ToolCallId(`denied-${delegated.id}`), signal: new AbortController().signal })
+      const denied = await test.execute(delegated, 'generate_image', { prompt: 'cat' })
       expect(denied.isError).toBe(true)
     }
     expect(test.queue.submit).not.toHaveBeenCalled()
@@ -312,16 +331,15 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     await test.load(parent)
     const canvas = await test.mint('canvas', { parent })
     const ordinary = await test.mint('ordinary-child', { parent })
-    expect(test.names(canvas)).toEqual([])
+    expect(await test.names(canvas)).toEqual([])
     const close = test.owner.authorizeCanvas(canvas)
-    expect(test.names(canvas)).toEqual(IMAGE_TOOLS)
-    expect(test.names(ordinary)).toEqual([])
-    const models = await test.ctx.tools.execute({ agent: canvas, name: 'list_image_generation_models', arguments: {},
-      callId: ToolCallId('canvas-models'), signal: new AbortController().signal })
+    expect(await test.names(canvas)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(ordinary)).toEqual([])
+    const models = await test.execute(canvas, 'list_image_generation_models', {})
     expect(models.isError).toBe(false)
     close()
-    expect(test.names(canvas)).toEqual([])
-    expect(test.names(parent)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(canvas)).toEqual([])
+    expect(await test.names(parent)).toEqual(IMAGE_TOOLS)
     expect(test.queue.submit).not.toHaveBeenCalled()
   })
 
@@ -333,18 +351,18 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     agentEvents(test.ctx, canvas).emit('agent/status', { status: 'idle' })
     test.config.announceToAgent = false
     test.owner.sync()
-    expect(test.names(canvas)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(canvas)).toEqual(IMAGE_TOOLS)
     test.config.allowAgentImageGeneration = false
     test.owner.sync()
-    expect(test.names(canvas)).toEqual([])
+    expect(await test.names(canvas)).toEqual([])
     test.config.allowAgentImageGeneration = true
     test.owner.sync()
-    expect(test.names(canvas)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(canvas)).toEqual(IMAGE_TOOLS)
     const newClose = test.owner.authorizeCanvas(canvas)
     close()
-    expect(test.names(canvas)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(canvas)).toEqual(IMAGE_TOOLS)
     newClose()
-    expect(test.names(canvas)).toEqual([])
+    expect(await test.names(canvas)).toEqual([])
   })
 
   it('removes summaries and all active scoped tools when the plugin is disposed', async () => {
@@ -356,11 +374,11 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     const close = test.owner.authorizeCanvas(canvas)
     test.owner.dispose()
     close()
-    expect(test.names(parent)).toEqual([])
-    expect(test.names(canvas)).toEqual([])
+    expect(await test.names(parent)).toEqual([])
+    expect(await test.names(canvas)).toEqual([])
     expect((await test.ctx.skills.list({ scope: parent })).map(skill => skill.name)).not.toContain(AGENT_IMAGE_SKILL.name)
     test.owner.sync()
-    expect(test.names(parent)).toEqual([])
+    expect(await test.names(parent)).toEqual([])
   })
 
   it('releases a canvas grant when its Agent fails to publish into the live registry', async () => {
@@ -368,13 +386,13 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     const parent = await test.mint('unpublished-parent')
     const canvas = await test.mint('unpublished-canvas', { parent })
     const close = test.owner.authorizeCanvas(canvas)
-    expect(test.names(canvas)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(canvas)).toEqual(IMAGE_TOOLS)
     // The factory may run setup and then fail before publishing this identity.
     test.agents.delete(canvas.id)
     close()
-    expect(test.names(canvas)).toEqual([])
+    expect(await test.names(canvas)).toEqual([])
     test.owner.sync()
-    expect(test.names(canvas)).toEqual([])
+    expect(await test.names(canvas)).toEqual([])
     expect((await test.load(canvas)).isError).toBe(true)
   })
 
@@ -390,7 +408,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     test.programs.run.mockImplementationOnce(async request => {
       const value = await request.bindings[0].functions.skill({ name: AGENT_IMAGE_SKILL.name })
       expect(value).toMatchObject({ content: AGENT_IMAGE_SKILL.content })
-      expect(test.names(parent)).toEqual([])
+      expect(await test.names(parent)).toEqual([])
       return { logs: [], value }
     })
     expect((await test.run(parent)).isError).toBe(false)
@@ -416,7 +434,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     })
     test.programs.run.mockImplementationOnce(async request => {
       const value = await request.bindings[0].functions.skill({ name: AGENT_IMAGE_SKILL.name })
-      expect(test.names(agent)).toEqual([])
+      expect(await test.names(agent)).toEqual([])
       if (outcome === 'program-error') return { logs: [], error: { kind: 'exception', message: 'failed after skill read' } }
       if (outcome === 'cancel') controller.abort()
       if (outcome === 'new-human') test.claim(agent, '不生成图片了')
@@ -424,7 +442,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     })
     const result = await test.run(agent, controller.signal)
     expect(result.isError).toBe(outcome !== 'new-human')
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
   })
 
   it('does not activate after PTC success that discards the loaded instruction body', async () => {
@@ -439,30 +457,37 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     const result = await test.run(agent)
     expect(result.isError).toBe(false)
     expect(JSON.stringify(result.content)).not.toContain(AGENT_IMAGE_SKILL.content)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     expect(renderPrompt(await test.assembly(agent))).not.toContain('generate_image')
   })
 
-  it.each(['native', 'ptc'] as const)('updates the first %s assembly only after native pre-step delivers /ebao-imagegen instructions', async mode => {
+  it.each(['native', 'ptc'] as const)('admits the first %s slash step but blocks execution until native instructions arrive', async mode => {
     const test = await fixture(mode)
     const agent = await test.mint(`slash-${mode}`)
     const human = test.claim(agent, '/ebao-imagegen 生成橘猫图片')
+    const toolSet = await test.admission(agent)
+    cleanups.push(() => toolSet.dispose())
     const first = await test.assembly(agent)
-    expect(first.tools.map(tool => tool.name).filter(name => IMAGE_TOOLS.includes(name))).toEqual([])
-    expect(renderPrompt(first)).not.toContain('generate_image')
-    const invocation = admitted(await test.preStep(agent, [human])).filter(message => message.source.kind === 'skill-invocation')
     if (mode === 'native') expect(first.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(IMAGE_TOOLS))
     else {
       expect(first.tools.map(tool => tool.name)).toEqual(['run_code'])
       expect(renderPrompt(first)).toContain('generate_image')
+      test.programs.run.mockImplementation(async request => ({ logs: [], value: await request.bindings[0].functions.list_image_generation_models({}) }))
     }
-    expect(renderPrompt(first)).not.toContain(AGENT_IMAGE_SKILL.content)
+    const dispatch = () => test.execute(agent, mode === 'native' ? 'list_image_generation_models' : 'run_code',
+      mode === 'native' ? {} : { code: 'return await tools.list_image_generation_models({})', description: 'Read image model choices.' }, new AbortController().signal, toolSet)
+    expect((await dispatch()).isError).toBe(true)
+    expect(test.queue.submit).not.toHaveBeenCalled()
+    const invocation = admitted(await test.preStep(agent, [human])).filter(message => message.source.kind === 'skill-invocation')
     expect(invocation).toHaveLength(1)
     expect(textOf(invocation)).toContain(AGENT_IMAGE_SKILL.content)
+    // The original admitted definitions stay live; no prompt or admission object is patched.
+    expect((await dispatch()).isError).toBe(false)
+    expect(renderPrompt(first)).not.toContain(AGENT_IMAGE_SKILL.content)
     expect(test.queue.submit).not.toHaveBeenCalled()
   })
 
-  it.each(['native', 'ptc'] as const)('refreshes first-step capabilities without overriding a %s complete prompt profile', async mode => {
+  it.each(['native', 'ptc'] as const)('keeps a %s complete prompt profile while admitting verified slash capabilities', async mode => {
     const test = await fixture(mode)
     const complete = 'Follow this complete custom system prompt.'
     test.ctx.systemPrompt.section({ name: 'test:complete-profile', order: 1, text: complete, complete: true })
@@ -471,9 +496,9 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     // Upstream enforces complete sections by returning a shallow assembly copy.
     const first = await test.assembly(agent)
     expect(renderPrompt(first)).toBe(complete)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual(IMAGE_TOOLS)
     const messages = admitted(await test.preStep(agent, [human]))
-    expect(test.names(agent)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(agent)).toEqual(IMAGE_TOOLS)
     if (mode === 'native') expect(first.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(IMAGE_TOOLS))
     else expect(first.tools.map(tool => tool.name)).toEqual(['run_code'])
     // A complete PTC profile owns its instructions; SDK text must not be forced into it.
@@ -483,7 +508,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     expect(textOf(messages.filter(message => message.source.kind === 'skill-invocation'))).toContain(AGENT_IMAGE_SKILL.content)
   })
 
-  it('refreshes the first PTC SDK when the profile suppresses runtime contexts', async () => {
+  it('admits the first PTC SDK while respecting suppressed runtime contexts', async () => {
     const test = await fixture('ptc')
     test.ctx.systemPrompt.context({ name: 'test:runtime-fact', order: 1, text: 'This runtime fact is intentionally suppressed.' })
     test.ctx.systemPrompt.suppressRuntimeContext()
@@ -491,7 +516,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     const human = test.claim(agent, '/ebao-imagegen 生成橘猫图片')
     const first = await test.assembly(agent)
     expect(first.contexts).toEqual([])
-    expect(renderPrompt(first)).not.toContain('generate_image')
+    expect(renderPrompt(first)).toContain('generate_image')
     await test.preStep(agent, [human])
     expect(first.tools.map(tool => tool.name)).toEqual(['run_code'])
     expect(renderPrompt(first)).toContain('generate_image')
@@ -500,21 +525,21 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     expect(first.contexts).toEqual([])
   })
 
-  it('preserves the original Agent context and updates schema, section, context and variable providers during reassembly', async () => {
+  it('preserves the admitted Agent context and leaves provider snapshots under upstream ownership', async () => {
     const test = await fixture()
     const agent = await test.mint('context-preserved')
     test.ctx.systemPrompt.variable('image_owner', context => String(context.agent?.id ?? 'missing'))
-    test.ctx.systemPrompt.variable('image_state', context => context.agent && test.names(context.agent).length > 0 ? 'ready' : 'unloaded')
+    test.ctx.systemPrompt.variable('image_state', context => context.agent && test.ctx.tools.schemas(context.agent).filter(tool => IMAGE_TOOLS.includes(tool.name)).length > 0 ? 'ready' : 'unloaded')
     test.ctx.systemPrompt.section({ name: 'test:agent-section', order: 1, text: 'Owner {{image_owner}}, image tools {{image_state}}.' })
     test.ctx.systemPrompt.context({ name: 'test:agent-context', order: 1,
-      text: context => `Context for ${String(context.agent?.id ?? 'missing')}: ${context.agent ? test.names(context.agent).length : -1}.` })
+      text: context => `Context for ${String(context.agent?.id ?? 'missing')}: ${context.agent ? test.ctx.tools.schemas(context.agent).filter(tool => IMAGE_TOOLS.includes(tool.name)).length : -1}.` })
     test.ctx.systemPrompt.tools(context => ({ schemas: [{
       name: 'profile_read', description: `Read for ${String(context.agent?.id ?? 'missing')}.`,
       parameters: { type: 'object', additionalProperties: false, properties: {} },
     }] }))
     const human = test.claim(agent, '/ebao-imagegen 生成橘猫图片')
     const first = await test.assembly(agent)
-    expect(renderPrompt(first)).toContain('Owner context-preserved, image tools unloaded.')
+    expect(renderPrompt(first)).toContain('Owner context-preserved, image tools ready.')
     await test.preStep(agent, [human])
     expect(renderPrompt(first)).toContain('Owner context-preserved, image tools ready.')
     expect(first.variables).toMatchObject({ image_owner: agent.id, image_state: 'ready' })
@@ -538,7 +563,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     await test.preStep(agent, [human], controller.signal)
     expect(intermediate).toBeDefined()
     expect(first.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(IMAGE_TOOLS))
-    expect(test.names(agent)).toEqual(IMAGE_TOOLS)
+    expect(await test.names(agent)).toEqual(IMAGE_TOOLS)
   })
 
   it.each(['absent', 'forged-provider'] as const)('does not activate slash tools when native instruction delivery is %s', async invalid => {
@@ -546,11 +571,11 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     const agent = await test.mint(`slash-invalid-${invalid}`)
     if (invalid === 'forged-provider') test.overrideSkill(agent, { ...AGENT_IMAGE_SKILL, provider: 'unrelated-image-plugin' })
     const human = test.claim(agent, '/ebao-imagegen 生成橘猫图片')
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     const first = await test.assembly(agent)
     await test.preStep(agent, [human])
     expect(renderPrompt(first)).toBe('')
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
   })
 
   it('does not grant slash execution tools when the native skill loader is restricted', async () => {
@@ -559,11 +584,11 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     agent.ctx.tools.restrict({ deny: ['skill'] })
     const human = test.claim(agent, '/ebao-imagegen 生成橘猫图片')
     const first = await test.assembly(agent)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     const messages = admitted(await test.preStep(agent, [human]))
     // Native slash may supply context, but restrictions still withhold execution capabilities.
     expect(messages.some(message => message.source.kind === 'skill-invocation')).toBe(true)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     expect(first.tools.map(tool => tool.name).filter(name => IMAGE_TOOLS.includes(name))).toEqual([])
   })
 
@@ -580,7 +605,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     const first = await test.assembly(agent)
     const messages = admitted(await test.preStep(agent, [human]))
     expect(messages.some(message => message.source.kind === 'skill-invocation')).toBe(false)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     expect(first.tools.map(tool => tool.name).filter(name => IMAGE_TOOLS.includes(name))).toEqual([])
   })
 
@@ -590,7 +615,7 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     test.overrideSkill(agent, { ...AGENT_IMAGE_SKILL, invocation: { modelInvocable: true, userInvocable: false } })
     const human = test.claim(agent, '/ebao-imagegen 生成橘猫图片')
     expect(renderPrompt(await test.assembly(agent))).toBe('')
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual([])
     expect(admitted(await test.preStep(agent, [human])).some(message => message.source.kind === 'skill-invocation')).toBe(false)
   })
 
@@ -601,17 +626,17 @@ describe('e图宝 native Skill lifecycle with real DSH services', () => {
     let entered!: () => void
     let resolve!: (definition: SkillDefinition) => void
     const waiting = new Promise<void>(done => { entered = done })
-    test.overrideSkill(agent, AGENT_IMAGE_SKILL, () => new Promise<SkillDefinition>(done => { resolve = done; entered() }))
     const controller = new AbortController()
     const first = await test.assembly(agent, controller.signal)
-    expect(test.names(agent)).toEqual([])
+    expect(await test.names(agent)).toEqual(IMAGE_TOOLS)
+    test.overrideSkill(agent, AGENT_IMAGE_SKILL, () => new Promise<SkillDefinition>(done => { resolve = done; entered() }))
     const pending = test.preStep(agent, [human], controller.signal)
     const rejected = expect(pending).rejects.toThrow()
     await waiting
     controller.abort()
     resolve(AGENT_IMAGE_SKILL)
     await rejected
-    expect(test.names(agent)).toEqual([])
-    expect(first.tools.map(tool => tool.name).filter(name => IMAGE_TOOLS.includes(name))).toEqual([])
+    expect(await test.names(agent)).toEqual([])
+    expect(first.tools.map(tool => tool.name).filter(name => IMAGE_TOOLS.includes(name))).toEqual(IMAGE_TOOLS)
   })
 })

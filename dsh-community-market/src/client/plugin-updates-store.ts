@@ -1,14 +1,13 @@
-import type { MarketOperationPreviewResponse, MarketPluginUpdate, MarketUpdatesResponse } from '../api-types.js'
+import type { MarketOperationApplication, MarketOperationPreviewResponse, MarketPluginUpdate, MarketUpdatesResponse } from '../api-types.js'
 import { executeMarketOperation, readMarketUpdates } from './api.js'
 
 export const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000
 export const UPDATE_STARTUP_RETRY_MS = 30 * 1000
-export const UPDATE_RESTART_TOKEN_TTL_MS = 5 * 60 * 1000
 
 export interface CompletedPluginUpdate {
   readonly packageName: string
   readonly version: string
-  readonly restartToken: string
+  readonly application: MarketOperationApplication
   readonly completedAt: number
 }
 
@@ -108,7 +107,7 @@ export function createPluginUpdatesStore(dependencies: UpdateStoreDependencies =
   const executeReviewed = async (previews: readonly MarketOperationPreviewResponse[]): Promise<void> => {
     if (disposed || snapshot.operationPending || previews.length === 0) return
     // Review requests must identify an exact update, never an install/uninstall token.
-    if (previews.some(preview => preview.action !== 'update' || preview.version === undefined || preview.currentVersion === undefined)) return
+    if (previews.some(preview => preview.action !== 'update' || preview.version === undefined || preview.fromVersion === undefined)) return
     checkController?.abort()
     checkController = undefined
     pendingCheck = undefined
@@ -125,8 +124,11 @@ export function createPluginUpdatesStore(dependencies: UpdateStoreDependencies =
           if (result.action !== 'update' || result.packageName !== preview.packageName || result.version !== preview.version) {
             throw new Error('The update result could not be verified.')
           }
+          if (result.outcome !== 'updated' || result.application === undefined) {
+            throw new Error(result.details ?? `The plugin manager reported ${result.outcome}.`)
+          }
           const completed = [...snapshot.completed.filter(item => item.packageName !== result.packageName), {
-            packageName: result.packageName, version: result.version, restartToken: result.restartToken, completedAt: Date.now(),
+            packageName: result.packageName, version: result.version, application: result.application, completedAt: Date.now(),
           }]
           const updates = snapshot.updates.map(update => update.packageName === result.packageName
             ? { ...update, currentVersion: result.version, updateAvailable: false }
