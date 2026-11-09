@@ -13,7 +13,7 @@ import {
   prepareMacUniversalRuntime,
 } from './mac-universal.ts'
 import { prepareFsExtForElectron } from './prepare-fs-ext.ts'
-import { electronBuilderEnvironment } from './electron-builder-environment.ts'
+import { electronBuilderEnvironment, releaseArtifactNameArgs } from './electron-builder-environment.ts'
 import { prepareDesktopInterpreters, verifyPreparedDesktopRuntime } from './prepare-runtime.ts'
 
 const MAC_COMPRESSION_LEVELS = new Set(['store', 'normal', 'maximum'])
@@ -191,11 +191,13 @@ export function packageMacSmoke(options: MacSmokePackageOptions = defaultOptions
       options.builderCli,
       '--mac',
       target,
+      ...(target === 'dmg' && options.env.DSH_RELEASE_MAC_ZIP === '1' ? ['zip'] : []),
       `--${architecture}`,
       '--publish',
       'never',
       '--config.mac.notarize=false',
       '--config.npmRebuild=false',
+      ...releaseArtifactNameArgs(options.env, 'mac'),
       `--config.directories.output=${options.outputDir}`,
       ...(compression === undefined ? [] : [`--config.mac.compression=${compression}`]),
       ...(compression === 'store' ? ['--config.dmg.writeUpdateInfo=false'] : []),

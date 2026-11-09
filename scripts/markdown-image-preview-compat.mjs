@@ -14,7 +14,7 @@ export const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '
 export const frontendAsset = 'dist/assets/index-5SrrfWpU.js'
 const primitivesPatch = 'patches/dsh-client-ui-primitives@0.2.0-rc.2.patch'
 const frontendPatch = 'patches/dsh-web-frontend@0.2.0-rc.2.patch'
-export const markdownPreviewVersions = ['0.2.0-rc.2', '0.2.2-alpha.3']
+export const markdownPreviewVersions = ['0.2.0-rc.2', '0.2.2-alpha.3', '0.2.2-rc.1']
 const ownedLibraryFiles = ['lib/index.js', 'lib/types/index.d.ts', 'lib/types/markdown/MarkdownDelegate.d.ts']
 // Published artifacts use LF; inherited Git settings must not change replay bytes.
 const gitLFConfig = ['-c', 'core.autocrlf=false', '-c', 'core.eol=lf']
@@ -162,7 +162,7 @@ function verifyReplay(directory, patch, files) {
 
 export function generateMarkdownPreviewPatches(version = markdownPreviewVersions[0]) {
   if (!markdownPreviewVersions.includes(version)) throw new Error(`Unsupported Markdown preview runtime ${String(version)}`)
-  const current = version === '0.2.2-alpha.3'
+  const current = version !== '0.2.0-rc.2'
   const versionPrimitivesPatch = current ? `patches/dsh-client-ui-primitives@${version}.patch` : primitivesPatch
   const versionFrontendPatch = current ? `patches/dsh-web-frontend@${version}.patch` : frontendPatch
   const temp = mkdtempSync(join(tmpdir(), 'ebao-markdown-preview-patch-'))

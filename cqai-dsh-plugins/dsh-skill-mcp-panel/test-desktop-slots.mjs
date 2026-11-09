@@ -55,8 +55,8 @@ const ctx = {
 }
 plugin.apply(ctx)
 
-assert.deepEqual(injections.sort(), ['cqai.pluginManagement.mcp', 'cqai.pluginManagement.skills'])
-assert.equal(registrations.length, 2)
+assert.deepEqual(injections.sort(), ['cqai.pluginManagement.mcp', 'cqai.pluginManagement.skills', 'plugins.tab', 'plugins.tab'])
+assert.equal(registrations.length, 4)
 assert.equal(registrations.some(({ options }) => options.name === 'main' || options.name === 'sidebar.panellist'), false)
 for (const name of ['skills', 'mcp']) {
   const registration = registrations.find(({ options }) => options.name === `cqai.pluginManagement.${name}`)
@@ -65,6 +65,12 @@ for (const name of ['skills', 'mcp']) {
   const page = registration.component({ ...registration.options.inject(), t: () => name })
   assert.equal(page.props.className, 'SKV_page')
   assert.equal(JSON.stringify(page).includes('SKV_pageBack'), false)
+}
+for (const [id, title] of [['cqai-skills', '技能'], ['cqai-mcp', 'MCP']]) {
+  const tab = registrations.find(({ options }) => options.name === 'plugins.tab' && options.id === id)
+  assert.equal(tab?.options.label(), title)
+  assert.equal(typeof tab.options.inject, 'function')
+  assert.equal(tab.component({ ...tab.options.inject(), t: () => title }).props.className, 'SKV_page')
 }
 assert.equal(styles.some(style => style.textContent.includes('.SKV_page{')), true)
 console.log('desktop skill/MCP slot checks passed')

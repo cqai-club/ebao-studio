@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertAppImage, assertDebArchive, assertElfExecutable } from '../../dsh-desktop-shared/scripts/verify-linux-artifacts.ts'
 import { assertPortableExecutable } from '../../dsh-desktop-shared/scripts/verify-win-installer.ts'
+import { windowsArtifactFileName } from '../../dsh-desktop-shared/scripts/electron-builder-environment.ts'
 import { linuxPackageTargets } from './package-targets.ts'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const { version: sourceVersion } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -12,7 +13,7 @@ const { version: sourceVersion } = JSON.parse(readFileSync(join(root, 'package.j
 const version = process.env.DSH_BETA_BUILD_VERSION ?? sourceVersion
 const verifyMode = process.env.DSH_PACKAGE_VERIFY_MODE ?? 'win'
 if (verifyMode === 'win-portable') {
-  const archivePath = join(root, 'dist', `e宝工坊-Beta-${version}-x64-Portable.zip`)
+  const archivePath = join(root, 'dist', windowsArtifactFileName(process.env, version, 'zip', 'e宝工坊-Beta'))
   const fd = openSync(archivePath, 'r')
   const header = Buffer.alloc(4)
   try {
@@ -30,6 +31,6 @@ if (verifyMode === 'win-portable') {
   if (targets.includes('deb')) assertDebArchive(join(root, 'dist', `e宝工坊-Beta-${version}-${arm64 ? 'arm64' : 'amd64'}.deb`), 'Next Debian package')
   assertElfExecutable(join(root, 'dist', arm64 ? 'linux-arm64-unpacked' : 'linux-unpacked', 'dsh-desktop-beta'), 'Next Linux application')
 } else {
-  assertPortableExecutable(join(root, 'dist', `e宝工坊-Beta-${version}-x64-Setup.exe`), 'Next NSIS installer')
+  assertPortableExecutable(join(root, 'dist', windowsArtifactFileName(process.env, version, 'nsis', 'e宝工坊-Beta')), 'Next NSIS installer')
   assertPortableExecutable(join(root, 'dist', 'win-unpacked', 'e宝工坊 Beta.exe'), 'Next application')
 }

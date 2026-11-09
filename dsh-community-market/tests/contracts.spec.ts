@@ -27,6 +27,9 @@ const sourceFixture = () => readJson('../docs/examples/catalog-source.example.js
 const queryFixture = () => readJson('../docs/examples/catalog-query.example.json')
 const providerFixture = () => readJson('../docs/examples/catalog-provider-page.example.json')
 const snapshotFixture = () => readJson('../docs/examples/catalog-snapshot.example.json')
+const upstream = readJson('../../upstream.json') as { channels: Record<'stable' | 'beta' | 'next', { sourceVersion: string }> }
+const marketPeerRange = [...new Set((['stable', 'beta', 'next'] as const).map(channel =>
+  upstream.channels[channel].sourceVersion))].join(' || ')
 
 describe('package integration contract', () => {
   it('loads the Client through the official settings, sidebar, and shell features', () => {
@@ -42,13 +45,13 @@ describe('package integration contract', () => {
       '@deepseek-ai/dsh-client-ui-settings',
       '@deepseek-ai/dsh-client-ui-sidebar',
     ])
-    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-file-upload', '0.2.2-alpha.3')
-    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-layout', '0.2.2-alpha.3')
-    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-renderer', '0.2.2-alpha.3')
-    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-session', '0.2.2-alpha.3')
-    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-settings', '0.2.2-alpha.3')
-    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-sidebar', '0.2.2-alpha.3')
-    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-workspace', '0.2.2-alpha.3')
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-file-upload', marketPeerRange)
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-layout', marketPeerRange)
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-renderer', marketPeerRange)
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-session', marketPeerRange)
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-settings', marketPeerRange)
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-sidebar', marketPeerRange)
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-client-ui-workspace', marketPeerRange)
   })
 
   it('keeps durable storage an optional peer so market still starts without it', () => {
@@ -57,7 +60,7 @@ describe('package integration contract', () => {
       peerDependenciesMeta?: Record<string, { optional?: boolean }>
     }
 
-    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-storage-domain', '0.2.2-alpha.3')
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-storage-domain', marketPeerRange)
     expect(manifest.peerDependenciesMeta?.['@deepseek-ai/dsh-storage-domain']).toEqual({ optional: true })
     expect(manifest.peerDependenciesMeta?.['@deepseek-ai/dsh-storage']).toEqual({ optional: true })
   })

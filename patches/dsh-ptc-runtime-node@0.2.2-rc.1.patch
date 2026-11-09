@@ -1,0 +1,13 @@
+diff --git a/lib/index.js b/lib/index.js
+index 3e800f2..2db9dea 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1152,6 +1152,8 @@ var ProgramWorker = class {
+ 		}, this.controller.signal);
+ 		if (this.closed) return;
+ 		const env = Object.fromEntries(Object.keys(process.env).filter((key) => !STARTUP_ENVIRONMENT_NAMES.has(key.toUpperCase()) && key.toUpperCase() !== "ELECTRON_RUN_AS_NODE").map((key) => [key, void 0]));
++		// Set Node mode only for this Electron child; the bootstrap removes it before evaluating model code.
++		if (process.versions.electron !== void 0) env.ELECTRON_RUN_AS_NODE = "1";
+ 		if (packaged) {
+ 			env.DSH_PTC_RUNTIME_NODE = "1";
+ 			env.NODE_OPTIONS = `${heapFlag} --experimental-vm-modules`;

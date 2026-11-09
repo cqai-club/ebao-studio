@@ -52,8 +52,8 @@ function runPackagedNode(path: string, args: readonly string[], timeout: number,
 }
 
 async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[]> {
-  const paths = ['mac/e宝工坊.app/Contents/MacOS/e宝工坊', 'mac-arm64/e宝工坊.app/Contents/MacOS/e宝工坊',
-    'mac-universal/e宝工坊.app/Contents/MacOS/e宝工坊', 'win-unpacked/e宝工坊.exe', 'linux-unpacked/dsh-desktop',
+  const paths = ['mac/易宝工坊.app/Contents/MacOS/易宝工坊', 'mac-arm64/易宝工坊.app/Contents/MacOS/易宝工坊',
+    'mac-universal/易宝工坊.app/Contents/MacOS/易宝工坊', 'win-unpacked/e宝工坊.exe', 'linux-unpacked/dsh-desktop',
     'linux-arm64-unpacked/dsh-desktop']
   const executables = paths.map(path => join(result.outDir, path)).filter(existsSync)
   if (!executables.length) throw new Error('No packaged Next executable to verify')

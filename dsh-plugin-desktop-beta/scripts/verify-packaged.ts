@@ -6,6 +6,7 @@ import { expectedNextVersion, verifyNextRuntimeTree } from './prepare-runtime.ts
 import { DESKTOP_RUNTIME_FILE } from '../src/runtime-tree.ts'
 import { packagingStepSync } from './packaging-step.ts'
 import { verifyWindowsCodeUnpacked } from './windows-asar-unpack.ts'
+import { packagedResourcesDirectory } from '../../dsh-desktop-shared/scripts/electron-builder-environment.ts'
 
 /** Resources directories already cross-checked by afterPack in the current packaging process. */
 export const verifiedPackagedResources = new Set<string>()
@@ -13,7 +14,7 @@ export const verifiedPackagedResources = new Set<string>()
 interface PackContext {
   appOutDir: string
   electronPlatformName: string
-  packager: { projectDir: string; appInfo: { version: string } }
+  packager: { projectDir: string; appInfo: { version: string; productFilename: string } }
 }
 
 /**
@@ -29,7 +30,7 @@ interface PackContext {
  * @param context - Electron Builder's afterPack context.
  */
 export default async function afterPack(context: PackContext): Promise<void> {
-  const resources = context.electronPlatformName === 'darwin' ? join(context.appOutDir, 'e宝工坊 Beta.app/Contents/Resources') : join(context.appOutDir, 'resources')
+  const resources = packagedResourcesDirectory(context.appOutDir, context.electronPlatformName, context.packager.appInfo.productFilename)
   if (!existsSync(join(resources, 'app.asar'))) throw new Error('Next must package its application into app.asar like upstream Desktop')
   if (context.electronPlatformName === 'darwin' && /-(?:x64|arm64)-temp$/u.test(context.appOutDir)) {
     // electron-builder's universal packager immediately merges the two temporary per-CPU bundles

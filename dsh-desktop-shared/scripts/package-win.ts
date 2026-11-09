@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { prepareFsExtForElectron } from './prepare-fs-ext.ts'
-import { electronBuilderEnvironment } from './electron-builder-environment.ts'
+import { electronBuilderEnvironment, releaseArtifactNameArgs } from './electron-builder-environment.ts'
 import { prepareDesktopInterpreters, verifyPreparedDesktopRuntime } from './prepare-runtime.ts'
 
 const WINDOWS_SIGNING_KEYS = [
@@ -196,6 +196,7 @@ export function packageWindowsArtifact(
       '--config.win.signExecutable=false',
       '--config.npmRebuild=false',
       '--config.electronFuses.onlyLoadAppFromAsar=false',
+      ...releaseArtifactNameArgs(options.env, target),
       ...(compression === undefined ? [] : [`--config.win.compression=${compression}`]),
       ...(reuseUnpacked ? [`--prepackaged=${join(options.desktopRoot, 'dist', 'win-unpacked')}`] : []),
     ],

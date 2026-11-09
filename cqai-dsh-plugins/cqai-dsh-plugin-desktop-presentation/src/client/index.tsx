@@ -4,7 +4,8 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import robotArtwork from '../../assets/ebao-robot.webp'
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { HomeDock } from './home.tsx'
 import { installHomeStyles } from './styles.ts'
 import { aggregateVideoAvailable, projectVideoEntries } from './video-navigation.ts'
@@ -195,21 +196,35 @@ function HomeHeadline({ ctx }: { ctx: Context }) {
   </span>
 }
 
+/** Keep the upstream scroll body and composer mounted while adding the employee dock. */
+function HomeFrame({ hero, children, ctx }: { hero: boolean; children: ReactNode; ctx: Context }) {
+  const frame = useRef<HTMLDivElement>(null)
+  const [scroll, setScroll] = useState<Element | null>(null)
+  useLayoutEffect(() => {
+    const content = frame.current?.closest('[data-conversation-content]')
+    setScroll(hero ? content?.querySelector('[data-conversation-scroll]') ?? null : null)
+  }, [hero])
+  return <div ref={frame} className="eBaoHomeFrame">{children}
+    {hero && scroll && createPortal(<HomeDock ctx={ctx} />, scroll)}
+  </div>
+}
+
 /** The presentation is a Desktop mode layer, never a compatibility override. */
 export function apply(ctx: Context): void {
   const mode = new URLSearchParams(window.location.search).get('dsh-desktop-mode')
-  if (mode !== 'extended' && mode !== 'advanced') return
+  const desktop = (window as Window & { desktopNext?: unknown }).desktopNext !== undefined
+  if (mode === 'compatibility' || (!desktop && mode !== 'extended' && mode !== 'advanced')) return
 
   ctx.inject(['layout'], scope => {
     scope.effect(() => installHomeStyles(), 'cqai-desktop-presentation: styles')
-    scope.slots.inject('conversation.hero.headline', () => scope.slots.register({
-      name: 'conversation.hero.headline',
-      priority: -20,
+    scope.slots.inject('conversation.hero.brand.mark', () => scope.slots.register({
+      name: 'conversation.hero.brand.mark',
+      priority: -110,
     }, () => <HomeHeadline ctx={scope} />))
-    scope.slots.inject('conversation.hero.dock', () => scope.slots.register({
-      name: 'conversation.hero.dock',
+    scope.slots.inject('conversation.hero.frame', () => scope.slots.register({
+      name: 'conversation.hero.frame',
       id: 'cqai-desktop-presentation:employees',
       order: 20,
-    }, () => <HomeDock ctx={scope} />))
+    }, ({ hero, children }) => <HomeFrame hero={hero} ctx={scope}>{children}</HomeFrame>))
   })
 }

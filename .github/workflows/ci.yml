@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.23.2
+          node-version: 24.18.0
       - name: Classify changed paths
         id: scope
         shell: bash
@@ -77,7 +77,7 @@ jobs:
       - uses: actions/setup-node@v6
         if: needs.changes.outputs.product == 'true'
         with:
-          node-version: 22.23.2
+          node-version: 24.18.0
       - if: needs.changes.outputs.product == 'true'
         run: corepack enable
       - name: Resolve Yarn cache folder
@@ -91,11 +91,14 @@ jobs:
           key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - if: needs.changes.outputs.product == 'true'
         run: yarn install --immutable
-      - if: needs.changes.outputs.product == 'true'
-        run: yarn check
-      - name: Install Chromium for Next window regression
+      - name: Verify product PPT and release packaging contracts
+        if: needs.changes.outputs.product == 'true'
+        run: node --test scripts/ppt-composer-compat.test.mjs scripts/release-packaging-contract.test.mjs
+      - name: Install Chromium for headless frontend checks
         if: needs.changes.outputs.product == 'true'
         run: yarn workspace dsh-desktop-next exec playwright install --with-deps chromium
+      - if: needs.changes.outputs.product == 'true'
+        run: yarn check
       - name: Verify Ebao home layout against the published frontend
         if: needs.changes.outputs.product == 'true'
         run: yarn workspace cqai-dsh-plugin-desktop-presentation test:layout
@@ -132,7 +135,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.23.2
+          node-version: 24.18.0
       - run: corepack enable
       - name: Resolve Yarn cache folder
         id: yarn-cache
@@ -164,7 +167,7 @@ jobs:
         run: node scripts/smoke-windows-publisher-worker.mjs
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.23.2
+          node-version: 24.18.0
       - run: corepack enable
       - run: yarn build:cqai-plugins
       # Typecheck is platform-neutral and already gated by `check`.
@@ -172,12 +175,14 @@ jobs:
       - name: Build Windows installer
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
+          DSH_RELEASE_ARTIFACT_NAMES: ${{ matrix.workspace == 'dsh-plugin-desktop' && '1' || '0' }}
           # CI artifacts are never published; skipping compression saves minutes.
           DSH_WINDOWS_PACKAGE_COMPRESSION: store
         run: yarn workspace ${{ matrix.workspace }} dist:win
       - name: Build Windows portable archive
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
+          DSH_RELEASE_ARTIFACT_NAMES: ${{ matrix.workspace == 'dsh-plugin-desktop' && '1' || '0' }}
           DSH_WINDOWS_PACKAGE_COMPRESSION: store
         run: yarn workspace ${{ matrix.workspace }} dist:win-portable
       - name: Upload Stable Windows test packages
@@ -214,7 +219,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.23.2
+          node-version: 24.18.0
       - run: corepack enable
       - name: Resolve Yarn cache folder
         id: yarn-cache
@@ -249,7 +254,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.23.2
+          node-version: 24.18.0
       - run: corepack enable
       - name: Resolve Yarn cache folder
         id: yarn-cache
@@ -273,13 +278,14 @@ jobs:
           corepack yarn@1.22.22 build:publisher-worker:universal
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.23.2
+          node-version: 24.18.0
       - run: corepack enable
       - run: yarn build:cqai-plugins
       - run: yarn workspace ${{ matrix.workspace }} check:mac-package:platform
       - name: Build macOS smoke artifact
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
+          DSH_RELEASE_ARTIFACT_NAMES: ${{ matrix.workspace == 'dsh-plugin-desktop' && '1' || '0' }}
           # The universal merge alone takes 9-17 minutes, so pull requests
           # package only the runner's native arm64 app. Pushes to master and
           # manual runs keep the full universal DMG.
@@ -310,7 +316,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.23.2
+          node-version: 24.18.0
       - run: corepack enable
       - run: yarn check:layout
       - run: yarn upstream:version

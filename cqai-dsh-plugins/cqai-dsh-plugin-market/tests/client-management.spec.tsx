@@ -284,6 +284,20 @@ describe('CQAI plugin management Client', () => {
     expect(test.registrations).toEqual([])
   })
 
+  it('contributes the market to the official Plugins page in modern Desktop', () => {
+    vi.stubGlobal('dshDesktop', { protocolVersion: 1 })
+    vi.stubGlobal('desktopNext', { state: vi.fn() })
+    const test = testContext()
+    apply(test.ctx)
+    expect(test.registrations).toHaveLength(1)
+    expect(test.registrations[0]?.options).toMatchObject({
+      name: 'plugins.tab', id: 'cqai-market',
+      children: { 'cqai.pluginManagement.market': { kind: 'list', scope: 'root' } },
+    })
+    expect(test.registrations.some(entry => entry.options.name === 'plugins.shell')).toBe(false)
+    expect(test.registrations.some(entry => entry.options.name === 'plugins.bundle.hidden')).toBe(false)
+  })
+
   it('registers shell, cards and menu when the relevant owners appear after the plugin', () => {
     vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: true })
     const pendingSlots = new Map<string, () => unknown>()

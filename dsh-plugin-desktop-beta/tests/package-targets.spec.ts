@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -82,11 +82,15 @@ describe('macOS smoke verification', () => {
     const commands: Command[] = []
     const options = nextMacVerification(false, '/repo/dist/mac-smoke', { DSH_MAC_SMOKE_ARCH: 'arm64', DSH_MAC_SMOKE_TARGET: 'dir' },
       (command, args) => { commands.push([command, ...args]) })
-    const app = '/repo/dist/mac-smoke/mac-arm64/e宝工坊 Beta.app'
+    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    expect(options.productName).toBe(manifest.build.mac.executableName)
+    const fuseCheck = readFileSync(new URL('../scripts/verify-fuses.ts', import.meta.url), 'utf8')
+    expect(fuseCheck).toContain(`mac-universal/${options.productName}.app/Contents/MacOS/${options.productName}`)
+    const app = '/repo/dist/mac-smoke/mac-arm64/易宝工坊 Beta.app'
     expect(verifyMacRelease({ ...options, verifyRuntime: () => undefined }).appPath).toBe(app)
     expect(commands.map(([command]) => command)).not.toContain('hdiutil')
-    expect(commands).toContainEqual(['lipo', `${app}/Contents/MacOS/e宝工坊 Beta`, '-verify_arch', 'arm64'])
-    expect(commands).not.toContainEqual(['lipo', `${app}/Contents/MacOS/e宝工坊 Beta`, '-verify_arch', 'x86_64'])
+    expect(commands).toContainEqual(['lipo', `${app}/Contents/MacOS/易宝工坊 Beta`, '-verify_arch', 'arm64'])
+    expect(commands).not.toContainEqual(['lipo', `${app}/Contents/MacOS/易宝工坊 Beta`, '-verify_arch', 'x86_64'])
     expect(commands).toContainEqual(['lipo', `${app}/Contents/Resources/app.asar.unpacked/node_modules/fixture-native/bin/uv`, '-verify_arch', 'arm64'])
   })
 

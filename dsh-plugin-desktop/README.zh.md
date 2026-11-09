@@ -2,22 +2,23 @@
 
 [English](README.md) | 中文
 
-e宝工坊 已迁移到 `anywhere-labs/dsh-desktop` 提交 `117e489913` 的新版桌面架构，围绕未经修改的官方 DeepSeek Harness checkout 组合产品能力。Stable 与 Beta 共享该架构，使用根目录 `upstream.json` 记录的精确源码构建的 `0.2.2-alpha.3` 运行时。产品身份、版本、更新源与账号数据继续由 e宝工坊管理。
+e宝工坊 已迁移到 `anywhere-labs/dsh-desktop` 提交 `117e489913` 的新版桌面架构，围绕未经修改的官方 DeepSeek Harness checkout 组合产品能力。Stable 与 Beta 共享该架构，使用根目录 `upstream.json` 记录的精确源码构建的 `0.2.2-rc.1` 运行时。产品身份、版本、更新源与账号数据继续由 e宝工坊管理。
 
 Electron 主进程负责窗口、原生权限、下载、恢复和 Publisher Worker 生命周期。独立的 Electron Node 模式 Host 运行官方 Web 前端与 Profile 插件。旧版可复用工具和原生界面源码保存在私有的 `dsh-desktop-shared` workspace。兼容呈现跟随官方前端，不复制聊天实现。
 
 ## 启动与验证
 
-使用 Node.js `^22.19.0` 或 `>=24.0.0`，以及根目录 Corepack Yarn `4.18.0`。从仓库根目录运行：
+使用 Node.js `>=24.9.0`，以及根目录 Corepack Yarn `4.18.0`。从仓库根目录运行：
 
 ```sh
 corepack yarn install --immutable
+corepack yarn workspace dsh-desktop-next exec playwright install chromium
 corepack yarn dev
 corepack yarn workspace dsh-plugin-desktop check
 corepack yarn check:desktop-variants
 ```
 
-`dev` 会明确打开图形应用。构建、类型检查、测试和无界面 Host 检查均不打开窗口。根目录开发命令在启动前刷新 dshmarket 和官方 Agents Anywhere 构建；首次准备需要联网。锁定的主运行时包含 Python、Node、pnpm 和 Office 技能。本地预览可通过 `DSH_MAC_SMOKE_ARCH` 选择一个经过验证的 macOS 架构；正式打包默认包含两个架构。
+无界面前端检查需要 Chromium；Linux 首次安装请使用 `playwright install --with-deps chromium`。`dev` 会明确打开图形应用。构建、类型检查、测试和无界面 Host 检查均不打开窗口。根目录开发命令在启动前刷新 dshmarket 和官方 Agents Anywhere 构建；首次准备需要联网。锁定的主运行时包含 Python、Node、pnpm 和 Office 技能。本地预览可通过 `DSH_MAC_SMOKE_ARCH` 选择一个经过验证的 macOS 架构；正式打包默认包含两个架构。
 
 ## 产品能力
 

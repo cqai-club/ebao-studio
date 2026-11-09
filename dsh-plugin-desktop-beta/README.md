@@ -2,16 +2,17 @@
 
 English | [中文](README.zh.md)
 
-e宝工坊 Beta now uses the modern Desktop shell from `anywhere-labs/dsh-desktop` at `117e489913`, around the unmodified official DeepSeek Harness checkout. Stable and Beta share this architecture and the `0.2.2-alpha.3` runtime built from the exact source recorded in the root `upstream.json`. Product identity, versions, update feeds, and account data remain e宝工坊 owned.
+e宝工坊 Beta now uses the modern Desktop shell from `anywhere-labs/dsh-desktop` at `117e489913`, around the unmodified official DeepSeek Harness checkout. Stable and Beta share this architecture and the `0.2.2-rc.1` runtime built from the exact source recorded in the root `upstream.json`. Product identity, versions, update feeds, and account data remain e宝工坊 owned.
 
 The Electron main process owns windows, native permissions, downloads, recovery and Publisher Worker lifecycle. A separate Electron Node-mode Host runs the official Web frontend and Profile plugins. Legacy helper and native UI source lives in the private `dsh-desktop-shared` workspace. Compatibility follows the official frontend; there is no copied chat implementation.
 
 ## Run and verify
 
-Use Node.js `^22.19.0` or `>=24.0.0` and root Corepack Yarn `4.18.0`. Run from the repository root:
+Use Node.js `>=24.9.0` and root Corepack Yarn `4.18.0`. Run from the repository root:
 
 ```sh
 corepack yarn install --immutable
+corepack yarn workspace dsh-desktop-next exec playwright install chromium
 corepack yarn dev:beta
 corepack yarn workspace dsh-plugin-desktop-beta check
 corepack yarn check:desktop-variants

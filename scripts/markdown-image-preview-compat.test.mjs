@@ -107,14 +107,14 @@ function currentPreviewFixture(source, frontend) {
   } }
 }
 
-test('alpha3 library and frozen frontend namespace preserve lightbox fallback, context menus and image eligibility', () => {
+for (const version of ['0.2.2-alpha.3', '0.2.2-rc.1']) test(`${version} library and frozen frontend namespace preserve lightbox fallback, context menus and image eligibility`, () => {
   const temp = mkdtempSync(join(tmpdir(), 'ebao-markdown-current-smoke-'))
   const props = { src: 'data:image/png;base64,fixture', alt: 'Fixture', destination: '/fixture/image.png' }
   try {
-    for (const [index, result] of generateMarkdownPreviewPatches('0.2.2-alpha.3').entries()) {
+    for (const [index, result] of generateMarkdownPreviewPatches(version).entries()) {
       const directory = join(temp, String(index))
       mkdirSync(directory)
-      const path = extractVendorPackage(index ? 'frontend' : 'primitives', directory, '0.2.2-alpha.3')
+      const path = extractVendorPackage(index ? 'frontend' : 'primitives', directory, version)
       execFileSync('git', ['apply', join(repositoryRoot, result.path)], { cwd: path })
       const source = readFileSync(join(path, result.files[0]), 'utf8')
       const fixture = currentPreviewFixture(source, index === 1)

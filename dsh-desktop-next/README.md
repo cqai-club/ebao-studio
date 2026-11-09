@@ -2,11 +2,11 @@
 
 English | [中文](README.zh.md)
 
-A separate experimental package based on DeepSeek Harness **0.1.6-alpha.2**. The main window loads the official published `@deepseek-ai/dsh-web-frontend`, sharing the official Web application, plugin manager, and basic Desktop presentation. Next adds the system tray, desktop preferences and tools, Profiles, recovery, Agents Anywhere remote control, Community Market, and dshmarket.
+A separate experimental package based on DeepSeek Harness **0.2.2-rc.1**. The main window loads the official published `@deepseek-ai/dsh-web-frontend`, sharing the official Web application, plugin manager, and basic Desktop presentation. Next adds the system tray, desktop preferences and tools, Profiles, recovery, Agents Anywhere remote control, Community Market, and dshmarket.
 
 ## Development and verification
 
-Run from the outer repository root with Node.js `^22.19.0` or `>=24.0.0` and Corepack's Yarn 4.18.0:
+Run from the outer repository root with Node.js `>=24.9.0` and Corepack's Yarn 4.18.0:
 
 ```sh
 git submodule update --init --recursive
@@ -101,7 +101,7 @@ Screen sharing uses `navigator.mediaDevices.getDisplayMedia({ video: true, audio
 
 Computer Use (Next) is the Desktop's own computer use, built on the bundled official `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` provider, and is **disabled by default**. Use the Computer Use (Next) section at the top of **Plugins** to enable it and read its live loading status. This entry uses the official Plugins slot, switch and plugin manager; its Profile row ID is `computer-use-cua-driver-native`. Tools and screenshots use existing conversation tool cards and image attachments; screenshot understanding requires a model route declaring image input. The gear to the left of the switch opens the permission dialog. By default a Session loads its tools and guidance only after `/computer-use`, and `/computer-use off` removes them; its plugin page can keep them in every Session instead.
 
-The version-scoped Yarn patch at `patches/dsh-experimental-computer-use-cua-driver-native@0.1.6-alpha.2.patch` routes `check_permissions` through `desktopPermissions` when available. `prompt: true` reveals the permission dialog for missing grants, then the driver performs a read-only check with `prompt: false`. The driver remains the authority for its own actual permission status; no grant is inferred from the Desktop response. Without the Desktop service, the provider retains upstream behavior. The pinned `@trycua/cua-driver@0.28.0` binary, operation tools, image handling and shutdown ownership are unchanged. Only one provider can register, but that does not serialize concurrent Sessions operating the same desktop.
+The version-scoped Yarn patch at `patches/dsh-experimental-computer-use-cua-driver-native@0.2.2-rc.1.patch` routes `check_permissions` through `desktopPermissions` when available. `prompt: true` reveals the permission dialog for missing grants, then the driver performs a read-only check with `prompt: false`. The driver remains the authority for its own actual permission status; no grant is inferred from the Desktop response. Without the Desktop service, the provider retains upstream behavior. The pinned `@trycua/cua-driver@0.28.0` binary, operation tools, image handling and shutdown ownership are unchanged. Only one provider can register, but that does not serialize concurrent Sessions operating the same desktop.
 
 Unit tests exercise the installed patched provider with a fake native SDK. The optional native activation check requires a supported SDK platform, loads and shuts down the real provider, and sends no input or screenshots:
 

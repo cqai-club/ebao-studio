@@ -18,23 +18,26 @@ it('inherits the pinned upstream entitlement file for the main app and all Helpe
 })
 
 it('checks both architectures in the main app and all four Helpers', () => {
-  const read = vi.fn(() => granted)
-  verifyNextMacEntitlements('/mounted/e宝工坊.app', read)
+  const read = vi.fn((_path: string, _arch: string) => granted)
+  const { build } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const executableName = build.mac.executableName as string
+  verifyNextMacEntitlements('/mounted/易宝工坊.app', read)
   expect(read).toHaveBeenCalledTimes(10)
   for (const suffix of ['', ' (Renderer)', ' (GPU)', ' (Plugin)']) {
+    expect(read.mock.calls.some(([path]) => String(path).endsWith(`${executableName} Helper${suffix}.app`))).toBe(true)
     for (const arch of ['arm64', 'x86_64']) {
-      expect(read).toHaveBeenCalledWith(join('/mounted/e宝工坊.app', 'Contents', 'Frameworks', `e宝工坊 Helper${suffix}.app`), arch)
+      expect(read).toHaveBeenCalledWith(join('/mounted/易宝工坊.app', 'Contents', 'Frameworks', `易宝工坊 Helper${suffix}.app`), arch)
     }
   }
 })
 
 it.each([undefined, false, 'true'])('rejects missing or non-boolean audio input grants: %s', value => {
-  expect(() => verifyNextMacEntitlements('/mounted/e宝工坊.app', (path, arch) =>
+  expect(() => verifyNextMacEntitlements('/mounted/易宝工坊.app', (path, arch) =>
     path.endsWith('Helper.app') && arch === 'x86_64'
       ? { ...granted, 'com.apple.security.device.audio-input': value } : granted,
   )).toThrow(/audio-input.*Helper.app.*x86_64/)
 })
 
 it('propagates a signature inspection failure instead of accepting an unchecked artifact', () => {
-  expect(() => verifyNextMacEntitlements('/mounted/e宝工坊.app', () => { throw new Error('codesign failed') })).toThrow('codesign failed')
+  expect(() => verifyNextMacEntitlements('/mounted/易宝工坊.app', () => { throw new Error('codesign failed') })).toThrow('codesign failed')
 })

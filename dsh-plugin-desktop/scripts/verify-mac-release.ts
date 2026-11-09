@@ -30,7 +30,7 @@ export function nextMacVerification(signed: boolean, distDir: string, env: NodeJ
   const architecture = signed ? undefined : macSmokeArchitecture(env)
   const smokeSlices = architecture === undefined ? undefined : macSmokeExecutableSlices(architecture)
   const inPlace = architecture !== undefined && macSmokeTarget(env) === 'dir' ? join(distDir, macApplicationDirectory(architecture)) : undefined
-  return { distDir, productName: 'e宝工坊', nativeEntries: NEXT_MAC_NATIVE_ENTRIES,
+  return { distDir, productName: '易宝工坊', nativeEntries: NEXT_MAC_NATIVE_ENTRIES,
     // Next archives its application; native files live beside the archive.
     unpackedRoot: appPath => join(appPath, 'Contents', 'Resources', 'app.asar.unpacked'),
     listDmgs: inPlace !== undefined ? () => [inPlace] : path => readdirSync(path).filter(name => name.endsWith('.dmg')).map(name => join(path, name)).filter(path => statSync(path).isFile()),

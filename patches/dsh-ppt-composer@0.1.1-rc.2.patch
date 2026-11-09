@@ -12,23 +12,67 @@ index 0000000..2340e5b
 +  <circle cx="18" cy="13" r="1" fill="#C95C38"/>
 +</svg>
 diff --git a/lib/client.js b/lib/client.js
-index 053cf03..37b19f2 100644
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -1375,13 +1375,6 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
+@@ -304,14 +304,16 @@
+ 				const activeMode = this.snapshot(sessionId).activeMode ?? (next?.presentationMode === "ppt" ? "ppt" : null);
+ 				this.setTemplates(sessionId, next?.templates ?? []);
+ 				if (!client?.bound || activeMode === null) return true;
+-				this.setMode(sessionId, activeMode);
++				// Applying an unchanged empty catalog must not bump revision: that would
++				// restart the catalog effect and create an endless request loop.
++				if (this.snapshot(sessionId).activeMode !== activeMode) this.setMode(sessionId, activeMode);
+ 				this.setNotice(sessionId, next?.templateMigration?.reason ?? null);
+ 				const selected = (next?.templates ?? []).find((template) => template.id === next.selectedTemplateId && (template.supportedModes?.includes("ppt") ?? true));
+ 				if (selected === void 0) {
+-					this.deselect(sessionId, activeMode);
++					if (this.snapshot(sessionId).selectedId !== null) this.deselect(sessionId, activeMode);
+ 					return true;
+ 				}
+-				this.select(sessionId, selected, activeMode);
++				if (this.snapshot(sessionId).selectedId !== selected.id) this.select(sessionId, selected, activeMode);
+ 				return true;
+ 			}
+ 		};
+@@ -1354,30 +1356,23 @@
+ 		*/
+ 		function applyStandard(ctx) {
+ 			const injectHero = officePptHeroInjection(ctx);
+-			ctx.slots.inject("conversation.hero.modeActions", () => ctx.slots.register({
+-				name: "conversation.hero.modeActions",
++			ctx.slots.inject("conversation.hero.options", () => ctx.slots.register({
++				name: "conversation.hero.options",
+ 				id: "dsh-ppt",
+ 				order: 20,
  				locale: NS,
  				inject: injectHero
- 			}, OfficePptStandardComposerDock));
--			ctx.slots.inject("conversation.composer.dock", () => ctx.slots.register({
--				name: "conversation.composer.dock",
+ 			}, OfficePptStandardModeAction));
+-			ctx.slots.inject("conversation.input.accessory", () => ctx.slots.register({
+-				name: "conversation.input.accessory",
+-				id: "dsh-ppt",
++			ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
++				name: "conversation.input.dock",
++				id: "dsh-ppt-selection",
+ 				order: 20,
+ 				locale: NS,
+ 				inject: injectHero
+ 			}, OfficePptStandardInputAccessory));
+-			ctx.slots.inject("conversation.hero.dock", () => ctx.slots.register({
+-				name: "conversation.hero.dock",
 -				id: "dsh-ppt",
 -				order: 20,
 -				locale: NS,
 -				inject: injectHero
 -			}, OfficePptStandardComposerDock));
- 		}
- 		//#endregion
- 		//#region src/client/index.ts
+-			ctx.slots.inject("conversation.composer.dock", () => ctx.slots.register({
+-				name: "conversation.composer.dock",
+-				id: "dsh-ppt",
++			ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
++				name: "conversation.input.dock",
++				id: "dsh-ppt-chooser",
+ 				order: 20,
+ 				locale: NS,
+ 				inject: injectHero
 diff --git a/package.json b/package.json
 index 60f4817..abd172d 100644
 --- a/package.json

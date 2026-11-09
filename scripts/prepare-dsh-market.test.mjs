@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
+import { createServer } from 'node:http'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
+import { pathToFileURL } from 'node:url'
 import { MARKET_WORKSPACES, latestMarket, marketResolution, prepareMarket } from './prepare-dsh-market.mjs'
 
 const reply = version => async () => new Response(JSON.stringify({ name: 'dshmarket', version }))
@@ -68,6 +71,76 @@ test('does not accept an offline or malformed latest response', async () => {
   await assert.rejects(latestMarket(async () => new Response('', { status: 503 })), /503/)
   await assert.rejects(latestMarket(reply('latest')), /invalid/)
   await assert.rejects(latestMarket(async () => new Response(JSON.stringify({ name: 'other', version: '1.0.0' }))), /invalid/)
+})
+
+test('detects the installation-owned market and isolates update cache by its version', async t => {
+  const { root } = fixture(t)
+  const desktopRequire = createRequire(new URL('../dsh-plugin-desktop-beta/package.json', import.meta.url))
+  const marketDirectory = dirname(desktopRequire.resolve('dshmarket/package.json'))
+  const updates = await import(pathToFileURL(join(marketDirectory, 'lib/updates.js')).href)
+  const proxyNames = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'npm_config_proxy', 'npm_config_https_proxy']
+  const proxyValues = new Map(proxyNames.map(name => [name, process.env[name]]))
+  for (const name of proxyNames) delete process.env[name]
+  t.after(() => {
+    updates.setUpdateRegistry('https://registry.npmjs.org')
+    for (const [name, value] of proxyValues) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  })
+  let requests = 0
+  const registry = createServer((_request, response) => {
+    requests++
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ name: 'dshmarket', version: '9.0.0', 'dist-tags': { latest: '9.0.0' } }))
+  })
+  await new Promise((resolve, reject) => registry.listen(0, '127.0.0.1', resolve).once('error', reject))
+  t.after(() => new Promise(resolve => registry.close(resolve)))
+  updates.setUpdateRegistry(`http://127.0.0.1:${registry.address().port}`)
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'test-profile', dependencies: {}, dsh: { profile: { bundles: [] } } }))
+  const check = version => updates.checkUpdates('test', false, root, new Map([['dshmarket', 'stable']]),
+    new Map(), new Map(), {}, new Map([['dshmarket', version]]))
+  const first = (await check('1.0.0')).dshmarket
+  assert.equal(first.current, '1.0.0')
+  assert.equal(first.latest, '9.0.0')
+  assert.equal(first.updateAvailable, true)
+  assert.equal((await check('2.0.0')).dshmarket.current, '2.0.0')
+  assert.equal(requests, 2, 'a different desktop-provided version must not reuse the previous cache entry')
+  assert.deepEqual(await updates.checkUpdates('test', false, root), {}, 'no market is invented for an ordinary profile')
+})
+
+test('keeps existing composition failures but rolls back newly introduced errors', async () => {
+  const desktopRequire = createRequire(new URL('../dsh-plugin-desktop-beta/package.json', import.meta.url))
+  const source = readFileSync(join(dirname(desktopRequire.resolve('dshmarket/package.json')), 'lib/routes.js'), 'utf8')
+  const start = source.indexOf('let trialError = null;')
+  const end = source.indexOf('let compatibility;', start)
+  assert.ok(start !== -1 && end > start, 'the installed market must retain its composition rollback branch')
+  const block = source.slice(start, end)
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+  const run = new AsyncFunction('trialBefore', 'trial', 'rollbackAttemptBuild', `
+    let ok = true, rollbackOk, rollbackDetail;
+    const name = 'fixture', activeProfileDir = '/fixture', hostAnchorOption = undefined, config = { profile: 'test' };
+    const readBundleStack = () => ({ community: [] });
+    const trialValidate = () => trial;
+    const logEvent = () => {};
+    ${block}
+    return { ok, rollbackOk, rollbackDetail, trialError };
+  `)
+  const existing = { layer: 'old-plugin', message: 'pre-existing issue' }
+  const introduced = { layer: 'updated-plugin', message: 'new invalid patch' }
+  let rollbacks = 0
+  const rollback = async () => { rollbacks++; return { ok: true } }
+  const unchanged = await run({ errors: [existing] }, { errors: [existing] }, rollback)
+  assert.equal(unchanged.ok, true)
+  assert.equal(rollbacks, 0)
+  const broken = await run({ errors: [existing] }, { errors: [existing, introduced] }, rollback)
+  assert.equal(broken.ok, false)
+  assert.equal(broken.rollbackOk, true)
+  assert.match(broken.trialError, /updated-plugin: new invalid patch/)
+  assert.equal(rollbacks, 1)
+  const failedRollback = await run({ errors: [] }, { errors: [introduced] }, async () => ({ ok: false, detail: 'restore failed' }))
+  assert.equal(failedRollback.rollbackOk, false)
+  assert.match(failedRollback.trialError, /restore failed/)
 })
 
 test('all root launch, build and packaging entry points prepare the market first', () => {

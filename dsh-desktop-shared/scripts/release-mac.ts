@@ -11,7 +11,7 @@ import {
 } from './release-preflight.ts'
 import { prepareInstalledMacUniversalRuntime } from './mac-universal.ts'
 import { prepareFsExtForElectron } from './prepare-fs-ext.ts'
-import { electronBuilderEnvironment } from './electron-builder-environment.ts'
+import { electronBuilderEnvironment, releaseArtifactNameArgs } from './electron-builder-environment.ts'
 import { desktopRuntimeTargets, prepareDesktopInterpreters, primaryRuntimeDirectory, verifyPreparedDesktopRuntime } from './prepare-runtime.ts'
 import { signMacRuntime, withMacSigningIdentity } from './sign-runtime.ts'
 
@@ -112,9 +112,10 @@ export function releaseMac(options: MacReleaseOptions = defaultReleaseOptions())
   options.resetOutput()
   options.prepareRuntime()
   options.run('yarn', [
-    'exec', 'electron-builder', '--mac', 'dmg', '--universal',
+    'exec', 'electron-builder', '--mac', 'dmg', 'zip', '--universal',
     '--config.forceCodeSigning=true', '--config.mac.notarize=true',
     '--config.npmRebuild=false',
+    ...releaseArtifactNameArgs(options.env, 'mac'),
     `--config.directories.output=${options.outputDir}`,
   ], options.desktopRoot, electronBuilderEnvironment(releaseEnvironment))
   options.run(
