@@ -20,13 +20,13 @@ export interface LiteratureSearchResult {
 
 interface OpenAlexWork {
   id?: string
-  doi?: string
+  doi?: string | null
   title?: string
   display_name?: string
   publication_year?: number
   language?: string
   cited_by_count?: number
-  abstract_inverted_index?: Record<string, number[]>
+  abstract_inverted_index?: Record<string, number[]> | null
   authorships?: Array<{ author?: { display_name?: string } }>
   primary_location?: { landing_page_url?: string; source?: { display_name?: string } }
 }
@@ -43,14 +43,14 @@ interface CrossrefItem {
   'is-referenced-by-count'?: number
 }
 
-function normalizeDoi(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined
+function normalizeDoi(value: string | null | undefined): string | undefined {
+  if (value == null) return undefined
   const doi = value.replace(/^https?:\/\/doi\.org\//iu, '').trim()
   return doi === '' ? undefined : doi
 }
 
-function reconstructAbstract(index: Record<string, number[]> | undefined): string | undefined {
-  if (index === undefined) return undefined
+function reconstructAbstract(index: Record<string, number[]> | null | undefined): string | undefined {
+  if (index == null) return undefined
   const words: Array<[number, string]> = []
   for (const [word, positions] of Object.entries(index)) {
     for (const position of positions) words.push([position, word])

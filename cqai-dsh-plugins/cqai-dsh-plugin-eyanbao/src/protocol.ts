@@ -114,6 +114,9 @@ export interface ProjectSummary {
 
 export interface RunRequest {
   prompt: string
+  researchMaterial?: string
+  sourceProjectId?: string
+  selectedSourceIds?: string[]
   kind: TaskKind
   degree: Degree
   discipline: string
@@ -229,6 +232,21 @@ export function parseRunRequest(value: unknown): RunRequest {
   const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
   if (prompt.length < 4) throw new Error('请至少输入四个字的研究需求')
   if (prompt.length > 4000) throw new Error('研究需求不能超过 4000 个字符')
+  if (body.researchMaterial !== undefined && typeof body.researchMaterial !== 'string') throw new Error('研究材料必须是文本')
+  const researchMaterial = typeof body.researchMaterial === 'string' ? body.researchMaterial.trim() : ''
+  if (researchMaterial.length > 10000) throw new Error('研究材料不能超过 10000 个字符')
+  const kind = taskKind(body.kind)
+  const hasSelection = body.sourceProjectId !== undefined || body.selectedSourceIds !== undefined
+  if (hasSelection && kind !== 'review') throw new Error('仅文献综述支持选择检索项目')
+  let sourceProjectId: string | undefined
+  let selectedSourceIds: string[] | undefined
+  if (hasSelection) {
+    if (typeof body.sourceProjectId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(body.sourceProjectId)) throw new Error('检索项目 ID 无效')
+    if (!Array.isArray(body.selectedSourceIds) || body.selectedSourceIds.length < 1 || body.selectedSourceIds.length > 30 || body.selectedSourceIds.some(id => typeof id !== 'string' || id.length === 0 || id.length > 2048)) throw new Error('请选择 1 到 30 条有效文献')
+    if (new Set(body.selectedSourceIds).size !== body.selectedSourceIds.length) throw new Error('文献不能重复选择')
+    sourceProjectId = body.sourceProjectId
+    selectedSourceIds = body.selectedSourceIds as string[]
+  }
   const sourceCount = Number(body.sourceCount ?? 12)
   if (!Number.isInteger(sourceCount) || sourceCount < 3 || sourceCount > 30) throw new Error('文献数量需在 3 到 30 之间')
   const year = body.yearFrom === undefined || body.yearFrom === null || body.yearFrom === ''
@@ -246,7 +264,9 @@ export function parseRunRequest(value: unknown): RunRequest {
   }
   return {
     prompt,
-    kind: taskKind(body.kind),
+    ...(researchMaterial ? { researchMaterial } : {}),
+    ...(sourceProjectId && selectedSourceIds ? { sourceProjectId, selectedSourceIds } : {}),
+    kind,
     degree: degree(body.degree ?? 'master'),
     discipline: clean('discipline', 80),
     language: language(body.language ?? 'zh'),
