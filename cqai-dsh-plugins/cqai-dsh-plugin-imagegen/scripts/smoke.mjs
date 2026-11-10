@@ -3464,6 +3464,7 @@ await check('E1 client apply registers and renders the official image studio (js
         sessionId: undefined,
         inputActions: undefined,
         useInput: () => undefined,
+        useSession: () => undefined,
       })
     },
   }))

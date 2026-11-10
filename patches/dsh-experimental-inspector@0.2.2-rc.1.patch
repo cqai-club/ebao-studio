@@ -1,0 +1,15 @@
+diff --git a/lib/devtools/chunks/legacy-DVodi6aW.js b/lib/devtools/chunks/legacy-DVodi6aW.js
+index ff7ab4e..993f314 100644
+--- a/lib/devtools/chunks/legacy-DVodi6aW.js
++++ b/lib/devtools/chunks/legacy-DVodi6aW.js
+@@ -867,7 +867,9 @@ var Wn = function(e, t, n, r, i) {
+ 	setWhitelistedShortcuts(e) {}
+ 	setEyeDropperActive(e) {}
+ 	showCertificateViewer(e) {}
+-	reattach(e) {}
++	reattach(e) {
++		e();
++	}
+ 	readyForTest() {}
+ 	connectionReady() {}
+ 	setOpenNewWindowForPopups(e) {}

@@ -1,3 +1,4 @@
+import { executeTool, installTestExecutor } from './tool-runtime-fixtures.ts'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -75,7 +76,8 @@ async function fixture() {
     } } as never)
     ctx.provide('desktopRuntime', { publisher: runtime } as never)
     await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-    await ctx.plugin(ToolRuntime, { mode: 'native' })
+    await ctx.plugin(ToolRuntime)
+    await installTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     ctx.provide('attachments', {} as never)
     ctx.provide('sessionController', { list: async () => ({
@@ -130,10 +132,10 @@ async function fixture() {
         source: { kind: 'user' }, content: [{ type: 'text', text: userRequest }],
       })
       ctx.emit('agent/inbox/claimed', { agent, message, turn: 1 })
-      const loaded = await ctx.tools.execute({ agent, name: 'skill', arguments: { name: PUBLISHING_SKILL.name },
+      const loaded = await executeTool(ctx, { agent, name: 'skill', arguments: { name: PUBLISHING_SKILL.name },
         callId: ToolCallId('load-publish-skill'), signal: new AbortController().signal })
       expect(loaded.isError).toBe(false)
-      const result = await ctx.tools.execute({ agent, name: 'publisher_request_publication', arguments: {
+      const result = await executeTool(ctx, { agent, name: 'publisher_request_publication', arguments: {
         source: 'current-draft', content_id: content.id, binding_token: bound.body.bindingToken,
         expected_revision: content.revision, platforms: ['bjh'], account_ids: [account.id], mode: 'draft',
       }, callId: ToolCallId(callId), signal: new AbortController().signal })

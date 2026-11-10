@@ -31,6 +31,8 @@ export interface MarketSourceSaveOptions {
  * because they reach a medium.
  */
 export interface MarketStateStore {
+  /** Wait for a storage domain that is already being opened, if any. */
+  waitUntilReady?(): Promise<void>
   /** Ordered source registry as last written; an unwritten store reads empty. */
   getSources(): readonly LocalSourceRecord[]
   /** Replace the whole ordered registry. */
@@ -96,6 +98,22 @@ export class MemoryMarketStateStore implements MarketStateStore {
 export class DeferredMarketStateStore implements MarketStateStore {
   private delegate: MarketStateStore = new MemoryMarketStateStore()
   private durable = false
+  private readiness: Promise<void> = Promise.resolve()
+
+  /** Announce an in-flight domain open before routes can observe placeholder state. */
+  beginAdoption(): () => void {
+    let finish!: () => void
+    this.readiness = new Promise<void>(resolve => { finish = resolve })
+    return finish
+  }
+
+  async waitUntilReady(): Promise<void> {
+    for (;;) {
+      const readiness = this.readiness
+      await readiness
+      if (readiness === this.readiness) return
+    }
+  }
 
   /**
    * @param warn - receives one line whenever state is dropped or a durable

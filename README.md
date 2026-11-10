@@ -28,7 +28,7 @@ e剪宝的已有口播视频制作表单，可选择素材、填写文案并调�
 
 ## 从源码开发
 
-需要 Node.js `^22.19.0` 或 `>=24.0.0`、Git 和 Corepack；仓库使用 Yarn `4.18.0`。在**仓库根目录**初始化固定的上游子模块并安装依赖：
+需要 Node.js `>=24.9.0`、Git 和 Corepack；仓库使用 Yarn `4.18.0`。在**仓库根目录**初始化固定的上游子模块并安装依赖：
 
 ```bash
 git submodule update --init --recursive

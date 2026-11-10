@@ -107,6 +107,22 @@ afterEach(async () => {
 })
 
 describe('CQAI account client registration', () => {
+  it('adds the Club panel to the current Desktop without replacing the official launcher', () => {
+    vi.stubGlobal('desktopNext', { state: vi.fn() })
+    const { ctx, registrations } = clientHarness()
+    apply(ctx)
+    expect(registrations.map(registration => registration.options)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'main', key: 'cqai-club' }),
+      expect.objectContaining({ name: 'sidebar.panellist', id: 'cqai-club' }),
+      expect.objectContaining({ name: 'settings.section', id: 'cqaiclub-dsn-account' }),
+    ]))
+    expect(registrations.some(registration => registration.options.name === 'settings.launcher')).toBe(false)
+    const panel = registrations.find(registration => registration.options.name === 'main' && registration.options.key === 'cqai-club')!
+    const section = registrations.find(registration => registration.options.name === 'settings.section' && registration.options.id === 'cqaiclub-dsn-account')!
+    expect(panel.options.children).toHaveProperty('cqaiclub.club.extension')
+    expect(section.options.children).toBeUndefined()
+  })
+
   it('places CQAI login between the welcome notice and DeepSeek onboarding', () => {
     const { ctx, registrations } = clientHarness()
 

@@ -1,0 +1,13 @@
+diff --git a/lib/index.js b/lib/index.js
+index 6eb6c11..7fa4b5d 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -106,7 +106,7 @@ const EXTENSION_BUNDLES = [
+ const MORE_BUNDLES = [
+ 	"@deepseek-ai/dsh-personalized-recommendations",
+ 	"@deepseek-ai/dsh-experimental-inspector-profile",
+-	"@deepseek-ai/dsh-cua-bundle",
++	// Desktop offers the shipped Computer Use bundle in the main optional list.
+ 	"@deepseek-ai/dsh-experimental-cot-translation-bundle",
+ 	"@deepseek-ai/dsh-experimental-session-search",
+ 	"@deepseek-ai/dsh-experimental-session-titles-bundle",

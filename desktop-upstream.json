@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/anywhere-labs/dsh-desktop.git",
+  "ref": "master",
+  "commit": "117e4899132553b230cafd902d78c0f8f0020132",
+  "architecture": "isolated-host",
+  "packages": {
+    "dsh-plugin-desktop": "dsh-plugin-desktop-beta",
+    "dsh-plugin-desktop-beta": "dsh-plugin-desktop-beta",
+    "dsh-desktop-next": "dsh-desktop-next",
+    "dsh-desktop-shared": "dsh-plugin-desktop"
+  },
+  "runtimeAdapters": {
+    "source": "dsh-plugin-desktop-beta",
+    "version": "0.2.2-alpha.3"
+  }
+}

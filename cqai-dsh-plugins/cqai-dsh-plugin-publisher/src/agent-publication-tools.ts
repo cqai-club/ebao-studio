@@ -1,6 +1,6 @@
 /** Publication requests can propose a card; only the user's UI click can submit. */
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
 import { validAgentSessionId } from './agent-draft-binding.ts'
 import type { AgentPublications, AgentPublicationRequest } from './agent-publication.ts'
 import { PLATFORMS, type Platform } from './protocol.ts'
@@ -65,6 +65,7 @@ export function registerAgentPublicationTools(
   ctx: Context,
   publications: AgentPublications,
   available: (sessionId: string) => Promise<boolean>,
+  options: ToolRegistrationOptions = {},
 ): () => void {
   const sessionOf = async (agent: { id: string; session?: { header?: { origin?: string } } } | undefined) => {
     if (!agent || agent.session?.header?.origin === 'subagent') throw new Error('发布确认需要当前主 Agent 对话')
@@ -105,7 +106,7 @@ export function registerAgentPublicationTools(
         exec.signal.throwIfAborted()
         return json(publicationResult(request, source))
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'publisher_get_publication_status',
       description: 'Read this conversation’s publication status. Queued is not platform success; unknown results need manual checking, never automatic resubmission.',
@@ -118,7 +119,7 @@ export function registerAgentPublicationTools(
         exec.signal.throwIfAborted()
         return json(publicationResult(request))
       },
-    })),
+    }), options),
   ]
   return () => { for (const close of dispose.reverse()) close() }
 }

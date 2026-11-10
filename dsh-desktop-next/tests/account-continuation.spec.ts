@@ -1,25 +1,23 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { registerDesktopOnboarding } from '../../dsh-plugin-desktop-beta/src/client/onboarding.tsx'
+import { registerDesktopOnboarding } from '../src/client/onboarding.tsx'
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], setters: [] as ReturnType<typeof vi.fn>[], effects: [] as (() => unknown)[] }))
-// The shared coordinator resolves React and primitives from Beta's workspace.
-// Mock those module identities rather than Next's separate installed copies.
-vi.mock('../../dsh-plugin-desktop-beta/node_modules/react/index.js', async importOriginal => ({
+// Vitest aliases these shared peers to Next's installed copies.
+vi.mock('react', async importOriginal => ({
   ...await importOriginal<typeof import('react')>(),
   useState: () => {
     const setter = vi.fn()
     hooks.setters.push(setter)
     return [hooks.values.shift(), setter]
   },
-  useRef: (value: unknown) => ({ current: value }),
   useEffect: (effect: () => unknown) => { hooks.effects.push(effect) },
 }))
-vi.mock('../../dsh-plugin-desktop-beta/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js', () => ({ Button: 'button', Toast: 'official-toast' }))
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({ Button: 'button', Toast: 'official-toast' }))
 afterEach(() => { vi.unstubAllGlobals() })
 
 function fixture(signedIn: boolean, required = false, failDismiss = false, overrides = {}) {
   const snapshot = { profile: 'work', required, accountPending: !required, edition: 'desktop', restartPending: false, input: { platform: 'darwin' }, ...overrides }
-  hooks.values = [snapshot, '', undefined, '', 0, 0, false]; hooks.setters = []; hooks.effects = []
+  hooks.values = [snapshot, '', 0, false]; hooks.setters = []; hooks.effects = []
   const bridge = {
     read: vi.fn(async (): Promise<typeof snapshot | null> => snapshot), finish: vi.fn(async () => {}),
     dismissAccount: vi.fn(async () => { if (failDismiss) throw new Error('save failed') }),
@@ -38,7 +36,7 @@ function fixture(signedIn: boolean, required = false, failDismiss = false, overr
     openLogin, renderNext, renderLoading, renderNavigation: vi.fn(), renderSurface: (value: unknown) => value }
   const result = Component(props)
   const renderWithSnapshot = (value: unknown) => {
-    hooks.values = [value, '', undefined, '', 0, 0, false]
+    hooks.values = [value, '', 0, false]
     return Component(props)
   }
   return { bridge, content, openLogin, result, snapshot, renderNext, renderWithSnapshot }

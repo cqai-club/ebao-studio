@@ -585,7 +585,7 @@ export function apply(ctx: Context): void {
     })
     return () => { disposeSession(); liveSession = () => false; draftBindings.clear() }
   })
-  ctx.inject(['agents', 'tools', 'attachments', 'skills', 'systemPrompt'], (agentCtx) => {
+  ctx.inject(['agents', 'tools', 'attachments', 'skills', 'systemPrompt', 'workingDirectory'], (agentCtx) => {
     const tasks = new PublisherDelegations(agentCtx, draftBindings, {
       owns: (id, contentId) => isCurrentPublisherSession(id, contentId),
       available: async id => await listedSession(id) && !archivedSession(id),

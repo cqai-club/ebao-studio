@@ -3,7 +3,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -25,7 +25,7 @@ const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { failure.target = ''; for (const dispose of cleanup.splice(0).reverse()) await dispose() })
 
 async function fixture() {
-  const home = mkdtempSync(join(tmpdir(), 'publisher-article-handoff-'))
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'publisher-article-handoff-')))
   const cwd = join(home, 'ordinary-workspace')
   mkdirSync(cwd)
   const env = { DSH_HOME: home }

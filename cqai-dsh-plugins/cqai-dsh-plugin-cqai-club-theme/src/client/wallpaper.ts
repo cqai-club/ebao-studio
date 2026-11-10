@@ -34,12 +34,15 @@ export const CLASSIC_DARK_BACKGROUND = [
 // and conversation. The PPT panel mounts alongside the home dock; exclude it.
 const HOME_FRAME = 'body:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) .dshDesktopFrame:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] .eBaoHomeDock):not(:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] [data-office-ppt-template-panel]))'
 const DARK_HOME_FRAME = 'body[data-ds-dark-theme]:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) .dshDesktopFrame:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] .eBaoHomeDock):not(:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] [data-office-ppt-template-panel]))'
+const MODERN_HOME = '[data-conversation-content][data-content-phase="hero"]:has(.eBaoHomeDock):not(:has([data-office-ppt-template-panel]))'
 
 // The default mist fills the shared frame; translucency and blur live on the
 // surfaces above it. Scope this to the built-in background, not custom images.
 const CLASSIC_FROST_CSS = `
 ${HOME_FRAME} { background-color: #F7FAFF; background-image: ${CLASSIC_LIGHT_BACKGROUND}; }
 ${DARK_HOME_FRAME} { background-color: #171D28; background-image: ${CLASSIC_DARK_BACKGROUND}; }
+${MODERN_HOME} { background-color: #F7FAFF; background-image: ${CLASSIC_LIGHT_BACKGROUND}; }
+body[data-ds-dark-theme] ${MODERN_HOME} { background-color: #171D28; background-image: ${CLASSIC_DARK_BACKGROUND}; }
 ${HOME_FRAME} .dshDesktopSidebarSurface {
   background: rgb(255 255 255 / 75%) !important;
   -webkit-backdrop-filter: blur(20px);
@@ -176,6 +179,14 @@ ${DARK_HOME_FRAME} .eBaoHomeSectionActions .eBaoHomeAdd {
 `
 
 const CSS = `
+${MODERN_HOME} {
+  background-color: var(--dsw-alias-bg-base);
+  background-image: var(--cqai-club-home-light-background);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+body[data-ds-dark-theme] ${MODERN_HOME} { background-image: var(--cqai-club-home-dark-background); }
 ${HOME_FRAME} {
   background-color: var(--dsw-alias-bg-base);
   background-image: var(--cqai-club-home-light-background);
@@ -201,6 +212,7 @@ ${HOME_FRAME} .dshDesktopMacCaptionRow {
   background: transparent !important;
 }
 @media (forced-colors: active) {
+  ${MODERN_HOME} { background-image: none !important; }
   ${HOME_FRAME}, ${DARK_HOME_FRAME} { background-image: none; }
   ${HOME_FRAME} .dshDesktopSidebarSurface { background: Canvas !important; }
 }

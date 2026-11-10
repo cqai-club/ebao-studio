@@ -4,7 +4,6 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import { renderSkillContent } from '@deepseek-ai/dsh-skill'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
-import type { AssembleContext, PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type { ImageGenerationRuntime } from './generation-runtime.ts'
 import { registerAgentImageTools, type AgentImageToolConfig } from './agent-image-tools.ts'
 import { AGENT_IMAGE_SKILL, isAgentImageSkill } from './agent-image-skill.ts'
@@ -16,6 +15,7 @@ interface State {
   generation: number
   requestId?: string
   gesture?: boolean
+  authorized?: boolean
   canvas?: symbol
   skill?: () => void
   tools?: () => void
@@ -23,7 +23,6 @@ interface State {
   restriction?: () => void
 }
 interface Activation { agent: Agent; state: State; generation: number; requestId: string }
-interface SlashAssembly { activation: Activation; assembly: PromptAssembly; context: AssembleContext }
 
 function deliversImageInstructions(content: readonly { type: string; text?: string }[]): boolean {
   // PTC may return the Skill object as JSON, or print its body into logs.
@@ -31,22 +30,10 @@ function deliversImageInstructions(content: readonly { type: string; text?: stri
     && (block.text.includes(AGENT_IMAGE_SKILL.content) || block.text.includes(JSON.stringify(AGENT_IMAGE_SKILL.content))))
 }
 
-function refreshAssembly(target: PromptAssembly, source: PromptAssembly): void {
-  // Complete/suppressed prompt profiles return a shallow copy after the
-  // waterfall. Preserve shared arrays so that copy receives the new schemas.
-  target.tools.splice(0, target.tools.length, ...source.tools)
-  target.sections.splice(0, target.sections.length, ...source.sections)
-  target.contexts.splice(0, target.contexts.length, ...source.contexts)
-  for (const key of Object.keys(target.variables)) delete target.variables[key]
-  Object.assign(target.variables, source.variables)
-}
-
 export class AgentImageSkills {
   private readonly states = new Map<Agent, State>()
   private readonly loads = new Map<ToolExecutionToken, Activation>()
   private readonly pending = new Map<ToolExecutionToken, Activation[]>()
-  private readonly assembling = new Set<Agent>()
-  private readonly slashAssemblies = new Map<Agent, SlashAssembly>()
   private readonly disposers: (() => void)[] = []
   private disposed = false
 
@@ -88,59 +75,39 @@ export class AgentImageSkills {
         const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
         state.gesture = gesture || [...text.matchAll(/(^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/g)]
           .some(match => match[2] === AGENT_IMAGE_SKILL.name)
+        if (state.gesture && this.visible()) this.prepareSlash(agent, state)
       }),
       ctx.on('agent/status', ({ agent, status }) => { if (status === 'idle' && !this.states.get(agent)?.canvas) this.reset(agent) }),
       ctx.on('agent/disposed', ({ agent }) => { this.remove(agent) }),
-      ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
-        const assembly = await next()
-        const agent = context.scope as Agent | undefined
-        if (!agent || context.signal?.aborted || this.assembling.has(agent)) return assembly
-        const state = this.states.get(agent)
-        if (!state?.gesture || state.tools || !ctx.tools.get('skill', agent)) return assembly
-        const activation = this.activation(agent)
-        const pending = this.slashAssemblies.get(agent)
-        // Another Skill can reassemble during the same pre-step. Keep the
-        // AgentLoop's original assembly, rather than capturing that nested copy.
-        if (activation && (!pending || pending.context.signal !== context.signal || !this.current(pending.activation))) {
-          this.slashAssemblies.set(agent, { activation, assembly, context })
-        }
-        return assembly
-      }, { prepend: true }),
       ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
-        // Wait for the native loader's final admission, rather than trusting
-        // a same-name tool. AgentLoop assembled before this waterfall; update
-        // that same assembly after actual instruction delivery for the first call.
-        const decision = await next()
-        const pending = this.slashAssemblies.get(agent)
-        this.slashAssemblies.delete(agent)
-        if (!pending) return decision
-        pending.activation.state.gesture = undefined
-        if (decision.kind === 'reject' || signal.aborted || pending.context.signal?.aborted
-          || (pending.context.signal && pending.context.signal !== signal) || !ctx.tools.get('skill', agent)
-          || !this.current(pending.activation)) return decision
+        // Step admission is resolved before this waterfall. Slash tools were
+        // registered conditionally at the user gesture; execution remains
+        // blocked until the native loader actually delivers trusted instructions.
+        let decision
+        try { decision = await next() }
+        catch (error) {
+          const pending = this.states.get(agent)
+          if (pending) { pending.gesture = undefined; this.revokePending(pending) }
+          throw error
+        }
+        const activation = this.activation(agent)
+        const state = this.states.get(agent)
+        if (!state?.gesture) return decision
+        state.gesture = undefined
+        if (decision.kind === 'reject' || signal.aborted || !activation || !this.current(activation)
+          || !ctx.tools.get('skill', agent)) { this.revokePending(state); return decision }
         const delivered = decision.messages.some(message => message.source.kind === 'skill-invocation'
           && message.source.name === AGENT_IMAGE_SKILL.name && message.source.form === 'instructions'
           && message.content.some(block => block.type === 'text' && block.text.includes(renderSkillContent(AGENT_IMAGE_SKILL))))
-        if (!delivered) return decision
+        if (!delivered) { this.revokePending(state); return decision }
         const skill = await ctx.skills.get(AGENT_IMAGE_SKILL.name, { scope: agent, cwd: agent.session.header.cwd, signal })
         signal.throwIfAborted()
-        if (!isAgentImageSkill(skill) || !skill.invocation.userInvocable || !this.current(pending.activation)) return decision
-        this.install(pending.activation.state)
-        const grant = pending.activation.state.tools
-        this.isolateDelegated()
-        this.assembling.add(agent)
-        const revoke = (): void => {
-          grant?.()
-          if (pending.activation.state.tools === grant) pending.activation.state.tools = undefined
-          this.isolateDelegated()
+        if (!isAgentImageSkill(skill) || !skill.invocation.userInvocable || !this.current(activation)) {
+          this.revokePending(state)
+          return decision
         }
-        try {
-          const assembly = await ctx.systemPrompt.assemble({ ...pending.context, signal })
-          signal.throwIfAborted()
-          if (!this.current(pending.activation)) { revoke(); return decision }
-          refreshAssembly(pending.assembly, assembly)
-        } catch (error) { revoke(); throw error }
-        finally { this.assembling.delete(agent) }
+        this.install(state)
+        this.isolateDelegated()
         return decision
       }, { prepend: true }),
     )
@@ -167,14 +134,48 @@ export class AgentImageSkills {
       && this.states.get(activation.agent) === activation.state && activation.generation === activation.state.generation
       && activation.requestId === activation.state.requestId
   }
+  private toolConfig(state: State, generation: number): AgentImageToolConfig {
+    const config = this.resolve()
+    return { ...config, enabled: config.enabled && state.generation === generation && state.authorized === true }
+  }
   private install(state: State): void {
-    if (!state.tools) state.tools = registerAgentImageTools(state.registration.ctx, this.runtime, this.resolve)
+    state.authorized = true
+    const generation = state.generation
+    state.tools ??= registerAgentImageTools(state.registration.ctx, this.runtime, () => this.toolConfig(state, generation))
+  }
+  private prepareSlash(agent: Agent, state: State): void {
+    const activation = this.activation(agent)
+    const loader = this.ctx.tools.get('skill')
+    if (!activation || state.tools || !loader || this.ctx.tools.get('skill', agent) !== loader) return
+    const generation = state.generation
+    const readiness = new WeakMap<AbortSignal, Promise<boolean>>()
+    state.tools = registerAgentImageTools(state.registration.ctx, this.runtime, () => this.toolConfig(state, generation), {
+      when: async ({ agent: subject, signal }) => {
+        if (subject !== agent || !this.current(activation) || this.ctx.tools.get('skill', agent) !== loader) return false
+        if (state.authorized) return true
+        if (!state.gesture) return false
+        let pending = readiness.get(signal)
+        if (!pending) {
+          pending = this.ctx.skills.get(AGENT_IMAGE_SKILL.name, { scope: agent, cwd: agent.session.header.cwd, signal }).then(skill => {
+            signal.throwIfAborted()
+            return this.current(activation) && isAgentImageSkill(skill) && skill.invocation.userInvocable
+          })
+          readiness.set(signal, pending)
+        }
+        return pending
+      },
+    })
+    this.isolateDelegated()
+  }
+  private revokePending(state: State): void {
+    if (state.authorized) return
+    state.tools?.()
+    state.tools = undefined
   }
   private reset(agent: Agent): void {
     const state = this.states.get(agent)
     if (!state) return
-    this.slashAssemblies.delete(agent)
-    state.generation++; state.requestId = undefined; state.gesture = undefined
+    state.generation++; state.requestId = undefined; state.gesture = undefined; state.authorized = false
     state.tools?.(); state.tools = undefined
     for (const [token, activation] of this.loads) if (activation.agent === agent) this.loads.delete(token)
     for (const [token, activations] of this.pending) {
@@ -242,6 +243,6 @@ export class AgentImageSkills {
     this.disposed = true
     for (const close of this.disposers.reverse()) close()
     for (const agent of this.states.keys()) this.remove(agent)
-    this.loads.clear(); this.pending.clear(); this.assembling.clear(); this.slashAssemblies.clear()
+    this.loads.clear(); this.pending.clear()
   }
 }

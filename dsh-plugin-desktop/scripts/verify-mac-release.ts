@@ -1,151 +1,53 @@
-/** Verify the signed application sealed inside one macOS release DMG. */
-
+/** Reuse the signed universal DMG verifier with Next's application identity. */
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, rmdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { readMacBundleNames, verifyMacBundleIdentity, type MacBundleIdentityOptions } from './mac-bundle-identity.ts'
-import { MACOS_UNIVERSAL_NATIVE_ENTRIES } from './mac-universal.ts'
-import {
-  PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH,
-  PUBLISHER_HELPER_UNIVERSAL_ENTRIES,
-} from './publisher-helper.ts'
+import { join, resolve } from 'node:path'
+import { macSmokeArchitecture, macSmokeExecutableSlices, type MacUniversalArch } from '../../dsh-desktop-shared/scripts/mac-universal.ts'
+import { verifyMacRelease, type MacReleaseVerificationOptions } from '../../dsh-desktop-shared/scripts/verify-mac-release.ts'
+import { NEXT_MAC_NATIVE_ENTRIES } from './mac-runtime.ts'
+import { macApplicationDirectory, macSmokeTarget } from './package-targets.ts'
+import { verifyNextMacEntitlements } from './verify-mac-entitlements.ts'
+import { verifyNextMacRuntime } from './verify-mac-runtime.ts'
 
-/** Injectable filesystem and command boundaries for release verification. */
-export interface MacReleaseVerificationOptions extends MacBundleIdentityOptions {
-  /** Native inventory for shells which do not load legacy-only modules. */
-  readonly nativeEntries?: readonly { readonly arch: string; readonly path: string }[]
-  /** Directory containing exactly one release DMG. */
-  readonly distDir: string
-  /** Physical app and executable filename, retained for updater compatibility. */
-  readonly productName: string
-  /** Return regular DMG files in the distribution directory. */
-  readonly listDmgs: (distDir: string) => readonly string[]
-  /** Create a private empty mount point. */
-  readonly makeMountPoint: () => string
-  /** Execute one macOS verification command. */
-  readonly run: (command: string, args: readonly string[]) => void
-  /** Remove the detached empty mount point. */
-  readonly removeMountPoint: (mountPoint: string) => void
-}
-
-function listDmgs(distDir: string): readonly string[] {
-  return readdirSync(distDir)
-    .filter(name => name.endsWith('.dmg'))
-    .map(name => join(distDir, name))
-    .filter(path => statSync(path).isFile())
-}
-
-function run(command: string, args: readonly string[]): void {
+function execute(command: string, args: readonly string[]): void {
   const result = spawnSync(command, args, { stdio: 'inherit' })
-  if (result.error !== undefined) throw result.error
-  if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(' ')} exited with ${String(result.status)}`)
-  }
-}
-
-function defaultOptions(): MacReleaseVerificationOptions {
-  const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-  return {
-    distDir: process.argv[2] === undefined
-      ? join(packageRoot, 'dist', 'mac-release')
-      : resolve(process.argv[2]),
-    productName: '易宝工坊',
-    displayName: 'e宝工坊',
-    readBundleNames: readMacBundleNames,
-    listDmgs,
-    makeMountPoint: () => mkdtempSync(join(tmpdir(), 'dsh-desktop-dmg-')),
-    run,
-    removeMountPoint: mountPoint => rmdirSync(mountPoint),
-  }
+  if (result.error || result.status !== 0) throw result.error ?? new Error(`Artifact verification failed: ${command}`)
 }
 
 /**
- * Mount and verify the application contained in the unique release DMG.
- * @param options - Filesystem and command boundaries.
- * @returns The verified DMG and application paths.
+ * Checks of Next's packaged macOS application. A smoke that packaged only the application directory has
+ * no image to mount: the directory electron-builder wrote stands in for the mount point, and the same
+ * application checks run in place.
+ * @param signed - Whether a signed release is verified; smokes skip the signature and notarization checks.
+ * @param distDir - Output directory of the build.
+ * @param env - Environment selecting the smoke architecture and target.
+ * @param run - Executes one verification command.
+ * @returns Options for the shared release verifier.
  */
-export function verifyMacRelease(
-  options: MacReleaseVerificationOptions = defaultOptions(),
-): { readonly appPath: string; readonly dmgPath: string } {
-  const dmgs = options.listDmgs(options.distDir)
-  if (dmgs.length !== 1) {
-    throw new Error(
-      `macOS release verification requires exactly one DMG in ${options.distDir}; found ${String(dmgs.length)}`,
-    )
-  }
-
-  const dmgPath = dmgs[0]!
-  const mountPoint = options.makeMountPoint()
-  const appPath = join(mountPoint, `${options.productName}.app`)
-  let mounted = false
-  let failure: unknown
-
-  try {
-    options.run('hdiutil', ['attach', dmgPath, '-mountpoint', mountPoint, '-nobrowse', '-readonly'])
-    mounted = true
-    verifyMacBundleIdentity(join(appPath, 'Contents', 'Info.plist'), options)
-    const executablePath = join(appPath, 'Contents', 'MacOS', options.productName)
-    options.run('lipo', [executablePath, '-verify_arch', 'x86_64'])
-    options.run('lipo', [executablePath, '-verify_arch', 'arm64'])
-    const unpackedRoot = join(appPath, 'Contents', 'Resources', 'app.asar.unpacked')
-    for (const entry of options.nativeEntries ?? MACOS_UNIVERSAL_NATIVE_ENTRIES) {
-      options.run('lipo', [join(unpackedRoot, entry.path), '-verify_arch', entry.arch])
-      if (entry.path.endsWith('/bin/uv')) {
-        options.run('/bin/test', ['-x', join(unpackedRoot, entry.path)])
-        if (entry.arch === (process.arch === 'x64' ? 'x86_64' : process.arch)) {
-          options.run(join(unpackedRoot, entry.path), ['--version'])
-        }
-      }
-    }
-    const publisherHelperPath = join(appPath, PACKAGED_PUBLISHER_HELPER_RELATIVE_PATH)
-    for (const entry of PUBLISHER_HELPER_UNIVERSAL_ENTRIES) {
-      const nativePath = join(publisherHelperPath, entry)
-      options.run('lipo', [nativePath, '-verify_arch', 'x86_64'])
-      options.run('lipo', [nativePath, '-verify_arch', 'arm64'])
-    }
-    // electron-osx-sign walks nested bundles depth-first before sealing the outer
-    // application. Verify the Helper independently so an outer --deep check cannot
-    // hide a missing or invalid nested signature.
-    options.run('codesign', [
-      '--verify', '--deep', '--strict', '--verbose=2', publisherHelperPath,
-    ])
-    options.run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath])
-    options.run('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath])
-    options.run('xcrun', ['stapler', 'validate', appPath])
-  } catch (cause) {
-    failure = cause
-  }
-
-  const cleanupFailures: unknown[] = []
-  if (mounted) {
-    try {
-      options.run('hdiutil', ['detach', mountPoint])
-    } catch (cause) {
-      cleanupFailures.push(cause)
-    }
-  }
-  try {
-    options.removeMountPoint(mountPoint)
-  } catch (cause) {
-    cleanupFailures.push(cause)
-  }
-
-  if (failure !== undefined || cleanupFailures.length > 0) {
-    const failures = failure === undefined ? cleanupFailures : [failure, ...cleanupFailures]
-    throw new AggregateError(failures, `failed to verify macOS release DMG ${basename(dmgPath)}`)
-  }
-  return { appPath, dmgPath }
+export function nextMacVerification(signed: boolean, distDir: string, env: NodeJS.ProcessEnv = process.env,
+  run: (command: string, args: readonly string[]) => void = execute): MacReleaseVerificationOptions {
+  const architecture = signed ? undefined : macSmokeArchitecture(env)
+  const smokeSlices = architecture === undefined ? undefined : macSmokeExecutableSlices(architecture)
+  const inPlace = architecture !== undefined && macSmokeTarget(env) === 'dir' ? join(distDir, macApplicationDirectory(architecture)) : undefined
+  return { distDir, productName: '易宝工坊', nativeEntries: NEXT_MAC_NATIVE_ENTRIES,
+    // Next archives its application; native files live beside the archive.
+    unpackedRoot: appPath => join(appPath, 'Contents', 'Resources', 'app.asar.unpacked'),
+    listDmgs: inPlace !== undefined ? () => [inPlace] : path => readdirSync(path).filter(name => name.endsWith('.dmg')).map(name => join(path, name)).filter(path => statSync(path).isFile()),
+    makeMountPoint: inPlace !== undefined ? () => inPlace : () => mkdtempSync(join(tmpdir(), 'dsh-next-release-')),
+    removeMountPoint: inPlace !== undefined ? () => undefined : path => rmdirSync(path),
+    // The interpreter payloads beside the archive: both CPUs present, the host's CPU executed, release signatures checked.
+    verifyRuntime: appPath => verifyNextMacRuntime(appPath, signed),
+    run: (command, args) => {
+      if (inPlace !== undefined && command === 'hdiutil') return
+      if (!signed && ['codesign', 'spctl', 'xcrun'].includes(command)) return
+      if (smokeSlices !== undefined && command === 'lipo' && args[1] === '-verify_arch' && args[0]?.includes('/Contents/MacOS/') && !smokeSlices.includes(args[2] as MacUniversalArch)) return
+      run(command, args)
+      if (signed && command === 'codesign' && args.includes('--verify')) verifyNextMacEntitlements(args.at(-1)!)
+    } }
 }
 
-const invokedPath = process.argv[1]
-if (invokedPath !== undefined && resolve(invokedPath) === fileURLToPath(import.meta.url)) {
-  try {
-    const verified = verifyMacRelease()
-    console.log(`macOS release verification passed: ${verified.dmgPath}`)
-  } catch (error) {
-    console.error(error)
-    process.exitCode = 1
-  }
+export function verifyNextMac(signed: boolean): void {
+  verifyMacRelease(nextMacVerification(signed, resolve(process.argv[2] ?? `dist/${signed ? 'mac-release' : 'mac-smoke'}`)))
 }
+if (process.argv[1]?.endsWith('/verify-mac-release.ts')) verifyNextMac(true)

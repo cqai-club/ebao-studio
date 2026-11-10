@@ -22,7 +22,8 @@ export const inject = ['theme', 'slots', 'locale']
 /** The theme remains a removable Client layer over the native DSH palette. */
 export function apply(ctx: Context): void {
   const mode = new URLSearchParams(window.location.search).get('dsh-desktop-mode')
-  if (mode !== 'extended' && mode !== 'advanced') return
+  const desktop = (window as Window & { desktopNext?: unknown }).desktopNext !== undefined
+  if (mode === 'compatibility' || (!desktop && mode !== 'extended' && mode !== 'advanced')) return
 
   const preferences = new ClubThemePreferenceStore()
   ctx.effect(() => preferences.listenForStorageChanges(), 'cqai-club-theme: preference sync')

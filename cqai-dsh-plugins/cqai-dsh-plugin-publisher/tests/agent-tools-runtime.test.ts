@@ -1,3 +1,4 @@
+import { admittedToolNames, admissionFor, executeTool, installTestExecutor, assembleAgentPrompt, MODEL_SELECTION } from './tool-runtime-fixtures.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -18,7 +19,7 @@ import { PublisherAgentTools } from '../src/agent-tools.ts'
 import { createContent } from '../src/contents.ts'
 
 const cleanups: (() => Promise<void> | void)[] = []
-afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
+afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close(); vi.unstubAllEnvs() })
 
 interface ProgramRequest {
   bindings: { global: string; functions: Record<string, (args: unknown) => Promise<unknown>> }[]
@@ -31,6 +32,10 @@ interface ProgramResult {
 }
 
 async function fixture(mode: 'native' | 'ptc' = 'native', mountLoader = true) {
+  const home = mkdtempSync(join(tmpdir(), 'ebao-skill-runtime-'))
+  cleanups.push(() => rmSync(home, { recursive: true, force: true }))
+  vi.stubEnv('DSH_HOME', home)
+  const env = { DSH_HOME: home }
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
@@ -44,7 +49,8 @@ async function fixture(mode: 'native' | 'ptc' = 'native', mountLoader = true) {
     })),
   }
   if (mode === 'ptc') ctx.provide('ptcRuntime' as never, runtime as never)
-  await ctx.plugin(ToolRuntime, { mode })
+  await ctx.plugin(ToolRuntime)
+  await installTestExecutor(ctx, mode)
   await ctx.plugin(SkillRegistry)
   ctx.provide('attachments', {} as never)
   ctx.provide('sessions', {} as never)
@@ -99,26 +105,23 @@ async function fixture(mode: 'native' | 'ptc' = 'native', mountLoader = true) {
     agentEvents(ctx, agent).emit('agent/inbox/claimed', { message, turn: 1 })
     return message
   }
-  const assembly = (agent: Agent, signal?: AbortSignal) => ctx.systemPrompt.assemble(assembleContextFor(agent, signal))
+  const assembly = (agent: Agent, signal?: AbortSignal) => assembleAgentPrompt(ctx, agent, signal)
   const names = (agent: Agent) => ctx.tools.schemas(agent).map(tool => tool.name)
   const skillsFor = (agent: Agent) => createScope(publisherCtx, agent).ctx.skills
   const load = (agent: Agent, name = PUBLISHING_SKILL.name, signal = new AbortController().signal) =>
-    ctx.tools.execute({ agent, name: 'skill', arguments: { name }, callId: ToolCallId(`skill-${++calls}`), signal })
-  const execute = (agent: Agent, name: string, args: unknown = {}) => ctx.tools.execute({
+    executeTool(ctx, { agent, name: 'skill', arguments: { name }, callId: ToolCallId(`skill-${++calls}`), signal })
+  const execute = (agent: Agent, name: string, args: unknown = {}) => executeTool(ctx, {
     agent, name, arguments: args, callId: ToolCallId(`publisher-${++calls}`), signal: new AbortController().signal,
   })
-  const run = (agent: Agent, signal = new AbortController().signal) => ctx.tools.execute({
+  const run = (agent: Agent, signal = new AbortController().signal) => executeTool(ctx, {
     agent, name: 'run_code', arguments: { code: 'return await tools.skill({name:"multiplatform-publish"})', description: 'Load publishing instructions.' },
     callId: ToolCallId(`program-${++calls}`), signal,
   })
   const preStep = (agent: Agent, messages: UserMessage[], signal = new AbortController().signal) => agentEvents(ctx, agent).waterfall('agent/pre-step', {
-    messages, turn: 1, step: 1, signal,
+    messages, turn: 1, step: 1, modelSelection: MODEL_SELECTION, signal,
   }, async (): Promise<PreStepDecision> => ({ kind: 'enter', messages }))
   const bind = (agent: Agent) => {
     owned.add(agent.id)
-    const home = mkdtempSync(join(tmpdir(), 'ebao-skill-runtime-'))
-    cleanups.push(() => rmSync(home, { recursive: true, force: true }))
-    const env = { DSH_HOME: home }
     const content = createContent('article', env)
     bindings.bind(agent.id, content.id, env)
     owner.refresh(agent.id)
@@ -146,7 +149,7 @@ describe('Publisher Skill continuity across conversation turns', () => {
     agent.session.append('user/message', instructions, { surfaceOp: 'append' })
     const human = test.claim(agent, '继续修改刚才的文章')
     const first = await test.assembly(agent)
-    expect(test.ctx.tools.get('publisher_update_current_draft', agent)).toBeUndefined()
+    expect((await test.execute(agent, 'publisher_get_current_draft')).isError).toBe(true)
     const decision = admitted(await test.preStep(agent, [human]))
     expectAssemblyTool(first, mode, 'publisher_get_current_draft')
     expectAssemblyTool(first, mode, 'publisher_update_current_draft')
@@ -204,7 +207,7 @@ describe('Publisher Skill continuity across conversation turns', () => {
 
     const human = test.claim(agent, '继续，先读取最新草稿再准备发布确认')
     const first = await test.assembly(agent)
-    expectAssemblyTool(first, mode, 'publisher_request_publication', false)
+    expectAssemblyTool(first, mode, 'publisher_request_publication')
     const runs = test.runtime.run.mock.calls.length
     const messages = admitted(await test.preStep(agent, [human]))
     expectAssemblyTool(first, mode, 'publisher_get_current_draft')
@@ -273,7 +276,7 @@ describe('Publisher Skill continuity across conversation turns', () => {
     test.owner.refresh(agent.id)
     expect(next.bindingToken).not.toBe(before.bindingToken)
     expect(() => test.bindings.require(agent.id, content.id, before.bindingToken)).toThrow('草稿已切换')
-    expect(test.ctx.tools.get('publisher_update_current_draft', agent)).toBeUndefined()
+    expect((await test.execute(agent, 'publisher_get_current_draft')).isError).toBe(true)
     expect((await test.load(agent, EDIT_DRAFT_SKILL.name)).isError).toBe(false)
     expect(test.ctx.tools.get('publisher_update_current_draft', agent)).toBeDefined()
     expect(test.ctx.tools.get('publisher_request_publication', agent)).toBeUndefined()
@@ -387,7 +390,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
       expect(messages.some(message => message.source.kind === 'skill-invocation')).toBe(false)
       expect(textOf(messages)).not.toContain(PUBLISHING_SKILL.content)
       expect(renderPrompt(await test.assembly(delegated))).toBe('')
-      const forbidden = await test.ctx.tools.execute({ agent: delegated, name: 'publisher_get_source', arguments: {},
+      const forbidden = await executeTool(test.ctx, { agent: delegated, name: 'publisher_get_source', arguments: {},
         callId: ToolCallId(`forbidden-${delegated.id}`), signal: new AbortController().signal })
       expect(forbidden.isError).toBe(true)
     }
@@ -536,15 +539,15 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     expect(test.names(agent)).toContain('publisher_update_current_draft')
   })
 
-  it.each(['native', 'ptc'] as const)('updates the exact first %s assembly only after native slash instructions are delivered', async mode => {
+  it.each(['native', 'ptc'] as const)('keeps the first %s admission stable and blocks execution until native slash instructions arrive', async mode => {
     const test = await fixture(mode)
     const agent = await test.mint(`slash-${mode}`)
     test.ctx.systemPrompt.section({ name: 'context-check', order: 1,
       text: context => context.agent === agent ? 'Agent context preserved.' : 'Agent context missing.' })
     const human = test.claim(agent, '请使用 /multiplatform-publish 发布这篇文章')
     const first = await test.assembly(agent)
-    expect(publisherNames(test.names(agent))).toEqual([])
-    expect(renderPrompt(first)).not.toContain('publisher_get_current_draft')
+    expect((await executeTool(test.ctx, { agent, name: 'publisher_get_current_draft', arguments: {}, callId: ToolCallId('before-instructions'), signal: new AbortController().signal, toolSet: admissionFor(first) })).isError).toBe(true)
+    const frozenPresentation = JSON.stringify(first)
     const invocation = admitted(await test.preStep(agent, [human])).filter(message => message.source.kind === 'skill-invocation')
     expect(invocation).toHaveLength(1)
     expect(textOf(invocation)).toContain(PUBLISHING_SKILL.content)
@@ -558,8 +561,19 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     expect(renderPrompt(first)).toContain('Agent context preserved.')
     expect(renderPrompt(first)).not.toContain('Agent context missing.')
     expect(renderPrompt(first)).not.toContain(PUBLISHING_SKILL.content)
-    expect(test.permit).toHaveBeenCalledTimes(1)
+    expect(test.permit).toHaveBeenCalled()
+    expect(JSON.stringify(first)).toBe(frozenPresentation)
     expect(test.runtime.run).not.toHaveBeenCalled()
+    if (mode === 'ptc') test.runtime.run.mockImplementationOnce(async request => ({
+      logs: [], value: await request.bindings[0].functions.publisher_get_current_draft({}),
+    }))
+    const accepted = await executeTool(test.ctx, {
+      agent, name: mode === 'native' ? 'publisher_get_current_draft' : 'run_code',
+      arguments: mode === 'native' ? {} : { code: 'return await tools.publisher_get_current_draft({})', description: 'Read the authorized draft.' },
+      callId: ToolCallId('after-instructions'), signal: new AbortController().signal, toolSet: admissionFor(first),
+    })
+    expect(accepted.isError).toBe(false)
+    expect(JSON.stringify(first)).toBe(frozenPresentation)
     expect(test.publications.prepare).not.toHaveBeenCalled()
   })
 
@@ -569,7 +583,8 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     test.bind(agent)
     const human = test.claim(agent, '/publisher-edit-draft 修改当前标题')
     const first = await test.assembly(agent)
-    expect(publisherNames(first.tools.map(tool => tool.name))).toEqual([])
+    expect(publisherNames(first.tools.map(tool => tool.name))).toHaveLength(7)
+    expect((await test.execute(agent, 'publisher_get_current_draft')).isError).toBe(true)
     const invocation = admitted(await test.preStep(agent, [human])).filter(message => message.source.kind === 'skill-invocation')
     expect(textOf(invocation)).toContain(EDIT_DRAFT_SKILL.content)
     expect(publisherNames(first.tools.map(tool => tool.name))).toHaveLength(7)
@@ -585,7 +600,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     const human = test.claim(agent, '/multiplatform-publish 发布文章')
     const first = await test.assembly(agent)
     expect(renderPrompt(first)).toBe(complete)
-    expect(publisherNames(test.names(agent))).toEqual([])
+    expect((await test.execute(agent, 'publisher_get_current_draft')).isError).toBe(true)
     const messages = admitted(await test.preStep(agent, [human]))
     expect(publisherNames(test.names(agent))).toHaveLength(3)
     if (mode === 'native') expect(publisherNames(first.tools.map(tool => tool.name))).toHaveLength(3)
@@ -604,7 +619,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     const human = test.claim(agent, '/multiplatform-publish 发布文章')
     const first = await test.assembly(agent)
     expect(first.contexts).toEqual([])
-    expect(renderPrompt(first)).not.toContain('publisher_get_current_draft')
+    expect(renderPrompt(first)).toContain('publisher_get_current_draft')
     await test.preStep(agent, [human])
     expect(first.tools.map(tool => tool.name)).toEqual(['run_code'])
     expect(renderPrompt(first)).toContain('publisher_get_current_draft')
@@ -613,7 +628,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     expect(first.contexts).toEqual([])
   })
 
-  it('refreshes schemas, sections, contexts and variables with the original Agent context', async () => {
+  it('prepares schemas, sections, contexts and variables once with the original Agent context', async () => {
     const test = await fixture()
     const agent = await test.mint('context-preserved')
     test.ctx.systemPrompt.variable('publisher_owner', context => String(context.agent?.id ?? 'missing'))
@@ -623,7 +638,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
       text: context => `Context for ${String(context.agent?.id ?? 'missing')}: ${context.agent ? publisherNames(test.names(context.agent)).length : -1}.` })
     const human = test.claim(agent, '/multiplatform-publish 发布文章')
     const first = await test.assembly(agent)
-    expect(renderPrompt(first)).toContain('Owner context-preserved, tools unloaded.')
+    expect(renderPrompt(first)).toContain('Owner context-preserved, tools ready.')
     await test.preStep(agent, [human])
     expect(renderPrompt(first)).toContain('Owner context-preserved, tools ready.')
     expect(first.variables).toMatchObject({ publisher_owner: agent.id, publisher_state: 'ready' })
@@ -638,7 +653,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     let intermediate: Awaited<ReturnType<typeof test.assembly>> | undefined
     test.ctx.on('agent/pre-step', async ({ agent: subject, signal }, next) => {
       const decision = await next()
-      intermediate = await test.ctx.systemPrompt.assemble(assembleContextFor(subject, signal))
+      intermediate = await assembleAgentPrompt(test.ctx, subject, signal)
       return decision
     })
     const human = test.claim(agent, '/multiplatform-publish 发布文章')
@@ -664,39 +679,34 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     expect(first.tools.map(tool => tool.name)).toContain('publisher_request_publication')
   })
 
-  it.each(['none', 'publication', 'edit'] as const)('rolls back a failed slash reassembly while preserving the previous %s grant', async existing => {
+  it.each(['none', 'publication', 'edit'] as const)('rolls back failed native delivery while preserving the previous %s grant', async existing => {
     const test = await fixture()
-    const agent = await test.mint(`slash-failed-reassembly-${existing}`)
+    const agent = await test.mint(`slash-failed-delivery-${existing}`)
     test.bind(agent)
     const human = test.claim(agent, '/multiplatform-publish /publisher-edit-draft 修改后发布文章')
     if (existing !== 'none') await test.load(agent, existing === 'publication' ? PUBLISHING_SKILL.name : EDIT_DRAFT_SKILL.name)
-    const previous = publisherNames(test.names(agent)).sort()
     const first = await test.assembly(agent)
-    test.ctx.on('system-prompt/assemble', async () => { throw new Error('reassembly failed') })
-    await expect(test.preStep(agent, [human])).rejects.toThrow('reassembly failed')
-    expect(publisherNames(test.names(agent)).sort()).toEqual(previous)
-    expect(publisherNames(first.tools.map(tool => tool.name)).sort()).toEqual(previous)
-    if (existing === 'publication') {
-      expect(previous).toHaveLength(3)
-      expect(test.names(agent)).toContain('publisher_get_current_draft')
-      expect(test.names(agent)).not.toContain('publisher_update_current_draft')
-    }
-    if (existing === 'edit') {
-      expect(previous).toHaveLength(7)
-      expect(test.names(agent)).not.toContain('publisher_request_publication')
-    }
+    const presentation = JSON.stringify(first)
+    test.ctx.on('agent/pre-step', async () => { throw new Error('native delivery failed') })
+    await expect(test.preStep(agent, [human])).rejects.toThrow('native delivery failed')
+    expect(JSON.stringify(first)).toBe(presentation)
+    const names = publisherNames(test.names(agent))
+    expect(names).toHaveLength(existing === 'none' ? 0 : existing === 'publication' ? 3 : 7)
+    expect(names.includes('publisher_request_publication')).toBe(existing === 'publication')
+    expect(names.includes('publisher_update_current_draft')).toBe(existing === 'edit')
+    if (existing !== 'none') expect((await test.execute(agent, 'publisher_get_current_draft')).isError).toBe(false)
+    expect(test.publications.prepare).not.toHaveBeenCalled()
   })
 
-  it('rolls back tools when the step is canceled during asynchronous slash reassembly', async () => {
+  it('revokes conditional registrations when native pre-step delivery is canceled', async () => {
     const test = await fixture()
-    const agent = await test.mint('slash-canceled-reassembly')
+    const agent = await test.mint('slash-canceled-delivery')
     const human = test.claim(agent, '/multiplatform-publish 发布文章')
     const controller = new AbortController()
     const first = await test.assembly(agent, controller.signal)
-    let resume!: () => void
-    let entered!: () => void
+    let resume!: () => void, entered!: () => void
     const waiting = new Promise<void>(done => { entered = done })
-    test.ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
+    test.ctx.on('agent/pre-step', async (_payload, next) => {
       const result = await next()
       entered()
       await new Promise<void>(done => { resume = done })
@@ -704,12 +714,11 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     })
     const pending = test.preStep(agent, [human], controller.signal)
     await waiting
-    expect(publisherNames(test.names(agent))).toHaveLength(3)
-    controller.abort()
-    resume()
+    controller.abort(); resume()
     await expect(pending).rejects.toThrow()
     expect(publisherNames(test.names(agent))).toEqual([])
-    expect(publisherNames(first.tools.map(tool => tool.name))).toEqual([])
+    expect(publisherNames(admittedToolNames(test.ctx, agent, first))).toEqual([])
+    expect(test.publications.prepare).not.toHaveBeenCalled()
   })
 
   it('keeps an earlier slash in one claimed batch without reusing it in the next step', async () => {
@@ -718,13 +727,13 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     const first = test.claim(agent, '/multiplatform-publish')
     const second = test.claim(agent, '请用小红书')
     const assembly = await test.assembly(agent)
-    expect(publisherNames(assembly.tools.map(tool => tool.name))).toEqual([])
+    expect((await test.execute(agent, 'publisher_get_current_draft')).isError).toBe(true)
     const invocation = admitted(await test.preStep(agent, [first, second]))
       .filter(message => message.source.kind === 'skill-invocation')
     expect(textOf(invocation)).toContain(PUBLISHING_SKILL.content)
     expect(assembly.tools.map(tool => tool.name)).toContain('publisher_get_current_draft')
     test.claim(agent, '先不要发布，帮我润色标题')
-    expect(publisherNames((await test.assembly(agent)).tools.map(tool => tool.name))).toEqual([])
+    expect((await test.execute(agent, 'publisher_get_current_draft')).isError).toBe(true)
     expect(test.publications.prepare).not.toHaveBeenCalled()
   })
 
@@ -740,7 +749,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     const human = test.claim(agent, '/multiplatform-publish 发布文章')
     const first = await test.assembly(agent)
     const messages = admitted(await test.preStep(agent, [human]))
-    expect(publisherNames(first.tools.map(tool => tool.name))).toEqual([])
+    expect(publisherNames(admittedToolNames(test.ctx, agent, first))).toEqual([])
     expect(publisherNames(test.names(agent))).toEqual([])
     expect(renderPrompt(first)).toBe('')
     if (visibility !== 'restricted') {
@@ -766,7 +775,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     const human = test.claim(agent, '/multiplatform-publish 发布文章', invalid === 'synthetic' ? 'skill-invocation' : 'user')
     const first = await test.assembly(agent)
     await test.preStep(agent, [human])
-    expect(publisherNames(first.tools.map(tool => tool.name))).toEqual([])
+    expect(publisherNames(admittedToolNames(test.ctx, agent, first))).toEqual([])
     expect(publisherNames(test.names(agent))).toEqual([])
     expect(test.publications.prepare).not.toHaveBeenCalled()
   })
@@ -785,7 +794,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     test.claim(agent, '取消发布，讨论标题')
     resolve(true)
     await pending
-    expect(publisherNames(first.tools.map(tool => tool.name))).toEqual([])
+    expect(publisherNames(admittedToolNames(test.ctx, agent, first))).toEqual([])
     expect(publisherNames(test.names(agent))).toEqual([])
   })
 
@@ -803,8 +812,8 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     await waiting
     controller.abort()
     resolve(true)
-    await pending
-    expect(publisherNames(first.tools.map(tool => tool.name))).toEqual([])
+    await expect(pending).rejects.toThrow()
+    expect(publisherNames(admittedToolNames(test.ctx, agent, first))).toEqual([])
     expect(publisherNames(test.names(agent))).toEqual([])
   })
 
@@ -824,7 +833,7 @@ describe('Publisher native Skills with real DSH scopes and assembly services', (
     expect(after.content.id).not.toBe(before.content.id)
     resolve(true)
     await pending
-    expect(publisherNames(first.tools.map(tool => tool.name))).toEqual([])
+    expect(publisherNames(admittedToolNames(test.ctx, agent, first))).toEqual([])
     expect(publisherNames(test.names(agent))).toEqual([])
   })
 })

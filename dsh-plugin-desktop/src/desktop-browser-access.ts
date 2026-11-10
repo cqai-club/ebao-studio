@@ -2,9 +2,17 @@
 
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { IncomingHttpHeaders } from 'node:http'
+import { NATIVE_ACCESS_HEADER } from './desktop-contract.ts'
 
 /** Header attached only by the Electron renderer's native network session. */
-export const DESKTOP_RENDERER_ACCESS_HEADER = 'x-dsh-desktop-renderer'
+export const DESKTOP_RENDERER_ACCESS_HEADER = NATIVE_ACCESS_HEADER
+
+let nextAccess: DesktopBrowserAccess | undefined
+/** Called before boot; credentials are removed from the inherited environment. */
+export function configureNextBrowserAccess(token: string | undefined, enabled: boolean): void {
+  nextAccess = token === undefined ? undefined : createDesktopBrowserAccess(enabled, token)
+}
+export function nextBrowserAccess(): DesktopBrowserAccess | undefined { return nextAccess }
 
 const ACCESS_TOKEN_BYTES = 32
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u

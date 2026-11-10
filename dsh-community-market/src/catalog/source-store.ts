@@ -28,6 +28,7 @@ export class PersistentCatalogSourceStore implements CatalogSourceStore {
   constructor(private readonly state: MarketStateStore) {}
 
   async load(): Promise<readonly LocalSourceRecord[]> {
+    await this.state.waitUntilReady?.()
     const records = [...this.state.getSources()]
     validateLocalSourceRecords(records)
     return normalizeActiveSourceRecords(records)

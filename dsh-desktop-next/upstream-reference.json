@@ -1,12 +1,12 @@
 {
   "repository": "https://github.com/deepseek-ai/deepseek-harness",
-  "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
-  "version": "0.2.0-rc.2",
+  "commit": "fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159",
+  "version": "0.2.2-rc.1",
   "files": [
     {
       "upstream": "apps/desktop/src/host-process.ts",
       "local": "src/host-process.ts",
-      "upstreamSha256": "6b9d3e558f526b7832020fb43d6682a07a68bf2d5657f26951f50a4f3eabfa28"
+      "upstreamSha256": "802d87760d921a7d87592a3107b404a825ebe6ad6e1387a9cfceec8fd99ce2dc"
     },
     {
       "upstream": "apps/desktop/src/browser-guests.ts",
@@ -26,7 +26,7 @@
     {
       "upstream": "apps/desktop/src/web-document.ts",
       "local": "src/web-document.ts",
-      "upstreamSha256": "05ab6fd59199f1b7a7dd558e60f50e38f4df1085a70af671014c085d270e91cc"
+      "upstreamSha256": "70da9451b517f8a3b094b2e361b4d666662052b7761cc0302b97d10e46b3f3ce"
     },
     {
       "upstream": "apps/desktop/src/backend-controller.ts",
@@ -46,7 +46,7 @@
     {
       "upstream": "apps/desktop/tests/host-process.spec.ts",
       "local": "tests/host-process.spec.ts",
-      "upstreamSha256": "b539b90d064ba2b52f2a5a2faf3a83d08911cc69f8644bc4783f17dbc98fcb86"
+      "upstreamSha256": "a1b7178cc5e6e017298aefc795966f7ffb5a51e7efc06f6c2b39f7bb1f8438ab"
     },
     {
       "upstream": "apps/desktop/tests/node-environment.spec.ts",
@@ -56,7 +56,7 @@
     {
       "upstream": "apps/desktop/tests/web-document.spec.ts",
       "local": "tests/web-document.spec.ts",
-      "upstreamSha256": "7b8dcccededac3bb9f978e4446a00a1cf97fb7573f73fdd47e0de842bf92539b"
+      "upstreamSha256": "251ac35160cf4d5d6d3080158333a4c5e06f2590f414a8f67b3b7b215283d349"
     },
     {
       "upstream": "apps/desktop/tests/backend-controller.spec.ts",
@@ -107,6 +107,96 @@
       "upstream": "apps/desktop/tests/keybindings.spec.ts",
       "local": "tests/keybindings.spec.ts",
       "upstreamSha256": "3d90e7dfde4733a9fec33b44a3347805404d4ba0a1a68ca4648ec5e94002a3ad"
+    },
+    {
+      "upstream": "apps/desktop/src/runtime-tree.ts",
+      "local": "src/runtime-tree.ts",
+      "upstreamSha256": "0178c8bf156b85a0f5107f7f29a277c91f434ef345cb81550ce759f10fb3a7fb"
+    },
+    {
+      "upstream": "apps/desktop/scripts/runtime-file-policy.ts",
+      "local": "scripts/runtime-file-policy.ts",
+      "upstreamSha256": "4f2daa3210c983d9cd8f1f0947382cd51b7a181dc50a51f59944f78a62c18940"
+    },
+    {
+      "upstream": "apps/desktop/tests/runtime-tree.spec.ts",
+      "local": "tests/runtime-tree.spec.ts",
+      "upstreamSha256": "4dfc31feb34b8e89cdead37cd8825da70de59549d7e8707427a5f405175b736b"
+    },
+    {
+      "upstream": "apps/desktop/tests/runtime-file-policy.spec.ts",
+      "local": "tests/runtime-file-policy.spec.ts",
+      "upstreamSha256": "ec729b67ca487a03be9cce40070cdd7fbd79bc179ab5cf715379065121fd9003"
+    },
+    {
+      "upstream": "apps/desktop/tests/runtime-fixture.ts",
+      "local": "tests/runtime-fixture.ts",
+      "upstreamSha256": "578b43a9b65f23627134f954c642f722dff52c09340860142a49f285bc7ddac1"
+    },
+    {
+      "upstream": "apps/desktop-host/src/office-engine.ts",
+      "local": "src/host/office-engine.ts",
+      "upstreamSha256": "9e399122d163f92aca01c57c0f5fd207946ebd7b7a3f6967b7e2e262e7f46432"
+    },
+    {
+      "upstream": "apps/desktop-host/tests/office-engine.spec.ts",
+      "local": "tests/office-engine.spec.ts",
+      "upstreamSha256": "0ef9ae8b2de83cb00a19db96b11cab886672277582986346df4431df189f6344"
+    },
+    {
+      "upstream": "apps/desktop-host/src/office.ts",
+      "local": "src/host/office.ts",
+      "upstreamSha256": "476724125820e03f258aee5939ea9adbda9c3125b7b07bd41cb0e6ee48bf34e3"
+    },
+    {
+      "upstream": "apps/desktop-host/tests/office.spec.ts",
+      "local": "tests/host-office.spec.ts",
+      "upstreamSha256": "ca07309c2e6affa2aa494d12dde1bbc868477a9ea80d1809f556ac4ee9ad2e85"
+    },
+    {
+      "upstream": "scripts/primary-runtime/prepare.ts",
+      "local": "scripts/primary-runtime.ts",
+      "upstreamSha256": "8b45452906fc5f62b877b5a2f6601781e79a14e076419f54e4b18ac26fea8387"
+    },
+    {
+      "upstream": "scripts/primary-runtime/prepare.spec.ts",
+      "local": "tests/primary-runtime.spec.ts",
+      "upstreamSha256": "f349e6dd1a749c49f5677a222592495c5540760c047302c0ff6dcda178f18787"
+    },
+    {
+      "upstream": "scripts/primary-runtime/prune-python-tests.ts",
+      "local": "scripts/prune-python-tests.ts",
+      "upstreamSha256": "030e3db3e733ac0e4a3ded3762bdba498cbc57f91405567aef40c02018319881"
+    },
+    {
+      "upstream": "scripts/primary-runtime/prune-python-tests.spec.ts",
+      "local": "tests/prune-python-tests.spec.ts",
+      "upstreamSha256": "c3d5528a5ac6ef88b184a3652b16c6a1f3548f292341c6e777f711f3e3f97bd0"
+    },
+    {
+      "upstream": "scripts/libreoffice-packages.mjs",
+      "local": "scripts/office-packages.ts",
+      "upstreamSha256": "dee06b3337deec553858d9edbbbef09bbca88dadefead0903cbd42162acfe445"
+    },
+    {
+      "upstream": "apps/desktop/scripts/macos-runtime.ts",
+      "local": "scripts/sign-runtime.ts",
+      "upstreamSha256": "116624ab8c1541ae5760549873e2fa2a201269a6d70fa4e21097306c20e8b1fb"
+    },
+    {
+      "upstream": "apps/desktop/scripts/verify-macos-signature.mjs",
+      "local": "scripts/sign-runtime.ts",
+      "upstreamSha256": "b39245a6d5a53125897e77ca1c7747aa00d0a6fc54d2a794ab99d33b8d895258"
+    },
+    {
+      "upstream": "apps/desktop/scripts/macos-signing-keychain.mjs",
+      "local": "scripts/sign-runtime.ts",
+      "upstreamSha256": "e73ad2ab60d56e610dfa5322f5bcd27e43bd297f2bda83aa44c69cd8d0352b3e"
+    },
+    {
+      "upstream": "apps/desktop/tests/macos-runtime.spec.ts",
+      "local": "tests/sign-runtime.spec.ts",
+      "upstreamSha256": "76a5870bcef7284626087adb14bfc9117c7aeecde02124995918bd20428d33c9"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { executeTool, installTestExecutor, MODEL_SELECTION } from './tool-runtime-fixtures.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -48,7 +49,8 @@ async function fixture(delegating = false) {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await ctx.plugin(ToolRuntime)
+  await installTestExecutor(ctx)
   if (delegating) await ctx.plugin(SkillRegistry)
   const agents = new Map<string, Agent>()
   ctx.provide('agents', { get: (id: string) => agents.get(id), list: () => [...agents.values()] } as never)
@@ -88,10 +90,10 @@ async function fixture(delegating = false) {
     return message
   }
   const execute = (agent: Agent | undefined, args: Record<string, unknown> = { markdown_path: markdown }, signal = new AbortController().signal) =>
-    ctx.tools.execute({ agent, name: 'handoff_to_publisher', arguments: args, callId: ToolCallId('handoff-' + ++calls), signal })
+    executeTool(ctx, { agent, name: 'handoff_to_publisher', arguments: args, callId: ToolCallId('handoff-' + ++calls), signal })
   const errorText = (result: Awaited<ReturnType<typeof execute>>) =>
     result.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
-  const loadRoute = (agent: Agent) => ctx.tools.execute({ agent, name: 'skill', arguments: { name: PUBLISHER_ROUTING_SKILL.name },
+  const loadRoute = (agent: Agent) => executeTool(ctx, { agent, name: 'skill', arguments: { name: PUBLISHER_ROUTING_SKILL.name },
     callId: ToolCallId('route-' + ++calls), signal: new AbortController().signal })
   return { ctx, owner, root, home, workspace, markdown, agents, owned, handoffs, delegate, readImage, mint, claim, execute, errorText, loadRoute }
 }
@@ -374,7 +376,7 @@ describe('global routing Skill and automatic Publisher delegation', () => {
     const human = test.claim(agent, '/publisher-route 帮我写一篇小红书分享')
     const signal = new AbortController().signal
     const decision = await agentEvents(test.ctx, agent).waterfall('agent/pre-step', {
-      messages: [human], turn: 1, step: 1, signal,
+      messages: [human], turn: 1, step: 1, modelSelection: MODEL_SELECTION, signal,
     }, async () => ({ kind: 'enter' as const, messages: [human] }))
     expect(decision.kind).toBe('enter')
     if (decision.kind === 'enter') expect(decision.messages.some(message => message.source.kind === 'skill-invocation'

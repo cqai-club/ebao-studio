@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 
-it.each([undefined, 'fixture-client-version'])('boots Desktop product telemetry with client version %s', clientVersion => {
+it.each([undefined, 'fixture-client-version'])('keeps official Desktop telemetry disabled with client version %s', clientVersion => {
   // Loader uses Node's native module pipeline; a child exercises that pipeline
   // independently of Vitest's transformed module graph.
   const script = `
@@ -50,17 +50,11 @@ it.each([undefined, 'fixture-client-version'])('boots Desktop product telemetry 
         });
       }, pathToFileURL(anchor).href);
       const telemetry = ctx.get('productTelemetry');
-      assert.ok(telemetry, 'Desktop product telemetry must mount');
-      // Mounting alone emits nothing. Only a synthetic event goes to our local collector.
-      assert.equal(captures.length, 0);
-      telemetry.emit({ eventName: 'telemetry.fixture', body: 'Synthetic regression event', timestamp: 1800000000000 });
+      assert.equal(telemetry, undefined, 'Next does not activate official Desktop product telemetry');
       await ctx.fiber.dispose();
       ctx = undefined;
-      assert.equal(captures.length, 1, 'the reporter must drain one synthetic event on unload');
-      const attributes = captures[0].resourceLogs[0].resource.attributes;
-      assert.deepEqual(attributes.find(value => value.key === 'service.name').value, { stringValue: 'deepseek-harness-desktop' });
-      assert.deepEqual(attributes.find(value => value.key === 'service.version').value, { stringValue: clientVersion ?? runtimeVersion });
-      console.log('Desktop telemetry boot and local export passed');
+      assert.equal(captures.length, 0, 'disabled telemetry must emit no events');
+      console.log('Desktop telemetry stays disabled');
     } finally {
       await ctx?.fiber.dispose();
       if (collector.listening) await new Promise((resolve, reject) => collector.close(error => error ? reject(error) : resolve()));
@@ -72,5 +66,5 @@ it.each([undefined, 'fixture-client-version'])('boots Desktop product telemetry 
     fileURLToPath(new URL('../src/profiles.ts', import.meta.url)),
     clientVersion ?? '',
   ], { encoding: 'utf8', timeout: 20_000 })
-  expect(output).toContain('Desktop telemetry boot and local export passed')
+  expect(output).toContain('Desktop telemetry stays disabled')
 }, 25_000)

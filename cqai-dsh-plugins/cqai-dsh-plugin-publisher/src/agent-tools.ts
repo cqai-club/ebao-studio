@@ -5,9 +5,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
 import { createScope, scopeChainOf, type Scope } from '@deepseek-ai/dsh-scope'
 import { renderSkillContent } from '@deepseek-ai/dsh-skill'
-import type { ToolExecution, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+import type { ToolExecution, ToolExecutionToken, ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
 import * as NativeSkillLoader from '@deepseek-ai/dsh-tool-skill'
-import type { AssembleContext, PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type { AgentDraftBindings } from './agent-draft-binding.ts'
 import { registerAgentDraftReadTool, registerAgentDraftTools } from './agent-draft-tools.ts'
 import type { AgentPublications } from './agent-publication.ts'
@@ -35,6 +34,8 @@ interface AgentTools {
   writingProfileWrite?: () => void
   inherited?: () => void
   hiddenSkills?: (() => void)[]
+  authorized?: Set<string>
+  step?: Map<string, StepActivation>
 }
 
 interface Activation {
@@ -46,11 +47,13 @@ interface Activation {
   reuse?: boolean
 }
 
-interface SlashAssembly {
-  activations: Activation[]
-  assembly: PromptAssembly
-  context: AssembleContext
+interface StepActivation extends Activation {
+  reuse: boolean
+  loader: object
+  revoke?: () => void
+  readiness: WeakMap<AbortSignal, Promise<boolean>>
 }
+type ToolCapability = 'edit' | 'publish' | 'draft-read' | 'profile-read' | 'profile-write'
 
 function ownedSkill(name: string) {
   const entry = PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === name)
@@ -62,15 +65,6 @@ function deliversSkillInstructions(content: readonly { type: string; text?: stri
   const body = ownedSkill(name).content
   return content.some(block => block.type === 'text' && typeof block.text === 'string'
     && (block.text.includes(body) || block.text.includes(JSON.stringify(body))))
-}
-
-/** Policy may return a shallow assembly copy; retain its shared array references. */
-function refreshAssembly(target: PromptAssembly, source: PromptAssembly): void {
-  target.tools.splice(0, target.tools.length, ...source.tools)
-  target.sections.splice(0, target.sections.length, ...source.sections)
-  target.contexts.splice(0, target.contexts.length, ...source.contexts)
-  for (const name of Object.keys(target.variables)) delete target.variables[name]
-  Object.assign(target.variables, source.variables)
 }
 
 function humanRequest(message: UserMessage): { id: string; text: string } {
@@ -91,8 +85,6 @@ export class PublisherAgentTools {
   private readonly byAgent = new Map<Agent, AgentTools>()
   private readonly loads = new Map<ToolExecutionToken, Activation>()
   private readonly pending = new Map<ToolExecutionToken, Activation[]>()
-  private readonly assembling = new Set<Agent>()
-  private readonly slashAssemblies = new Map<Agent, SlashAssembly>()
   private readonly disposers: (() => void)[] = []
   private disposed = false
 
@@ -114,7 +106,7 @@ export class PublisherAgentTools {
             || !this.owns(agent.id) || !this.bindings.current(agent.id)) {
             return { kind: 'deny', reason: '当前发布编辑面板已关闭或专属对话已变化' }
           }
-          if (!ctx.tools.get(exec.name, agent)) {
+          if (!this.toolAuthorized(this.state(agent), exec.name)) {
             const skill = exec.name === 'publisher_request_publication' || exec.name === 'publisher_get_publication_status'
               ? 'multiplatform-publish' : exec.name === 'publisher_update_writing_profile'
                 ? 'publisher-learn-voice' : exec.name === 'publisher_get_writing_profile'
@@ -146,7 +138,7 @@ export class PublisherAgentTools {
         } else {
           for (const activation of activations) {
             if (this.current(activation) && deliversSkillInstructions(result.content, activation.name)) {
-              this.install(activation.agent, activation.name)
+              this.authorize(activation.agent, activation.name)
               this.remember(activation.agent, activation.name)
             }
           }
@@ -163,76 +155,44 @@ export class PublisherAgentTools {
           const state = this.state(agent)
           state.request = request
           state.gestures = [...gestures, ...skillGestures(state.request.text)]
+          this.prepareStep(agent, state)
         }
       }),
       ctx.on('agent/status', ({ agent, status }) => { if (status === 'idle') this.reset(agent) }),
       ctx.on('agent/disposed', ({ agent }) => { this.remove(agent) }),
-      // AgentLoop keeps this exact assembly while pre-step delivers native
-      // Skill instructions. Do not grant tools just because a loader name exists.
-      ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
-        const assembly = await next()
-        const agent = context.scope as Agent | undefined
-        if (!agent || context.signal?.aborted || this.assembling.has(agent)) return assembly
-        const state = this.byAgent.get(agent)
-        if (!state?.request) return assembly
-        const gestures = state.gestures ?? []
-        const reusable = this.reusableSkills(agent, state)
-        const activations: Activation[] = []
-        for (const name of new Set([...gestures, ...reusable])) {
-          const entry = PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === name)
-          if (!entry || this.hasGrants(state, entry)) continue
-          const activation = this.activation(agent, name)
-          if (activation) activations.push({ ...activation, reuse: !gestures.includes(name) })
-        }
-        const pending = this.slashAssemblies.get(agent)
-        if (activations.length && (!pending || pending.context.signal !== context.signal
-          || pending.activations.every(activation => !this.current(activation)))) {
-          this.slashAssemblies.set(agent, { activations, assembly, context })
-        }
-        return assembly
-      }, { prepend: true }),
       ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
-        const decision = await next()
-        const pending = this.slashAssemblies.get(agent)
-        this.slashAssemblies.delete(agent)
-        if (!pending) return decision
-        const state = pending.activations[0].state
+        // Tool admission is immutable and precedes this waterfall. The genuine
+        // request registered conditional definitions; only exact native Skill
+        // instruction delivery makes those same definitions executable.
+        let decision
+        try { decision = await next() }
+        catch (cause) { this.revokeStep(this.byAgent.get(agent)); throw cause }
+        const state = this.byAgent.get(agent)
+        const pending = [...state?.step?.values() ?? []]
+        if (!state || !pending.length) return decision
+        if (decision.kind === 'reject') { this.revokeStep(state); return decision }
         state.gestures = undefined
-        if (decision.kind === 'reject' || signal.aborted || pending.context.signal?.aborted
-          || (pending.context.signal && pending.context.signal !== signal) || !ctx.tools.get('skill', agent)) return decision
-        const revocations: (() => void)[] = []
-        const installed: Activation[] = []
         const reminders: UserMessage[] = []
-        const revoke = () => { for (const close of revocations.reverse()) close() }
         try {
-          for (const activation of pending.activations) {
-            if (!this.current(activation)) continue
+          for (const activation of pending) {
+            if (signal.aborted || !this.current(activation)
+              || ctx.tools.get('skill', agent) !== activation.loader) continue
             const owned = ownedSkill(activation.name)
             const delivered = activation.reuse || decision.messages.some(message => message.source.kind === 'skill-invocation'
               && message.source.name === owned.name && message.source.form === 'instructions'
               && message.content.some(block => block.type === 'text' && block.text.includes(renderSkillContent(owned))))
-            if (!delivered) continue
-            const skill = await ctx.skills.get(owned.name, { scope: agent, cwd: agent.session.header.cwd, signal })
-            if (!isPublisherSkill(skill) || skill.name !== owned.name
-              || (activation.reuse ? !skill.invocation.userInvocable && !skill.invocation.modelInvocable : !skill.invocation.userInvocable)
-              || !await available(agent.id) || signal.aborted || pending.context.signal?.aborted || !this.current(activation)) continue
-            const close = this.install(agent, owned.name)
-            if (close) { revocations.push(close); installed.push(activation) }
+            if (!delivered || !await this.ready(activation, signal, true)) continue
+            signal.throwIfAborted()
+            if (!this.current(activation)) continue
+            this.authorize(agent, owned.name)
+            this.remember(agent, owned.name)
             if (activation.reuse && ![...agent.session.deriveMessages(), ...decision.messages]
               .some(message => deliversSkillInstructions(message.content, owned.name))) {
               reminders.push(createUserMessage({ content: [{ type: 'text', text: renderSkillContent(owned) }],
                 source: { kind: 'skill-invocation', name: owned.name, form: 'instructions' } }))
             }
           }
-          if (!installed.length) return decision
-          this.assembling.add(agent)
-          const assembly = await ctx.systemPrompt.assemble({ ...pending.context, signal })
-          signal.throwIfAborted()
-          if (installed.some(activation => !this.current(activation))) { revoke(); return decision }
-          refreshAssembly(pending.assembly, assembly)
-          for (const activation of installed) this.remember(agent, activation.name)
-        } catch (error) { revoke(); throw error }
-        finally { this.assembling.delete(agent) }
+        } finally { this.revokeStep(state) }
         return reminders.length ? { ...decision, messages: [...decision.messages, ...reminders] } : decision
       }, { prepend: true }),
     )
@@ -261,10 +221,108 @@ export class PublisherAgentTools {
       && this.owns(agent.id) && !!this.bindings.current(agent.id)
   }
 
+  private capability(state: AgentTools, capability: ToolCapability): boolean {
+    return [...state.authorized ?? []].some(name => {
+      const entry = PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === name)
+      return entry !== undefined && this.entryAllows(entry, capability)
+    })
+  }
+
+  private entryAllows(entry: PublisherSkillEntry, capability: ToolCapability): boolean {
+    if (capability === 'draft-read') return true
+    if (capability === 'profile-read') return Boolean(entry.writingProfile)
+    if (capability === 'profile-write') return entry.writingProfile === 'write'
+    return entry.capability === capability
+  }
+
+  private toolAuthorized(state: AgentTools, name: string): boolean {
+    const capability = name === 'publisher_request_publication' || name === 'publisher_get_publication_status' ? 'publish'
+      : name === 'publisher_update_writing_profile' ? 'profile-write'
+        : name === 'publisher_get_writing_profile' ? 'profile-read'
+          : name === 'publisher_get_current_draft' ? 'draft-read' : 'edit'
+    return this.capability(state, capability)
+  }
+
   private hasGrants(state: AgentTools, entry: PublisherSkillEntry): boolean {
-    return Boolean((entry.capability === 'publish' ? state.publication : state.edit)
-      && (!entry.writingProfile || (state.writingProfileRead
-        && (entry.writingProfile !== 'write' || state.writingProfileWrite))))
+    return this.capability(state, entry.capability)
+      && (!entry.writingProfile || (this.capability(state, 'profile-read')
+        && (entry.writingProfile !== 'write' || this.capability(state, 'profile-write'))))
+  }
+
+  private async ready(activation: StepActivation, signal: AbortSignal, fresh = false): Promise<boolean> {
+    let pending = fresh ? undefined : activation.readiness.get(signal)
+    if (!pending) {
+      pending = (async () => {
+        const { agent, name, reuse } = activation
+        const skill = await this.ctx.skills.get(name, { scope: agent, cwd: agent.session.header.cwd, signal })
+        signal.throwIfAborted()
+        return this.current(activation) && this.ctx.tools.get('skill', agent) === activation.loader
+          && isPublisherSkill(skill) && skill.name === name
+          && (reuse ? skill.invocation.userInvocable || skill.invocation.modelInvocable : skill.invocation.userInvocable)
+          && await this.available(agent.id) && this.current(activation)
+      })()
+      if (!fresh) activation.readiness.set(signal, pending)
+    }
+    return pending
+  }
+
+  private options(agent: Agent, capability: ToolCapability): ToolRegistrationOptions {
+    const state = this.state(agent), generation = state.generation
+    return { when: async ({ agent: subject, signal }) => {
+      if (subject !== agent || state.generation !== generation || !this.activation(agent, '')) return false
+      if (this.capability(state, capability)) return true
+      for (const activation of state.step?.values() ?? []) {
+        const entry = PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === activation.name)
+        if (entry && this.entryAllows(entry, capability) && await this.ready(activation, signal)) return true
+      }
+      return false
+    } }
+  }
+
+  private prepareStep(agent: Agent, state: AgentTools): void {
+    const global = this.ctx.tools.get('skill')
+    const inherited = scopeChainOf(agent).slice(1).map(parent => this.ctx.tools.get('skill', parent)).find(Boolean)
+    const loader = global ?? inherited ?? (state.skillLoader ? this.ctx.tools.get('skill', agent) : undefined)
+    if (!loader || this.ctx.tools.get('skill', agent) !== loader) return
+    const gestures = state.gestures ?? [], reusable = this.reusableSkills(agent, state)
+    for (const name of new Set([...gestures, ...reusable])) {
+      const entry = PUBLISHER_SKILL_CATALOG.find(entry => entry.skill.name === name)
+      if (!entry || this.hasGrants(state, entry) || state.step?.has(name)) continue
+      const source = this.activation(agent, name)
+      if (!source) continue
+      const activation: StepActivation = { ...source, reuse: !gestures.includes(name), loader, readiness: new WeakMap() }
+      state.step ??= new Map()
+      state.step.set(name, activation)
+      try { activation.revoke = this.install(agent, name) }
+      catch (cause) { state.step.delete(name); throw cause }
+    }
+  }
+
+  private revokeStep(state: AgentTools | undefined): void {
+    if (!state) return
+    state.step = undefined
+    state.gestures = undefined
+    // Several Skills share one registration. A failed pending upgrade must not
+    // revoke an edit/read capability another verified Skill already authorized.
+    if (!this.capability(state, 'edit')) { state.edit?.(); state.edit = undefined }
+    if (!this.capability(state, 'publish')) {
+      state.publication?.(); state.publication = undefined
+      state.draftRead?.(); state.draftRead = undefined
+    }
+    if (!this.capability(state, 'profile-write')) { state.writingProfileWrite?.(); state.writingProfileWrite = undefined }
+    if (!this.capability(state, 'profile-read')) { state.writingProfileRead?.(); state.writingProfileRead = undefined }
+    const agent = [...this.byAgent].find(([, current]) => current === state)?.[0]
+    if (!this.disposed && agent && state.publication && !state.edit && !state.draftRead && this.bindings.current(agent.id)) {
+      state.draftRead = registerAgentDraftReadTool(state.registration.ctx, this.bindings, this.options(agent, 'draft-read'))
+    }
+    this.refreshDelegated()
+  }
+
+  private authorize(agent: Agent, name: string): void {
+    const state = this.state(agent)
+    state.authorized ??= new Set()
+    state.authorized.add(name)
+    this.install(agent, name)
   }
 
   private remember(agent: Agent, name: string): void {
@@ -294,7 +352,7 @@ export class PublisherAgentTools {
       if (contentGrant) disposers.push(contentGrant)
       const scoped = state.registration.ctx
       if (entry.writingProfile && !state.writingProfileRead) {
-        const grant = registerWritingProfileReadTool(scoped, this.bindings)
+        const grant = registerWritingProfileReadTool(scoped, this.bindings, this.options(agent, 'profile-read'))
         state.writingProfileRead = grant
         disposers.push(() => {
           if (state.writingProfileRead !== grant) return
@@ -302,7 +360,7 @@ export class PublisherAgentTools {
         })
       }
       if (entry.writingProfile === 'write' && !state.writingProfileWrite) {
-        const grant = registerWritingProfileWriteTool(scoped, this.bindings)
+        const grant = registerWritingProfileWriteTool(scoped, this.bindings, this.options(agent, 'profile-write'))
         state.writingProfileWrite = grant
         disposers.push(() => {
           if (state.writingProfileWrite !== grant) return
@@ -322,23 +380,23 @@ export class PublisherAgentTools {
       if (state.edit) return
       const hadDraftRead = !!state.draftRead
       state.draftRead?.(); state.draftRead = undefined
-      const grant = registerAgentDraftTools(scoped, this.bindings)
+      const grant = registerAgentDraftTools(scoped, this.bindings, this.options(agent, 'edit'), this.options(agent, 'draft-read'))
       state.edit = grant
       this.refreshDelegated()
       return () => {
         if (state.edit !== grant) return
         grant(); state.edit = undefined
         if (hadDraftRead && state.publication && !state.draftRead && this.bindings.current(agent.id)) {
-          state.draftRead = registerAgentDraftReadTool(scoped, this.bindings)
+          state.draftRead = registerAgentDraftReadTool(scoped, this.bindings, this.options(agent, 'draft-read'))
         }
         this.refreshDelegated()
       }
     } else {
       if (state.publication) return
       if (!this.bindings.current(agent.id)) return
-      const disposeContent = state.edit ? () => {} : registerAgentDraftReadTool(scoped, this.bindings)
+      const disposeContent = state.edit ? () => {} : registerAgentDraftReadTool(scoped, this.bindings, this.options(agent, 'draft-read'))
       try {
-        const disposePublication = registerAgentPublicationTools(scoped, this.publications, this.available)
+        const disposePublication = registerAgentPublicationTools(scoped, this.publications, this.available, this.options(agent, 'publish'))
         state.draftRead = disposeContent
         const grant = () => { disposePublication() }
         state.publication = grant
@@ -358,7 +416,8 @@ export class PublisherAgentTools {
   private reset(agent: Agent): void {
     const state = this.byAgent.get(agent)
     if (!state) return
-    this.slashAssemblies.delete(agent)
+    this.revokeStep(state)
+    state.authorized = undefined
     state.generation++
     state.request = undefined
     state.gestures = undefined
@@ -448,6 +507,7 @@ export class PublisherAgentTools {
       state.catalog = undefined
       this.disposeSkillLoader(agent, state)
     }
+    this.prepareStep(agent, state)
     this.refreshDelegated()
   }
 
@@ -467,6 +527,6 @@ export class PublisherAgentTools {
     this.disposed = true
     for (const close of this.disposers.reverse()) close()
     for (const agent of this.byAgent.keys()) this.remove(agent)
-    this.loads.clear(); this.pending.clear(); this.assembling.clear(); this.slashAssemblies.clear()
+    this.loads.clear(); this.pending.clear()
   }
 }

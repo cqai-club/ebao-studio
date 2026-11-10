@@ -1,210 +1,203 @@
-/** Desktop Computer Use configuration through the official Plugins surface. */
-import { useSyncExternalStore } from 'react'
-import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { ChangeResult, PluginInfo } from '@deepseek-ai/dsh-api-remotes/client'
-import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button, StateDot, Switch, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DesktopClientPlatform } from './environment.ts'
+/** Configure the shipped provider through the official Plugins slot and manager. */
+import { useEffect, useState } from 'react'
+import type { Context } from '@deepseek-ai/cordis'
+import type { PluginInfo } from '@deepseek-ai/dsh-api-remotes/client'
+import { Button, StateDot, Switch, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ComputerUsePluginArtwork } from './computer-use-command-ui.tsx'
+import { DesktopPermissionsButton, PermissionDetails } from './permissions.tsx'
+import { useOfficialComputerUse } from './upstream-family.ts'
 
-export const COMPUTER_USE_ITEM_ID = 'desktop-computer-use'
-export const COMPUTER_USE_PROVIDER = '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'
-const NS = 'desktop.computerUse'
+const PROVIDER = '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'
+const COMPUTER_USE_SETTINGS_ROUTE = '/api/desktop-next/computer-use'
 
-export const computerUseZh = {
-  title: 'Computer Use',
-  description: '读取屏幕截图，并操作鼠标和键盘。需要支持图片输入的模型。',
-  enable: '启用 Computer Use',
-  loading: '正在读取…',
-  saving: '正在保存…',
-  disabled: '已停用',
-  running: '运行中',
-  waiting: '等待加载',
-  unloading: '正在停用…',
-  failed: '加载失败',
-  unavailable: '当前配置中不可用',
-  readOnly: '当前配置中的此插件不可修改。',
-  readError: '无法读取 Computer Use 状态。',
-  changeError: '无法更改 Computer Use 状态。',
-  retry: '重新读取',
-  restart: '已保存，请重启后台服务以应用。',
-  overridden: '已保存，但其他配置覆盖了此开关。',
-  cancelled: '更改已取消。',
-  macPermissions: 'macOS 使用前，请在系统设置中为运行 DSH 的桌面应用授予屏幕录制和辅助功能权限。',
-}
-export type ComputerUseLocaleKey = keyof typeof computerUseZh
-export const computerUseEn: Record<ComputerUseLocaleKey, string> = {
-  title: 'Computer Use',
-  description: 'Read screenshots and control the mouse and keyboard. A model that accepts image input is required.',
-  enable: 'Enable Computer Use',
-  loading: 'Loading…',
-  saving: 'Saving…',
-  disabled: 'Disabled',
-  running: 'Running',
-  waiting: 'Waiting to load',
-  unloading: 'Disabling…',
-  failed: 'Failed to load',
-  unavailable: 'Unavailable in this configuration',
-  readOnly: 'This plugin cannot be changed in the current configuration.',
-  readError: 'Could not read the Computer Use state.',
-  changeError: 'Could not change the Computer Use state.',
-  retry: 'Reload state',
-  restart: 'Saved. Restart the background service to apply.',
-  overridden: 'Saved, but another configuration overrides this switch.',
-  cancelled: 'The change was cancelled.',
-  macPermissions: 'Before using it on macOS, grant Screen Recording and Accessibility permissions in System Settings to the desktop app running DSH.',
-}
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface LocaleNamespaceMap { 'desktop.computerUse': ComputerUseLocaleKey }
+interface ComputerUseCacheEntry {
+  loaded: boolean
+  row: PluginInfo | undefined
+  commandMode: boolean
+  commandModeLoaded: boolean
 }
 
-type Manager = Pick<ClientContext['remote']['pluginManager'], 'listPlugins' | 'setPluginEnabled'>
-type Notice = 'restart' | 'overridden' | 'cancelled' | null
-interface ComputerUseSnapshot {
-  readonly row: PluginInfo | undefined
-  readonly loading: boolean
-  readonly busy: boolean
-  readonly readError: string | null
-  readonly changeError: string | null
-  readonly notice: Notice
-}
+const computerUseCache = new WeakMap<Context, ComputerUseCacheEntry>()
 
-/** Share authoritative provider state between its detail body and header switch. */
-export class ComputerUseController {
-  private snapshot: ComputerUseSnapshot = {
-    row: undefined, loading: true, busy: false, readError: null, changeError: null, notice: null,
+function getComputerUseCache(context: Context): ComputerUseCacheEntry {
+  let entry = computerUseCache.get(context)
+  if (!entry) {
+    entry = { loaded: false, row: undefined, commandMode: true, commandModeLoaded: false }
+    computerUseCache.set(context, entry)
   }
-  private readonly listeners = new Set<() => void>()
-  private generation = 0
-  private disposed = false
-  constructor(private readonly manager: Manager) {}
-  readonly getSnapshot = (): ComputerUseSnapshot => this.snapshot
-  readonly subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener)
-    return () => { this.listeners.delete(listener) }
-  }
-  private publish(patch: Partial<ComputerUseSnapshot>): void {
-    if (this.disposed) return
-    this.snapshot = { ...this.snapshot, ...patch }
-    for (const listener of this.listeners) listener()
-  }
-  /** Read only the shipped native provider; missing or ambiguous rows remain unavailable. */
-  readonly refresh = async (): Promise<void> => {
-    if (this.disposed) return
-    const generation = ++this.generation
-    this.publish({ loading: true, readError: null })
-    try {
-      const result = await this.manager.listPlugins()
-      if (this.disposed || generation !== this.generation) return
-      if (!result.ok) {
-        this.publish({ row: undefined, loading: false, readError: result.error.message })
-        return
+  return entry
+}
+
+export function ComputerUseSettings({ context, zh, mode = 'overview' }: { context: Context; zh: boolean; mode?: 'overview' | 'actions' | 'page' }) {
+  const t = (chinese: string, english: string): string => zh ? chinese : english
+  const cache = getComputerUseCache(context)
+  const [revision, refresh] = useState(0)
+  const [row, setRow] = useState<PluginInfo | undefined>(() => cache.row)
+  const [loading, setLoading] = useState(() => !cache.loaded)
+  const [busy, setBusy] = useState(false)
+  const [commandMode, setCommandMode] = useState<boolean>(() => cache.commandMode)
+  const [commandBusy, setCommandBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  // The official Computer Use bundle of a newer DSH release gets a row beside Computer Use (Next) (src/client/upstream-family.ts).
+  const official = useOfficialComputerUse?.({ context, t, page: mode === 'page', revision, onError: setError, onNotice: setNotice,
+    onChanged: () => { refresh(value => value + 1) } })
+  useEffect(() => {
+    const reload = (): void => { refresh(value => value + 1) }
+    const off = context.remote.$on('plugin-manager/changed', reload)
+    const reset = context.on('connection/reset', reload)
+    window.addEventListener('focus', reload)
+    return () => { off(); reset(); window.removeEventListener('focus', reload) }
+  }, [context])
+  useEffect(() => {
+    let disposed = false
+    if (!cache.loaded) setLoading(true)
+    void context.remote.pluginManager.listPlugins().then(result => {
+      if (disposed) return
+      if (!result.ok) throw new Error(result.error.message)
+      const rows = result.value.filter(item => item.moduleName === PROVIDER)
+      const next = rows.length === 1 ? rows[0] : undefined
+      cache.row = next
+      cache.loaded = true
+      setRow(next)
+    }).catch(failure => {
+      if (!disposed) {
+        if (!cache.loaded) setRow(undefined)
+        setError(String(failure))
       }
-      const rows = result.value.filter(row => row.moduleName === COMPUTER_USE_PROVIDER)
-      this.publish({ row: rows.length === 1 ? rows[0] : undefined, loading: false })
-    } catch (failure) {
-      if (generation !== this.generation) return
-      this.publish({ row: undefined, loading: false, readError: failure instanceof Error ? failure.message : '' })
-    }
-  }
-  /** Change the exact Host entry once, then reread the accepted state. */
-  readonly setEnabled = async (enabled: boolean): Promise<void> => {
-    const { row, loading, busy } = this.snapshot
-    if (this.disposed || loading || busy || !row || row.readOnlyReason !== undefined) return
-    this.publish({ busy: true, changeError: null, notice: null })
+    }).finally(() => { if (!disposed) setLoading(false) })
+    return () => { disposed = true }
+  }, [cache, context, revision])
+  useEffect(() => {
+    if (mode !== 'page' || typeof fetch !== 'function') return
+    let disposed = false
+    void fetch(COMPUTER_USE_SETTINGS_ROUTE, { method: 'GET' })
+      .then(async response => {
+        if (!response.ok) return
+        const payload = await response.json() as { commandMode?: unknown } | null
+        if (!disposed && payload && typeof payload.commandMode === 'boolean') {
+          cache.commandMode = payload.commandMode
+          cache.commandModeLoaded = true
+          setCommandMode(payload.commandMode)
+        }
+      })
+      .catch(() => {
+        // Keep the cached/default commandMode if the Host route is unreachable in a mock environment.
+      })
+    return () => { disposed = true }
+  }, [cache, mode, revision])
+  const change = async (enabled: boolean): Promise<void> => {
+    if (!row || busy || loading) return
+    setBusy(true); setError(''); setNotice('')
     try {
-      const result = await this.manager.setPluginEnabled(row.entryId, enabled)
-      if (!result.ok) this.publish({ changeError: result.error.message })
-      else {
-        const change: ChangeResult = result.value
-        if (change.application === 'failed') this.publish({ changeError: change.error?.diagnostic ?? '' })
-        if (change.application === 'restart-required') this.publish({ notice: 'restart' })
-        if (change.application === 'overridden') this.publish({ notice: 'overridden' })
-        if (change.application === 'cancelled') this.publish({ notice: 'cancelled' })
+      const result = await context.remote.pluginManager.setPluginEnabled(row.entryId, enabled)
+      if (!result.ok) throw new Error(result.error.message)
+      const change = result.value
+      if (change.application === 'failed') throw new Error(change.error?.diagnostic ?? t('无法更改插件状态。', 'Could not change the plugin state.'))
+      if (change.application === 'restart-required') setNotice(t('已保存，请重启后台服务以应用。', 'Saved. Restart the background service to apply.'))
+      if (change.application === 'overridden') setNotice(t('已保存，但当前配置覆盖了此开关。', 'Saved, but another configuration overrides this switch.'))
+      const next = { ...row, enabled }
+      cache.row = next
+      setRow(next)
+    } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
+    finally { setBusy(false); refresh(value => value + 1) }
+  }
+  const changeCommandMode = async (nextMode: boolean): Promise<void> => {
+    if (busy || commandBusy || loading) return
+    setCommandBusy(true); setError(''); setNotice('')
+    try {
+      const response = await fetch(COMPUTER_USE_SETTINGS_ROUTE, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ commandMode: nextMode }),
+      })
+      if (!response.ok) {
+        throw new Error(t('无法保存 Computer Use（Next）命令模式设置。', 'Could not save the Computer Use (Next) command mode setting.'))
       }
+      const payload = await response.json() as { commandMode?: unknown } | null
+      const resolved = payload && typeof payload.commandMode === 'boolean' ? payload.commandMode : nextMode
+      cache.commandMode = resolved
+      cache.commandModeLoaded = true
+      setCommandMode(resolved)
+      setNotice(
+        resolved
+          ? t('已开启按需命令加载（/computer-use）。', 'On-demand command loading (/computer-use) enabled.')
+          : t('已关闭按需命令加载，Computer Use（Next）工具将在所有会话中常驻。', 'On-demand command loading disabled; Computer Use (Next) tools remain active across sessions.'),
+      )
     } catch (failure) {
-      this.publish({ changeError: failure instanceof Error ? failure.message : '' })
+      setError(failure instanceof Error ? failure.message : String(failure))
     } finally {
-      await this.refresh()
-      this.publish({ busy: false })
+      setCommandBusy(false)
     }
   }
-  /** Ignore pending reads and writes when the client plugin unloads. */
-  dispose(): void {
-    this.disposed = true
-    this.generation++
-    this.listeners.clear()
-  }
-}
-
-interface ComputerUseInjected {
-  readonly controller: ComputerUseController
-  readonly platform: DesktopClientPlatform
-}
-export type ComputerUseSettingsProps = PropsRuntime<'plugins.item'> & PropsLocale<typeof NS> & InjectFace<ComputerUseInjected>
-export type ComputerUseActionsProps = PropsRuntime<'plugins.detail.actions'> & PropsLocale<typeof NS> & InjectFace<ComputerUseInjected>
-
-/** Render a plain summary in the official ItemCard and live state on its detail page. */
-export function ComputerUseSettings({ controller, platform, view, t }: ComputerUseSettingsProps) {
-  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
-  if (view === 'summary') return <>{t('description')}</>
-  let status: ComputerUseLocaleKey = 'waiting'
-  let dot: StateDotState = 'ongoing'
-  if (state.busy) status = 'saving'
-  else if (state.loading) status = 'loading'
-  else if (!state.row) { status = 'unavailable'; dot = 'warning' }
-  else if (state.row.fiberPhase === 'unloading') status = 'unloading'
-  else if (!state.row.enabled) { status = 'disabled'; dot = 'idle' }
-  else if (state.row.fiberPhase === 'failed') { status = 'failed'; dot = 'error' }
-  else if (state.row.fiberPhase === 'active') { status = 'running'; dot = 'done' }
-  const error = state.changeError ?? state.readError
-  return <div aria-busy={state.loading || state.busy}>
-    <p>{t('description')}</p>
-    <p role="status" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><StateDot state={dot} />{t(status)}</p>
-    {platform === 'darwin' && <p className="dshDesktopSettingsHint">{t('macPermissions')}</p>}
-    {state.row?.readOnlyReason !== undefined && <p className="dshDesktopSettingsHint">{t('readOnly')}</p>}
-    {state.notice && <p role="status">{t(state.notice)}</p>}
-    {error !== null && <div>
-      <p role="alert">{t(state.changeError !== null ? 'changeError' : 'readError')}{error && ` ${error}`}</p>
-      <Button variant="outline" size="sm" disabled={state.loading || state.busy} onClick={() => { void controller.refresh() }}>{t('retry')}</Button>
-    </div>}
+  const status = loading ? t('正在读取…', 'Loading…') : !row ? t('当前 Profile 中不可用', 'Unavailable in this Profile')
+    : !row.enabled ? t('已停用', 'Disabled') : row.fiberPhase === 'active' ? t('运行中', 'Running')
+      : row.fiberPhase === 'failed' ? t('加载失败', 'Failed to load') : t('等待加载', 'Waiting to load')
+  const commandSwitchLabel = t('按需命令加载（/computer-use）', 'On-demand command loading (/computer-use)')
+  const commandActive = Boolean(row?.enabled && commandMode)
+  return <div className="dshNextComputerUse" data-next-computer-use>
+    {mode !== 'page' && <>
+      <div className="dshNextPluginActions">
+        <DesktopPermissionsButton service={window.desktopNext?.permissions} language={zh ? 'zh' : 'en'} label={t('权限设置', 'Permission settings')} />
+        <Switch label={t('启用 Computer Use（Next）', 'Enable Computer Use (Next)')} checked={row?.enabled ?? false}
+          disabled={loading || busy || !row || row.readOnlyReason !== undefined} onChange={enabled => { void change(enabled) }} />
+      </div>
+    </>}
+    {mode === 'page' && <>
+      <p className="dshDesktopSettingsHint"><code>{PROVIDER}</code></p>
+      <p role="status" className="dshNextPermissionStatus"><StateDot state={row?.enabled && row.fiberPhase === 'active' ? 'done' : row?.fiberPhase === 'failed' ? 'error' : 'idle'} />{status}</p>
+      <section className="dshNextComponentSection" data-next-computer-use-options>
+        <div className="dshNextComponentSectionHead">
+          <h4 className="dshNextComponentSectionTitle">{t('包含的组件', 'Components')}</h4>
+          <span className="dshNextComponentSectionCount">
+            {official?.componentCount(commandActive) ?? (commandActive
+              ? t('共 1 个 · 1 运行中', '1 total · 1 running')
+              : t('共 1 个 · 1 已停用', '1 total · 1 off'))}
+          </span>
+        </div>
+        <ul className="dshNextComponentRows">
+          <li
+            className="dshNextComponentRow"
+            data-plugin-row="computer-use-command"
+            {...(commandActive ? {} : { 'data-state': 'off' })}
+          >
+            <div className="dshNextComponentRowLine">
+              <span className="dshNextComponentRowIcon" aria-hidden="true">
+                <ComputerUsePluginArtwork size={30} />
+              </span>
+              <div className="dshNextComponentRowMain">
+                <span className="dshNextComponentRowId">{commandSwitchLabel}</span>
+                <span className="dshNextComponentRowModule">
+                  {t(
+                    '默认开启：普通会话不常驻加载 Computer Use（Next）工具与系统提示词，避免占用上下文；需要时可在会话中通过 /computer-use 命令手动加载（/computer-use off 关闭）。若关闭此项，则恢复在所有会话中常驻加载。',
+                    'Enabled by default: Computer Use (Next) tools and guidance are not loaded into sessions by default to save context; run /computer-use in a session to load them on demand (/computer-use off to unload). Turn off to keep them resident in all sessions.',
+                  )}
+                </span>
+                <code className="dshNextComponentRowModule">computer-use</code>
+                <code className="dshNextComponentRowModule">{PROVIDER}</code>
+              </div>
+              <span className="dshNextComponentRowState">
+                <StateDot state={commandActive ? 'done' : 'idle'} />
+                {commandActive ? t('运行中', 'Running') : t('已关闭', 'Off')}
+              </span>
+              {row?.enabled ? (
+                <Switch
+                  label={commandSwitchLabel}
+                  checked={commandMode}
+                  disabled={loading || busy || commandBusy}
+                  onChange={enabled => { void changeCommandMode(enabled) }}
+                />
+              ) : null}
+            </div>
+          </li>
+          {official?.row}
+        </ul>
+      </section>
+      {window.desktopNext?.permissions ? <PermissionDetails service={window.desktopNext.permissions} language={zh ? 'zh' : 'en'} />
+        : <p>{t('请在运行 DSH 的桌面应用中管理系统权限。', 'Manage system permissions in the desktop app running DSH.')}</p>}
+    </>}
+    {notice && <Toast text={notice} onDone={() => { setNotice('') }} />}
+    {error && <Toast text={error} onDone={() => { setError('') }} />}
+    {error && <div className="dshNextPluginActions"><Button variant="outline" size="sm" onClick={() => { setError(''); refresh(value => value + 1) }}>{t('重试', 'Retry')}</Button></div>}
   </div>
-}
-
-/** Contribute only to the Computer Use item's native detail header. */
-export function ComputerUseActions({ controller, subject, t }: ComputerUseActionsProps) {
-  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
-  if (subject.kind !== 'item' || subject.id !== COMPUTER_USE_ITEM_ID) return null
-  return <div aria-busy={state.loading || state.busy}>
-    <Switch label={t('enable')} checked={state.row?.enabled ?? false}
-      disabled={state.loading || state.busy || !state.row || state.row.readOnlyReason !== undefined}
-      title={state.row?.readOnlyReason !== undefined ? t('readOnly') : undefined}
-      onChange={enabled => { void controller.setEnabled(enabled) }} />
-  </div>
-}
-
-/** Register an official ItemCard in every Desktop shell mode; the Host owns its default-off row. */
-export function registerDesktopComputerUse(ctx: ClientContext, platform: DesktopClientPlatform): void {
-  // Namespace services mount independently of `remote`. Keep this child scoped
-  // so the Desktop parent can provide layout before Plugin Manager becomes ready.
-  ctx.inject(['remote.pluginManager'], (scope: ClientContext) => {
-    const controller = new ComputerUseController(scope.remote.pluginManager)
-    scope.effect(() => scope.locale.register(NS, { zh: computerUseZh, en: computerUseEn }), 'dsh-plugin-desktop: Computer Use dictionaries')
-    scope.effect(() => {
-      const reload = (): void => { void controller.refresh() }
-      const off = scope.remote.$on('plugin-manager/changed', reload)
-      const reset = scope.on('connection/reset', reload)
-      window.addEventListener('focus', reload)
-      reload()
-      return () => { off(); reset(); window.removeEventListener('focus', reload); controller.dispose() }
-    }, 'dsh-plugin-desktop: Computer Use provider state')
-    scope.slots.inject('plugins.item', () => scope.slots.register({
-      name: 'plugins.item', id: COMPUTER_USE_ITEM_ID, order: 100, locale: NS,
-      label: () => scope.locale.bind(NS)('title'), inject: () => ({ controller, platform }),
-    }, ComputerUseSettings))
-    scope.slots.inject('plugins.detail.actions', () => scope.slots.register({
-      name: 'plugins.detail.actions', id: 'desktop-computer-use-toggle', locale: NS,
-      inject: () => ({ controller, platform }),
-    }, ComputerUseActions))
-  })
 }

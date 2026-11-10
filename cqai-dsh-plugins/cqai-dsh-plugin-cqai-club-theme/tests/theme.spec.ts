@@ -68,7 +68,7 @@ describe('CQAI Club palette', () => {
     }
   })
 
-  it.each(['extended', 'advanced'])('registers a removable override in %s mode', mode => {
+  it.each(['extended', 'advanced', 'modern'])('registers a removable override in %s mode', mode => {
     const storage = new Map<string, string>()
     const localStorage = {
       getItem: vi.fn((key: string) => storage.get(key) ?? null),
@@ -78,7 +78,8 @@ describe('CQAI Club palette', () => {
     const addEventListener = vi.fn()
     const removeEventListener = vi.fn()
     vi.stubGlobal('window', {
-      location: { search: `?dsh-desktop-mode=${mode}` }, localStorage, addEventListener, removeEventListener,
+      location: { search: mode === 'modern' ? '' : `?dsh-desktop-mode=${mode}` },
+      ...(mode === 'modern' ? { desktopNext: {} } : {}), localStorage, addEventListener, removeEventListener,
     })
     const styles: Array<{ dataset: Record<string, string>; textContent: string; remove: ReturnType<typeof vi.fn> }> = []
     const appendChild = vi.fn()
@@ -117,6 +118,7 @@ describe('CQAI Club palette', () => {
     expect(style.textContent).toContain('.dshDesktopFrame:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] .eBaoHomeDock)')
     expect(style.textContent).toContain(':not(:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] [data-office-ppt-template-panel]))')
     expect(style.textContent).toContain('.dshDesktopSidebarSurface')
+    expect(style.textContent).toContain('[data-conversation-content][data-content-phase="hero"]:has(.eBaoHomeDock)')
     expect(style.textContent).toContain('background: transparent !important')
     expect(style.textContent).toContain('body[data-ds-dark-theme]')
     expect(style.textContent).toContain('--cqai-club-home-light-background: none')

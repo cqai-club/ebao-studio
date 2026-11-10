@@ -1,5 +1,6 @@
+import { executeTool, installTestExecutor } from './tool-runtime-fixtures.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -28,6 +29,7 @@ async function fixture(trustedRequest?: ConstructorParameters<typeof PublisherAg
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
   await ctx.plugin(ToolRuntime)
+  await installTestExecutor(ctx)
   await ctx.plugin(SkillRegistry)
   ctx.provide('attachments', {} as never)
   const agents = new Map<string, Agent>()
@@ -72,12 +74,12 @@ async function fixture(trustedRequest?: ConstructorParameters<typeof PublisherAg
     agentEvents(ctx, agent).emit('agent/inbox/claimed', { message, turn: 1 })
   }
   const load = (agent: Agent, name = PUBLISHING_SKILL.name, signal = new AbortController().signal) =>
-    ctx.tools.execute({ agent, name: 'skill', arguments: { name }, callId: ToolCallId(`skill-${++call}`), signal })
+    executeTool(ctx, { agent, name: 'skill', arguments: { name }, callId: ToolCallId(`skill-${++call}`), signal })
   const names = (agent: Agent) => ctx.tools.schemas(agent).map(tool => tool.name).filter(name => name.startsWith('publisher_')).sort()
   const catalog = (agent: Agent) => ctx.skills.list({ scope: agent })
   const skillsFor = (agent: Agent) => createScope(publisherCtx, agent).ctx.skills
   const draft = () => {
-    const home = mkdtempSync(join(tmpdir(), 'ebao-native-skill-'))
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ebao-native-skill-')))
     cleanups.push(() => rmSync(home, { recursive: true, force: true }))
     const env = { DSH_HOME: home }
     return { env, content: createContent('article', env) }
@@ -176,7 +178,7 @@ describe('Publisher native Skill lifecycle', () => {
     expect(test.names(agent)).toContain('publisher_update_current_draft')
     expect(test.names(agent)).not.toContain('publisher_request_publication')
     test.claim(agent, '先不要继续修改')
-    expect(test.names(agent)).toEqual([])
+    expect((await executeTool(test.ctx, { agent, name: 'publisher_get_current_draft', arguments: {}, callId: ToolCallId('delegation-reset-draft'), signal: new AbortController().signal })).isError).toBe(true)
   })
 
   it('rejects unavailable and canceled reads without granting execution capabilities', async () => {
@@ -272,7 +274,7 @@ describe('Publisher native Skill lifecycle', () => {
     test.claim(agent)
     await test.load(agent)
     test.claim(agent, '现在只修改标题')
-    expect(test.names(agent)).toEqual([])
+    expect((await executeTool(test.ctx, { agent, name: 'publisher_get_current_draft', arguments: {}, callId: ToolCallId('reset-current-draft'), signal: new AbortController().signal })).isError).toBe(true)
   })
 
   it('adds the editor Skill for a cold binding but loads its seven tools only after a Skill read', async () => {
@@ -337,7 +339,7 @@ describe('Publisher native Skill lifecycle', () => {
     await test.load(agent)
     expect(test.names(agent)).toContain('publisher_request_publication')
     test.owned.delete(agent.id)
-    const result = await test.ctx.tools.execute({ agent, name: 'publisher_get_current_draft', arguments: {},
+    const result = await executeTool(test.ctx, { agent, name: 'publisher_get_current_draft', arguments: {},
       callId: ToolCallId('late-draft-read'), signal: new AbortController().signal })
     expect(result.isError).toBe(true)
     test.owner.refresh(agent.id)
@@ -357,7 +359,7 @@ describe('Publisher native Skill lifecycle', () => {
     const next = test.bindings.bind(agent.id, content.id, env, { kind: 'platform', platform: 'xhs' })!
     test.owner.refresh(agent.id)
     expect(next.bindingToken).not.toBe(first.bindingToken)
-    expect(test.names(agent)).toEqual([])
+    expect((await executeTool(test.ctx, { agent, name: 'publisher_get_current_draft', arguments: {}, callId: ToolCallId('target-current-draft'), signal: new AbortController().signal })).isError).toBe(true)
     expect(() => test.bindings.require(agent.id, content.id, first.bindingToken)).toThrow('草稿已切换')
   })
 

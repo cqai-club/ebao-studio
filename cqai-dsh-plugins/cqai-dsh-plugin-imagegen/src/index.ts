@@ -743,11 +743,12 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
           }, signal)
           const exactModel = selected.upstream?.trim() || selected.model.trim()
           if (exactModel === '') throw new Error('CQAI 未返回可用于画布技能的图像模型。')
-          if (!Number.isSafeInteger(ctx.webServer.port) || ctx.webServer.port < 1) {
+          const port = ctx.webServer.port
+          if (port === undefined || !Number.isSafeInteger(port) || port < 1) {
             throw new Error('DSH 本地服务尚未准备好，无法签发画布技能图像凭据。')
           }
           const grant = skillImageBridge.issue({
-            origin: `http://127.0.0.1:${ctx.webServer.port}`,
+            origin: `http://127.0.0.1:${port}`,
             model: exactModel,
             signal,
           })

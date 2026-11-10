@@ -2947,6 +2947,17 @@ const cssMcp = ".MCP_section{position:relative;width:100%;max-width:760px;color:
 				locale: MCP_NS,
 				inject: mcpSectionFace
 			}, McpPanelPage));
+
+			// Modern Harness exposes list tabs on its official Plugins page.
+			// Keep the legacy slots above for older compatible Desktop shells.
+			ctx.slots.inject("plugins.tab", () => ctx.slots.register({
+				name: "plugins.tab", id: "cqai-skills", order: 50,
+				label: () => t("nav"), locale: NS, inject: sectionFace
+			}, SkillsPanelPage));
+			ctx.slots.inject("plugins.tab", () => ctx.slots.register({
+				name: "plugins.tab", id: "cqai-mcp", order: 60,
+				label: () => mt("nav"), locale: MCP_NS, inject: mcpSectionFace
+			}, McpPanelPage));
 		}
 
 		bundleModule.exports.NS = NS;

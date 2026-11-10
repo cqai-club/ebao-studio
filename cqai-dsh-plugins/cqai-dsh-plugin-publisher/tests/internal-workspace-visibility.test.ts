@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,7 @@ const homes: string[] = []
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }) })
 
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), 'publisher-hidden-workspace-'))
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'publisher-hidden-workspace-')))
   homes.push(home)
   const env = { DSH_HOME: home }
   const workspaces: Array<{ id: string; path: string; title: string; sessionIds: string[] }> = []

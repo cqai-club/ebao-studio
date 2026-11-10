@@ -35,6 +35,10 @@ function isCqaiDesktop(): boolean {
     .dshDesktop?.cqaiPrimaryLogin === true
 }
 
+function isModernDesktop(): boolean {
+  return typeof (globalThis as typeof globalThis & { desktopNext?: { state?: unknown } }).desktopNext?.state === 'function'
+}
+
 function AccountAction({ registerAction, open, label }: PropsRuntime<'cqaiclub.account.menu.action'> & { open: () => void; label: () => string }) {
   useEffect(() => registerAction({
     id: 'cqai-plugin-management', label, onSelect: open,
@@ -46,7 +50,20 @@ function AccountAction({ registerAction, open, label }: PropsRuntime<'cqaiclub.a
 export const inject = ['slots', 'locale']
 
 export function apply(ctx: Context): void {
-  if (!isCqaiDesktop()) return
+  if (!isCqaiDesktop()) {
+    if (!isModernDesktop()) return
+    // Current Harness owns the installed list. Contribute a market tab through
+    // its public extension point instead of replacing its page or hiding bundles.
+    ctx.slots.inject('plugins.tab', () => ctx.slots.register({
+      name: 'plugins.tab', id: 'cqai-market', order: 20,
+      label: () => ctx.locale.getLocale().active.startsWith('zh') ? '插件市场' : 'Plugin market',
+      children: { 'cqai.pluginManagement.market': { kind: 'list', scope: 'root' } },
+    }, (props: PropsRuntime<'plugins.tab'> & PropsRenderSlots<'cqai.pluginManagement.market'>) =>
+      props.renderSlot('cqai.pluginManagement.market', {}, {
+        fallback: <p role="status">{ctx.locale.getLocale().active.startsWith('zh') ? '当前插件市场不可用。' : 'The plugin market is unavailable.'}</p>,
+      })))
+    return
+  }
   const viewState = createViewState()
   ctx.inject(['layout', 'remote', 'remote.pluginManager'], scope => {
     const open = () => { viewState.select('installed'); scope.layout.selectPanel(PANEL) }

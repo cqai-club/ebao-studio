@@ -4,7 +4,7 @@ import type { ChatSnapshot, ToolCallBlock, ToolChatData } from '@deepseek-ai/dsh
 import type { ISessions, SessionBinding, SessionEventWindow, SessionListState, SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type {} from '@deepseek-ai/dsh-tools/types'
+import type {} from '@deepseek-ai/dsh-tool-executor-ptc/types'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
