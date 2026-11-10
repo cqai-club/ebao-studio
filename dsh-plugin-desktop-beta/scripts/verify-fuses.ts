@@ -105,13 +105,9 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
       runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-skill-badge-smoke.mjs'), root], 120_000, 'Packaged badge skill smoke failed'),
       // Image attachments and Market icons go through sharp; on Linux the Host's resolver must keep it on the WebAssembly build.
       runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-sharp-smoke.mjs'), root], 120_000, 'Packaged sharp smoke failed'),
-      // Session persistence uses the official native flock addon, not legacy fs-ext. Exercise both
-      // universal macOS slices on Apple Silicon (Intel through Rosetta), and the native Linux slice.
+      // Session persistence uses the official native flock addon, not legacy fs-ext.
       ...target.platform === 'win32' ? [] : [
         runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-flock-smoke.mjs'), root, process.arch], 30_000, 'Packaged session lock smoke failed'),
-        ...(darwin && process.arch === 'arm64' && path.includes('/mac-universal/') ? [
-          runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-flock-smoke.mjs'), root, 'x64'], 30_000, 'Packaged x64 session lock smoke failed', 'x64'),
-        ] : []),
       ],
       // Linux has no tray terminal; the application executable itself answers `<app> dsh …` (#1568).
       ...target.platform === 'linux' ? [
@@ -120,6 +116,11 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
       // The same Electron, in Node mode, starts the real Host from the archive with a private home.
       runPackagedNode(path, ['--expose-internals', join(desktopRoot, 'scripts', 'packaged-host-smoke.mjs'), root], 300_000, 'Packaged Next Host smoke failed'),
     ])
+    // Cold Rosetta translation competes with the other Electron/Host checks on hosted runners.
+    // Run it separately, retaining its stage diagnostics if it cannot start or complete.
+    if (darwin && process.arch === 'arm64' && path.includes('/mac-universal/')) {
+      await runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-flock-smoke.mjs'), root, 'x64'], 120_000, 'Packaged x64 session lock smoke failed', 'x64')
+    }
   }
   return []
 }
