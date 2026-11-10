@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import { act, type ComponentProps, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
@@ -24,6 +25,7 @@ let root: Root | undefined
 
 function result(requestId: string, options: { name?: string; failed?: boolean; subCalls?: ToolResultNode[] } = {}): ToolResultNode {
   return {
+    name: options.name ?? 'publisher_request_publication', args: PartialArguments.fromText('{}'),
     kind: 'tool-result', seq: 10, time: 10, callId: `call-${requestId}`,
     call: { name: options.name ?? 'publisher_request_publication', argsRaw: '{}' }, callTime: 9,
     content: [{ type: 'text', text: JSON.stringify({ request_id: requestId }) }], isError: !!options.failed,

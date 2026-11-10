@@ -1,4 +1,4 @@
-/** One native owner for OS consent and Chromium's media permission hooks. */
+/** Native controls for Computer Use and trusted renderer media access. */
 import { desktopCapturer, Menu, shell, systemPreferences, type BrowserWindow, type DesktopCapturerSource, type Session } from 'electron'
 import { NativePermissions } from './native-permissions.ts'
 import { APP_URL } from './ipc.ts'
@@ -6,8 +6,10 @@ import { APP_URL } from './ipc.ts'
 export function createNativePermissions(): NativePermissions {
   return new NativePermissions({
     platform: process.platform,
+    // AXIsProcessTrusted and Electron's screen-capture preflight answer only yes or no, so an ungranted screen or
+    // Accessibility grant reads as denied whether or not the person ever refused it.
     status: permission => permission === 'accessibility'
-      ? process.platform === 'darwin' && systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'unknown'
+      ? process.platform === 'darwin' ? systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'denied' : 'unknown'
       : systemPreferences.getMediaAccessStatus(permission),
     microphone: () => systemPreferences.askForMediaAccess('microphone'),
     // Enumeration triggers macOS consent when needed; zero-sized thumbnails avoid capturing images.
@@ -38,6 +40,12 @@ function appOrigin(value: string): boolean {
   try { const url = new URL(value); return url.protocol === 'dsh-app:' && url.host === 'app' } catch { return false }
 }
 
+/**
+ * Clipboard access open to app-origin sub-frames such as plugin viewers; other permissions need the main frame.
+ * Chromium asks for `clipboard-read` to read, to write custom formats, and to write without user activation.
+ */
+const SUBFRAME_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-read', 'clipboard-sanitized-write'])
+
 /** A frame may close while native consent is open; settle its callback at most once. */
 function replyOnce<T>(callback: (value: T) => void, warn: (error: unknown) => void): (value: T) => void {
   let replied = false
@@ -48,34 +56,31 @@ function replyOnce<T>(callback: (value: T) => void, warn: (error: unknown) => vo
   }
 }
 
-export function installMediaPermissions(session: Session, permissions: NativePermissions, options: {
+export function installMediaPermissions(session: Session, options: {
   window(): BrowserWindow | undefined
   language(): string
   warn(error: unknown): void
 }): void {
-  const trusted = (contents: Electron.WebContents | null, url: string, isMainFrame: boolean): boolean => {
+  const trusted = (contents: Electron.WebContents | null, url: string, isMainFrame: boolean, permission: string): boolean => {
     const owner = options.window()
     return !!owner && !owner.isDestroyed() && owner.webContents === contents && !contents.isDestroyed()
-      && isMainFrame && appOrigin(url) && contents.getURL().startsWith(APP_URL)
+      && (isMainFrame || SUBFRAME_PERMISSIONS.has(permission)) && appOrigin(url) && contents.getURL().startsWith(APP_URL)
   }
   session.setPermissionCheckHandler((contents, permission, origin, details) => {
-    if (!trusted(contents, origin, details.isMainFrame)) return false
-    if (permission === 'media') return details.mediaType === 'audio' && permissions.query('microphone').status === 'granted'
+    if (!trusted(contents, origin, details.isMainFrame, permission)) return false
+    if (permission === 'media') return details.mediaType === 'audio'
     // Keep the existing trusted renderer's non-media behavior; OS media grants remain separate.
     return true
   })
   session.setPermissionRequestHandler((contents, permission, callback, details) => {
     const reply = replyOnce(callback, options.warn)
-    const allowed = (): boolean => trusted(contents, details.requestingUrl, details.isMainFrame)
+    const allowed = (): boolean => trusted(contents, details.requestingUrl, details.isMainFrame, permission)
     if (!allowed()) return reply(false)
     if (permission !== 'media') return reply(true)
     const mediaTypes = 'mediaTypes' in details ? details.mediaTypes : undefined
-    if (!mediaTypes?.length || mediaTypes.some(type => type !== 'audio') || !options.window()?.isFocused()) return reply(false)
-    void (async () => {
-      if (!await contents.executeJavaScript('navigator.userActivation.isActive') || !allowed()) return false
-      const result = await permissions.request('microphone')
-      return allowed() && (result.status === 'granted' || process.platform === 'linux' && result.status === 'unknown')
-    })().then(reply, error => { options.warn(error); reply(false) })
+    // Chromium and macOS request recording consent as part of getUserMedia.
+    // Voice transcription may await initialization before opening the stream.
+    reply(!!mediaTypes?.length && mediaTypes.every(type => type === 'audio'))
   })
   let picking = false
   session.setDisplayMediaRequestHandler((request, callback) => {

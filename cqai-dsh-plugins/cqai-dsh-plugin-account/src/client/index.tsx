@@ -3,6 +3,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-models/client'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -45,6 +46,11 @@ const CLUB_PANEL = 'cqai-club' as MainPanelId
 function isCqaiPrimaryDesktop(): boolean {
   return (globalThis as typeof globalThis & { dshDesktop?: { cqaiPrimaryLogin?: unknown } })
     .dshDesktop?.cqaiPrimaryLogin === true
+}
+
+/** The current Desktop shell keeps the official settings launcher intact. */
+function isModernDesktop(): boolean {
+  return typeof (globalThis as typeof globalThis & { desktopNext?: { state?: unknown } }).desktopNext?.state === 'function'
 }
 
 const zh = {
@@ -1250,7 +1256,9 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'cqaiclub-dsn-account: dictionaries')
 
-  if (isCqaiPrimaryDesktop()) {
+  const primaryDesktop = isCqaiPrimaryDesktop()
+  const modernDesktop = isModernDesktop()
+  if (primaryDesktop || modernDesktop) {
     const viewState = createClubViewState()
     ctx.inject(['layout'], scope => {
       scope.slots.inject('main', () => scope.slots.register({
@@ -1263,7 +1271,7 @@ export function apply(ctx: ClientContext): void {
           'cqaiclub.club.activities': { kind: 'list', scope: 'root' },
         },
       }, (props) => <CqaiClubPage {...props} />))
-      scope.slots.inject('settings.launcher', () => scope.slots.register({
+      if (primaryDesktop) scope.slots.inject('settings.launcher', () => scope.slots.register({
         name: 'settings.launcher',
         locale: NS,
         inject: () => ({
@@ -1272,8 +1280,13 @@ export function apply(ctx: ClientContext): void {
         }),
         children: { 'cqaiclub.account.menu.action': { kind: 'list', scope: 'root' } },
       }, (props) => <CqaiAccountLauncher {...props} />))
+      else scope.slots.inject('sidebar.panellist', () => scope.slots.register({
+        name: 'sidebar.panellist', id: CLUB_PANEL, order: 45,
+        label: () => t('tab'), locale: NS,
+      }, ({ size }: PropsRuntime<'sidebar.panellist'>) => <IconUserOutlineMedium size={size} />))
     })
-  } else {
+  }
+  if (!primaryDesktop) {
     ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: NS,
@@ -1281,10 +1294,12 @@ export function apply(ctx: ClientContext): void {
       label: () => t('tab'),
       locale: NS,
       inject: () => ({ accountContext: ctx }),
-      children: {
+      // Modern Desktop already declares these children on its Club panel.
+      // The renderer rejects two owners for the same root-scoped slot.
+      ...(!modernDesktop ? { children: {
         'cqaiclub.club.extension': { kind: 'list', scope: 'root' },
         'cqaiclub.club.activities': { kind: 'list', scope: 'root' },
-      },
+      } as const } : {}),
     }, (props) => <AccountSettingsTab {...props} />))
   }
 

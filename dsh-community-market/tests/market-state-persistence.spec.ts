@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,12 +7,13 @@ import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility, defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { stringify } from 'yaml'
 import { z } from 'zod'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DSH_1024STORE_ADAPTER_ID, DSH_1024STORE_PROVIDER_ID } from '../src/adapters/dsh-1024store.js'
 import { activateMarketDurableState, marketDomainSpec } from '../src/catalog/domain.js'
 import { PersistentCatalogSourceStore } from '../src/catalog/source-store.js'
-import { DeferredMarketStateStore, MemoryMarketStateStore, type MarketCatalogCache } from '../src/catalog/state-store.js'
-import type { LocalSourceRecord } from '../src/contracts/index.js'
+import { DeferredMarketStateStore, MemoryMarketStateStore, type MarketCatalogCache, type MarketStateStore } from '../src/catalog/state-store.js'
+import type { CatalogSourceManifest, LocalSourceRecord } from '../src/contracts/index.js'
+import { createMarketSourceMutator } from '../src/host/routes.js'
 import { MemoryMedium, createMemoryBackend } from './fixtures/memory-storage-backend.js'
 
 const cleanups: Array<() => Promise<void>> = []
@@ -119,6 +121,41 @@ describe('community market durable state', () => {
 
     expect(pending.getDefaultSourceApplied()).toBe(true)
     expect(durable.getDefaultSourceApplied()).toBe(true)
+  })
+
+  it('waits for in-flight adoption before accepting a user source mutation', async () => {
+    const state = new DeferredMarketStateStore()
+    const finish = state.beginAdoption()
+    const durable = new MemoryMarketStateStore({ sources: [source], defaultSourceApplied: true })
+    const mutate = createMarketSourceMutator(state)
+    let completed = false
+    const pending = mutate({ action: 'add-builtin', key: 'dshfind' }, new AbortController().signal)
+      .then(() => { completed = true })
+    await Promise.resolve()
+    expect(completed).toBe(false)
+    await state.adopt(durable)
+    finish()
+    await pending
+    expect(durable.getSources()).toEqual([
+      source,
+      expect.objectContaining({ builtInProviderKey: 'dshfind', enabled: false }),
+    ])
+    const added = durable.getSources()[1]!
+    await mutate({ action: 'select', sourceRecordId: added.sourceRecordId }, new AbortController().signal)
+    expect(durable.getSources()[1]?.enabled).toBe(true)
+  })
+
+  it('continues in session-only mode after an unsuccessful domain open', async () => {
+    const state = new DeferredMarketStateStore()
+    const finish = state.beginAdoption()
+    const pending = new PersistentCatalogSourceStore(state).load()
+    finish()
+    await expect(pending).resolves.toEqual([])
+    await createMarketSourceMutator(state)(
+      { action: 'add-builtin', key: 'dshfind' }, new AbortController().signal,
+    )
+    expect(state.isDurable).toBe(false)
+    expect(state.getSources()).toHaveLength(1)
   })
 
   it('restores the catalog cache independently of the source registry', async () => {
@@ -247,5 +284,71 @@ describe('community market durable state', () => {
     // if the caller had not closed the handle it owns.
     const reopened = await bootMarketState(medium)
     expect(reopened.state.isDurable).toBe(true)
+  })
+})
+
+const manifest = JSON.parse(
+  readFileSync(new URL('../docs/examples/catalog-source.example.json', import.meta.url), 'utf8'),
+) as CatalogSourceManifest
+
+const userSource: LocalSourceRecord = {
+  sourceRecordId: '018f1f77-a5c4-7b73-a9ae-0242ac120002',
+  registrationKind: 'user-added',
+  adapterId: 'market.standard-http-v1',
+  providerId: 'org.example.community-catalog',
+  manifestUrl: 'https://plugins.example.org/catalog-source.json',
+  manifest,
+  enabled: true,
+  order: 0,
+}
+
+function observedStore() {
+  const inner = new MemoryMarketStateStore()
+  const setSources = vi.fn((records: readonly LocalSourceRecord[]) => inner.setSources(records))
+  const state: MarketStateStore = {
+    getSources: () => inner.getSources(),
+    getDefaultSourceApplied: () => inner.getDefaultSourceApplied(),
+    setSources,
+    getCatalogCache: () => inner.getCatalogCache(),
+    setCatalogCache: cache => inner.setCatalogCache(cache),
+  }
+  return { state, setSources }
+}
+
+describe('storage-backed catalog source store', () => {
+  it('persists validated source records through the state store', async () => {
+    const { state, setSources } = observedStore()
+    const store = new PersistentCatalogSourceStore(state)
+
+    await store.save([userSource])
+
+    expect(setSources).toHaveBeenCalledWith([userSource])
+    await expect(store.load()).resolves.toEqual([userSource])
+  })
+
+  it('normalizes a legacy multi-enabled registry to one selected source', async () => {
+    const secondSource: LocalSourceRecord = {
+      ...userSource,
+      sourceRecordId: '028f1f77-a5c4-7b73-a9ae-0242ac120003',
+      order: 1,
+    }
+    const { state, setSources } = observedStore()
+    const store = new PersistentCatalogSourceStore(state)
+
+    await store.save([userSource, secondSource])
+
+    expect(setSources).toHaveBeenCalledWith([userSource, { ...secondSource, enabled: false }])
+    await expect(store.load()).resolves.toEqual([
+      userSource,
+      { ...secondSource, enabled: false },
+    ])
+  })
+
+  it('rejects a persisted registry that no longer satisfies the local-source contract', async () => {
+    const state = new MemoryMarketStateStore({
+      sources: [{ ...userSource, sourceRecordId: 'not-a-uuid' }],
+    })
+
+    await expect(new PersistentCatalogSourceStore(state).load()).rejects.toThrow(/sourceRecordId/u)
   })
 })

@@ -21,9 +21,11 @@ const SID = 'session-imagegen' as SessionId
 
 function inputActions(overrides: Partial<InputActions> = {}): InputActions {
   return {
+    insertQuote: vi.fn(() => true),
     captureInsertion: vi.fn(() => ({ start: 0, end: 0, draftRev: 0 })),
     insertText: vi.fn(() => true),
     setDraft: vi.fn(),
+    persistDraft: vi.fn(),
     addAttachments: vi.fn(() => true),
     removeAttachment: vi.fn(),
     pruneAttachments: vi.fn(),
@@ -75,7 +77,7 @@ describe('native conversation attachment bridge', () => {
 
     const receipt = attachImageFile(conversation, SID, actions, file)
 
-    expect(conversation.createDrafts).toHaveBeenCalledExactlyOnceWith(SID, [file])
+    expect(conversation.createDrafts).toHaveBeenCalledExactlyOnceWith(SID, [file], true)
     expect(actions.addAttachments).toHaveBeenCalledExactlyOnceWith([draft.id])
     expect(conversation.releaseDraftAttachments).not.toHaveBeenCalled()
     expect(receipt.attachmentIds).toEqual([draft.id])
@@ -190,6 +192,7 @@ describe('official main-panel integration', () => {
       sessionId: undefined,
       inputActions: undefined,
       useInput: () => undefined,
+      useSession: () => undefined,
     }))
 
     expect(view.getByText('no-session')).toBeTruthy()
@@ -203,6 +206,7 @@ describe('official main-panel integration', () => {
       sessionId: SID,
       inputActions: actions,
       useInput: (selector: (state: { draft: string }) => unknown) => selector({ draft: '' }),
+      useSession: (selector: (state: { subagent: null }) => unknown) => selector({ subagent: null }),
     }))
 
     expect(view.getByText(`session:${SID}`)).toBeTruthy()
@@ -211,7 +215,7 @@ describe('official main-panel integration', () => {
 
     const file = new File([Uint8Array.of(9)], 'result.png', { type: 'image/png' })
     bridge?.addFile(file)
-    expect(conversation.createDrafts).toHaveBeenCalledExactlyOnceWith(SID, [file])
+    expect(conversation.createDrafts).toHaveBeenCalledExactlyOnceWith(SID, [file], true)
     expect(actions.addAttachments).toHaveBeenCalledExactlyOnceWith(['draft-image'])
 
     bridge?.setDraftIfEmpty(' describe this image ')

@@ -1,8 +1,10 @@
+import { EventEmitter } from 'node:events'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { installFailLoud } from '@deepseek-ai/dsh-app-boot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from '../src/host-process.ts'
+import { DesktopHostExitError, DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, exitFatalLine } from '../src/host-process.ts'
 
 const roots: string[] = []
 const hosts: DesktopHostProcess[] = []
@@ -112,6 +114,27 @@ describe('desktop host process', () => {
     expect(failure).not.toHaveBeenCalled()
   })
 
+  it('applies logging settings through correlated acknowledgements and records IPC metadata only', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace("  if (message.type === 'browser-access') {", `
+      if (message.type === 'logging-config') {
+        process.send({ type: 'logging-config', requestId: message.requestId }); return;
+      }
+      if (message.type === 'browser-access') {`))
+    const diagnostic = vi.fn()
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, diagnostic)
+    hosts.push(host)
+    await host.start()
+    await Promise.all([host.setLogging({ developerLogging: true, logLevel: 'debug' }), host.setLogging({ developerLogging: false, logLevel: 'info' })])
+    const complete = diagnostic.mock.calls.map(([record]) => record).filter(record => record.event === 'control.complete')
+    expect(complete).toHaveLength(2)
+    expect(complete[0].operationId).not.toBe(complete[1].operationId)
+    expect(complete[0]).toMatchObject({ source: 'host.ipc', fields: { type: 'logging-config' } })
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('token=fixture')
+    await host.stop()
+    await expect(host.setLogging({ developerLogging: true, logLevel: 'info' })).rejects.toThrow('unavailable')
+  })
+
   it('correlates browser-policy acknowledgements and refuses stale or failed changes', async () => {
     const host = hostProcess(projectWithHost())
     await expect(host.setBrowserAccess(true)).rejects.toThrow('unavailable')
@@ -151,6 +174,30 @@ describe('desktop host process', () => {
     await expect(host.stop()).resolves.toBeUndefined()
   })
 
+  it('escalates non-update stop within the 5-second Electron quit budget when active handles keep the child alive', async () => {
+    const diagnostic = vi.fn()
+    const runtime = projectWithHost(`
+      setInterval(() => {}, 60_000)
+      process.send({ type: 'ready', url: 'http://127.0.0.1:3080/' })
+      process.on('message', message => {
+        if (message.type !== 'shutdown') return
+        process.send({ type: 'shutdown-complete' }, () => process.disconnect())
+      })
+    `)
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, diagnostic)
+    hosts.push(host)
+    await host.start()
+    const startedAt = Date.now()
+    await host.stop()
+    expect(Date.now() - startedAt).toBeLessThan(4_800)
+    expect(diagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'host.process',
+      event: 'shutdown.escalate',
+      fields: { signal: 'SIGTERM' },
+    }))
+  })
+
   it('returns the Web authentication URL and waits for graceful shutdown', async () => {
     const runtime = projectWithHost()
     const failure = vi.fn()
@@ -188,24 +235,61 @@ describe('desktop host process', () => {
     expect(failure).toHaveBeenCalledWith(new Error('plugin unavailable'))
   })
 
-  it('reports a child crash after readiness with its stderr diagnostic', async () => {
+  it('reports a child crash after readiness with its exit, observed first, and its stderr labelled as possibly unrelated', async () => {
     const runtime = projectWithHost()
     const failure = vi.fn()
-    const host = hostProcess(runtime, runtime, failure)
+    const exited = vi.fn()
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, failure,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, { exited })
+    hosts.push(host)
     const { url } = await host.start()
     await fetch(new URL('/crash', url))
     await expect.poll(() => failure.mock.calls.length).toBe(1)
-    expect(failure).toHaveBeenCalledWith(new Error('dsh desktop host exited with 7: plugin crashed'))
+    const [error] = failure.mock.calls[0] as [DesktopHostExitError]
+    expect(error).toBeInstanceOf(DesktopHostExitError)
+    expect(error.message).toBe('dsh desktop host exited with code 7\nLast Host stderr (may be unrelated to the exit):\nplugin crashed')
+    expect([error.exitCode, error.signal, error.output]).toEqual([7, null, 'plugin crashed'])
+    expect(exited).toHaveBeenCalledExactlyOnceWith({ code: 7, signal: null, expected: false }, expect.any(Number))
+    expect(exited.mock.invocationCallOrder[0]).toBeLessThan(failure.mock.invocationCallOrder[0]!)
+  })
+
+  it('delivers validated Host memory pushes to the observer without logging them as IPC traffic', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace("process.send({ type: 'ready'",
+      "process.send({ type: 'memory', rss: 5, heapTotal: 4, heapUsed: 3, external: 2, arrayBuffers: 1 }); process.send({ type: 'ready'"))
+    const memory = vi.fn()
+    const exited = vi.fn()
+    const diagnostic = vi.fn()
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, diagnostic, { memory, exited })
+    hosts.push(host)
+    await host.start()
+    expect(memory).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ rss: 5, heapTotal: 4, heapUsed: 3, external: 2, arrayBuffers: 1 }), expect.any(Number))
+    expect(diagnostic.mock.calls.map(([record]) => record.fields?.type)).not.toContain('memory')
+    await host.stop()
+    expect(exited).toHaveBeenCalledExactlyOnceWith({ code: 0, signal: null, expected: true }, expect.any(Number))
   })
 
   it('retains only recent diagnostics from a noisy child', async () => {
     const runtime = projectWithHost('process.stderr.write(\'discarded-prefix\' + \'x\'.repeat(70_000) + \'recent-failure\', () => { process.exitCode = 7; process.disconnect() })')
     const failure = await hostProcess(runtime).start().catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(Error)
+    expect(failure).toBeInstanceOf(DesktopHostExitError)
     const message = (failure as Error).message
     expect(message).not.toContain('discarded-prefix')
     expect(message.endsWith('recent-failure')).toBe(true)
-    expect(message.length).toBeLessThan(66_000)
+    expect((failure as DesktopHostExitError).output.length).toBe(4096)
+  })
+
+  it('carries the fatal line the Host printed before its teardown pushed it out of the stderr tail (#1574)', async () => {
+    const runtime = projectWithHost(`
+const report = "dsh: fatal load failure: MeshCallError: Call deadline exceeded\\n    at localDeadlineError (client.js:781:12)\\n"
+process.stderr.write("plugin started\\n" + report + "plugin teardown\\n".repeat(400), () => { process.exitCode = 1; process.disconnect() })
+`)
+    const failure = await hostProcess(runtime).start().catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(DesktopHostExitError)
+    const exit = failure as DesktopHostExitError
+    expect(exit.fatal).toBe('dsh: fatal load failure: MeshCallError: Call deadline exceeded')
+    expect(exit.output).not.toContain('fatal load failure')
+    expect(exit.message).toBe(`dsh desktop host exited with code 1\nHost fatal error: ${exit.fatal!}\nLast Host stderr (may be unrelated to the exit):\n${exit.output}`)
   })
 
   it('settles teardown when the executable cannot be spawned', async () => {
@@ -232,6 +316,8 @@ describe('desktop host process', () => {
     ["process.send({ type: 'fatal', message: 'startup failed' }); process.disconnect()", 'startup failed'],
     ["process.send({ type: 'ready', url: 4 })", 'invalid IPC event'],
     ["process.send({ type: 'fatal', message: 'startup failed', diagnostic: 42 })", 'invalid IPC event'],
+    ["process.send({ type: 'memory', rss: -1, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 })", 'invalid IPC event'],
+    ["process.send({ type: 'memory', rss: 1.5, heapTotal: 0, heapUsed: 0, external: 0 })", 'invalid IPC event'],
     ['process.exit(0)', 'host stopped'],
   ])('rejects startup when the child fails before readiness: %s', async (source, message) => {
     const host = hostProcess(projectWithHost(source))
@@ -252,25 +338,47 @@ describe('desktop host process', () => {
   })
 
   it('carries Platform credentials over private IPC and clears them on shutdown', async () => {
-    const runtime = projectWithHost(HTTP_HOST.replace("process.send({ type: 'ready'", "process.send({ type: 'platform-session', session: { origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'feat/test' } }); process.send({ type: 'ready'"))
+    const runtime = projectWithHost(HTTP_HOST.replace("process.send({ type: 'ready'", "process.send({ type: 'platform-session', session: { origin: 'https://platform.deepseek.com', userId: 'fixture-user', token: 'fixture-secret', embeddedPageDist: 'feat/test' } }); process.send({ type: 'ready'"))
     const changed = vi.fn()
     const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined,
       undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, changed)
     hosts.push(host)
     await host.start()
-    expect(changed).toHaveBeenCalledWith({ origin: 'https://platform.deepseek.com', token: 'fixture-secret', embeddedPageDist: 'feat/test' })
+    expect(changed).toHaveBeenCalledWith({ origin: 'https://platform.deepseek.com', userId: 'fixture-user', token: 'fixture-secret', embeddedPageDist: 'feat/test' })
     await host.stop()
     expect(changed).toHaveBeenLastCalledWith(null)
   })
 
+  it('lets a stopping Host withdraw its Platform credentials but not install new ones', async () => {
+    const runtime = projectWithHost(HTTP_HOST.replace("if (message.type !== 'shutdown') return", [
+      "if (message.type !== 'shutdown') return",
+      "  process.send({ type: 'platform-session', session: { origin: 'https://platform.deepseek.com', userId: null, token: 'late-secret' } })",
+      "  process.send({ type: 'platform-session', session: null })",
+    ].join('\n')))
+    const changed = vi.fn()
+    const received: string[] = []
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, changed, undefined,
+      (input) => { if (input.event === 'received') received.push(String(input.fields?.type)) })
+    hosts.push(host)
+    await host.start()
+    await host.stop()
+    expect(received.filter(type => type === 'platform-session')).toHaveLength(2)
+    expect(changed).not.toHaveBeenCalledWith(expect.objectContaining({ token: 'late-secret' }))
+    expect(changed).toHaveBeenLastCalledWith(null)
+  })
+
   it.each([
-    ["{ origin: 'https://platform.deepseek.com', token: '' }", 'an empty credential'],
-    ["{ origin: 'http://platform.deepseek.com', token: 'secret' }", 'a plaintext non-loopback origin'],
-    ["{ origin: 'https://user:pass@platform.deepseek.com', token: 'secret' }", 'embedded userinfo'],
-    ["{ origin: 'https://platform.deepseek.com/app', token: 'secret' }", 'a path beyond the origin'],
-    ["{ origin: 'https://platform.deepseek.com', token: 'secret', requestHeaders: { 'X-Deploy': 'a' } }", 'an upper-case header name'],
-    ["{ origin: 'https://platform.deepseek.com', token: 'secret', requestHeaders: { authorization: 'a' } }", 'a forbidden header'],
-    ["{ origin: 'https://platform.deepseek.com', token: 'secret', requestHeaders: { 'x-deploy': 'a\\r\\nx: b' } }", 'a header value carrying CRLF'],
+    ["{ origin: 'https://platform.deepseek.com', userId: null, token: '' }", 'an empty credential'],
+    ["{ origin: 'http://platform.deepseek.com', userId: null, token: 'secret' }", 'a plaintext non-loopback origin'],
+    ["{ origin: 'https://user:pass@platform.deepseek.com', userId: null, token: 'secret' }", 'embedded userinfo'],
+    ["{ origin: 'https://platform.deepseek.com/app', userId: null, token: 'secret' }", 'a path beyond the origin'],
+    ["{ origin: 'https://platform.deepseek.com', userId: null, token: 'secret', requestHeaders: { 'X-Deploy': 'a' } }", 'an upper-case header name'],
+    ["{ origin: 'https://platform.deepseek.com', userId: null, token: 'secret', requestHeaders: { authorization: 'a' } }", 'a forbidden header'],
+    ["{ origin: 'https://platform.deepseek.com', userId: null, token: 'secret', requestHeaders: { 'x-deploy': 'a\\r\\nx: b' } }", 'a header value carrying CRLF'],
+    ["{ origin: 'https://platform.deepseek.com', token: 'secret' }", 'no account ID'],
+    ["{ origin: 'https://platform.deepseek.com', userId: '', token: 'secret' }", 'an empty account ID'],
+    ["{ origin: 'https://platform.deepseek.com', userId: 7, token: 'secret' }", 'a numeric account ID'],
   ])('refuses a Platform session with %s (%s)', async (session) => {
     const host = hostProcess(projectWithHost(`process.send({ type: 'platform-session', session: ${session} })`))
     await expect(host.start()).rejects.toThrow('invalid IPC event')
@@ -298,5 +406,37 @@ describe('desktop host process', () => {
   ])('refuses a Platform sign-in request %s (%s)', async (event) => {
     const host = hostProcess(projectWithHost(`process.send(${event})`))
     await expect(host.start()).rejects.toThrow('invalid IPC event')
+  })
+})
+
+describe('Host fatal line', () => {
+  /** What the DSH runtime's fail-loud handler writes for one fatal process event. */
+  function failLoudReport(event: 'unhandledRejection' | 'uncaughtException', error: Error): string {
+    let written = ''
+    const proc = Object.assign(new EventEmitter(), { stderr: { write(chunk: string) { written += chunk } }, exit: vi.fn() })
+    const uninstall = installFailLoud('dsh', proc)
+    try {
+      proc.emit(event, error)
+    } finally {
+      uninstall()
+    }
+    expect(proc.exit).toHaveBeenCalledWith(1)
+    return written
+  }
+
+  it('finds the line the DSH runtime prints when it fails loud, among other Host output (#1574)', () => {
+    const report = failLoudReport('unhandledRejection', new Error('Call deadline exceeded'))
+    expect(exitFatalLine(`remote-web-ui: relay lease claim failed\n${report}(node:28708) PromiseRejectionHandledWarning: Promise rejection was handled asynchronously (rejection id: 3804)\n`))
+      .toBe('dsh: fatal load failure: Error: Call deadline exceeded')
+    expect(exitFatalLine(failLoudReport('uncaughtException', new TypeError('listener failed'))))
+      .toBe('dsh: fatal uncaught exception: TypeError: listener failed')
+  })
+
+  it('ignores output that only mentions a fatal failure and bounds a long line', () => {
+    expect(exitFatalLine('plugin: fatal error: disk full\n[bridge] dsh: fatal load failure: quoted\n')).toBeUndefined()
+    expect(exitFatalLine('')).toBeUndefined()
+    const long = exitFatalLine(`dsh: fatal load failure: Error: ${'x'.repeat(2000)}\n`)
+    expect(long).toHaveLength(1024)
+    expect(long?.endsWith('…')).toBe(true)
   })
 })

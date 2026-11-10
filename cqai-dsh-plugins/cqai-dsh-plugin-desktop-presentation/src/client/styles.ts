@@ -20,14 +20,14 @@ const COVER_CSS = Object.entries(coverImages).map(([id, url]) => {
 .eBaoHomeCard[data-cover="${id}"]::before { background-image: url(${JSON.stringify(url)}); }`
 }).join('\n')
 
-const HERO_HOME = 'body:is([data-dsh-desktop-mode="extended"],[data-dsh-desktop-mode="advanced"]) [data-conversation-content][data-content-phase="hero"]:has(.eBaoHeroSlot):not(:has([data-office-ppt-template-panel]))'
-const HERO_PPT = 'body:is([data-dsh-desktop-mode="extended"],[data-dsh-desktop-mode="advanced"]) [data-conversation-content][data-content-phase="hero"]:has(.eBaoHeroSlot):has([data-office-ppt-template-panel])'
+const HERO_HOME = '[data-conversation-content][data-content-phase="hero"]:has(.eBaoHeroSlot):not(:has([data-office-ppt-template-panel]))'
+const HERO_PPT = '[data-conversation-content][data-content-phase="hero"]:has(.eBaoHeroSlot):has([data-office-ppt-template-panel])'
 // Locate the published HeroShell through the renderer's public slot anchor.
 // Upstream CSS Module class names change when its client bundle is rebuilt.
-const HERO_SLOT = '[data-slot="conversation.hero.headline"]'
-const HERO_HEADLINE = `${HERO_HOME} div:has(> span > span > ${HERO_SLOT}):has(.eBaoHeroSlot)`
-const HERO_TITLE_GROUP = `${HERO_HOME} span:has(> span > ${HERO_SLOT}):has(.eBaoHeroSlot)`
-const HERO_ROOT = `${HERO_HOME} div:has(> div > div > span > span > ${HERO_SLOT}):has(.eBaoHeroSlot)`
+const HERO_SLOT = '[data-slot="conversation.hero.brand.mark"]'
+const HERO_HEADLINE = `${HERO_HOME} div:has(> span > ${HERO_SLOT}):has(.eBaoHeroSlot)`
+const HERO_TITLE_GROUP = `${HERO_HOME} span:has(> ${HERO_SLOT}):has(.eBaoHeroSlot)`
+const HERO_ROOT = `${HERO_HOME} div:has(> div > div > span > ${HERO_SLOT}):has(.eBaoHeroSlot)`
 
 const CSS = `
 /* Keep navigation quiet while the same plugin artwork stays colorful elsewhere. */
@@ -57,6 +57,8 @@ ${HERO_HOME} span:has(> ${HERO_SLOT}):has(.eBaoHeroSlot) { display: block; width
   padding: 10px 0 6px;
   line-height: normal;
 }
+.eBaoHomeFrame { display: contents; }
+${HERO_TITLE_GROUP} { height: auto; flex: 1; }
 .eBaoRobotHero {
   position: relative;
   isolation: isolate;
@@ -170,14 +172,14 @@ ${HERO_PPT} .eBaoHeroFallback { display: inline; }
 }
 body[data-ds-dark-theme] .eBaoHeroActionIcon { filter: drop-shadow(0 5px 8px rgb(0 0 0 / 32%)); }
 body[data-ds-dark-theme] .eBaoHeroPrompt { background: rgb(37 48 69 / 96%); color: #f5f7fc; box-shadow: 0 6px 18px rgb(0 0 0 / 24%); }
-body:is([data-dsh-desktop-mode="extended"],[data-dsh-desktop-mode="advanced"]) [data-conversation-content][data-content-phase="hero"]:has(.eBaoHomeDock):not(:has([data-office-ppt-template-panel])) [data-conversation-scroll] {
+[data-conversation-content][data-content-phase="hero"]:has(.eBaoHomeDock):not(:has([data-office-ppt-template-panel])) [data-conversation-scroll] {
   justify-content: safe center;
 }
-body:is([data-dsh-desktop-mode="extended"],[data-dsh-desktop-mode="advanced"]) [data-conversation-content][data-content-phase="hero"]:has([data-office-ppt-template-panel]) [data-conversation-scroll] {
+[data-conversation-content][data-content-phase="hero"]:has([data-office-ppt-template-panel]) [data-conversation-scroll] {
   justify-content: flex-start;
   padding-top: clamp(16px, 4vh, 48px);
 }
-body:is([data-dsh-desktop-mode="extended"],[data-dsh-desktop-mode="advanced"]) [data-conversation-content][data-content-phase="hero"]:has([data-office-ppt-template-panel]) .eBaoHomeDock {
+[data-conversation-content][data-content-phase="hero"]:has([data-office-ppt-template-panel]) .eBaoHomeDock {
   display: none;
 }
 .eBaoHomeDock {

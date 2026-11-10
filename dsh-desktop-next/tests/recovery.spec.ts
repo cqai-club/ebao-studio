@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -90,7 +91,6 @@ it('disables and re-enables a bundle without deleting its dependency, taking a b
   const disabled = JSON.parse(readFileSync(path, 'utf8'))
   expect(disabled.dsh.profile.bundles).not.toContain('my-plugin')
   expect(disabled.dependencies['my-plugin']).toBe('1.0.0')
-  expect(disabled.dsh.desktopNextDeselectedBundles).toEqual(['my-plugin'])
   expect(recovery.bundles('desktop').find(item => item.packageName === 'my-plugin'))
     .toMatchObject({ status: 'disabled', action: 'uninstall', toggle: 'enable' })
   expect(readdirSync(recovery.directory)).toHaveLength(1)
@@ -98,7 +98,6 @@ it('disables and re-enables a bundle without deleting its dependency, taking a b
   await recovery.setBundleSelected('desktop', 'my-plugin', true)
   const enabled = JSON.parse(readFileSync(path, 'utf8'))
   expect(enabled.dsh.profile.bundles).toContain('my-plugin')
-  expect(enabled.dsh.desktopNextDeselectedBundles).toBeUndefined()
   expect(recovery.bundles('desktop').find(item => item.packageName === 'my-plugin')?.toggle).toBe('disable')
   expect(readdirSync(recovery.directory)).toHaveLength(2)
 })
@@ -124,14 +123,14 @@ it('refuses a protected, unknown, or already-applied selection change', async ()
   expect(readFileSync(path, 'utf8')).toBe(before)
 })
 
-it('forgets a ledger entry once the bundle is reselected or its dependency is gone', async () => {
+it('derives disabled bundles directly from dependencies outside profile.bundles', () => {
   const { directory, recovery } = fixture()
   const path = join(directory, 'package.json')
   const manifest = JSON.parse(readFileSync(path, 'utf8'))
-  manifest.dsh.profile.bundles.push('my-plugin')
   manifest.dependencies = { ...manifest.dependencies, 'my-plugin': '1.0.0' }
   writeFileSync(path, JSON.stringify(manifest))
-  await recovery.setBundleSelected('desktop', 'my-plugin', false)
+  expect(recovery.bundles('desktop').filter(item => item.packageName === 'my-plugin'))
+    .toEqual([expect.objectContaining({ status: 'disabled', action: 'uninstall', toggle: 'enable' })])
 
   const reselected = JSON.parse(readFileSync(path, 'utf8'))
   reselected.dsh.profile.bundles.push('my-plugin')
@@ -144,4 +143,19 @@ it('forgets a ledger entry once the bundle is reselected or its dependency is go
   delete removed.dependencies['my-plugin']
   writeFileSync(path, JSON.stringify(removed))
   expect(recovery.bundles('desktop').some(item => item.packageName === 'my-plugin')).toBe(false)
+})
+it('restores a backup that hashed the BOM it kept before reads dropped one', async () => {
+  const { directory, recovery } = fixture()
+  const path = join(directory, 'package.json')
+  const original = readFileSync(path, 'utf8')
+  recovery.checkpoint('desktop')
+  const checkpoint = recovery.checkpoints('desktop')[0]!
+  const snapshotPath = join(checkpoint.directory, 'snapshot.json')
+  const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8'))
+  writeFileSync(join(checkpoint.directory, 'package.json'), `\uFEFF${original}`)
+  snapshot.files['package.json'].sha256 = createHash('sha256').update(`\uFEFF${original}`).digest('hex')
+  writeFileSync(snapshotPath, JSON.stringify(snapshot))
+  writeFileSync(path, '{}')
+  await recovery.restore('desktop', checkpoint.id)
+  expect(readFileSync(path, 'utf8')).toBe(original)
 })

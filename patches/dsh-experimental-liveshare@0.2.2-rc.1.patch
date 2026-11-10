@@ -1,0 +1,29 @@
+diff --git a/lib/index.js b/lib/index.js
+index 874db50..0b08404 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -2300,7 +2300,10 @@ var TunnelWorker = class {
+ 			env: {
+ 				NODE_ENV: process.env.NODE_ENV,
+ 				LIVESHARE_TUNNEL_MODE: "gateway",
+-				...workerTransportEnv(process.env)
++				...workerTransportEnv(process.env),
++				// DSH Desktop runs the Host on Electron's executable. This environment names its variables, so Electron's
++				// Node-mode selector is set here; without it the worker would start as a second Electron application.
++				...process.versions.electron === void 0 ? {} : { ELECTRON_RUN_AS_NODE: "1" }
+ 			},
+ 			stdio: [
+ 				"ignore",
+diff --git a/package.json b/package.json
+index d1fcc84..e1a6c8a 100644
+--- a/package.json
++++ b/package.json
+@@ -144,7 +144,7 @@
+   "dsh": {
+     "bundle": {
+       "patch": "./cordis.patch.yml",
+-      "listedByDefault": false
++      "listedByDefault": true
+     },
+     "client": {
+       "inject": [

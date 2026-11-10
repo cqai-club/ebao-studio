@@ -1,6 +1,6 @@
 import { spawnSync, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { lstatSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +10,6 @@ import {
   type DesktopTerminalOptions,
   type DesktopTerminalSpawn,
 } from '../src/desktop-terminal.ts'
-import { DESKTOP_PRODUCT_NAME } from '../src/product-identity.ts'
 
 const temporaryDirectories: string[] = []
 
@@ -51,7 +50,7 @@ function spawnHarness(): SpawnHarness {
 function macOptions(stateDir: string, spawn: DesktopTerminalSpawn): DesktopTerminalOptions {
   return {
     platform: 'darwin',
-    appExecutable: "/Applications/DSH O'Brien.app/Contents/MacOS/e宝工坊",
+    appExecutable: "/Applications/DSH O'Brien.app/Contents/MacOS/DSH Desktop",
     dshBootstrapPath: "/Applications/DSH O'Brien.app/Contents/Resources/app.asar/lib/dsh-terminal-bootstrap.js",
     pnpmBinPath: "/Applications/DSH O'Brien.app/Contents/Resources/app.asar/node_modules/pnpm/bin/pnpm.mjs",
     electronVersion: '43.4.0',
@@ -73,9 +72,9 @@ function macOptions(stateDir: string, spawn: DesktopTerminalSpawn): DesktopTermi
 function windowsOptions(stateDir: string, spawn: DesktopTerminalSpawn): DesktopTerminalOptions {
   return {
     platform: 'win32',
-    appExecutable: 'C:\\Program Files\\DSH 100% Desktop\\e宝工坊.exe',
-    dshBootstrapPath: 'C:\\Program Files\\e宝工坊\\resources\\app.asar\\lib\\dsh-terminal-bootstrap.js',
-    pnpmBinPath: 'C:\\Program Files\\e宝工坊\\resources\\app.asar\\node_modules\\pnpm\\bin\\pnpm.mjs',
+    appExecutable: 'C:\\Program Files\\DSH 100% Desktop\\DSH Desktop.exe',
+    dshBootstrapPath: 'C:\\Program Files\\DSH Desktop\\resources\\app.asar\\lib\\dsh-terminal-bootstrap.js',
+    pnpmBinPath: 'C:\\Program Files\\DSH Desktop\\resources\\app.asar\\node_modules\\pnpm\\bin\\pnpm.mjs',
     electronVersion: '43.4.0',
     profileName: 'desktop',
     productVersion: '2.0.0',
@@ -104,7 +103,7 @@ afterEach(() => {
 describe('desktop terminal environment', () => {
   it('keeps generated shims isolated by active profile', () => {
     const desktop = desktopTerminalStateDirectory('/tmp/dsh-desktop', 'desktop')
-    const work = desktopTerminalStateDirectory('/tmp/dsh-desktop', '工作 profile')
+    const work = desktopTerminalStateDirectory('/tmp/dsh-desktop', 'work-profile')
 
     expect(dirname(desktop)).toBe(join('/tmp/dsh-desktop', 'cli'))
     expect(dirname(work)).toBe(join('/tmp/dsh-desktop', 'cli'))
@@ -140,7 +139,7 @@ describe('desktop terminal environment', () => {
     const dshShim = readFileSync(launch.dshShimPath, 'utf8')
     expect(dshShim).toContain("DSH_DESKTOP_DEFAULT_PROFILE='desktop' ELECTRON_RUN_AS_NODE=1 exec")
     expect(dshShim).toContain('--expose-internals')
-    expect(dshShim).toContain("'/Applications/DSH O'\"'\"'Brien.app/Contents/MacOS/e宝工坊'")
+    expect(dshShim).toContain("'/Applications/DSH O'\"'\"'Brien.app/Contents/MacOS/DSH Desktop'")
     expect(dshShim).toContain("'/Applications/DSH O'\"'\"'Brien.app/Contents/Resources/app.asar/lib/dsh-terminal-bootstrap.js'")
     expect(dshShim).toContain('"$@"')
     expect(dshShim).not.toContain('npm_config_')
@@ -150,10 +149,12 @@ describe('desktop terminal environment', () => {
     expect(pnpmShim).toContain("npm_config_disturl='https://electronjs.org/headers'")
     expect(pnpmShim.match(/--config\.minimumReleaseAge=0/gu)).toHaveLength(1)
     expect(pnpmShim).toContain('--config.minimumReleaseAge=0 "$@"')
+    expect(pnpmShim.match(/--config\.updateNotifier=false/gu)).toHaveLength(1)
+    expect(pnpmShim).toContain("pnpm.mjs' --config.updateNotifier=false --config.minimumReleaseAge=0 \"$@\"")
     const nodeShim = readFileSync(launch.nodeShimPath, 'utf8')
     expect(nodeShim).toBe([
       '#!/bin/sh',
-      `ELECTRON_RUN_AS_NODE=1 exec '/Applications/DSH O'"'"'Brien.app/Contents/MacOS/e宝工坊' "$@"`,
+      `ELECTRON_RUN_AS_NODE=1 exec '/Applications/DSH O'"'"'Brien.app/Contents/MacOS/DSH Desktop' "$@"`,
       '',
     ].join('\n'))
     expect(nodeShim).not.toContain('npm_config_')
@@ -162,14 +163,14 @@ describe('desktop terminal environment', () => {
     expect(welcome).toContain('unset ELECTRON_RUN_AS_NODE')
     expect(welcome).not.toContain('ELECTRON_RUN_AS_NODE=1')
     expect(welcome).toContain("printf '\\033[2J\\033[3J\\033[H'")
-    expect(welcome).toContain(`${DESKTOP_PRODUCT_NAME} 2.0.0 terminal`)
+    expect(welcome).toContain('DSH Desktop 2.0.0 terminal')
     expect(welcome).toContain('Profile: desktop')
     expect(welcome).toContain('Plugin commands without --profile modify the desktop profile.')
     expect(welcome).toContain('dsh --dump-config')
     expect(welcome).toContain('dsh plugin add <third-party-plugin>')
     expect(welcome).toContain('dsh plugin remove <third-party-plugin>')
     expect(welcome).toContain('dsh plugin update')
-    expect(welcome).toContain(`Restart ${DESKTOP_PRODUCT_NAME} after plugin changes.`)
+    expect(welcome).toContain('Restart DSH Desktop after plugin changes.')
     expect(welcome).not.toContain(' -l')
     expect(welcome).toContain("DSH O'\"'\"'Brien")
     expect(welcome).toContain('exec "${SHELL}" --noprofile --rcfile')
@@ -238,23 +239,25 @@ describe('desktop terminal environment', () => {
     expect(pnpmShim).toContain('set "npm_config_disturl=https://electronjs.org/headers"')
     expect(pnpmShim.match(/--config\.minimumReleaseAge=0/gu)).toHaveLength(1)
     expect(pnpmShim).toContain('--config.minimumReleaseAge=0 %*')
+    expect(pnpmShim.match(/--config\.updateNotifier=false/gu)).toHaveLength(1)
+    expect(pnpmShim).toContain('"%DSH_DESKTOP_PNPM_ENTRY%" --config.updateNotifier=false --config.minimumReleaseAge=0 %*')
     expect(readFileSync(launch.nodeShimPath, 'utf8')).toContain(
       '"%DSH_DESKTOP_APP_EXECUTABLE%" %*',
     )
     const welcome = readFileSync(launch.welcomePath, 'utf8')
     expect(welcome).toContain('Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue')
     expect(welcome).toContain('Set-Location -LiteralPath $env:DSH_DESKTOP_PROFILE_DIRECTORY')
-    expect(welcome).toContain('"{0} {1} terminal" -f $env:DSH_DESKTOP_PRODUCT_NAME, $env:DSH_DESKTOP_PRODUCT_VERSION')
+    expect(welcome).toContain('"DSH Desktop {0} terminal" -f $env:DSH_DESKTOP_PRODUCT_VERSION')
     expect(welcome).toContain('"Plugin commands without --profile modify the {0} profile."')
     expect(welcome).toContain('dsh --dump-config')
     expect(welcome).toContain('dsh plugin add <third-party-plugin>')
     expect(welcome).toContain('dsh plugin remove <third-party-plugin>')
     expect(welcome).toContain('dsh plugin update')
-    expect(welcome).toContain('"Restart {0} after plugin changes." -f $env:DSH_DESKTOP_PRODUCT_NAME')
+    expect(welcome).toContain('Restart DSH Desktop after plugin changes.')
 
     expect(launch.windowsLauncherPath).toBe(join(stateDir, 'launch.cmd'))
     const launcher = readFileSync(launch.windowsLauncherPath!, 'utf8')
-    expect(launcher).toContain('start "!DSH_DESKTOP_PRODUCT_NAME!" /D "!DSH_DESKTOP_PROFILE_DIRECTORY!"')
+    expect(launcher).toContain('start "eBao Studio" /D "!DSH_DESKTOP_PROFILE_DIRECTORY!"')
     expect(launcher).toContain('"!DSH_DESKTOP_SHELL_EXECUTABLE!" -NoLogo -NoExit')
     expect(launcher).toContain('-File "!DSH_DESKTOP_POWERSHELL_WELCOME!"')
 
@@ -279,8 +282,8 @@ describe('desktop terminal environment', () => {
           DSH_DESKTOP_ELECTRON_VERSION: options.electronVersion,
           DSH_DESKTOP_PNPM_ENTRY: options.pnpmBinPath,
           DSH_DESKTOP_PROFILE_DIRECTORY: options.profileDir,
-          DSH_DESKTOP_PRODUCT_NAME: DESKTOP_PRODUCT_NAME,
           DSH_DESKTOP_PRODUCT_VERSION: options.productVersion,
+          DSH_DESKTOP_TERMINAL_MODE: '正常环境 / Normal environment',
           DSH_DESKTOP_SHIM_DIRECTORY: launch.shimDir,
           DSH_DESKTOP_POWERSHELL_WELCOME: launch.welcomePath,
           DSH_DESKTOP_CMD_WELCOME: join(stateDir, 'welcome.cmd'),
@@ -308,7 +311,7 @@ describe('desktop terminal environment', () => {
         'new',
         'new-tab',
         '--title',
-        DESKTOP_PRODUCT_NAME,
+        'DSH Desktop',
         '--startingDirectory',
         options.profileDir,
       ],
@@ -324,7 +327,7 @@ describe('desktop terminal environment', () => {
       'new',
       'new-tab',
       '--title',
-      DESKTOP_PRODUCT_NAME,
+      'DSH Desktop',
       '--startingDirectory',
       options.profileDir,
       'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
@@ -438,10 +441,10 @@ describe('desktop terminal environment', () => {
     const stateDir = join(temporaryDirectory(), '终端 state')
     const harness = spawnHarness()
     const options = windowsOptions(stateDir, harness.spawn)
-    options.profileName = '工作 profile'
+    options.profileName = 'work-profile'
     options.profileDir = 'C:\\用户\\工作 profile'
     options.homeDir = 'C:\\用户'
-    options.appExecutable = 'C:\\程序\\e宝工坊.exe'
+    options.appExecutable = 'C:\\程序\\DSH Desktop.exe'
     options.dshBootstrapPath = 'C:\\程序\\resources\\app.asar\\lib\\desktop-cli.js'
     options.pnpmBinPath = 'C:\\程序\\resources\\app.asar.unpacked\\node_modules\\pnpm\\bin\\pnpm.mjs'
 
@@ -462,19 +465,18 @@ describe('desktop terminal environment', () => {
     expect(harness.calls[0]?.options.cwd).toBe(stateDir)
     expect(harness.calls[0]?.options.env).toEqual(expect.objectContaining({
       DSH_HOME: 'C:\\用户',
-      DSH_DESKTOP_DEFAULT_PROFILE: '工作 profile',
-      DSH_DESKTOP_APP_EXECUTABLE: 'C:\\程序\\e宝工坊.exe',
+      DSH_DESKTOP_DEFAULT_PROFILE: 'work-profile',
+      DSH_DESKTOP_APP_EXECUTABLE: 'C:\\程序\\DSH Desktop.exe',
       DSH_DESKTOP_DSH_BOOTSTRAP: 'C:\\程序\\resources\\app.asar\\lib\\desktop-cli.js',
       DSH_DESKTOP_ELECTRON_VERSION: '43.4.0',
       DSH_DESKTOP_PNPM_ENTRY: 'C:\\程序\\resources\\app.asar.unpacked\\node_modules\\pnpm\\bin\\pnpm.mjs',
       DSH_DESKTOP_PROFILE_DIRECTORY: 'C:\\用户\\工作 profile',
-      DSH_DESKTOP_PRODUCT_NAME: DESKTOP_PRODUCT_NAME,
       DSH_DESKTOP_POWERSHELL_WELCOME: join(stateDir, 'welcome.ps1'),
       DSH_DESKTOP_CMD_WELCOME: join(stateDir, 'welcome.cmd'),
     }))
   })
 
-  it('accepts localized macOS profile names and rejects path escapes before writing state', () => {
+  it('supports Next Profile names with localized paths and rejects escapes before writing state', () => {
     const root = temporaryDirectory()
     const harness = spawnHarness()
     const unsupported = macOptions(join(root, 'unsupported'), harness.spawn)
@@ -484,14 +486,14 @@ describe('desktop terminal environment', () => {
 
     const unsafe = macOptions(join(root, 'unsafe'), harness.spawn)
     unsafe.profileName = '../desktop'
-    expect(() => openDesktopTerminal(unsafe)).toThrow('invalid desktop profile name')
+    expect(() => openDesktopTerminal(unsafe)).toThrow('Profile 名称')
     expect(() => lstatSync(unsafe.stateDir)).toThrow()
 
     const localized = macOptions(join(root, 'localized'), harness.spawn)
-    localized.profileName = '工作 profile'
+    localized.profileName = 'work-profile'
     openDesktopTerminal(localized)
     expect(readFileSync(join(localized.stateDir, 'welcome.command'), 'utf8'))
-      .toContain('Profile: 工作 profile')
+      .toContain('Profile: work-profile')
 
     const newline = macOptions(join(root, 'newline'), harness.spawn)
     newline.productVersion = '2.0.0\ntouch injected'
@@ -499,4 +501,30 @@ describe('desktop terminal environment', () => {
     expect(() => lstatSync(newline.stateDir)).toThrow()
     expect(harness.calls).toHaveLength(1)
   })
+})
+
+
+it.skipIf(process.platform === 'win32').each(['safe', 'recovery'] as const)('launches a macOS %s terminal with matching pwd, DSH_HOME and environment label', mode => {
+  const root = temporaryDirectory()
+  const homeDir = join(root, mode === 'safe' ? 'safe-runtime' : 'original')
+  const profileDir = join(homeDir, 'profiles', 'desktop')
+  mkdirSync(profileDir, { recursive: true })
+  const harness = spawnHarness()
+  const launch = openDesktopTerminal({ ...macOptions(join(homeDir, 'cli'), harness.spawn), homeDir, profileDir, mode })
+  // Execute the generated setup through the welcome text, without opening an interactive terminal.
+  const prefix = readFileSync(launch.welcomePath, 'utf8').split('case "${SHELL:-/bin/zsh}" in')[0]!
+  const result = spawnSync('/bin/sh', ['-c', prefix + '\npwd\nprintf "%s\\n" "$DSH_HOME"'], { encoding: 'utf8' })
+  expect(result.status).toBe(0)
+  expect(result.stdout.trim().split('\n').slice(-2)).toEqual([profileDir, homeDir])
+  expect(result.stdout).toContain(mode === 'safe' ? 'Safe mode: temporary environment' : 'Recovery terminal: original Profile')
+})
+
+it.each(['safe', 'recovery'] as const)('labels the Windows %s terminal for both PowerShell and cmd', mode => {
+  const harness = spawnHarness()
+  const options = { ...windowsOptions(join(temporaryDirectory(), 'cli'), harness.spawn), mode }
+  const launch = openDesktopTerminal(options)
+  expect(harness.calls[0]!.options.env?.DSH_DESKTOP_TERMINAL_MODE).toContain(mode === 'safe' ? 'Safe mode: temporary environment' : 'Recovery terminal: original Profile')
+  expect(harness.calls[0]!.options.env?.DSH_HOME).toBe(options.homeDir)
+  expect(readFileSync(launch.welcomePath, 'utf8')).toContain('Write-Host $env:DSH_DESKTOP_TERMINAL_MODE')
+  expect(readFileSync(join(options.stateDir, 'welcome.cmd'), 'utf8')).toContain('echo(!DSH_DESKTOP_TERMINAL_MODE!')
 })

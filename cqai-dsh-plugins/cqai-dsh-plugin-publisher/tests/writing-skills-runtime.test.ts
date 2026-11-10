@@ -1,3 +1,4 @@
+import { admittedToolNames, admissionFor, executeTool, installTestExecutor, assembleAgentPrompt, MODEL_SELECTION } from './tool-runtime-fixtures.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -40,6 +41,7 @@ async function fixture(mountLoader = true, attachments: object = {}) {
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
   await ctx.plugin(ToolRuntime)
+  await installTestExecutor(ctx)
   await ctx.plugin(SkillRegistry)
   ctx.provide('attachments', attachments as never)
   for (const service of ['sessions', 'llm', 'sessionProjections']) {
@@ -105,7 +107,7 @@ async function fixture(mountLoader = true, attachments: object = {}) {
     agentEvents(ctx, agent).emit('agent/inbox/claimed', { message, turn: 1 })
     return message
   }
-  const execute = (agent: Agent, name: string, args: unknown = {}) => ctx.tools.execute({
+  const execute = (agent: Agent, name: string, args: unknown = {}) => executeTool(ctx, {
     agent, name, arguments: args, callId: ToolCallId(`writing-${++calls}`), signal: new AbortController().signal,
   })
   const load = (agent: Agent, name: string) => execute(agent, 'skill', { name })
@@ -113,9 +115,9 @@ async function fixture(mountLoader = true, attachments: object = {}) {
     .filter(name => name.startsWith('publisher_')).sort()
   const catalog = async (agent: Agent) => (await ctx.skills.list({ scope: agent }))
     .filter(skill => isModelInvocable(skill) || isUserInvocable(skill))
-  const assembly = (agent: Agent, signal?: AbortSignal) => ctx.systemPrompt.assemble(assembleContextFor(agent, signal))
+  const assembly = (agent: Agent, signal?: AbortSignal) => assembleAgentPrompt(ctx, agent, signal)
   const preStep = (agent: Agent, messages: UserMessage[], signal = new AbortController().signal) =>
-    agentEvents(ctx, agent).waterfall('agent/pre-step', { messages, turn: 1, step: 1, signal },
+    agentEvents(ctx, agent).waterfall('agent/pre-step', { messages, turn: 1, step: 1, modelSelection: MODEL_SELECTION, signal },
       async (): Promise<PreStepDecision> => ({ kind: 'enter', messages }))
   return { ctx, owner, owned, bindings, publications, env, bind, mint, remove, mountPresetLoader, claim, execute, load, names, catalog, assembly, preStep }
 }
@@ -442,7 +444,9 @@ describe('Publisher writing Skills through the real native runtime', () => {
     if (existing === 'read-first') await test.load(agent, WRITE_ARTICLE_SKILL.name)
     if (existing === 'edit-first') await test.load(agent, EDIT_DRAFT_SKILL.name)
     const first = await test.assembly(agent)
-    expect(first.tools.map(tool => tool.name)).not.toContain(PROFILE_WRITE)
+    expect(first.tools.map(tool => tool.name)).toContain(PROFILE_WRITE)
+    const before = test.bindings.current(agent.id)!
+    expect((await test.execute(agent, PROFILE_WRITE, { content_id: before.contentId, binding_token: before.bindingToken, expected_revision: 0, instructions: '尚未授权' })).isError).toBe(true)
     const messages = admitted(await test.preStep(agent, [human]))
     expect(textOf(messages.filter(message => message.source.kind === 'skill-invocation'))).toContain(LEARN_VOICE_SKILL.content)
     expect(first.tools.map(tool => tool.name).filter(name => name.startsWith('publisher_')).sort()).toEqual(WRITE_TOOLS)
@@ -454,16 +458,16 @@ describe('Publisher writing Skills through the real native runtime', () => {
     expect(test.publications.prepare).not.toHaveBeenCalled()
   })
 
-  it('rolls back a failed slash write upgrade while preserving an earlier read-only grant', async () => {
+  it('rolls back failed native voice delivery while preserving an earlier read-only grant', async () => {
     const test = await fixture()
     const agent = await test.mint('slash-profile-upgrade-rollback')
     const human = test.claim(agent, '/publisher-learn-voice 学习风格')
     await test.load(agent, WRITE_ARTICLE_SKILL.name)
     const first = await test.assembly(agent)
-    test.ctx.on('system-prompt/assemble', async () => { throw new Error('profile reassembly failed') })
-    await expect(test.preStep(agent, [human])).rejects.toThrow('profile reassembly failed')
+    test.ctx.on('agent/pre-step', async () => { throw new Error('native voice delivery failed') })
+    await expect(test.preStep(agent, [human])).rejects.toThrow('native voice delivery failed')
     expect(test.names(agent)).toEqual(READ_TOOLS)
-    expect(first.tools.map(tool => tool.name).filter(name => name.startsWith('publisher_')).sort()).toEqual(READ_TOOLS)
+    expect(admittedToolNames(test.ctx, agent, first)).not.toContain(PROFILE_WRITE)
     expect((await test.execute(agent, PROFILE_WRITE, {})).isError).toBe(true)
     expect((await test.execute(agent, PROFILE_READ)).isError).toBe(false)
   })
@@ -498,7 +502,7 @@ describe('Publisher writing Skills through the real native runtime', () => {
     const human = test.claim(agent, '/publisher-learn-voice 从样稿学习并保存表达规则')
     const first = await test.assembly(agent)
     expect(first.tools.map(tool => tool.name)).toContain('skill')
-    expect(test.names(agent)).toEqual([])
+    expect((await test.execute(agent, 'publisher_get_current_draft')).isError).toBe(true)
     const messages = admitted(await test.preStep(agent, [human]))
     expect(textOf(messages.filter(message => message.source.kind === 'skill-invocation'))).toContain(LEARN_VOICE_SKILL.content)
     expect(first.tools.map(tool => tool.name).filter(name => name.startsWith('publisher_')).sort()).toEqual(WRITE_TOOLS)

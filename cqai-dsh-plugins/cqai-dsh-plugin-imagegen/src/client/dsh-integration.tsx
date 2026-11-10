@@ -28,6 +28,7 @@ import pluginIcon from '../../assets/plugin-icon.svg'
 // Session props.  These imports are intentionally type-only: the profile owns
 // the concrete UI plugins and their load order.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 
 /** Stable global-panel identity.  sidebar.panellist ids address main keys. */
@@ -37,14 +38,6 @@ export const IMAGEGEN_PANEL_ID = 'cqai-imagegen' as MainPanelId
 export const IMAGEGEN_SESSION_SLOT = 'cqai-imagegen.session' as const
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
-  // ui-session owns this runtime value.  Restating the standard prop here
-  // keeps the independently installable plugin's type surface limited to the
-  // slot contract instead of taking a direct package dependency on the scope
-  // adapter implementation.
-  interface SessionMaybeStandardProps {
-    readonly sessionId: SessionId | undefined
-  }
-
   interface SlotMap {
     /** Current-session bridge rendered inside the root-scoped image studio. */
     'cqai-imagegen.session': { kind: 'single'; scope: 'session-maybe' }
@@ -113,12 +106,13 @@ export function attachImageFile(
   sessionId: SessionId | undefined,
   inputActions: InputActions | undefined,
   file: File,
+  uploadImages = true,
 ): ImageGenConversationAttachment {
   if (sessionId === undefined || inputActions === undefined) {
     throw new ImageGenConversationError('no-session')
   }
 
-  const attachments = conversation.createDrafts(sessionId, [file])
+  const attachments = conversation.createDrafts(sessionId, [file], uploadImages)
   try {
     if (!inputActions.addAttachments(attachments.map(attachment => attachment.id))) {
       throw new ImageGenConversationError('composer-busy')
@@ -146,11 +140,12 @@ export function createImageGenConversationBridge(
   sessionId: SessionId | undefined,
   inputActions: InputActions | undefined,
   draft: string | undefined = undefined,
+  uploadImages = true,
 ): ImageGenConversationBridge {
   return {
     sessionId,
     available: sessionId !== undefined && inputActions !== undefined,
-    addFile: file => attachImageFile(conversation, sessionId, inputActions, file),
+    addFile: file => attachImageFile(conversation, sessionId, inputActions, file, uploadImages),
     setDraftIfEmpty: (text) => {
       if (inputActions !== undefined && draft?.trim() === '' && text.trim() !== '') {
         inputActions.setDraft(text.trim())
@@ -200,11 +195,12 @@ export function registerImageGenStudio(
     throw new Error('cqai-imagegen: conversation service is required')
   }
 
-  const StudioSeat = ({ sessionId, inputActions, useInput }: PropsRuntime<typeof IMAGEGEN_SESSION_SLOT>) => {
+  const StudioSeat = ({ sessionId, inputActions, useInput, useSession }: PropsRuntime<typeof IMAGEGEN_SESSION_SLOT>) => {
     const draft = useInput(state => state.draft)
+    const uploadImages = useSession(state => state.subagent === null) === true
     const bridge = useMemo(
-      () => createImageGenConversationBridge(conversation, sessionId, inputActions, draft),
-      [sessionId, inputActions, draft],
+      () => createImageGenConversationBridge(conversation, sessionId, inputActions, draft, uploadImages),
+      [sessionId, inputActions, draft, uploadImages],
     )
     return options.renderStudio({ conversation: bridge })
   }

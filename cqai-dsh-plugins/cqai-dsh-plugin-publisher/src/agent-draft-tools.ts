@@ -1,7 +1,7 @@
 /** Agent tools for the draft currently open in the Publisher editor drawer. */
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-attachment'
 import { AgentDraftBindings, normalizeAgentDraftTarget, sameAgentDraftTarget, type AgentDraftTarget } from './agent-draft-binding.ts'
@@ -131,13 +131,13 @@ function currentDraftTool(bindings: AgentDraftBindings) {
     })
 }
 
-export function registerAgentDraftReadTool(ctx: Context, bindings: AgentDraftBindings): () => void {
-  return ctx.tools.register(currentDraftTool(bindings))
+export function registerAgentDraftReadTool(ctx: Context, bindings: AgentDraftBindings, options: ToolRegistrationOptions = {}): () => void {
+  return ctx.tools.register(currentDraftTool(bindings), options)
 }
 
-export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindings): () => void {
+export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindings, options: ToolRegistrationOptions = {}, readOptions = options): () => void {
   const disposers = [
-    registerAgentDraftReadTool(ctx, bindings),
+    registerAgentDraftReadTool(ctx, bindings, readOptions),
     ctx.tools.register(defineTool({
       name: 'publisher_update_current_draft',
       description: 'Patch only requested fields in the current main draft or selected platform version. Pass the target returned by publisher_get_current_draft, the binding token and observed revision. Merge into the latest saved draft; unrelated fields stay unchanged and the last successful save wins for a field. Does not publish.',
@@ -195,7 +195,7 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
         const saved = patchContent(current.id, { revision: args.expected_revision, patch })
         return asToolResult(snapshot(saved, binding.bindingToken, target))
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'publisher_insert_current_draft_image',
       description: 'Article only: import one existing image attachment and save it in the main body. Provide the complete latest body with exactly one {{PUBLISHER_IMAGE}} marker at the desired insertion point. The attachment may come from generate_image. Requires the current binding token and revision. Does not publish.',
@@ -223,7 +223,7 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
           args.body_with_image_marker, args.alt)
         return asToolResult(snapshot(saved, binding.bindingToken, binding.target))
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'publisher_add_current_draft_image',
       description: 'Image-note only: add one uploaded or generated image attachment to the bound local draft. Requires the current binding token and revision. Does not modify the Markdown source or publish.',
@@ -248,7 +248,7 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
           bytes, process.env, { expectedRevision: args.expected_revision })
         return asToolResult(snapshot(saved, binding.bindingToken, binding.target))
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'publisher_remove_current_draft_image',
       description: 'Image-note only: remove one managed image from the bound local draft when the user explicitly asks to delete it. This also removes its platform-copy references and cannot be undone. Requires the current binding token and revision.',
@@ -268,7 +268,7 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
           { expectedRevision: args.expected_revision })
         return asToolResult(snapshot(saved, binding.bindingToken, binding.target))
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'publisher_list_video_works',
       description: 'Video draft only: list up to 50 existing, completed e剪宝 video works that can be selected as the local draft video source. Returns IDs and safe metadata, never local file paths.',
@@ -282,7 +282,7 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
         const works = listWorks()
         return asToolResult({ total: works.length, works: works.slice(0, 50) })
       },
-    })),
+    }), options),
     ctx.tools.register(defineTool({
       name: 'publisher_select_current_video_work',
       description: 'Video draft only: select an existing, completed e剪宝 work as this draft’s video source. The existing title, description, short title, tags, and declaration stay unchanged. Local video files must be selected with the editor’s native file picker.',
@@ -303,7 +303,7 @@ export function registerAgentDraftTools(ctx: Context, bindings: AgentDraftBindin
         })
         return asToolResult(snapshot(saved, binding.bindingToken, binding.target))
       },
-    })),
+    }), options),
   ]
   return () => { for (const dispose of disposers.reverse()) dispose() }
 }

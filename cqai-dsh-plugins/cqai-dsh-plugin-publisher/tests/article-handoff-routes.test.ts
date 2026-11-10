@@ -1,3 +1,4 @@
+import { executeTool, installTestExecutor, MODEL_SELECTION } from './tool-runtime-fixtures.ts'
 import { Context } from '@deepseek-ai/cordis'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -9,7 +10,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -20,7 +21,7 @@ import { readPublisherSessionOwnership } from '../src/agent-draft-session.ts'
 const disposers: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of disposers.splice(0).reverse()) await close() })
 async function fixture(withAgent = false) {
-  const home = mkdtempSync(join(tmpdir(), 'ebao-handoff-route-')), cwd = join(home, 'ordinary')
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'ebao-handoff-route-'))), cwd = join(home, 'ordinary')
   mkdirSync(cwd)
   const before = process.env.DSH_HOME
   process.env.DSH_HOME = home
@@ -68,7 +69,8 @@ async function fixture(withAgent = false) {
   ctx.provide('desktopRuntime', { publisher: { request: async (method: string) => { workerCalls.push(method); return [] } } } as never)
   if (withAgent) {
     await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-    await ctx.plugin(ToolRuntime, { mode: 'native' })
+    await ctx.plugin(ToolRuntime)
+    await installTestExecutor(ctx)
     await ctx.plugin(SkillRegistry)
     ctx.provide('attachments', {} as never)
     ctx.provide('agents', { get: (id: string) => agents.get(id), list: () => [...agents.values()] } as never)
@@ -144,9 +146,9 @@ describe('ordinary conversation article handoff Host routes', () => {
     host.source.append('user/message', human, { surfaceOp: 'append' })
     agentEvents(host.ctx, agent).emit('agent/inbox/claimed', { message: human, turn: 2 })
     const signal = new AbortController().signal
-    const loaded = await host.ctx.tools.execute({ agent, name: 'skill', arguments: { name: 'publisher-route' }, callId: ToolCallId('route-entrance'), signal })
+    const loaded = await executeTool(host.ctx, { agent, name: 'skill', arguments: { name: 'publisher-route' }, callId: ToolCallId('route-entrance'), signal })
     expect(loaded.isError).toBe(false)
-    const transferred = await host.ctx.tools.execute({ agent, name: 'handoff_to_publisher', arguments: {
+    const transferred = await executeTool(host.ctx, { agent, name: 'handoff_to_publisher', arguments: {
       creation_brief: '重庆生活的小红书图文分享，遵循用户提供的真实材料', content_type: 'image-note', platforms: ['xhs'], title: '重庆生活分享',
     }, callId: ToolCallId('delegate-task'), signal })
     expect(transferred.isError).toBe(false)
@@ -176,10 +178,10 @@ describe('ordinary conversation article handoff Host routes', () => {
     agentEvents(host.ctx, publisherAgent).emit('agent/inbox/claimed', { message: delegated, turn: 1 })
     const close = () => host.request('agent-draft-bind', { sessionId, contentId: null, bindingToken: bound.body.bindingToken })
     expect((await close()).status).toBe(200)
-    const editSkill = await host.ctx.tools.execute({ agent: publisherAgent, name: 'skill',
+    const editSkill = await executeTool(host.ctx, { agent: publisherAgent, name: 'skill',
       arguments: { name: 'publisher-edit-draft' }, callId: ToolCallId('background-edit-skill'), signal })
     expect(editSkill.isError).toBe(false)
-    const draft = await host.ctx.tools.execute({ agent: publisherAgent, name: 'publisher_get_current_draft',
+    const draft = await executeTool(host.ctx, { agent: publisherAgent, name: 'publisher_get_current_draft',
       arguments: {}, callId: ToolCallId('background-draft-read'), signal })
     expect(draft.isError).toBe(false)
     const reopened = await host.request('agent-draft-bind', { sessionId, contentId: result.contentId })
@@ -191,7 +193,7 @@ describe('ordinary conversation article handoff Host routes', () => {
     publisherAgent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     Object.assign(publisherAgent, { status: 'idle' })
     agentEvents(host.ctx, publisherAgent).emit('agent/status', { status: 'idle' })
-    const afterFinish = await host.ctx.tools.execute({ agent: publisherAgent, name: 'publisher_get_current_draft',
+    const afterFinish = await executeTool(host.ctx, { agent: publisherAgent, name: 'publisher_get_current_draft',
       arguments: {}, callId: ToolCallId('closed-draft-after-finish'), signal })
     expect(afterFinish.isError).toBe(true)
     expect(host.workerCalls).toEqual([])

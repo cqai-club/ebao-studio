@@ -1,19 +1,10 @@
 import { defineConfig } from 'vitest/config'
+import { createRequire } from 'node:module'
 
-export default defineConfig({
-  test: {
-    environment: 'node',
-    include: ['tests/**/*.spec.ts'],
-    globalSetup: process.platform === 'win32' ? ['../scripts/prepare-test-electron.mjs'] : [],
-    // This patched host package is exercised with a mocked node:fs/promises.
-    // Keep it in Vitest's module graph so the builtin mock reaches its imports.
-    server: {
-      deps: {
-        inline: ['@deepseek-ai/dsh-host-directory-picker-browse', '@deepseek-ai/dsh-native-command'],
-      },
-    },
-    // Profile integration tests create a full package-junction closure; higher
-    // Windows file concurrency makes their latency depend on NTFS/Defender load.
-    maxWorkers: process.platform === 'win32' ? 2 : undefined,
-  },
-})
+// Shared Desktop components must resolve the same peer module as Next's tests.
+export default defineConfig({ resolve: { alias: [
+  { find: /^react$/, replacement: createRequire(import.meta.url).resolve('react') },
+  { find: '@deepseek-ai/dsh-client-ui-primitives', replacement: createRequire(import.meta.url).resolve('@deepseek-ai/dsh-client-ui-primitives') },
+] }, test: { include: ['tests/**/*.spec.ts'], testTimeout: 20_000,
+  server: { deps: { inline: ['@deepseek-ai/dsh-experimental-computer-use-cua-driver-native', '@deepseek-ai/dsh-fs-local', '@deepseek-ai/dsh-host-open-in-app', '@deepseek-ai/dsh-native-command'] } },
+} })

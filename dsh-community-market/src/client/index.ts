@@ -66,7 +66,9 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({ readLocale }),
   }, MarketSettingsTab))
-  if (isCqaiPrimaryDesktop()) {
+  const primaryDesktop = isCqaiPrimaryDesktop()
+  const modernDesktop = typeof (globalThis as typeof globalThis & { desktopNext?: { state?: unknown } }).desktopNext?.state === 'function'
+  if (primaryDesktop || modernDesktop) {
     ctx.slots.inject('cqai.pluginManagement.market', () => ctx.slots.register({
       name: 'cqai.pluginManagement.market',
       id: 'community-market',
@@ -81,7 +83,8 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: () => ({ updatesStore: pluginUpdatesStore }),
     }, PluginUpdatesSummary))
-  } else {
+  }
+  if (!primaryDesktop) {
     ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
       name: 'sidebar.footer.action',
       id: 'community-market',

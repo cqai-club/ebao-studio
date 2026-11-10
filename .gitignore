@@ -6,6 +6,9 @@
 !.yarn/sdks
 !.yarn/versions
 node_modules/
+.desktop-build/
+.desktop-next/
+.npm-cache/
 *.tsbuildinfo
 .build/
 

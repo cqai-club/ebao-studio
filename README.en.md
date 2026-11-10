@@ -28,7 +28,7 @@ Choose a build from [GitCode downloads for China](https://gitcode.com/g-dxw/ebao
 
 ## Develop from source
 
-Use Node.js `^22.19.0` or `>=24.0.0`, Git, and Corepack. This repository uses Yarn `4.18.0`. From the **repository root**, initialize the pinned upstream submodule and install dependencies:
+Use Node.js `>=24.9.0`, Git, and Corepack. This repository uses Yarn `4.18.0`. From the **repository root**, initialize the pinned upstream submodule and install dependencies:
 
 ```bash
 git submodule update --init --recursive

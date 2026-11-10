@@ -156,4 +156,21 @@ describe('community market client registration', () => {
     expect(test.registrations[2]?.component).toBe(PluginUpdatesSummary)
     expect(test.registrations[4]?.component).toBe(MarketUpdateNotice)
   })
+
+  it('exposes the storefront to the modern Plugins tab while retaining its launcher', () => {
+    vi.stubGlobal('desktopNext', { state: vi.fn() })
+    const test = testContext()
+    apply(test.context)
+    expect(test.injections.map(value => value.name)).toEqual([
+      'settings.plugins.tab',
+      'cqai.pluginManagement.market',
+      'cqai.pluginManagement.updates',
+      'sidebar.footer.action',
+      'shell.overlay',
+      'shell.overlay',
+    ])
+    test.injections.forEach(value => { value.factory() })
+    expect(test.registrations.find(value => value.spec.name === 'cqai.pluginManagement.market')?.component)
+      .toBe(PluginManagementMarket)
+  })
 })

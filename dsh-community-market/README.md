@@ -14,8 +14,8 @@ The Market has five views:
 
 1. **Discover** browses the selected source, with search, category filters, details, and source attribution.
 2. **Installable** shows normalized entries that expose one unambiguous npm package identity. It does not trust a source-provided version.
-3. **Installed** reads direct plugin dependencies from the active Profile. It includes plugins installed by this Market, another market, or the DSH CLI. Removable plugins offer **Uninstall**, while core bundles remain read-only.
-4. **Updates** compares installed npm plugin versions with npm `latest` and offers individual or all-package review and update.
+3. **Installed** lists the active Profile's community plugins as the official plugin manager reports them, including plugins installed by this Market, another market, or the DSH CLI, and lets the user enable, disable, update, or uninstall them. Official plugins, bundles the installation ships, DeepSeek's own packages, and Desktop's built-in bundles (`dsh-community-market`, `dshmarket`, `@agents-anywhere/dsh-bridge-next`) are managed on the official Plugins page and do not appear here.
+4. **Updates** reviews and updates community plugins through the official manager.
 5. **Sources** saves, orders, and selects catalog sources. Exactly one source is active for browsing.
 
 The Renderer never sends a package name or package-manager command for an installation. It submits the selected source and item identity, then the Host resolves the normalized package identity it previously observed.
@@ -31,23 +31,15 @@ Automatic installation deliberately has a small qualification boundary:
 
 Source versions, verification badges, repository equality, deprecation metadata, lifecycle scripts, engine ranges, tarball integrity metadata, and build-allowance claims do not decide Market eligibility. pnpm remains responsible for resolving and installing the requested exact npm version.
 
-After confirmation, the Host calls only `desktopPnpm.run(argv)`, adds the exact npm version, and reconciles the package into `dsh.profile.bundles`. The Market creates no install receipt, snapshot, retry, cleanup, or rollback path. Recovery is handled by Desktop's unified three-slot healthy-start checkpoints.
+After confirmation, the Host calls the official plugin manager's `installBundle` with the exact `name@version` target, saved exactly and activated. The manager validates the bundle, restores the Profile manifest and lockfile when installation fails, selects the bundle, and applies it live where the Host runs HMR. The Market creates no install receipt, snapshot, retry, cleanup, or rollback path of its own. When the manager reports that a restart is still required, the Market says so in its completion notice instead of prompting for one.
 
-## Plugin updates
+## Enable, disable, update, uninstall, and cross-market compatibility
 
-The Client checks installed plugins after startup and every 30 minutes. The Market also offers **Check for updates**. Checks use a bounded Host cache, and the manual action refreshes the registry result. Available updates show the installed and latest versions and an update notice; checking never installs a version automatically.
+The Installed view is derived from the official plugin manager's bundle list, not from Market receipts or the selected catalog. This makes plugins installed by external markets and the DSH CLI visible without special integration. The view keeps to community plugins: a bundle the manager marks official, a bundle the installation ships, a package in the `@deepseek-ai` scope, or one of Desktop's built-in bundles is left to the official Plugins page.
 
-The Host derives each target from the active Profile's opaque inventory `bundleId`, reads the actual installed version, and compares it with the official npm registry's stable `latest` version using semver. Checks cover direct npm plugin bundles, including ones installed by another market or the DSH CLI. Product-owned core bundles and local or Git dependencies are skipped. Packages whose installed version cannot be verified show a check error and cannot be updated. Updates never downgrade or select a prerelease.
+Enable and disable call the manager's `setBundleEnabled` directly and keep the dependency installed. Uninstall preview accepts a package name from that list; the Host confirms through the manager that the bundle is still removable before the preview and again before execution, then calls `removeBundle`, which deselects and unloads the bundle before pnpm removes it. The manager's `readOnlyReason`, `error`, and `removable` flags decide which actions a listed bundle offers.
 
-The user may review and confirm one update or **Update all**. A short-lived, one-shot preview binds the active Profile, package, and exact old and new versions. The Host rechecks these facts, updates one package at a time through `desktopPnpm.run(argv)`, and retains its bundle reference and configuration. Changes take effect after an explicit restart.
-
-If an update fails, the Host attempts to reinstall the previous exact version. The failure is shown for that package; if restoration also fails, the message directs the user to Desktop Recovery. **Update all** is a sequence of individual updates, not an atomic transaction. It stops at the first failure, retains successful updates, and lists the failed and remaining unattempted packages so they can be reviewed and retried. This feature uses Community Market's own services and does not depend on DSH Market.
-
-## Uninstall and cross-market compatibility
-
-The Installed view is derived from the active Profile's direct dependencies and bundle list, not from Market receipts or the selected catalog. This makes plugins installed by external markets and the DSH CLI visible without special integration.
-
-Uninstall preview accepts only the generation-scoped opaque `bundleId` returned by Desktop inventory. The Host resolves it to the current direct dependency, confirms it is removable, and runs `desktopPnpm.run(['remove', packageName])`. The Market does not provide enable or disable operations.
+Updates follow the official Plugins page. On DSH 0.2.2 and later, a bundle the manager marks `updatable` is checked through the manager's `listVersions`, and the Market offers the version the official page offers: the newest that declares a bundle, accepts the running DSH version, and is neither deprecated nor a prerelease. Update preview accepts only the package name; after confirmation the Host calls `updateBundle` with that version and the registry that listed it, and the manager installs the removed version again when the new one fails. Earlier DSH releases have no version operations, so the Market offers no update there.
 
 ## Catalog sources
 
@@ -65,7 +57,7 @@ Source requests are HTTPS-only, credential-free, bounded, and protected against 
 
 When automatic installation is unavailable, the details dialog may show a bounded, display-only npm command reconstructed by the Host. **Open DSH Terminal** only opens Desktop's terminal; it does not paste or execute the command.
 
-If an automatic installation starts but pnpm fails, Desktop keeps a bounded tail of stdout and stderr, writes it to the Desktop log, and shows the same diagnostic output in a failure dialog. The dialog offers a Host-derived exact command and **Open DSH Terminal** for manual follow-up; it never retries the consumed confirmation automatically.
+If an automatic installation starts but the official manager reports a failure, the Market records the manager's bounded pnpm output in the Desktop log and shows the same diagnostic output in a failure dialog. The dialog offers a Host-derived exact command and **Open DSH Terminal** for manual follow-up; it never retries the consumed confirmation automatically.
 
 ## Documentation
 
@@ -79,3 +71,7 @@ If an automatic installation starts but pnpm fails, Desktop keeps a bounded tail
 ## License and attribution
 
 Package code and documentation are licensed under the [MIT License](LICENSE). No third-party catalog snapshot, provider command, or artwork is bundled in this package. Catalog providers remain independent projects responsible for their own metadata and service policies.
+
+## Update notices and batch review
+
+After startup and every 30 minutes, the Client checks updatable community plugins through the official plugin manager; checking never installs code. The Updates view retains manual checks, exact version review, single updates, and Update all. Each execution uses the Host's one-shot confirmation and the official update operation. A batch stops on its first failure, retains completed updates, and lists unattempted packages. Failed checks remain distinct from up-to-date results. Completion follows the manager's live application, restart-required, or configuration-override result.

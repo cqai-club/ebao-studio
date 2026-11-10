@@ -1,30 +1,23 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-plugin-manager'
 import type {} from '@deepseek-ai/dsh-storage-domain'
-import {
-  registerMarketRoutes,
-  type MarketDesktopPlugins,
-} from './host/routes.js'
+import { registerMarketRoutes } from './host/routes.js'
 import { DeferredMarketStateStore } from './catalog/state-store.js'
 import { createRestrictedHttpClient } from './network/restricted-http.js'
 import {
   createMarketPackageVerifier,
   MarketInstallService,
-  type MarketDesktopPnpm,
-  type MarketDesktopProfile,
+  type MarketPluginManager,
 } from './install/service.js'
 import { CommunityMarketPolicyRegistry } from './policy.js'
 
 export const name = 'community-market'
 export const inject = ['webServer']
 
-interface DesktopProfilesCapability {
-  readonly current: MarketDesktopProfile
-}
-
 interface DesktopActionsCapability {
   openTerminal?(): void
-  requestRestart(): Promise<void>
 }
 
 const npmRegistryHttp = createRestrictedHttpClient({
@@ -43,18 +36,13 @@ export function apply(ctx: Context): void {
   const state = new DeferredMarketStateStore(message => ctx.logger.warn(message))
   let installService: MarketInstallService | undefined
   let desktopActions: DesktopActionsCapability | undefined
-  let desktopPlugins: MarketDesktopPlugins | undefined
   const installProvider = { get: () => installService }
   const desktopActionsProvider = { get: () => desktopActions }
-  const desktopPluginsProvider = { get: () => desktopPlugins }
-  ctx.effect(
-    () => registerMarketRoutes(ctx, state, installProvider, desktopActionsProvider, desktopPluginsProvider, policies),
-    'community-market: routes',
-  )
   // Durable state is optional, so the storage domain is soft-injected like every
   // other optional peer. The domain handle belongs to this effect: the facility
   // only sweeps handles nobody closed.
   ctx.inject(['storageDomain'], (storageCtx) => {
+    const finishAdoption = state.beginAdoption()
     storageCtx.effect(async () => {
       let close: (() => Promise<void>) | undefined
       try {
@@ -67,10 +55,16 @@ export function apply(ctx: Context): void {
         ctx.logger.warn(`dsh-community-market: durable storage is unavailable; market state is session-only: ${
           cause instanceof Error ? cause.message : String(cause)
         }`)
+      } finally {
+        finishAdoption()
       }
       return () => close?.()
     }, 'community-market: durable state')
   })
+  ctx.effect(
+    () => registerMarketRoutes(ctx, state, installProvider, desktopActionsProvider, policies),
+    'community-market: routes',
+  )
   ctx.inject(['desktopActions'], (desktopCtx) => {
     const actions = desktopCtx.get('desktopActions') as DesktopActionsCapability
     desktopCtx.effect(() => {
@@ -80,24 +74,18 @@ export function apply(ctx: Context): void {
       }
     }, 'community-market: optional desktop actions')
   })
-  ctx.inject(['desktopPlugins'], (desktopCtx) => {
-    const plugins = desktopCtx.get('desktopPlugins') as MarketDesktopPlugins
-    desktopCtx.effect(() => {
-      desktopPlugins = plugins
-      return () => {
-        if (desktopPlugins === plugins) desktopPlugins = undefined
-      }
-    }, 'community-market: optional desktop plugin management')
-  })
-  // Browsing remains portable. Desktop-only package operations appear whenever
-  // the narrow profile and package-manager capabilities are live.
-  ctx.inject(['desktopProfiles', 'desktopPnpm'], (desktopCtx) => {
-    const profiles = desktopCtx.get('desktopProfiles') as DesktopProfilesCapability
-    const pnpm = desktopCtx.get('desktopPnpm') as MarketDesktopPnpm
-    desktopCtx.effect(() => {
+  // Browsing remains portable. Package operations appear whenever the official
+  // plugin manager and the profile it manages are live: the Market only verifies
+  // catalog identity and delegates every install, enable, disable, update and
+  // removal. Updates need the version operations DSH 0.2.2 added to the manager.
+  ctx.inject(['pluginManager', 'profileContext'], (managedCtx) => {
+    const manager: MarketPluginManager | undefined = managedCtx.get('pluginManager')
+    const profile = managedCtx.get('profileContext')
+    if (manager === undefined || profile === undefined) return
+    managedCtx.effect(() => {
       const service = new MarketInstallService(
-        () => profiles.current,
-        pnpm,
+        () => ({ name: profile.name, dir: profile.dir }),
+        manager,
         createMarketPackageVerifier(npmRegistryHttp),
         {
           logFailure: message => ctx.logger.error(message),
@@ -108,7 +96,7 @@ export function apply(ctx: Context): void {
         if (installService === service) installService = undefined
         service.dispose()
       }
-    }, 'community-market: desktop package operations')
+    }, 'community-market: official plugin manager operations')
   })
 }
 

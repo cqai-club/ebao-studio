@@ -14,7 +14,7 @@ import { UPLOADS, uploadKinds, validateUpload } from '../uploads.ts'
 
 export const inject = ['slots']
 const PANEL = 'cqai-video' as MainPanelId
-const defaults: Options = {title: '', text: '', duration: 60, mode: 'video', optimize: false, covers: false, studio: false}
+const defaults: Options = {title: '', text: '', duration: 60, mode: 'digitalhuman', optimize: false, covers: false, studio: false}
 const statusText: Record<Job['status'], string> = {draft: '待开始', running: '制作中', completed: '已完成', failed: '制作失败', cancelled: '已取消', interrupted: '已中断'}
 const statusTone: Record<Job['status'], 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {draft: 'neutral', running: 'info', completed: 'success', failed: 'danger', cancelled: 'neutral', interrupted: 'warning'}
 async function api<T>(action: string, data?: unknown, signal?: AbortSignal): Promise<T> {
@@ -61,7 +61,7 @@ function Studio({active = true, onOpenSettings}: Partial<EjianbaoWorkspaceOwner>
     if (!options.text.trim() && !files.script) {setError('请先填写文案或上传文案文件'); return}
     if (options.mode === 'digitalhuman' && options.text.length > 5000) {setError('数字人口播文案最多 5000 个字符'); return}
     if (options.mode === 'video' && !files.video) {setError('请先上传已有口播视频'); return}
-    if (options.mode === 'digitalhuman' && (!files.avatar || !files.voice)) {setError('请上传形象照和参考录音'); return}
+    if (options.mode === 'digitalhuman' && (!files.avatar || !files.voice)) {setError('请上传照片和声音'); return}
     const kinds = uploadKinds(options)
     inFlight.current = true; setBusy('检查素材…')
     try {
@@ -97,11 +97,18 @@ function Studio({active = true, onOpenSettings}: Partial<EjianbaoWorkspaceOwner>
     } catch (e) {setError(e instanceof Error ? e.message : '操作失败')} finally {inFlight.current = false; setBusy('')}
   }
   const stageSummary = job && <div className="ejb-flow">{STAGES.map((stage, i) => <div key={stage} className={`ejb-step ${job.stages[stage] || ''}`}>{job.stages[stage] === 'completed' ? '✓' : String(i + 1).padStart(2, '0')}　{LABELS[stage]}{job.stages[stage] === 'skipped' ? ' · 跳过' : ''}</div>)}</div>
+  const digitalHumanPanel = options.mode === 'digitalhuman' && <div className="ejb-dh"><div className="ejb-dh-card">
+    <div className="ejb-dh-modes" role="group" aria-label="制作方式">{([['video', '已有口播视频'], ['digitalhuman', '数字人口播'], ['plan', '动效方案']] as const).map(([mode, label]) => <button key={mode} className="ejb-mode" aria-pressed={options.mode === mode} onClick={() => update('mode', mode)}>{label}</button>)}</div>
+    <div className="ejb-dh-field"><label htmlFor="ejb-text">文案</label><textarea id="ejb-text" className="ejb-textarea" maxLength={5000} placeholder="输入需要数字人口播的文案" value={options.text} onChange={e => update('text', e.target.value)}/><div className="ejb-muted ejb-field-hint">{options.text.length} / 5000 字</div></div>
+    <div className="ejb-dh-files">{uploadField('avatar', '照片', '.png,.jpg,.jpeg,.webp', '清晰正面照片')}{uploadField('voice', '声音', '.mp3,.m4a,.wav,.ogg', '20 秒左右的干净人声')}</div>
+    {error && <div className="ejb-error" role="alert">{error}</div>}
+    <Button variant="primary" className="ejb-create-action" aria-busy={!!busy} disabled={!!busy || jobs.some(j => j.status === 'running')} onClick={() => void create()}>{busy || '生成数字人视频'}</Button>
+  </div></div>
   return <section className="ejb" data-cqai-video-main=""><style>{styles}</style><div className="ejb-wrap">
     <header className="ejb-head"><div><h1>数字人视频制作</h1><div className="ejb-muted">从口播素材到完整成片，让每一句话都有画面。</div></div><Tag tone="neutral">数字人视频工作台</Tag></header>
     <nav className="ejb-tabs" aria-label="视频制作"><Button className="ejb-tab" aria-current={tab === 'new' ? 'page' : undefined} onClick={() => setTab('new')}>新建视频</Button><Button className="ejb-tab" aria-current={tab === 'history' ? 'page' : undefined} onClick={() => setTab('history')}>制作记录 {jobs.length > 0 && `· ${jobs.length}`}</Button>{!onOpenSettings && <Button className="ejb-tab" onClick={() => setTab('settings')}>设置</Button>}</nav>
     {tab === 'settings' && error && <div className="ejb-error" role="alert">{error}</div>}
-    {tab === 'settings' ? <MediaSettingsEditor api={API}/> : tab === 'new' ? <div className="ejb-grid"><div>
+    {tab === 'settings' ? <MediaSettingsEditor api={API}/> : tab === 'new' ? digitalHumanPanel || <div className="ejb-grid"><div>
       <div className="ejb-card"><h2><span className="ejb-num">01</span>选择制作方式</h2><div className="ejb-modes">{([['video', '已有口播视频'], ['digitalhuman', '数字人口播'], ['plan', '仅生成动效方案']] as const).map(([mode, label]) => <button key={mode} className="ejb-mode" aria-pressed={options.mode === mode} onClick={() => {update('mode', mode); if (mode === 'digitalhuman') setOptions(prev => ({...prev, mode, optimize: false, covers: false}))}}>{label}</button>)}</div>
         <div className="ejb-muted">{options.mode === 'video' ? '保留原声，自动添加字幕、内容卡片和画中画动效。' : options.mode === 'digitalhuman' ? '使用你有权使用的形象照与参考录音，通过产品账户分段生成口播视频。先获取报价，确认后使用账户额度。' : '不生成视频，先整理文案并生成可编辑的 Remotion 动效组件包。'}</div>
         {options.mode === 'video' && uploadField('video', '口播视频', '.mp4,.mov,.webm,.mkv', 'MP4 / MOV / WEBM / MKV · 最大 1 GB')}

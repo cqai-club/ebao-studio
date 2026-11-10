@@ -14,8 +14,8 @@ Market 包含五个视图：
 
 1. **发现**：浏览当前来源，支持搜索、分类筛选、详情和来源归属信息。
 2. **可安装**：显示能够提供唯一 npm package 身份的标准化条目，不信任来源提供的版本。
-3. **已安装**：读取当前 Profile 的直接插件依赖。无论插件由本 Market、其他市场还是 DSH CLI 安装，都会显示；可移除插件提供**卸载**，核心 bundle 保持只读。
-4. **更新**：比较已安装 npm 插件版本与 npm `latest`，支持查看确认和执行单个或全部更新。
+3. **已安装**：按官方插件管理器的报告列出当前 Profile 中的社区插件，包括本 Market、其他市场或 DSH CLI 安装的插件，并可以启用、停用、更新或卸载。官方插件、随安装包附带的 bundle、DeepSeek 自己的 package，以及 Desktop 内置 bundle（`dsh-community-market`、`dshmarket`、`@agents-anywhere/dsh-bridge-next`）在官方“插件”页面管理，不在这里显示。
+4. **插件更新**：通过官方管理器检查社区插件，审阅并执行单个或全部更新。
 5. **来源**：保存、排序和选择目录来源；同一时间只选择一个来源浏览。
 
 Renderer 在安装时不会提交 package name 或 package-manager 命令，只提交被选中的来源和条目身份。Host 再解析自己此前观察到的标准化 package 身份。
@@ -31,23 +31,15 @@ Renderer 在安装时不会提交 package name 或 package-manager 命令，只�
 
 来源版本、验证徽章、仓库是否一致、deprecated metadata、lifecycle script、engine 范围、tarball integrity metadata 和 build-allowance 声明，都不决定 Market 是否允许安装。pnpm 负责解析并安装用户确认的精确 npm 版本。
 
-用户确认后，Host 只调用 `desktopPnpm.run(argv)`，添加精确 npm 版本，并把 package 写入 `dsh.profile.bundles`。Market 不创建安装 receipt、快照、重试、清理或回滚路径；恢复统一交给 Desktop 的三个健康启动 checkpoint 槽位。
+用户确认后，Host 以精确的 `name@version` 目标调用官方插件管理器的 `installBundle`，保存精确版本并激活。管理器负责校验 bundle、在安装失败时恢复 Profile manifest 和 lockfile、选中 bundle，并在 Host 运行 HMR 时实时应用。Market 自己不创建安装 receipt、快照、重试、清理或回滚路径。如果管理器报告仍需重启，Market 会在完成提示中说明，而不会弹窗要求重启。
 
-## 插件更新
+## 启用、停用、更新、卸载与其他市场兼容
 
-Client 在启动后及每隔 30 分钟检查已安装插件，Market 也提供**检查更新**。检查使用 Host 的有界缓存，手动检查会刷新 registry 结果。发现更新时显示已安装版本、最新版本和更新提醒；检查不会自动安装新版本。
+**已安装**视图来自官方插件管理器的 bundle 列表，不依赖 Market receipt 或当前目录来源。因此，其他市场和 DSH CLI 安装的插件无需额外适配也能正确显示。该视图只列出社区插件：管理器标记为官方的 bundle、随安装包附带的 bundle、`@deepseek-ai` 作用域下的 package，以及 Desktop 内置 bundle 都交给官方“插件”页面。
 
-Host 从当前 Profile 的不透明清单 `bundleId` 解析目标，读取真实安装版本，并通过 semver 与 npm 官方 registry 的稳定 `latest` 版本比较。检查覆盖直接 npm 插件 bundle，包括其他市场或 DSH CLI 安装的插件；跳过产品自有核心 bundle、本地或 Git 依赖。无法验证真实安装版本的 package 会显示检查错误，不能更新。更新不会降级，也不会选择预发布版本。
+启用和停用直接调用管理器的 `setBundleEnabled`，并保留已安装的依赖。卸载 preview 接受该列表中的 package name；Host 在 preview 前和执行前都通过管理器确认 bundle 仍可移除，然后调用 `removeBundle`，由它在 pnpm 移除前取消选中并卸载 bundle。管理器的 `readOnlyReason`、`error` 和 `removable` 标志决定列出的每个 bundle 提供哪些操作。
 
-用户可以查看并确认单个更新或**全部更新**。短时一次性 preview 绑定当前 Profile、package 和精确的新旧版本。Host 会再次检查这些事实，通过 `desktopPnpm.run(argv)` 逐个更新，并保留 bundle 引用和配置。修改在用户明确重启后生效。
-
-更新失败时，Host 尝试重新安装旧的精确版本，并显示该 package 的失败结果；如果恢复也失败，提示用户使用 Desktop 恢复页面。**全部更新**是逐项执行而非原子事务：首次失败即停止，成功项保留，并列出失败项和剩余未执行项，供重新查看确认和重试。该功能使用 Community Market 自身服务，不依赖 DSH Market。
-
-## 卸载与其他市场兼容
-
-**已安装**视图来自当前 Profile 的直接依赖和 bundle 列表，不依赖 Market receipt 或当前目录来源。因此，其他市场和 DSH CLI 安装的插件无需额外适配也能正确显示。
-
-卸载 preview 只接受 Desktop 清单返回的、当前 generation 有效的不透明 `bundleId`。Host 将它解析为当前直接依赖，确认可以移除后执行 `desktopPnpm.run(['remove', packageName])`。Market 不提供启用或禁用操作。
+更新与官方“插件”页面一致。在 DSH 0.2.2 及以后的版本中，管理器标记为 `updatable` 的 bundle 通过管理器的 `listVersions` 检查，Market 提供官方页面会提供的版本：声明了 bundle、兼容当前 DSH 版本、未弃用且不是预发布的最新版本。更新 preview 只接受 package name；用户确认后，Host 以该版本和列出它的 registry 调用 `updateBundle`，新版本安装失败时由管理器重新安装被移除的版本。更早的 DSH 版本没有版本操作，因此 Market 在其中不提供更新。
 
 ## 目录来源
 
@@ -65,7 +57,7 @@ Host 从当前 Profile 的不透明清单 `bundleId` 解析目标，读取真实
 
 自动安装不可用时，详情弹窗可以显示 Host 根据标准化身份重建的、有界且只用于展示的 npm 命令。**打开 DSH 终端**只打开 Desktop 终端，不会粘贴或执行该命令。
 
-如果自动安装已经开始但 pnpm 失败，Desktop 会保留有上限的 stdout/stderr 尾部，将其写入 Desktop 日志，并在失败弹窗中显示同一份诊断输出。弹窗提供 Host 推导的精确命令和**打开 DSH 终端**，供用户手动继续；已经消费的确认不会被自动重试。
+如果自动安装已经开始但官方管理器报告失败，Market 会把管理器保留的有界 pnpm 输出写入 Desktop 日志，并在失败弹窗中显示同一份诊断输出。弹窗提供 Host 推导的精确命令和**打开 DSH 终端**，供用户手动继续；已经消费的确认不会被自动重试。
 
 ## 文档
 
@@ -79,3 +71,7 @@ Host 从当前 Profile 的不透明清单 `bundleId` 解析目标，读取真实
 ## 许可证与归属
 
 Package 代码和文档使用 [MIT License](LICENSE)。本 package 不内置任何第三方目录快照、provider 命令或 artwork；目录提供方是独立项目，并自行负责其 metadata 与服务策略。
+
+## 插件更新提醒与批量更新
+
+客户端启动后和每 30 分钟通过官方插件管理器检查可更新的社区插件，检查本身不会安装代码。更新视图保留手动检查、版本审阅、单个更新和全部更新。每次执行都使用 Host 返回的一次性确认标识，按顺序调用官方更新操作；首个失败发生后停止，保留成功项目并列出尚未执行的项目。失败检查与已是最新版分别显示。更新结果遵循管理器的即时生效、需要重启或配置覆盖状态。
