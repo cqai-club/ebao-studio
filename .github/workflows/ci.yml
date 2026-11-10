@@ -229,6 +229,7 @@ jobs:
           path: ${{ steps.yarn-cache.outputs.dir }}
           key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - run: yarn install --immutable
+      - run: yarn build:cqai-plugins
       - run: yarn workspace ${{ matrix.workspace }} check:linux-package:platform
       - name: Build Linux AppImage and Debian package
         env:

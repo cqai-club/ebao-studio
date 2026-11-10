@@ -74,6 +74,21 @@ test('each native release job builds bundled workspace plugins before packaging'
   }
 })
 
+test('both Linux CI channels build bundled workspace plugins before packaging', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  const start = workflow.indexOf('\n  desktop-linux:')
+  const end = workflow.indexOf('\n  desktop-macos:', start + 1)
+  assert.ok(start !== -1 && end > start, 'Linux packaging job must exist')
+  const job = workflow.slice(start, end)
+  assert.match(job, /workspace: \[dsh-plugin-desktop, dsh-plugin-desktop-beta\]/u)
+  const install = job.indexOf('yarn install --immutable')
+  const build = job.indexOf('yarn build:cqai-plugins')
+  const gate = job.indexOf('check:linux-package:platform')
+  const packaging = job.indexOf('dist:linux')
+  assert.ok(install >= 0 && build > install && gate > build && packaging > gate,
+    'both channels must build installed workspace plugins before the Linux package gate')
+})
+
 test('macOS afterPack resolves the actual executable filename for each Desktop channel', () => {
   for (const desktop of ['dsh-plugin-desktop', 'dsh-plugin-desktop-beta']) {
     const manifest = JSON.parse(readFileSync(new URL(`../${desktop}/package.json`, import.meta.url), 'utf8'))
