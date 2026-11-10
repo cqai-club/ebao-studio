@@ -248,6 +248,12 @@ jobs:
       matrix:
         workspace: [dsh-plugin-desktop, dsh-plugin-desktop-beta]
     steps:
+      - name: Ensure Rosetta for Intel smoke tests
+        run: |
+          if [ "$(uname -m)" = arm64 ]; then
+            arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
+            arch -x86_64 /usr/bin/true
+          fi
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}

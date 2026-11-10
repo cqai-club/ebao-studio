@@ -89,6 +89,24 @@ test('both Linux CI channels build bundled workspace plugins before packaging', 
     'both channels must build installed workspace plugins before the Linux package gate')
 })
 
+test('macOS CI and release prepare Rosetta before universal smoke checks', () => {
+  for (const [file, startLabel] of [
+    ['ci.yml', 'desktop-macos'],
+    ['release.yml', 'macos'],
+  ]) {
+    const workflow = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8')
+    const start = workflow.indexOf(`\n  ${startLabel}:`)
+    assert.ok(start >= 0, `${file} macOS job must exist`)
+    const rest = workflow.slice(start + 1)
+    const nextJob = rest.slice(1).search(/\n  [a-z][a-z0-9-]*:/u)
+    const job = nextJob < 0 ? rest : rest.slice(0, nextJob + 1)
+    const rosetta = job.indexOf('softwareupdate --install-rosetta --agree-to-license')
+    const packaging = job.indexOf('dist:mac')
+    assert.ok(rosetta >= 0 && packaging > rosetta, `${file} must prepare Rosetta before macOS packaging`)
+    assert.ok(job.includes('arch -x86_64 /usr/bin/true'), `${file} must probe Intel execution`)
+  }
+})
+
 test('macOS afterPack resolves the actual executable filename for each Desktop channel', () => {
   for (const desktop of ['dsh-plugin-desktop', 'dsh-plugin-desktop-beta']) {
     const manifest = JSON.parse(readFileSync(new URL(`../${desktop}/package.json`, import.meta.url), 'utf8'))
