@@ -4,6 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Document, Packer, Paragraph } from 'docx'
+import JSZip from 'jszip'
 import type { ResearchModelServices } from '../src/generation.ts'
 import { API, type AssistEvent, type ScholarProject, type StreamEvent } from '../src/protocol.ts'
 import { createRouteHandler } from '../src/routes.ts'
@@ -119,6 +121,66 @@ describe('e研宝 HTTP routes', () => {
     expect(response.status).toBe(403)
   })
 
+  it('rejects DOCX formatting without the local mutation header', async () => {
+    const { base } = await fixture()
+    const response = await fetch(`${base}${API}/format-docx`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fileName: 'example.docx', dataBase64: 'AA==', preset: 'journal' }),
+    })
+    expect(response.status).toBe(403)
+  })
+
+  it('rejects a malformed DOCX formatting request', async () => {
+    const { base } = await fixture()
+    const response = await fetch(`${base}${API}/format-docx`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-eyanbao': '1' },
+      body: JSON.stringify({ fileName: 'example.txt', dataBase64: 'AA==', preset: 'thesis', confirmed: true }),
+    })
+    expect(response.status).toBeGreaterThanOrEqual(400)
+    expect(response.status).toBeLessThan(500)
+  })
+
+  it('rejects a DOCX input beyond the 8 MiB limit', async () => {
+    const { base } = await fixture()
+    const dataBase64 = Buffer.alloc(8 * 1024 * 1024 + 1).toString('base64')
+    const response = await fetch(`${base}${API}/format-docx`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-eyanbao': '1' },
+      body: JSON.stringify({ fileName: 'big.docx', dataBase64, preset: 'journal', confirmed: true }),
+    })
+    expect(response.status).toBe(400)
+  })
+
+  it.each(['journal', 'thesis'] as const)('returns a DOCX copy from the %s formatting route', async preset => {
+    const { base } = await fixture()
+    const original = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('原稿样例内容')] }] }))
+    const response = await fetch(`${base}${API}/format-docx`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-eyanbao': '1' },
+      body: JSON.stringify({ fileName: '论文.docx', dataBase64: original.toString('base64'), preset, confirmed: true }),
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('wordprocessingml')
+    const copy = Buffer.from(await response.arrayBuffer())
+    const before = await JSZip.loadAsync(original)
+    const after = await JSZip.loadAsync(copy)
+    expect(await after.file('word/document.xml')?.async('string')).toEqual(await before.file('word/document.xml')?.async('string'))
+  })
+
+  it('requires explicit confirmation before returning a formatted copy', async () => {
+    const { base } = await fixture()
+    const original = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('原稿样例内容')] }] }))
+    const response = await fetch(`${base}${API}/format-docx`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-eyanbao': '1' },
+      body: JSON.stringify({ fileName: '论文.docx', dataBase64: original.toString('base64'), preset: 'thesis' }),
+    })
+    expect(response.status).toBe(400)
+    expect(response.headers.get('content-type')).toContain('application/json')
+  })
+
   it('streams text and saves a generated manuscript', async () => {
     const { base } = await fixture({
       stream: async function* () {
@@ -148,6 +210,39 @@ describe('e研宝 HTTP routes', () => {
       status: 'complete',
     })
     expect(result.project.keywords).toEqual(['生成式 AI', '学术写作'])
+  })
+
+  // These are integration checks for the route and persistence boundary only.
+  // Both the provider response and model stream are deterministic fixtures.
+  it.each([
+    ['research', '研究生成式 AI 对学术写作的影响'],
+    ['thesis', '研究生成式 AI 对研究生科研写作的影响'],
+  ] as const)('streams and persists the %s task with fixture sources and model', async (kind, prompt) => {
+    const { base } = await fixture({
+      stream: async function* () {
+        yield { type: 'text-delta', text: '# 测试草稿\n\n## 研究问题\n\n结果和数据待作者补充。' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      },
+    })
+    const response = await fetch(`${base}${API}/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-eyanbao': '1' },
+      body: JSON.stringify({ prompt, kind, degree: 'master', language: 'zh', citationStyle: 'gb7714', sourceCount: 8 }),
+    })
+    expect(response.status).toBe(200)
+    const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line) as StreamEvent)
+    expect(events.some(event => event.type === 'delta')).toBe(true)
+    const result = events.find(event => event.type === 'result')
+    if (result?.type !== 'result') throw new Error(`missing ${kind} result`)
+    expect(result.project.kind).toBe(kind)
+    expect(result.project.status).toBe('complete')
+    expect(result.project.content).toContain('结果和数据待作者补充')
+    expect(result.project.sources).toHaveLength(1)
+    const saved = await fetch(`${base}${API}/projects/${result.project.id}`)
+    expect(saved.status).toBe(200)
+    const savedProject = (await saved.json() as { project: ScholarProject }).project
+    expect(savedProject.kind).toBe(kind)
+    expect(savedProject.content).toBe(result.project.content)
   })
 
   it('streams AI research assistance without creating a project', async () => {

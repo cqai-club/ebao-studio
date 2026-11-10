@@ -11,15 +11,13 @@
 - 一句话生成期刊论文
 - 一句话生成研究论文
 - 一句话生成毕业论文
-- 一句话生成期刊排版
-- 一句话生成毕业论文排版
-- 本科、硕士、博士三种学位论文排版基线
+- 对已有 DOCX 预览并应用通用默认样式，或提取自有 DOCX 模板中的默认字体、字号和行距，确认后导出副本
 
 ## 功能边界
 
 检索通过 OpenAlex、Crossref、PubMed 和 Semantic Scholar 完成，每条结果均标明实际来源数据库；生成使用 DSH 当前默认文字模型。外文或混合检索会优先使用模型生成英文检索词，
 并在结果中过滤出对应语言的来源，来源列表会同时显示数据库统计和逐条语言标识。来源数据、正文、引用和排版设置保存在
-`$DSH_HOME/eyanbao/projects/<id>/project.json`。生成的正文只使用本次检索到的来源，证据不足时模型必须明确说明，不会伪造引用。
+`$DSH_HOME/eyanbao/projects/<id>/project.json`。研究材料可选填入文本，材料会发送给配置的模型提供方，不作为数据库检索词；材料本身不单独存入项目，但生成的草稿可能包含其内容。生成与引用需要作者检查，模型提示不能保证引用和事实准确。
 
 “顶刊优先”使用跨学科精选顶刊库并结合被引次数排序；“仅顶级期刊”只保留精选库中的来源。Nature、Science、Cell、
 The Lancet、Academy of Management Journal、MIS Quarterly、American Economic Review、Review of Educational Research、
@@ -30,7 +28,7 @@ IEEE TPAMI 等均在库中，完整分组见 [顶级外文期刊库](./docs/top-
 OpenAlex、Crossref、PubMed 和 Semantic Scholar 无需配置即可使用；Semantic Scholar 可通过 `S2_API_KEY` 提高配额。Web of Science、Scopus、Google Scholar、CNKI 和万方需要在宿主环境配置
 供应商 API 凭据或企业网关；未配置的数据库会在选择器中显示原因并禁用。配置方法见 [数据库接入](./docs/databases.md)。
 
-排版导出为 DOCX。内置模板是通用学术基线，不等同于任何具体学校的强制规范；学校或期刊另有模板时，应以其最新文件为准。
+排版处理 DOCX 原稿并导出副本。通用基线和用户模板仅调整文档默认字体、字号与行距；命名样式、直接格式、页边距、页眉页脚、目录和引用格式不会按模板迁移。已有显式格式可能覆盖默认值。此功能不保证符合任何学校或期刊的规范，必须对照最新要求人工检查，原稿和模板仅提交给本机插件处理。
 
 ## 开发
 

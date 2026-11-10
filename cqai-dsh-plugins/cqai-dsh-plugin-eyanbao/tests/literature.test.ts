@@ -32,6 +32,19 @@ describe('literature search', () => {
     expect(url).toContain('is_retracted%3Afalse')
   })
 
+  it('keeps OpenAlex results when an abstract is null', async () => {
+    const fetcher = vi.fn(async () => response({ results: [
+      { id: 'https://openalex.org/W2', title: 'Without abstract', doi: null, abstract_inverted_index: null },
+      { id: 'https://openalex.org/W3', title: 'With abstract', abstract_inverted_index: { Available: [0], text: [1] } },
+    ] })) as unknown as typeof fetch
+    const sources = await searchOpenAlex('evidence', { limit: 5, scope: 'mixed', fetcher })
+    expect(sources).toHaveLength(2)
+    expect(sources[0]?.title).toBe('Without abstract')
+    expect(sources[0]?.abstract).toBeUndefined()
+    expect(sources[0]?.doi).toBeUndefined()
+    expect(sources[1]?.abstract).toBe('Available text')
+  })
+
   it('falls back to Crossref when OpenAlex fails', async () => {
     const fetcher = vi.fn(async input => {
       const url = String(input)

@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createDocxBuffer, docxFileName } from './docx.ts'
+import { formatDocx, previewDocx } from './format-docx.ts'
 import { databaseLabel, databaseStatuses } from './database-connectors.ts'
 import {
   finalizeProject,
@@ -220,6 +221,18 @@ async function runProject(
   options: RoutesOptions,
 ): Promise<void> {
   const request = parseRunRequest(await readJson(req, MAX_JSON_BODY))
+  let selectedSources: ScholarProject['sources'] | undefined
+  if (request.kind === 'review') {
+    if (!request.sourceProjectId || !request.selectedSourceIds?.length || !validProjectId(request.sourceProjectId)) throw new RouteError('请先检索并选择用于综述的文献。', 400, 'selection-required')
+    if (new Set(request.selectedSourceIds).size !== request.selectedSourceIds.length) throw new RouteError('文献不能重复选择。', 400, 'duplicate-source')
+    const searchProject = await readProject(request.sourceProjectId, { root: options.projectRoot, env: options.env })
+    if (!searchProject || searchProject.kind !== 'search' || searchProject.status !== 'complete') throw new RouteError('检索项目不存在或尚未完成，请重新检索。', 400, 'invalid-search-project')
+    const byId = new Map(searchProject.sources.map(source => [source.id, source]))
+    if (byId.size !== searchProject.sources.length || request.selectedSourceIds.some(id => !byId.has(id))) throw new RouteError('所选文献不属于该检索结果，请重新选择。', 400, 'invalid-source-selection')
+    selectedSources = request.selectedSourceIds.map(id => byId.get(id)!)
+  } else if (request.sourceProjectId !== undefined || request.selectedSourceIds !== undefined) {
+    throw new RouteError('仅文献综述支持选择检索项目。', 400, 'invalid-source-selection')
+  }
   let project = initialProject(request)
   project.status = 'running'
   project = await saveProject(project, { root: options.projectRoot, env: options.env })
@@ -267,8 +280,8 @@ async function runProject(
       return
     }
 
-    await writeEvent(res, { type: 'status', stage: 'search', message: searchStatus(project, true) })
-    const result = await searchSources(project, options, controller.signal)
+    await writeEvent(res, { type: 'status', stage: 'search', message: selectedSources ? '正在使用已选择的文献' : searchStatus(project, true) })
+    const result = selectedSources ? { sources: selectedSources } : await searchSources(project, options, controller.signal)
     project = {
       ...project,
       sources: result.sources,
@@ -287,6 +300,7 @@ async function runProject(
         await writeEvent(res, { type: 'delta', text })
       },
       controller.signal,
+      request.researchMaterial,
     )
     await writeEvent(res, { type: 'status', stage: 'polish', message: '正在校对结构与引用' })
     project = finalizeProject(project, content, result.sources)
@@ -416,6 +430,24 @@ export function createRouteHandler(options: RoutesOptions) {
       }
       if (req.method === 'POST' && action === 'run') {
         await runProject(req, res, options)
+        return
+      }
+      if (req.method === 'POST' && action === 'format-docx') {
+        const body = await readJson(req, 24 * 1024 * 1024)
+        if (!body || typeof body !== 'object' || Array.isArray(body) || (body as Record<string, unknown>).confirmed !== true) throw new RouteError('请先查看预览并确认生成副本。', 400, 'confirmation-required')
+        const result = await formatDocx(body)
+        res.writeHead(200, {
+          'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'content-length': result.buffer.byteLength,
+          'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(result.name)}`,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        })
+        res.end(result.buffer)
+        return
+      }
+      if (req.method === 'POST' && action === 'format-preview') {
+        json(res, 200, previewDocx(await readJson(req, 24 * 1024 * 1024)))
         return
       }
       if (req.method === 'POST' && action === 'assist') {
