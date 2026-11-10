@@ -93,12 +93,13 @@ jobs:
           node-version: 20.19.5
       - run: corepack enable
       - name: Build Windows MatrixMedia Publisher Worker
+        id: worker-build-windows
         working-directory: matrixmedia-publisher
         shell: pwsh
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
-          corepack yarn@1.22.22 install --frozen-lockfile
+          node ../scripts/install-matrixmedia-ci.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           corepack yarn@1.22.22 test:publisher-worker
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -106,6 +107,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           corepack yarn@1.22.22 electron-builder --config electron-builder.publisher.yml --win dir --x64 --publish never
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Restore MatrixMedia lock after interruption
+        if: ${{ always() && steps.worker-build-windows.outcome != 'skipped' }}
+        run: node scripts/install-matrixmedia-ci.mjs --restore
       - name: Smoke Windows Publisher Worker lifecycle
         run: node scripts/smoke-windows-publisher-worker.mjs
       - uses: actions/setup-node@v7
@@ -182,13 +186,17 @@ jobs:
           node-version: 20.19.5
       - run: corepack enable
       - name: Build macOS MatrixMedia Publisher Worker
+        id: worker-build-macos
         working-directory: matrixmedia-publisher
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
-          corepack yarn@1.22.22 install --frozen-lockfile
+          node ../scripts/install-matrixmedia-ci.mjs
           corepack yarn@1.22.22 test:publisher-worker
           corepack yarn@1.22.22 build:publisher-worker:universal
+      - name: Restore MatrixMedia lock after interruption
+        if: ${{ always() && steps.worker-build-macos.outcome != 'skipped' }}
+        run: node scripts/install-matrixmedia-ci.mjs --restore
       - uses: actions/setup-node@v7
         with:
           node-version: 24.18.0

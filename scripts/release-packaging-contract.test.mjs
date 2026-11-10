@@ -89,6 +89,16 @@ test('both Linux CI channels build bundled workspace plugins before packaging', 
     'both channels must build installed workspace plugins before the Linux package gate')
 })
 
+test('native CI and release jobs restore the Worker lock after every install', () => {
+  for (const file of ['ci.yml', 'release.yml']) {
+    const workflow = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8')
+    assert.equal((workflow.match(/node \.\.\/scripts\/install-matrixmedia-ci\.mjs/gu) ?? []).length, 2)
+    assert.equal((workflow.match(/node scripts\/install-matrixmedia-ci\.mjs --restore/gu) ?? []).length, 2)
+    assert.equal((workflow.match(/always\(\) && steps\.worker-build-(?:windows|macos)\.outcome != 'skipped'/gu) ?? []).length, 2)
+    assert.doesNotMatch(workflow, /corepack yarn@1\.22\.22 install --frozen-lockfile/u)
+  }
+})
+
 test('macOS CI and release prepare Rosetta before universal smoke checks', () => {
   for (const [file, startLabel] of [
     ['ci.yml', 'desktop-macos'],
