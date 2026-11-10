@@ -19,7 +19,8 @@ it('omits development artifacts while preserving executable modules, assets and 
     'example/index.js.map', 'example/index.mjs.map', 'example/index.cjs.map',
     'example/style.css.map', 'example/index.d.ts.map', 'example/index.d.mts.map',
     'example/index.d.cts.map', 'example/tsconfig.tsbuildinfo',
-    'fs-ext/build/Release/obj/fs_ext/native.obj', 'fs-ext/build/Release/fs_ext.pdb',
+    'fs-ext/build/Release/obj/fs_ext/native.obj', 'fs-ext/build/Release/obj.target/fs_ext/fs-ext.o',
+    'fs-ext/build/Debug/obj.target/fs_ext/fs-ext.o', 'fs-ext/build/Release/fs_ext.pdb',
     'fs-ext/build/Release/fs_ext.lib', 'fs-ext/build/Release/fs_ext.exp',
     'fs-ext/build/Release/fs_ext.iobj', 'fs-ext/build/Release/fs_ext.ipdb',
     'fs-ext/build/binding.sln', 'fs-ext/build/config.gypi',
@@ -95,6 +96,8 @@ it('applies package-specific rules inside scoped and nested dependency container
   expect(nextRuntimeFileExclusion('outer/node_modules/@mixmark-io/domino/.yarn/plugin.cjs', windows)).toBeDefined()
   expect(nextRuntimeFileExclusion('@mixmark-io/domino/.yarn', windows)).toBeDefined()
   expect(nextRuntimeFileExclusion('outer\\node_modules\\node-pty\\prebuilds\\win32-arm64\\conpty.node', windows)).toBeDefined()
+  expect(nextRuntimeFileExclusion('outer/node_modules/fs-ext/build/Release/obj.target/fs_ext/fs-ext.o', linuxX64)).toBe('fs-ext compiler output')
+  expect(nextRuntimeFileExclusion('outer/node_modules/fs-ext/build/Release/fs_ext.node', linuxX64)).toBeUndefined()
   expect(nextRuntimeFileExclusion('outer/node_modules/unrelated/test/data.html', windows)).toBeUndefined()
   expect(nextRuntimeFileExclusion('outer/fs-ext/build/Release/fs_ext.lib', windows)).toBeUndefined()
 })

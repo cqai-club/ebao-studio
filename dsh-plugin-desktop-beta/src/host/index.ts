@@ -20,6 +20,7 @@ import { parseSystemProxyProbe, SYSTEM_PROXY_ENV, withSystemProxy } from '../sys
 import { watchPlatformLogin, type PlatformLoginAccount } from './platform-login.ts'
 import { installPlatformSessionPublisher } from './platform-session.ts'
 import { installAgentPresetResolution } from './agent-preset.ts'
+import { installAgentlyCliResolution } from './agently-cli.ts'
 import { installCuaDriverResolution } from './cua-driver.ts'
 import { installOfficeEngineResolution } from './office-engine.ts'
 import { installSharpWasmResolution } from './sharp-wasm.ts'
@@ -40,6 +41,8 @@ export async function main(): Promise<void> {
   installOfficeEngineResolution(runtimeDir)
   // The Creator preset reads its skills through the Host's filesystem service, which cannot stat inside the archive.
   installAgentPresetResolution(runtimeDir)
+  // The IM email transport spawns a native binary, which must resolve outside the archive.
+  installAgentlyCliResolution(runtimeDir)
   // The computer-use driver hands its library path to the system loader, which reads no archive.
   installCuaDriverResolution(runtimeDir)
   // The badge skill tells the model to take its PNG from the directory it announces, which shells and the Host's filesystem service cannot read inside the archive.

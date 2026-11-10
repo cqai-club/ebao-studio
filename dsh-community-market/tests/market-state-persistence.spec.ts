@@ -13,6 +13,7 @@ import { activateMarketDurableState, marketDomainSpec } from '../src/catalog/dom
 import { PersistentCatalogSourceStore } from '../src/catalog/source-store.js'
 import { DeferredMarketStateStore, MemoryMarketStateStore, type MarketCatalogCache, type MarketStateStore } from '../src/catalog/state-store.js'
 import type { CatalogSourceManifest, LocalSourceRecord } from '../src/contracts/index.js'
+import { createMarketSourceMutator } from '../src/host/routes.js'
 import { MemoryMedium, createMemoryBackend } from './fixtures/memory-storage-backend.js'
 
 const cleanups: Array<() => Promise<void>> = []
@@ -120,6 +121,41 @@ describe('community market durable state', () => {
 
     expect(pending.getDefaultSourceApplied()).toBe(true)
     expect(durable.getDefaultSourceApplied()).toBe(true)
+  })
+
+  it('waits for in-flight adoption before accepting a user source mutation', async () => {
+    const state = new DeferredMarketStateStore()
+    const finish = state.beginAdoption()
+    const durable = new MemoryMarketStateStore({ sources: [source], defaultSourceApplied: true })
+    const mutate = createMarketSourceMutator(state)
+    let completed = false
+    const pending = mutate({ action: 'add-builtin', key: 'dshfind' }, new AbortController().signal)
+      .then(() => { completed = true })
+    await Promise.resolve()
+    expect(completed).toBe(false)
+    await state.adopt(durable)
+    finish()
+    await pending
+    expect(durable.getSources()).toEqual([
+      source,
+      expect.objectContaining({ builtInProviderKey: 'dshfind', enabled: false }),
+    ])
+    const added = durable.getSources()[1]!
+    await mutate({ action: 'select', sourceRecordId: added.sourceRecordId }, new AbortController().signal)
+    expect(durable.getSources()[1]?.enabled).toBe(true)
+  })
+
+  it('continues in session-only mode after an unsuccessful domain open', async () => {
+    const state = new DeferredMarketStateStore()
+    const finish = state.beginAdoption()
+    const pending = new PersistentCatalogSourceStore(state).load()
+    finish()
+    await expect(pending).resolves.toEqual([])
+    await createMarketSourceMutator(state)(
+      { action: 'add-builtin', key: 'dshfind' }, new AbortController().signal,
+    )
+    expect(state.isDurable).toBe(false)
+    expect(state.getSources()).toHaveLength(1)
   })
 
   it('restores the catalog cache independently of the source registry', async () => {

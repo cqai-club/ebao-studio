@@ -458,7 +458,7 @@
         "\\.(?:pak|dat|wasm)$",
         "/Contents/Resources/runtime/(?:arm64|x64)/primary-runtime(?:/|$)"
       ],
-      "x64ArchFiles": "{**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,meshcall-router-darwin-*/**,sherpa-onnx-darwin-*/**,@trycua/cua-driver-darwin-*/**,@ubjs/node-darwin-*/**,@reflink/reflink-darwin-*/**,@earendil-works/pi-tui/native/darwin/prebuilds/**},Contents/Resources/runtime/**,Contents/Resources/runtime/**/.*/**}",
+      "x64ArchFiles": "{**/node_modules/{@dataiku/uv-darwin-*/**,@deepseek-ai/node-addon-system-darwin-*/**,node-pty/prebuilds/darwin-*/**,fs-ext/prebuilds/darwin-*/**,node-addon-require-builtin-darwin-*/**,@vscode/ripgrep-darwin-*/**,@img/sharp-darwin-*/**,@img/sharp-libvips-darwin-*/**,@koromix/koffi-darwin-*/**,@deepseek-ai/libreoffice-kit-darwin-*/**,meshcall-router-darwin-*/**,sherpa-onnx-darwin-*/**,@trycua/cua-driver-darwin-*/**,@tencent-qqmail/agently-cli-darwin-*/**,@ubjs/node-darwin-*/**,@reflink/reflink-darwin-*/**,@earendil-works/pi-tui/native/darwin/prebuilds/**},Contents/Resources/runtime/**,Contents/Resources/runtime/**/.*/**}",
       "executableName": "易宝工坊",
       "extraFiles": [
         {
@@ -565,6 +565,7 @@
       "**/meshcall-router-*/bin/*",
       "**/node_modules/@deepseek-ai/libreoffice-kit-*/**/*",
       "**/node_modules/@trycua/cua-driver-*/**/*",
+      "**/node_modules/@tencent-qqmail/agently-cli-*/**/*",
       "**/node_modules/sherpa-onnx-*/**/*",
       "**/node_modules/@agents-anywhere/dsh-bridge-next/lib/bundled-connector/**/*",
       "**/node_modules/@deepseek-ai/dsh-agent-preset/**/*",

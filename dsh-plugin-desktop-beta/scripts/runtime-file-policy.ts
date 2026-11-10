@@ -79,7 +79,7 @@ export function nextRuntimeFileExclusion(path: string, target: NextPackagingTarg
   }
   const sharp = sharpBackendExclusion(name, target)
   if (sharp !== undefined) return sharp
-  if (name === 'fs-ext' && /^build\/(?:Release|Debug)\/(?:obj(?:\/|$)|fs_ext\.(?:exp|lib|pdb|iobj|ipdb)$)/u.test(entry)) {
+  if (name === 'fs-ext' && /^build\/(?:Release|Debug)\/(?:obj(?:\.target)?(?:\/|$)|fs_ext\.(?:exp|lib|pdb|iobj|ipdb)$)/u.test(entry)) {
     return 'fs-ext compiler output'
   }
   if (name === 'fs-ext' && /^build\/(?:binding\.sln|config\.gypi|fs_ext\.vcxproj(?:\.filters)?)$/u.test(entry)) {

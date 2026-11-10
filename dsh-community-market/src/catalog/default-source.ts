@@ -35,6 +35,7 @@ export async function initializeMarketDefaultSource(
   signal: AbortSignal,
   readManifest: MarketDefaultSourceManifestReader,
 ): Promise<MarketDefaultSourceInitialization> {
+  await state.waitUntilReady?.()
   signal.throwIfAborted()
   if (state.getDefaultSourceApplied()) return 'already-applied'
 

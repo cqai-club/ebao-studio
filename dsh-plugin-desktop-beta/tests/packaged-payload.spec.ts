@@ -97,6 +97,8 @@ it('reports stray root entries, policy leftovers, packed native code and packed 
     writeFileSync(join(app, 'node_modules', '@deepseek-ai', 'dsh-skill-badge', 'assets', 'dsh-badge.png'), 'png\n')
     mkdirSync(join(app, 'node_modules', '@trycua', 'cua-driver-darwin-arm64'), { recursive: true })
     writeFileSync(join(app, 'node_modules', '@trycua', 'cua-driver-darwin-arm64', 'package.json'), '{"name":"@trycua/cua-driver-darwin-arm64"}\n')
+    mkdirSync(join(app, 'node_modules', '@tencent-qqmail', 'agently-cli-linux-x64', 'bin'), { recursive: true })
+    writeFileSync(join(app, 'node_modules', '@tencent-qqmail', 'agently-cli-linux-x64', 'bin', 'agently-cli'), 'fixture\n')
   })
   const source = archivedPayload(resources)
   try {
@@ -107,6 +109,7 @@ it('reports stray root entries, policy leftovers, packed native code and packed 
       'node_modules/@deepseek-ai/dsh-agent-preset/skills/agent-experience/SKILL.md: must be unpacked beside app.asar',
       'node_modules/@deepseek-ai/dsh-skill-badge/assets/dsh-badge.png: must be unpacked beside app.asar',
       'node_modules/@deepseek-ai/dsh/index.js.map: source map must not be packaged',
+      'node_modules/@tencent-qqmail/agently-cli-linux-x64/bin/agently-cli: must be unpacked beside app.asar',
       'node_modules/@trycua/cua-driver-darwin-arm64/package.json: must be unpacked beside app.asar',
       'node_modules/native-pkg/helper: native code is packed inside app.asar',
     ])

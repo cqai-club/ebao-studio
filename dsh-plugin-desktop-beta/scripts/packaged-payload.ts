@@ -180,6 +180,8 @@ const REQUIRED_UNPACKED = [
   // The computer-use driver resolves its platform package's manifest and hands the library beside it to the system
   // loader; the Host resolves that package to this copy.
   /^node_modules\/@trycua\/cua-driver-/u,
+  // IM resolves the platform manifest and starts its sibling executable as a child process.
+  /(?:^|\/)node_modules\/@tencent-qqmail\/agently-cli-(?:darwin|linux|win32)-[^/]+\//u,
   // The Office CLI and its direct dependencies run under the bundled standalone Node, which reads no archive;
   // beforePack unpacks the complete closure, and these guard its roots.
   /^node_modules\/@deepseek-ai\/libreoffice-kit\//u, /^node_modules\/(?:fflate|fontkit|koffi|saxes)\//u,
@@ -295,10 +297,11 @@ export function verifyNextPayload(source: PayloadSource): void {
     const required = [...Object.keys(data.dependencies ?? {}),
       ...Object.keys(data.peerDependencies ?? {}).filter(name => optionalPeers[name]?.optional !== true)]
     for (const name of required) {
-      // Match the closure collector: Node and Electron supply builtin modules.
-      if (isBuiltin(name)) continue
+      // A builtin name can also have an npm package, which subpath imports need.
+      if (name.startsWith('node:') && isBuiltin(name)) continue
       const found = packagedManifest(source, manifestPath, name)
       if (found === undefined) {
+        if (isBuiltin(name)) continue
         if (Object.hasOwn(data.optionalDependencies ?? {}, name)) continue
         throw new Error(`Missing packaged dependency ${name} required by ${String(data.name)}`)
       }

@@ -38,14 +38,11 @@ export function apply(ctx: Context): void {
   let desktopActions: DesktopActionsCapability | undefined
   const installProvider = { get: () => installService }
   const desktopActionsProvider = { get: () => desktopActions }
-  ctx.effect(
-    () => registerMarketRoutes(ctx, state, installProvider, desktopActionsProvider, policies),
-    'community-market: routes',
-  )
   // Durable state is optional, so the storage domain is soft-injected like every
   // other optional peer. The domain handle belongs to this effect: the facility
   // only sweeps handles nobody closed.
   ctx.inject(['storageDomain'], (storageCtx) => {
+    const finishAdoption = state.beginAdoption()
     storageCtx.effect(async () => {
       let close: (() => Promise<void>) | undefined
       try {
@@ -58,10 +55,16 @@ export function apply(ctx: Context): void {
         ctx.logger.warn(`dsh-community-market: durable storage is unavailable; market state is session-only: ${
           cause instanceof Error ? cause.message : String(cause)
         }`)
+      } finally {
+        finishAdoption()
       }
       return () => close?.()
     }, 'community-market: durable state')
   })
+  ctx.effect(
+    () => registerMarketRoutes(ctx, state, installProvider, desktopActionsProvider, policies),
+    'community-market: routes',
+  )
   ctx.inject(['desktopActions'], (desktopCtx) => {
     const actions = desktopCtx.get('desktopActions') as DesktopActionsCapability
     desktopCtx.effect(() => {

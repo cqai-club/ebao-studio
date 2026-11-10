@@ -17,6 +17,7 @@
     "cqai-dsh-plugins/*"
   ],
   "resolutions": {
+    "sharp": "0.35.5",
     "dsh-ppt-composer": "patch:dsh-ppt-composer@file%3Avendor/ppt-runtime/dsh-ppt-composer-0.1.1-rc.2-desktop-20260926-eec5d57.tgz#./patches/dsh-ppt-composer@0.1.1-rc.2.patch",
     "@agents-anywhere/dsh-bridge-next": "file:vendor/agents-anywhere/agents-anywhere-dsh-bridge-next-2.2.0-desktop.c2c25ea4aacc6.rc2b11bfc.tgz",
     "app-builder-lib@npm:26.15.7": "patch:app-builder-lib@npm%3A26.15.7#./patches/app-builder-lib@26.15.7.patch",

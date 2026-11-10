@@ -51,7 +51,9 @@ function readManifest(directory: string): PackageManifest {
  */
 function resolvePackageDir(name: string, from: string): string | undefined {
   if (!PACKAGE_NAME.test(name) || name.split('/').some(part => part === '.' || part === '..')) throw new Error(`Next payload: invalid dependency name ${JSON.stringify(name)}`)
-  for (const directory of createRequire(join(from, 'package.json')).resolve.paths(name) ?? []) {
+  // A bare builtin such as `punycode` has no lookup paths, although dependencies can
+  // explicitly load its installed npm package with `require('punycode/')`.
+  for (const directory of createRequire(join(from, 'package.json')).resolve.paths(`${name}/`) ?? []) {
     if (basename(directory) !== 'node_modules') continue
     const candidate = join(directory, name)
     if (existsSync(join(candidate, 'package.json'))) return candidate
@@ -118,11 +120,12 @@ export function collectProductionClosure(desktopRoot: string, target = nextPacka
       ? Object.keys(manifest.peerDependencies ?? {}).filter(name => manifest.dependencies?.[name] === undefined)
       : []
     for (const name of new Set([...required, ...optional])) {
-      // Some packages list Node builtins (for example pptxgenjs lists https).
-      // They are supplied by the packaged Node runtime, not npm directories.
-      if (isBuiltin(name)) continue
+      // Explicit node: specifiers can only refer to builtins. Bare names may also
+      // name an installed npm package used through a subpath, such as punycode/.
+      if (name.startsWith('node:') && isBuiltin(name)) continue
       const installed = (rootPeers.includes(name) ? rootPackageDir(name) : undefined) ?? resolvePackageDir(name, real)
       if (installed === undefined) {
+        if (isBuiltin(name)) continue
         if (required.includes(name)) throw new Error(`Next payload: dependency ${name} required by ${dependent} is not installed`)
         continue
       }

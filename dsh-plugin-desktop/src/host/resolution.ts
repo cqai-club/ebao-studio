@@ -4,3 +4,4 @@ export { AGENT_PRESET_PACKAGE, installAgentPresetResolution } from './agent-pres
 export { CUA_DRIVER_PLATFORM_PACKAGES, installCuaDriverResolution } from './cua-driver.ts'
 export { SHARP_WASM_PACKAGE, installSharpWasmResolution } from './sharp-wasm.ts'
 export { SKILL_BADGE_PACKAGE, installSkillBadgeResolution } from './skill-badge.ts'
+export { AGENTLY_CLI_PLATFORM_PACKAGES, installAgentlyCliResolution } from './agently-cli.ts'

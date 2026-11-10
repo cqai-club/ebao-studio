@@ -95,6 +95,10 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
         await import(pathToFileURL(root + '/lib/desktop-runtime.js'));
         require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html');
       `, root], 30_000, 'Packaged Next runtime failed'),
+      // tr46 imports the npm package punycode/ rather than Node's built-in punycode.
+      runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-idna-smoke.mjs'), root], 30_000, 'Packaged IDNA dependency smoke failed'),
+      // IM's mailbox transport spawns its platform CLI by the manifest path; it must resolve outside the archive.
+      runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-agently-smoke.mjs'), root], 120_000, 'Packaged Agently CLI smoke failed'),
       // The native computer-use driver opens its library with the system loader; the Host's resolver must answer with the unpacked copy.
       runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-driver-smoke.mjs'), root], 120_000, 'Packaged computer-use driver smoke failed'),
       // The badge skill announces its asset directory to the model; the Host's resolver must make it physical.

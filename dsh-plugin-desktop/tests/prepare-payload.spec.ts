@@ -80,6 +80,20 @@ it('uses Node builtins without requiring npm payload directories', () => {
   expect(names).toContain('peer-user')
 })
 
+it('prepares and verifies a Linux payload when a production package declares https', async () => {
+  const { root, desktop } = workspace()
+  const manifestPath = join(desktop, 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { dependencies: Record<string, string> }
+  manifest.dependencies.pptxgenjs = '*'
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  writePackage(join(desktop, 'node_modules'), 'pptxgenjs', { dependencies: { https: '^1.0.0' } })
+  const output = join(root, 'linux-payload')
+  await preparePayload({ desktopRoot: desktop, output, target: nextPackagingTarget('linux', 'x64'), electronVersion: '44.0.0' })
+  expect(existsSync(join(output, 'node_modules', 'pptxgenjs', 'package.json'))).toBe(true)
+  expect(existsSync(join(output, 'node_modules', 'https'))).toBe(false)
+  expect(() => verifyNextPayload(physicalPayload(output))).not.toThrow()
+})
+
 it('places the production closure like an installer and copies one version once', () => {
   const { desktop, market } = workspace()
   const closure = collectProductionClosure(desktop)
