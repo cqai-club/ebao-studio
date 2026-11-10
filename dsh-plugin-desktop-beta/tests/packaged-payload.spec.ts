@@ -130,6 +130,32 @@ it('requires every sharp of a Linux package to find the WebAssembly build of its
   expect(await audit(nextPackagingTarget('darwin'))).toEqual([])
 })
 
+it('accepts Node builtins throughout the packaged closure but rejects similarly named missing packages', async () => {
+  const withDependency = (missing: boolean) => (app: string) => {
+    const path = join(app, 'package.json')
+    const manifest = JSON.parse(readFileSync(path, 'utf8')) as { dependencies: Record<string, string> }
+    manifest.dependencies['pptxgenjs-fixture'] = '*'
+    writeFileSync(path, JSON.stringify(manifest))
+    writePackage(join(app, 'node_modules'), 'pptxgenjs-fixture', {
+      dependencies: { https: '*', 'node:fs': '*', ...(missing ? { 'https-not-a-node-builtin': '*' } : {}) },
+      peerDependencies: { path: '*', 'node:events': '*' },
+    })
+  }
+  const valid = await assembled(withDependency(false), false)
+  const validArchive = archivedPayload(valid.resources)
+  try {
+    expect(() => verifyNextPayload(physicalPayload(valid.app))).not.toThrow()
+    expect(() => verifyNextPayload(validArchive)).not.toThrow()
+  } finally { validArchive.close() }
+  const invalid = await assembled(withDependency(true), false)
+  const invalidArchive = archivedPayload(invalid.resources)
+  try {
+    for (const source of [physicalPayload(invalid.app), invalidArchive]) {
+      expect(() => verifyNextPayload(source)).toThrow(/Missing packaged dependency https-not-a-node-builtin required by pptxgenjs-fixture/u)
+    }
+  } finally { invalidArchive.close() }
+})
+
 it('rejects an archive missing a declared dependency or a shell-owned file', async () => {
   const { resources } = await assembled((app) => {
     rmSync(join(app, 'node_modules', '@deepseek-ai', 'cordis'), { recursive: true })

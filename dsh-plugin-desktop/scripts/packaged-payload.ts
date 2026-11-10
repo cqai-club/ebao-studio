@@ -1,7 +1,7 @@
 /** Read, audit and verify the archived Next payload after Electron Builder assembled it from the prepared tree. */
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, readSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { createRequire, isBuiltin } from 'node:module'
 import { dirname, join } from 'node:path'
 import { basename as posixBasename, dirname as posixDirname } from 'node:path/posix'
 import { getRawHeader } from '@electron/asar'
@@ -295,6 +295,8 @@ export function verifyNextPayload(source: PayloadSource): void {
     const required = [...Object.keys(data.dependencies ?? {}),
       ...Object.keys(data.peerDependencies ?? {}).filter(name => optionalPeers[name]?.optional !== true)]
     for (const name of required) {
+      // Match the closure collector: Node and Electron supply builtin modules.
+      if (isBuiltin(name)) continue
       const found = packagedManifest(source, manifestPath, name)
       if (found === undefined) {
         if (Object.hasOwn(data.optionalDependencies ?? {}, name)) continue

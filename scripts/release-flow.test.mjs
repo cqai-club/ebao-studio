@@ -193,3 +193,11 @@ test('workflow orders pinned master packaging and retained artifacts before tag 
   assert.equal((ci.match(/branches: \[dev, master\]/gu) ?? []).length, 2)
   assert.match(ci, /node scripts\/release-flow.mjs integration/u)
 })
+
+test('Windows upstream smoke installs the patched workspace before layout checks', () => {
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  const job = ci.slice(ci.indexOf('\n  upstream-command-windows:'))
+  const install = job.indexOf('yarn install --immutable')
+  const layout = job.indexOf('yarn check:layout')
+  assert.ok(install >= 0 && layout > install, 'layout checks require the installed Market bundle')
+})

@@ -318,5 +318,7 @@ jobs:
         with:
           node-version: 24.18.0
       - run: corepack enable
+      # Layout checks exercise the installed, patched Market bundle as well as source files.
+      - run: yarn install --immutable
       - run: yarn check:layout
       - run: yarn upstream:version
