@@ -13,9 +13,9 @@ import { packagingStep } from './packaging-step.ts'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 
-function runPackagedNode(path: string, args: readonly string[], timeout: number, failure: string): Promise<void> {
+function runPackagedNode(path: string, args: readonly string[], timeout: number, failure: string, arch?: 'x64'): Promise<void> {
   return packagingStep(`smoke:${failure.replace(/ failed$/u, '')}`, () => new Promise<void>((resolve, reject) => {
-    const child = spawn(path, args, {
+    const child = spawn(arch === undefined ? path : '/usr/bin/arch', arch === undefined ? args : ['-x86_64', path, ...args], {
       env: { ...withoutWindowsSigningSecrets(withoutMacReleaseSecrets(process.env)), ELECTRON_RUN_AS_NODE: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -105,6 +105,14 @@ async function verifyFinalArtifacts(result: { outDir: string }): Promise<string[
       runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-skill-badge-smoke.mjs'), root], 120_000, 'Packaged badge skill smoke failed'),
       // Image attachments and Market icons go through sharp; on Linux the Host's resolver must keep it on the WebAssembly build.
       runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-sharp-smoke.mjs'), root], 120_000, 'Packaged sharp smoke failed'),
+      // Session persistence uses the official native flock addon, not legacy fs-ext. Exercise both
+      // universal macOS slices on Apple Silicon (Intel through Rosetta), and the native Linux slice.
+      ...target.platform === 'win32' ? [] : [
+        runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-flock-smoke.mjs'), root, process.arch], 30_000, 'Packaged session lock smoke failed'),
+        ...(darwin && process.arch === 'arm64' && path.includes('/mac-universal/') ? [
+          runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-flock-smoke.mjs'), root, 'x64'], 30_000, 'Packaged x64 session lock smoke failed', 'x64'),
+        ] : []),
+      ],
       // Linux has no tray terminal; the application executable itself answers `<app> dsh …` (#1568).
       ...target.platform === 'linux' ? [
         runPackagedNode(path, [join(desktopRoot, 'scripts', 'packaged-dsh-command-smoke.mjs'), root], 120_000, 'Packaged dsh command smoke failed'),
