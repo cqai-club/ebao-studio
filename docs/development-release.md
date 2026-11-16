@@ -1,80 +1,61 @@
-# 开发与发布流程
+# 官方 Desktop 开发与发行边界
 
-开发改动 → `dev` → `master` → 打包成功 → 生成版本 tag。
+[English](development-release.en.md)
 
-## 阶段与进入条件
+当前仓库直接使用固定的 DeepSeek Harness 官方 Desktop。原 Stable/Beta/Next 社区桌面包和 e宝发布工作流已停用；CQAI 业务插件源码保留，等待后续单独接入。本页取代此前的社区桌面开发与 e宝发行流程说明。
 
-| 阶段 | 触发方式和进入条件 | 完成条件 |
-| --- | --- | --- |
-| 开发集成 | 从已同步的 `dev` 创建功能分支，提 PR 到 `dev` | PR 的 CI 通过并经审核合入；推送到 `dev` 再运行集成 CI |
-| 发布准备 | 在 `dev` 提交版本记录、`release/vX.Y.Z.md`、最新 Market 与 Agents Anywhere 的产物、清单和锁文件 | 待发布内容确定，`dev` 的集成 CI 通过，工作区生成改动均已提交 |
-| 提升到主分支 | 同仓库 `dev` 提 PR 到 `master`；CI 拒绝其他来源的 master PR | PR 的 CI 通过并审核合入；使用 merge commit 保留分支历史 |
-| 主分支打包 | `master` 的 CI 通过后，手动运行 `Release`，选择 `master` 并输入尚未创建的版本 tag 和 macOS 模式 | 同一 dispatch SHA 的 `verify`、Windows 和 macOS 打包/必要校验全部成功，汇总产物的 SHA-256 和 Updater SHA-512 校验通过 |
-| 标记与发布 | 打包成功后工作流自动进行 | 保存完整校验产物和来源记录后创建 annotated tag，上传并检查 Release 文件，再公开预发布版本 |
-| GitCode 镜像 | 启用 GitCode 同步后，GitHub 公开下载校验成功自动调用镜像工作流 | 同步源码和版本 tag，复用七个原始 Release 附件；匿名下载及完整性校验通过后确认国内下载可用 |
+## 初始化
 
-CI 自动覆盖面向 `dev`、`master` 的 PR 及两分支推送，也可手动触发。仓库管理员应将 `changes` 和 `check` 设为两分支的必需检查并禁止绕过；CI 拒绝不合规 PR，Release 另外拒绝没有已合并 `dev → master` PR 记录的提交，直接推送 master 不满足发布条件。
-
-## 一次发布
-
-1. 开发改动先合入 `dev`。若 master 有历史修复尚未进入 dev，先将 master 合并回 dev，避免漏带修复。
-2. 在 dev 准备版本和发布依赖。沿用现有 `vMAJOR.MINOR.PATCH` 输入、Stable `X.Y.Z`、Beta `X.Y.Z-beta.1` 和稳定版索引一致性规则；本流程不引入自动递增版本。发布说明放在 `release/vX.Y.Z.md`。
-3. 运行 `corepack yarn market:prepare`、`corepack yarn aa:prepare-release`，将精确依赖、补丁、产物、provenance 和锁文件一并提交到 dev。使用根 Yarn `4.18.0`，保持上游子模块独立。
-4. `dev → master` PR 通过 CI 后合入。等待 master CI，通过后在 Actions 的 Release 页面选择 master；不要预先创建或推送 tag。命令示例中的 `vX.Y.Z` 须替换为已提交版本：
-
-   ```sh
-   gh workflow run release.yml --repo cqai-club/ebao-studio --ref master \
-     -f release_tag=vX.Y.Z -f macos_mode=signed
-   ```
-
-   `signed` 要求现有 macOS 签名、公证凭据；只有明确的测试发布使用 `unsigned-test`。现有 Windows 未签名、GitHub 预发布策略保持不变。
-5. 每个 job 检出 dispatch 时的 `github.sha`，而非浮动的 master 或 tag。Release 再次检查该 SHA 在 master 历史中，且恰为已合并 dev PR 的提交；即使 master 后来推进，标签仍指向实际打包的旧 SHA。
-6. 所有打包与校验成功，先保留 `release-validated-<run_id>-<attempt>` artifact，再创建带来源 JSON 的 annotated tag。记录包含提交 SHA、版本、macOS 模式、运行 URL、所有发布文件的 SHA-256；同样内容保存在 `release-provenance.json` 和 Release 正文中。Actions artifacts 保留 30 天；tag 和 Release 的来源记录长期保留。
-7. 发布先创建 draft，逐个上传缺少的文件，以 GitHub 返回的文件 digest 检查所有文件与打包产物一致，才公开预发布版本。最后下载公开文件，再检查 SHA256SUMS 和 Updater 元数据。完成后将 master 合并回 dev 保持历史同步。
-8. 若已启用 GitCode 同步，`mirror-gitcode` 在 GitHub 发布及公开下载校验成功后运行。它使用同一 dispatch SHA 的可信脚本，先同步源码和已有 tag，再镜像已验证的 Release；镜像失败可以单独重试，已经发布的 GitHub Release 保留。
-
-## GitCode 源码与 Release 镜像
-
-GitHub 是开发和打包主源，GitCode 目标为 [`g-dxw/ebao-studio`](https://gitcode.com/g-dxw/ebao-studio)。GitCode 导入仓库不会迁移 GitHub Release 附件；源码同步和 Release 同步分别执行。当前仍由 GitHub Actions 的原生 Windows/macOS runner 打包，GitCode 复用这些原始构件。若要让 GitCode 独立打包，需要另行提供原生 Windows/macOS 执行机及签名环境。
-
-工作流默认关闭。在 GitHub 仓库设置中添加有目标仓库写入权限的 `GITCODE_TOKEN` secret，然后将 repository variable `GITCODE_SYNC_ENABLED` 设为字符串 `true`。可选 variable `GITCODE_REPOSITORY` 用于更换目标，默认是 `g-dxw/ebao-studio`。Token 仅放在 Actions secret 中，不写入源码、命令参数或下载链接。
-
-启用后，`dev` 和 `master` 推送自动单向同步这两个分支；发布成功后再同步对应的已有 annotated tag。源码同步不强推，也不批量镜像或删除其他分支和 tag，遇到目标历史冲突时停止并报告。所有同步共用 `gitcode-mirror` concurrency，避免源码、发布和补同步同时写目标仓库。
-
-可在 Actions 的 **Sync GitCode mirror** 中手动补同步。选择 `master` 运行可信脚本，不能从待同步的版本 tag 执行代码。`release` 模式要求输入一个已有 GitHub Release 的版本 tag，`source` 模式只同步源码，可选输入已有版本 tag：
-
-```sh
-gh workflow run sync-gitcode.yml --repo cqai-club/ebao-studio --ref master \
-  -f mode=source
-
-gh workflow run sync-gitcode.yml --repo cqai-club/ebao-studio --ref master \
-  -f mode=release -f release_tag=vX.Y.Z
+```bash
+corepack yarn upstream:init
+corepack yarn install --immutable
+corepack yarn upstream:install
+corepack yarn upstream:prepare-electron
 ```
 
-Release 镜像保持原版本、发布说明、签名/预发布标记及来源记录，上传四个安装包/压缩包、`latest.yml`、`latest-mac.yml` 和 `SHA256SUMS` 共七个原始文件。保留各文件名和字节，不重建、分卷或改写校验文件。平台单附件、总容量及流量限制需要用当前大安装包实测；上传受理成功不代表下载验收通过。必须以匿名下载返回的实际字节、SHA-256 和 Updater SHA-512 校验结果确认国内用户能获取完整包，真实结果另行记录。
+`corepack yarn setup` 可组合执行上游初始化、依赖安装和 Electron 准备。pnpm 安装依赖不会自动下载 Electron；启动或运行无界面 Desktop 测试（含 Windows）前需完成 `upstream:prepare-electron`。已有 checkout 出现陈旧 pnpm 链接时，可运行 `corepack yarn upstream:repair-install`，清理失效的工作区依赖链接后，按锁文件重新安装。
 
-更新源按实际网络出口 IP 选择。Stable 与 Beta 先请求自有路由接口 `https://cqaiclub.asia/api/ebao-studio/download?platform=windows|macos`（按系统选择 `windows` 或 `macos`），不传 `source`，不跟随 302 跳转，仅读取 `X-Download-Source`。服务端使用本地 `geoip-country` 识别 IP，仅 `CN` 使用 GitCode；其他地区（包括 HK/MO/TW）、无法识别，以及客户端探测失败、超时或无效响应，均使用 GitHub。此判断不使用语言或时区。成功的来源判断仅在当前进程缓存五分钟，不写入磁盘；缓存过期后在下次判断时重新探测，网络出口变化最多沿用五分钟内的成功判断。
+要求 Node.js `>=24.9.0` 和 Corepack。外层使用 Yarn `4.18.0`；`deepseek-harness/` 使用其 package manifest 固定的 pnpm。外层没有活动的应用/插件 workspace，也不将官方子模块纳入 Yarn 的依赖图。
 
-GitHub 版本清单为 `https://raw.githubusercontent.com/cqai-club/ebao-studio/master/release/desktop-version.json`，中国大陆来源使用 `https://api.gitcode.com/api/v5/repos/g-dxw/ebao-studio/raw/release%2Fdesktop-version.json?ref=master`。Stable 确认下载后，以已确认版本的所选来源目录为 Electron Updater generic 源：GitHub 为 `https://github.com/cqai-club/ebao-studio/releases/download/v<version>/`，GitCode 为 `https://gitcode.com/g-dxw/ebao-studio/releases/download/v<version>/`。读取 `latest.yml`（Windows）或 `latest-mac.yml`（macOS），并从同一目录下载元数据引用的相对文件。目标版本必须匹配确认值，完整 NSIS 安装器或 macOS ZIP 必须通过 SHA-512 校验。所选版本清单或下载源本身失败后可重试，不自动跨源回退；路由探测失败时默认 GitHub 的规则与此不同。Beta 保留版本检查与手动检查结果，不提供应用内安装；Next 继续使用其上游更新源。
+官方源码 pin 为 `fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159`，对应版本 `0.2.2-rc.1`。更新 pin 和元数据应单独提交，不在业务功能变更中修改官方源码。
 
-按 IP 选择更新源须随包含这些代码的下一版应用发布后生效，现有已安装应用不会因镜像或仓库配置改变而自动切换。GitHub 仍是开发、打包和原始发布源。发布必须启用上述 GitCode 同步，并确保版本清单、对应 tag 和七个原始 Release 附件均已同步且通过匿名下载校验。源码和清单可能先于附件完成同步；这段时间内中国大陆用户确认下载可能失败，待镜像完成后可重试。
+## 构建与检查
 
-## 失败与重试
+```bash
+corepack yarn build
+corepack yarn typecheck
+corepack yarn test
+corepack yarn check
+```
 
-- `verify`、任一平台打包、汇总校验或产物保存失败：不创建新 tag，不发布 Release。可对原运行选择 **Re-run failed jobs**；原 SHA 保持固定。
-- tag 已创建但上传/公开发布失败：标签保留；对原运行重新执行失败的 publish job，复用此前成功的 Windows/macOS artifacts，只补缺失文件，不覆盖已有文件。相同 SHA、run ID、模式和全部文件校验值才能复用已有 tag；不会重复创建标签或 Release。
-- 对 tag 已存在的运行重跑全部 job 可能得到不同二进制字节；这种情况下校验会拒绝覆盖。已校验的每次 attempt artifacts 分别保存，不会覆盖旧的完整来源证据。
-- 同版本另起一个新 Release run、不同提交/模式/字节或历史轻量 tag 均会被拒绝。需要修改源码、工作流或重新构建不一致的产物时，在 dev 修复，重新提升 master，并使用新版本；不要删除、移动或强推已有标签。
-- 最后公开下载校验失败时，tag 已代表之前成功且验证过的打包；保留该 tag 并调查下载/发布错误，重试最后失败的 job。上传阶段不完整则保持 draft。
-- Actions artifacts 已过期且无法恢复时，原流程不能重新证明相同文件；准备新版本和新运行。
-- GitCode 同步失败：检查 secret、目标写入权限、源码历史冲突及平台附件限制，再单独重试 `mirror-gitcode` 或手动补同步已有版本。不要重跑 Windows/macOS 构建来修复镜像，也不要覆盖目标上校验不一致的文件。GitHub 原始 tag、Release 和构件保留。
+`build` 调用官方 `build:artifacts`；`typecheck` 检查官方 `apps/desktop/tsconfig.json`；`test` 运行外层启动器 Node 测试和官方 Desktop 的 Vitest 测试。`check` 依次组合仓库布局、启动器测试、官方构建、Desktop 类型检查和 Desktop 测试。根脚本负责准确命令，上游负责实现范围。构建、类型检查和测试保持无界面可运行，不能用它们代替真实图形启动、账号登录或平台安装包验收。
 
-## 验证范围
+## 启动与数据隔离
 
-`node --test scripts/release-flow.test.mjs scripts/verify-release-assets.test.mjs` 覆盖成功打包后标记、失败/取消/未完成时不标记、失败重试、部分上传恢复、重复运行、不同提交/运行/文件冲突，以及工作流先保存产物后创建 tag 的顺序。API 测试使用内存替身，不会制造真实版本标签。CI 每次运行这些流程测试与分支入口检查。真实 Windows/macOS 打包和 Release API 上传仍由下一次有版本变更的 master Release 运行验收，不为测试发布流程额外生成产品版本。打包耗时和稳定性继续由 issue #23 跟踪。
+```bash
+corepack yarn dev
+# 使用已有构建：
+corepack yarn start
+```
 
-GitCode 镜像接入增加了 `scripts/sync-gitcode-source.test.mjs` 和 `scripts/sync-gitcode-release.test.mjs`。`corepack yarn test:release-assets` 的 28 项测试与 `node --test scripts/release-flow.test.mjs` 的 13 项测试共 41 项本地检查通过，覆盖受信任源码与凭据边界、只同步指定分支/tag、幂等补传、冲突拒绝、来源一致性、匿名流式/分段下载校验，以及成功发布后调用镜像的工作流顺序。测试使用内存替身及临时本地服务，不代表真实平台上传或完整安装流程验收；现有原生 Windows/macOS 打包门禁保持不变。
+两条命令会明确打开官方 Desktop，保留官方产品身份与默认功能。启动器默认将 Harness 数据放在 `.official-desktop/home`，将 Electron 用户数据放在 `.official-desktop/electron-user-data`；解析后的路径以启动日志为准。这些本机目录不提交到 Git。
 
-2026-10-13 已将现有 `v0.0.14` 镜像到 [GitCode Release](https://gitcode.com/g-dxw/ebao-studio/releases/tag/v0.0.14)，七个原始附件合计 **2,535,484,234 bytes（约 2.54 GB）**，7/7 均通过匿名 GET 下载及 SHA-256 校验。Release 正文保留 GitHub 原发布说明、未签名测试/预发布标记及 provenance，原始源码提交和 annotated tag 未改变。本记录只确认该版本的大包容量和匿名下载实测结果，不承诺未来平台配额或流量策略。
+现有 `~/.dsh`、`~/.dsh-beta` 和 e宝应用数据保留。旧 Profile 的可执行依赖、锁文件、已安装插件和浏览器分区不自动迁入官方 `desktop` Profile。后续数据迁移应独立设计、验证并记录。
 
-GitHub 的 `GITCODE_TOKEN` secret、`GITCODE_REPOSITORY=g-dxw/ebao-studio` 和 `GITCODE_SYNC_ENABLED=true` 已配置并回读确认。自动同步工作流代码仍在功能分支，须经过 PR 审核合入 `dev`，并提升到 `master` 后生效；本次验收复用现有构件，没有重新运行原生 Windows/macOS 打包。代码仍要求显式启用，后续环境须自行配置凭据和 variable。
+首次运行可能需要下载官方固定的内置运行时。运行时准备失败时应处理具体错误，不以社区壳或旧产物替代官方实现。
+
+## 业务源码与接入范围
+
+保留的 `cqai-dsh-plugins/`、`dsh-community-market/`、`dsh-community-fabric/` 和 `matrixmedia-publisher/` 不参与当前默认安装、构建或启动。CQAI 账号、发布器、业务工具、AA、自定义市场和主题不属于本次官方基线验收范围。
+
+重新接入能力时，应说明其官方扩展接口、所需 Host/原生服务、依赖安装、用户数据和验证结果。旧 `desktopRuntime`、旧渠道镜像或其他社区壳私有接口不能被视为官方 Desktop 已提供的服务。
+
+## 发行状态
+
+本次仅切换源码开发基线，没有创建新 e宝版本、tag、安装包或公开 Release。历史 e宝 Releases 与 `release/` 文件保留为历史记录，不作为当前官方 Desktop 的发行指令。
+
+根 `package:dir` 委托官方未封装安装器的应用目录打包；`dist:mac:arm64`、`dist:mac:x64` 和 `dist:win` 分别委托官方对应目标的未签名打包。当前没有活动的上传或公开发布工作流。
+
+官方平台打包、签名、更新和发布步骤见[固定的官方 Desktop 参考](../deepseek-harness/apps/desktop/README.zh.md)。运行本地构建或检查不代表这些发行步骤已完成；重新发布 e宝产品身份与业务能力需要单独的集成和发行变更。
+
+当前边界由[官方 Desktop 基线 Agent Note](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.zh.md)负责。

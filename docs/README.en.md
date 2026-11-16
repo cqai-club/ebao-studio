@@ -1,51 +1,30 @@
-# 易宝工坊 Documentation
+# e宝工坊 documentation
 
-[中文文档](README.md)
+[中文](README.md) · [Repository entry](../README.en.md)
 
-This directory is the product and developer documentation index for 易宝工坊. The root [`README.en.md`](../README.en.md) is the short product entry point; these pages explain why the project exists, how to use it, and how to build plugins for it. Want to contribute? See [Contributing](../CONTRIBUTING.en.md).
+The active application is the pinned official DeepSeek Harness Desktop. e宝 business plugins and accounts will be integrated separately. The former community Desktop documents remain historical references.
 
-## Read by goal
+## Current entry points
 
-Ordinary users can start with the [user guide](user-guide.en.md) and never need the developer documentation.
-
-### User documentation
-
-| Document | Covers |
+| Document | Scope |
 | --- | --- |
-| [User guide](user-guide.en.md) | Installation, profiles, modes, terminal, plugins, and updates |
-| [FAQ](faq.en.md) | Direct answers about platforms, bundled runtime, project status, data, plugins, and updates |
-| [Privacy Policy](../PRIVACY.md) | Official updates, downloads, local data, third-party services, and user choices |
-| [Why Desktop](why-desktop.en.md) | The boundary with upstream Harness and the case for plugins |
+| [Official Desktop reference](../deepseek-harness/apps/desktop/README.md) | Current Desktop behavior, development, packaging, plugins, and local settings |
+| [Current development and release boundaries](development-release.en.md) | Root Yarn commands, official pnpm delegation, isolated data, and verification |
+| [Contributing](../CONTRIBUTING.en.md) | Source ownership, submissions, and feedback |
+| [Official Desktop baseline decision](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.md) | Community-shell replacement, inactive business plugins, and future integration boundaries |
 
-### Developer and maintainer documentation
+## Historical product references
 
-| Document | Covers |
+The following documents describe the previous e宝/community Desktop design or usage. Their features, commands, Profile layout, plugin services, and release workflow do not apply to the current official baseline. Old paths into removed Desktop packages may also be unavailable.
+
+| Historical document | Former scope |
 | --- | --- |
-| [Plugin ecosystem manifesto](plugin-ecosystem.en.md) | The vision of an open, composable, sustainable plugin ecosystem and its three principles |
-| [Plugin development](plugin-development.en.md) | Ordinary DSH plugins, Desktop services, compatibility, and lifecycle |
-| [Development and release workflow](development-release.en.md) | dev integration, master packaging before tagging, retries and artifact provenance |
-| [Community Fabric Draft](../dsh-community-fabric/README.md) | Community interoperability drafts spanning manifest/capability foundations, Runtime/Presentation, service composition, and provenance diagnostics |
-| [Fabric community-feedback disposition](../dsh-community-fabric/docs/research/community-issue-23-review.md) | Which Issue #23 proposals were adopted, split into focused RFCs, deferred, or kept out of portable core |
-| [Fabric framework and plugin-needs research](../dsh-community-fabric/docs/research/mature-plugin-frameworks.md) | Mature Koishi, Chrome, and VS Code patterns plus requirements observed in real DSH plugins |
-| [VS Code extension-model research](../dsh-community-fabric/docs/research/vscode-extension-model.md) | Implemented declaration, Provider, UI, placement, and lifecycle patterns, with concrete constraints for the Fabric RFC |
-| [Community Market design](../dsh-community-market/README.md) | The proposed market shell, extensible catalog sources, user selection, install confirmation, and safety boundary |
-| [Market catalog provider contract](../dsh-community-market/docs/catalog-provider-contract.md) | Schemas, query parameters, multi-source behavior, and adapter rules for the implementation team |
-| [Architecture](architecture.en.md) | Electron, Host, the Web carrier, profiles, and packaging |
-| [Desktop service reference](../dsh-plugin-desktop/docs/plugin-services.md) | Stable `desktopProfiles` and `desktopPnpm` contracts with TypeScript examples |
-| [Package reference](../dsh-plugin-desktop/README.md) | Detailed build, runtime, release, and limitation notes |
+| [Previous user guide](user-guide.en.md), [previous FAQ](faq.en.md) | Former installers, Profiles, plugins, modes, and updates |
+| [Previous architecture](architecture.en.md), [Why Desktop](why-desktop.en.md) | Community shell and native-adapter design |
+| [Previous plugin development guide](plugin-development.en.md), [plugin ecosystem manifesto](plugin-ecosystem.en.md) | Former Desktop services and community ecosystem design |
+| [CQAI extension notes](cqai/README.md) | Business plugins awaiting reconnection |
+| [Community Market source and documents](../dsh-community-market/README.md) | Preserved market implementation, currently inactive |
+| [Community Fabric documents](../dsh-community-fabric/README.md) | Preserved interoperability proposals, excluded from the active build |
+| [Historical e宝 releases](https://github.com/cqai-club/ebao-studio/releases) | Previously published installers and version notes |
 
-## How the README files are organized
-
-The outer repository has two formal product READMEs plus one legacy compatibility entry:
-
-- [`README.md`](../README.md): the Chinese product entry point.
-- [`README.en.md`](../README.en.md): the English product entry point with the same product scope.
-- [`README.zh.md`](../README.zh.md): a legacy Chinese-path compatibility page with no independent content.
-
-`README.i18n.yaml` records the bilingual blob hashes for those two formal entry points; it is not a user guide. `dsh-plugin-desktop/README.md` and `dsh-plugin-desktop/README.zh.md` ship with the npm package and are the more technical package reference. `dsh-plugin-desktop/docs/` contains stable API contracts rather than marketing copy. `.agents/notes/implemented/` contains dated maintainer decision records and does not replace user documentation.
-
-`deepseek-harness/` is the pinned upstream submodule. Its README and `docs/` belong to the upstream project, not to the Desktop product, and are excluded from the outer documentation inventory.
-
-## Status convention
-
-These pages distinguish shipped behavior, platform limits, and roadmap items. Compatibility mode keeps the upstream default Web client below an independent Desktop frame; extended mode installs its own Desktop layout/sidebar registration and hosts official occupants in an inverted L; enhanced mode retains a separate root registration with compact internal captions. Desktop frames provide capability-gated native materials. The plugin marketplace now has a documentation scaffold in [`dsh-community-market`](../dsh-community-market/README.md), but no usable page or installer; mobile remote control and Channels also remain separate roadmap items and are not implied to be part of the current installer.
+Root `README.md` and `README.en.md` are the current Chinese and English entry points; `README.zh.md` preserves a legacy link. Dated Agent Notes provide decision history, with current decisions superseding retired topology descriptions. Official submodule documents own its implementation; outer documents own launch entry points and integration boundaries.

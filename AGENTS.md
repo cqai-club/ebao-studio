@@ -1,36 +1,30 @@
 # e宝工坊 repository rules
 
-This repository owns the desktop product around an unmodified DeepSeek Harness checkout.
+This repository currently runs the unmodified official DeepSeek Harness Desktop. The former community Desktop channels have been retired from the active build. CQAI account and business capabilities will be integrated separately later.
 
 ## Prerequisites and setup
 
-- Use Node.js `>=24.9.0` and the root Yarn `4.18.0` release through Corepack. The current official Harness runtime requires Node 24.
-- Initialize the pinned upstream checkout with `git submodule update --init --recursive`.
-- Install root dependencies with `corepack yarn install --immutable`.
-- Yarn lifecycle scripts are disabled; Desktop builds explicitly restore the vendored Agents Anywhere `uv` executable bit before verification or packaging.
+- Use Node.js `>=24.9.0`, Corepack, and the root Yarn `4.18.0` release.
+- Initialize only the pinned official checkout with `corepack yarn upstream:init`.
+- Install the outer command wrapper with `corepack yarn install --immutable`, install the official workspace through `corepack yarn upstream:install`, then download its Electron binary with `corepack yarn upstream:prepare-electron`. `corepack yarn setup` combines upstream initialization, installation, and Electron preparation.
+- pnpm dependency installation does not download Electron. Prepare the binary before dev/start and before Desktop tests, including headless Windows tests. If an existing checkout has stale pnpm links, `corepack yarn upstream:repair-install` removes stale workspace dependency links, then reinstalls from the frozen lockfile.
+- `deepseek-harness/` owns its pnpm workspace and pinned package-manager release. The outer repository has no active application or plugin Yarn workspaces.
 
 ## Build, run, and verify
 
-- Start the desktop development workflow with `corepack yarn dev`.
-- Build the desktop package with `corepack yarn build`.
-- Root build, dev/start, and packaging commands refresh `dshmarket` from npm `latest` for Stable, Beta, and Next via `corepack yarn market:prepare`. Commit its exact dependency versions, Desktop compatibility patch, and lockfile together. `corepack yarn market:check` verifies freshness without writes; offline lookups or incompatible patches fail rather than silently retaining an old market. Installed apps do not hot-update executable plugins on launch.
-- Before each release, run `corepack yarn aa:prepare-release` to build the latest official Agents Anywhere `main` for both Desktop channels. Commit the resulting artifact, provenance, manifests, and lockfile before packaging. Signed macOS releases and root Windows distribution commands verify freshness and installed versions; `DSH_AA_SOURCE_REF=pinned` is no longer supported.
-- Run unit tests with `corepack yarn test`.
-- Run type checking with `corepack yarn typecheck`.
-- Run the complete headless gate with `corepack yarn check`.
-- `corepack yarn dev:next` explicitly launches the experimental Next app; `corepack yarn check:next` validates it without a graphical application. Next uses the official published Web frontend and the recorded upstream Desktop presentation, with product capabilities composed as a separate bundle.
-- Develop and validate Desktop feature changes in `dsh-plugin-desktop-beta/` first, then synchronize shared changes into `dsh-plugin-desktop/` while preserving declared variant differences. Before committing or pushing shared Desktop changes, run `corepack yarn check:desktop-variants` and validate both affected packages; neither package automatically inherits the other's source edits.
-- Run upstream operations through the root scripts, such as `corepack yarn upstream:build`.
+- `corepack yarn build` delegates to official `build:artifacts`; `typecheck` runs the official Desktop TypeScript project; `test` runs outer launcher tests and official Desktop tests.
+- `corepack yarn check` combines repository-layout checks, launcher tests, official artifact building, Desktop type checking, and Desktop tests. Keep this gate headless-safe; it is not a graphical or installer acceptance test.
+- `corepack yarn dev` and `corepack yarn start` explicitly launch the official Desktop. Keep graphical application launch explicit; build and verification commands must remain headless-safe.
+- The root launcher defaults to the isolated `.official-desktop/home` and `.official-desktop/electron-user-data` directories. Do not point it at existing e宝 data or migrate Profiles implicitly.
+- Run upstream operations through the root `upstream:*` scripts. Keep the official pnpm workspace out of the outer Yarn dependency graph.
+- Official Desktop identity, login, plugin management, and packaging behavior belong to upstream. `package:dir` and `dist:mac:arm64`, `dist:mac:x64`, and `dist:win` delegate to unsigned official packaging. No upload or public release workflow is active. This cutover does not create a new e宝 installer or publish a release.
 
-- `deepseek-harness/` is a pinned upstream Git submodule. Never edit files inside it from a desktop feature branch.
-- `dsh-plugin-desktop/` and `dsh-plugin-desktop-beta/` use the modern isolated Host shell, official Web frontend, Profiles and recovery. Preserve their source mirror and product identities.
-- `dsh-desktop-shared/` owns private shared native controls, recovery UI and utility source retained from the legacy shell. It must not declare a loadable application or DSH entrypoint. Its build-time dependencies follow the same official runtime family as the application channels.
-- `dsh-desktop-next/` owns the separate experimental Desktop channel and adapters for the existing AA bridge and Community Market. Next-only changes do not belong in the Stable/Beta variant mirror. Keep its upstream reference and published runtime versions aligned; do not fork the official main frontend.
-- `dsh-community-fabric/` owns the community interoperability RFC. Until schemas and a reviewed reference adapter exist, it remains a private documentation scaffold and must not declare loadable DSH or package entry points.
-- `dsh-community-market/` owns the loadable community-market runtime and its source, install, and network boundaries.
-- The outer repository and all owned packages use the root Yarn release with `nodeLinker: node-modules`.
-- The upstream submodule keeps its own pnpm workspace. Run upstream commands through the root `upstream:*` scripts, whose Yarn portable-shell commands enter the submodule before invoking Corepack.
-- Compatibility mode must run the upstream default client without overrides. Advanced presentation belongs to desktop-owned client plugins and may replace documented slots or services through profile composition.
-- Keep graphical application launch explicit. Builds, typechecks, unit tests, and Loader smokes must remain headless-safe.
-- Commit before major changes of direction and keep the submodule pin update separate from desktop behavior changes.
-- Keep the repository topology and package-manager split consistent with the [owning Agent Note](.agents/notes/implemented/process/2026-08-15-pinned-upstream-and-isolated-yarn-workspace.md).
+## Source and data ownership
+
+- `deepseek-harness/` is a pinned Git submodule. Never edit its tracked files from a product feature branch. Update its pin and owning metadata in a separate commit when an upstream change is needed.
+- `cqai-dsh-plugins/`, `dsh-community-market/`, `dsh-community-fabric/`, and `matrixmedia-publisher/` retain source for later integration. They are not installed, built, or activated by the default official Desktop workflow.
+- Keep CQAI account, Publisher Worker, AA, Market, custom themes, and other product integrations out of the official baseline until each has an explicit integration and verification change.
+- Preserve existing `~/.dsh`, `~/.dsh-beta`, application-support directories, accounts, sessions, attachments, and works. A source cutover is not a user-data reset.
+- Historical product documentation and releases describe the retired e宝/community implementation. Do not infer current feature availability from them.
+- Commit before a major change of direction. Keep migration, upstream pin changes, later product integrations, and releases independently reviewable.
+- Follow the current [owning Agent Note](.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.md). It supersedes the former community-channel topology while preserving the read-only upstream and package-manager boundary.

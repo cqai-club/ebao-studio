@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Verify stable release artifacts, SHA256SUMS, and Electron Updater metadata. */
 
+// Historical eBao release validation only; official Desktop follows upstream packaging.
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat, readdir, readFile } from 'node:fs/promises'

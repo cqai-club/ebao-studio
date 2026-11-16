@@ -1,59 +1,38 @@
 # 参与贡献
 
-感谢你愿意参与 易宝工坊。这是一个社区项目，无论你是普通用户、插件作者还是开发者，都有适合你的贡献方式。
+[English](CONTRIBUTING.en.md)
 
-## 普通用户：使用、反馈与传播
+当前开发目标是直接运行固定版本的官方 DeepSeek Harness Desktop。先阅读[仓库入口](README.md)与[当前开发说明](docs/development-release.md)，再开始修改。
 
-- 遇到问题或异常，[提 issue](https://github.com/anywhere-labs/deepseek-harness-desktop/issues)：说明操作系统（macOS / Windows）、应用版本和复现步骤。
-- 有功能想法或改进建议，也欢迎提 issue 讨论。
-- 参与[社区交流](README.md#社区交流)（微信群、QQ 群、Discord），帮助其他用户解决问题。
-- 写使用教程、体验文章，或帮助完善和翻译文档。
-- 在[友情链接](README.md#友情链接)中收录生态项目。
+## 开发环境
 
-## 插件作者：扩展生态
+使用 Node.js `>=24.9.0`、Corepack 和根 Yarn `4.18.0`：
 
-DSH 的核心是插件。如果你写插件，请先阅读：
-
-- [插件开发](docs/plugin-development.md)：如何编写普通 DSH 插件和 Desktop 插件。
-- [DSH 插件生态倡议书](docs/plugin-ecosystem.md)：开放、可组合、可持续的生态愿景，以及组合优先、声明清晰、兼容优先三条原则。
-- [DSH Community Fabric Draft](dsh-community-fabric/README.zh.md)：参与 Manifest、Capability、Host Descriptor 和事件 contract 的公开讨论。
-- [Community Market 设计](dsh-community-market/docs/market-shell.zh.md)：未来市场如何发现插件，以及为什么收录不等于安全审核。
-
-遵循倡议书的插件更容易与其他插件共存，也会在未来上线时更容易在插件市场中被发现和信任。
-
-## 开发者：贡献代码
-
-### 开发环境
-
-```sh
-git submodule update --init --recursive
+```bash
+corepack yarn upstream:init
 corepack yarn install --immutable
-corepack yarn check   # 完整 headless gate：构建、类型检查、测试与冒烟
-corepack yarn dev     # 有图形环境时启动应用
+corepack yarn upstream:install
+corepack yarn upstream:prepare-electron
+corepack yarn build
+corepack yarn typecheck
+corepack yarn test
+corepack yarn check
 ```
 
-### 仓库边界（开始前务必了解）
+`corepack yarn dev` 和 `corepack yarn start` 仅在需要打开图形应用时运行。默认开发状态位于 `.official-desktop/`，与原有 e宝用户数据隔离。
 
-- `deepseek-harness/` 是固定版本的上游子模块，**桌面开发不修改其中的任何文件**；上游内容更新走独立的 pin 提交。
-- 桌面代码位于 `dsh-plugin-desktop/`；`dsh-community-fabric/` 保存社区标准 Draft，`dsh-community-market/` 保存市场壳设计。两个社区 package 当前都只有文档、尚不可加载，三个自有 package 共用外层 Yarn workspace。
-- 构建、类型检查、单元测试和冒烟检查必须保持 headless-safe。
+## 修改范围
 
-### 提交与 PR
+- 官方应用实现位于只读的 `deepseek-harness/` 子模块。子模块 pin 和对应元数据更新使用独立提交；不要直接在产品分支修改官方源码。
+- 外层 Yarn 仅维护命令委托与仓库边界；官方依赖继续通过固定的 pnpm workspace 安装。外层当前没有活动的应用或业务插件 workspace。
+- `cqai-dsh-plugins/`、市场/Fabric 源码及 `matrixmedia-publisher/` 为后续集成保留。它们不在当前默认构建或功能验收范围内。接回业务能力时，单独说明扩展接口、依赖、用户数据与验证范围。
+- 构建、类型检查和测试保持无界面可运行。实际启动、登录或原生安装包验收单独记录。
+- 保留账号、会话、附件、作品及历史应用数据；迁移用户数据需要明确的实现和验证。
 
-与桌面版必要功能无关的 PR，以及其他插件收录相关的 PR，我们可能不会接受。
+当前拓扑由[官方 Desktop 基线 Agent Note](.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.zh.md)负责。旧版 Stable/Beta 同步、AA/Market 准备和 e宝发行步骤属于历史流程。
 
-目前我们接受与桌面版必要功能相关的 PR（如问题修复、新功能等），非常欢迎各位开发者提出此类 PR。
+## 提交与反馈
 
-- 提交信息使用 conventional commits 风格（例如 `fix(desktop): ...`、`docs: ...`）。
-- 提交前运行 `yarn check` 并保证全绿。
-- 变更生产依赖后，运行 `yarn workspace dsh-plugin-desktop verify:notices` 刷新第三方许可清单，并提交更新后的 `dsh-plugin-desktop/THIRD_PARTY_NOTICES.md`。
-- 文档改动请中英同步，并更新 `README.i18n.yaml` 的双语 hash 记录。
-- PR 描述说明改动内容、动机和验证方式；CI 通过后再合并。
+使用 conventional commits，例如 `fix(launcher): ...` 或 `docs: ...`。PR 说明具体行为、原因、验证结果及尚未完成的验收；不要把本地构建描述成已发布版本。中英入口与受记录的双语文档应同步更新 Git blob hash。
 
-## 加入技术团队
-
-如果你希望加入我们的技术团队，欢迎通过 [t4wefan@qq.com](mailto:t4wefan@qq.com) 联系我们。
-
-## 行为准则
-
-请保持友善与尊重，就事论事。我们希望这是一个欢迎新人的社区。完整的[参与者公约](CODE_OF_CONDUCT.md)适用于所有项目空间。
+本仓库问题请提交至 [e宝工坊 Issues](https://github.com/cqai-club/ebao-studio/issues)，并提供操作系统、固定上游版本及复现步骤。交流遵循[行为准则](CODE_OF_CONDUCT.md)。

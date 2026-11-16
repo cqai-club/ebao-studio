@@ -1,4 +1,5 @@
 /**
+ * Dormant CQAI plugin tooling; it does not patch or build official Desktop.
  * Rebuild the narrow Markdown preview extension against the pinned published DSH
  * artifacts. Both runtimes share the registry source below: the frontend embeds
  * ui-primitives, so patching only the separately installed library is insufficient.

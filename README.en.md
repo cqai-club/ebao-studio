@@ -1,90 +1,60 @@
-<p align="center">
-  <img src="assets/ebao-desktop-home.jpg" alt="Actual e宝工坊 home with the E宝 robot and digital employee entries in the Chinese UI" width="100%">
-</p>
+# e宝工坊: official Desktop baseline
 
-The home page with the E宝 robot and digital employee entries. Available features depend on the Profile and enabled plugins.
+[中文](README.md) · [Documentation](docs/README.en.md) · [Contributing](CONTRIBUTING.en.md)
 
-# e宝工坊
+This repository now runs [the official DeepSeek Harness Desktop](deepseek-harness/apps/desktop/README.md) directly. The application uses the official interface, identity, login, and plugin manager. The former Stable, Beta, and Next shells based on `anywhere-labs/dsh-desktop` have been retired from the active build.
 
-[中文](README.md) · [Download in China (GitCode)](https://gitcode.com/g-dxw/ebao-studio/releases) · [GitHub downloads](https://github.com/cqai-club/ebao-studio/releases) · [User guide](docs/user-guide.en.md)
+This change establishes a pure official Desktop baseline first. CQAI accounts, e图宝, e剪宝, Publisher, e研宝, AA remote control, custom markets, themes, and other product capabilities have not been reconnected. Retaining their plugin source does not activate them.
 
-e宝工坊 is an open-source desktop app for Windows and macOS built around [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It brings the upstream local Web client, Host service, and plugin system into a native window, with a system tray, Profile management, a terminal, recovery, and plugin management. Installed builds include the required runtime.
+The unmodified official Git submodule is pinned to `fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159` (`0.2.2-rc.1`). This repository is maintained by e宝工坊 independently of DeepSeek; see [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) for its technical origin.
 
-This repository pins an **unmodified upstream** version. Repository-owned plugins and an Electron launcher compose the desktop features around it. The project is maintained independently by the community and is not affiliated with or endorsed by DeepSeek or the official upstream team.
+## Run from source
 
-<p align="center">
-  <img src="assets/ebao-video-workbench.jpg" alt="Actual e宝工坊 e剪宝 form for producing a video from existing talking footage in the Chinese UI" width="100%">
-</p>
-
-The e剪宝 form for producing a video from existing talking footage, with media selection, script input, and production settings. Both screenshots above were captured in the Chinese UI of macOS Beta `v0.0.12-beta.1`.
-
-## Use
-
-Choose a build from [GitCode downloads for China](https://gitcode.com/g-dxw/ebao-studio/releases) or [GitHub Releases](https://github.com/cqai-club/ebao-studio/releases). Check its Release page for supported platforms and installation notes. For first-run steps, Profiles, plugins, and updates, see the [user guide](docs/user-guide.en.md) and [FAQ](docs/faq.en.md).
-
-- **Desktop experience:** Start and manage DSH locally, with a native window, tray, browser access, and terminal.
-- **Work Profiles:** Compose plugins and settings per Profile, with startup recovery for configuration problems.
-- **Plugin extensions:** Extend the app through [DSH Community Market](dsh-community-market/README.md) and repository plugins; see the [plugin development guide](docs/plugin-development.en.md).
-
-## Develop from source
-
-Use Node.js `>=24.9.0`, Git, and Corepack. This repository uses Yarn `4.18.0`. From the **repository root**, initialize the pinned upstream submodule and install dependencies:
+Use Node.js `>=24.9.0`, Git, and Corepack. The outer command entry uses Yarn `4.18.0`; the official submodule retains its own pinned pnpm release.
 
 ```bash
-git submodule update --init --recursive
-corepack.cmd yarn install --immutable
+corepack yarn upstream:init
+corepack yarn install --immutable
+corepack yarn upstream:install
+corepack yarn upstream:prepare-electron
+corepack yarn build
+corepack yarn dev
 ```
 
-`corepack.cmd` is for Windows Git Bash. Use `corepack yarn` in PowerShell, macOS, or Linux.
+In Windows Git Bash, replace `corepack` with `corepack.cmd` if needed. Initial installation, downloading Electron, or preparing the official bundled runtime requires network access. pnpm dependency installation does not download Electron; complete `upstream:prepare-electron` before launch or headless Desktop tests. `dev` opens a graphical application.
 
-### Start Stable
+The root launcher defaults to separate `.official-desktop/home` and `.official-desktop/electron-user-data` directories for official Harness state and Electron browser data. Existing e宝 accounts, sessions, works, and installed-application data remain in their original locations; this change does not migrate them automatically.
 
-```bash
-corepack.cmd yarn dev
-```
+## Common commands
 
-### Start Beta (Windows Git Bash)
-
-To keep its Profiles separate from an installed Stable app, use the existing `~/.dsh-beta` home:
-
-```bash
-export DSH_HOME="$(cygpath -w "$HOME/.dsh-beta")"
-corepack.cmd yarn dev:beta
-```
-
-`DSH_HOME` selects the DSH data directory, including Profiles and sessions; installed Stable defaults to `~/.dsh`. A data-directory choice previously saved by Beta in its own app data takes precedence over this environment variable. To **also isolate development from an installed Beta**, give it separate DSH and Electron user-data directories:
-
-```bash
-mkdir -p "$HOME/.dsh-beta-dev" "$HOME/.ebao-beta-dev-user-data"
-export DSH_HOME="$(cygpath -w "$HOME/.dsh-beta-dev")"
-export DSH_DESKTOP_DEV_USER_DATA="$(cygpath -w "$HOME/.ebao-beta-dev-user-data")"
-corepack.cmd yarn dev:beta
-```
-
-In PowerShell, set `$env:DSH_HOME = Join-Path $HOME '.dsh-beta'` and run `corepack yarn dev:beta`. On macOS or Linux, use `DSH_HOME="$HOME/.dsh-beta" corepack yarn dev:beta`.
-
-`dev` and `dev:beta` prepare Market, Agents Anywhere, and plugin dependencies. They may access the network and update generated artifacts or the lockfile. Review working-tree changes before committing.
-
-### Checks and layout
-
-```bash
-corepack.cmd yarn check
-corepack.cmd yarn check:desktop-variants
-```
-
-`check` runs the full headless gate. After shared Stable/Beta desktop changes, `check:desktop-variants` verifies both editions. Launch the experimental Next shell separately with `corepack.cmd yarn dev:next`.
-
-| Directory | Purpose |
+| Repository-root command | Purpose |
 | --- | --- |
-| `dsh-plugin-desktop-beta/`, `dsh-plugin-desktop/` | Beta and Stable desktop implementations |
-| `dsh-desktop-next/` | Separate experimental Next desktop shell |
-| `dsh-community-market/`, `cqai-dsh-plugins/` | Market and product plugins |
-| `deepseek-harness/` | Pinned upstream submodule; do not edit it for desktop features |
+| `corepack yarn dev` | Build and launch official Desktop |
+| `corepack yarn start` | Launch official Desktop using existing build output |
+| `corepack yarn build` | Run official `build:artifacts` |
+| `corepack yarn typecheck` | Check the official Desktop TypeScript project |
+| `corepack yarn test` | Run outer launcher tests and official Desktop tests |
+| `corepack yarn check` | Check repository layout, launcher, official artifacts, Desktop types, and tests |
 
-See the [documentation index](docs/README.en.md), [architecture](docs/architecture.en.md), and [contribution guide](CONTRIBUTING.en.md). The upstream submodule has its own pnpm workspace; run upstream operations through the repository-root `upstream:*` scripts.
+The root scripts invoke the official pnpm workspace. They do not install or build outer business plugins by default. Consult the root scripts for the exact gate composition; graphical execution and platform installer acceptance are recorded separately.
 
-## Community and license
+## Layout and future integrations
 
-Send feedback through [GitHub Issues](https://github.com/cqai-club/ebao-studio/issues).
+| Directory | Current purpose |
+| --- | --- |
+| `deepseek-harness/` | Unmodified official source and Desktop implementation; the only active application source |
+| `scripts/` | Outer command delegation, data isolation, and repository validation |
+| `.official-desktop/` | Local official development state, ignored by Git |
+| `cqai-dsh-plugins/` | Preserved CQAI business-plugin source awaiting adaptation |
+| `dsh-community-market/`, `dsh-community-fabric/` | Preserved market source and interoperability documents, excluded from the active build |
+| `matrixmedia-publisher/` | Preserved Publisher submodule, excluded from official Desktop startup |
 
-This project uses the [MIT License](LICENSE). “DeepSeek Harness” is mentioned only to describe technical origin and compatibility.
+Future product capabilities require separate changes using official extension interfaces, with account, data, and native-function verification. Do not reuse old Profiles, lockfiles, or `node_modules` as the official Desktop executable dependency graph.
+
+## Documentation and release status
+
+The current workflow runs official Desktop from source. It does not represent a new published e宝 installer. Root `package:dir`, `dist:mac:arm64`, `dist:mac:x64`, and `dist:win` only delegate to unsigned official packaging; they do not upload or publish artifacts. The [pinned upstream reference](deepseek-harness/apps/desktop/README.md) owns official Desktop behavior, development, and packaging. See the [development guide](docs/development-release.en.md) for outer entry points and verification.
+
+[Historical e宝 Releases](https://github.com/cqai-club/ebao-studio/releases) and the retained user guides, screenshots, and architecture documents describe the previous product. They do not establish the current official baseline's capabilities or installation procedure.
+
+This repository uses the [MIT License](LICENSE). Report repository issues through [e宝工坊 Issues](https://github.com/cqai-club/ebao-studio/issues).
