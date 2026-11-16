@@ -19,7 +19,7 @@ test('commands target the official checkout and registered upstream scripts', ()
     version: ['pnpm', '--version'],
     build: ['pnpm', 'run', 'build:artifacts'],
     typecheck: ['pnpm', 'exec', 'tsc', '-b', 'apps/desktop/tsconfig.json'],
-    test: ['pnpm', 'exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=4'],
+    test: ['pnpm', 'exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000'],
     dev: ['pnpm', 'run', 'dev:desktop'],
     start: ['pnpm', 'run', 'start:desktop'],
     'package:dir': ['pnpm', 'run', 'package:desktop:dir', '--unsigned'],

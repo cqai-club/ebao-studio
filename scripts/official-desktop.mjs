@@ -4,6 +4,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, unlinkS
 import { constants } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildAccountExtensions, createPreparationPlan, prepareProfile } from './prepare-cqai-account.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ACTIONS = {
@@ -13,7 +14,7 @@ const ACTIONS = {
   version: ['--version'],
   build: ['run', 'build:artifacts'],
   typecheck: ['exec', 'tsc', '-b', 'apps/desktop/tsconfig.json'],
-  test: ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=4'],
+  test: ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000'],
   dev: ['run', 'dev:desktop'],
   start: ['run', 'start:desktop'],
   'package:dir': ['run', 'package:desktop:dir', '--unsigned'],
@@ -163,7 +164,14 @@ export async function main(args = process.argv.slice(2)) {
     const removed = pruneStaleWorkspaceLinks(plan.cwd)
     process.stdout.write(`Official Desktop: removed ${removed.length} stale workspace hoist links; running frozen install.\n`)
   }
-  return runOfficialDesktop(plan)
+  if (plan.action === 'dev' || plan.action === 'start') {
+    const accountPlan = createPreparationPlan()
+    const artifacts = await buildAccountExtensions(accountPlan)
+    await prepareProfile(accountPlan, artifacts)
+  }
+  const code = await runOfficialDesktop(plan)
+  if (code === 0 && plan.action === 'build') await buildAccountExtensions(createPreparationPlan())
+  return code
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

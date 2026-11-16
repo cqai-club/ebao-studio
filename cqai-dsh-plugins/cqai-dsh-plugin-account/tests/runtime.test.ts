@@ -6,6 +6,7 @@ import { credentialKey, type CredentialRecord } from '@deepseek-ai/dsh-credentia
 import type {
   DsnDefaultModelCategory,
   DsnDefaultModelSelection,
+  DsnAccountService,
   DsnResourceSession,
 } from '../src/protocol.ts'
 import { DEFAULT_CLUB_MCP_URL } from '../src/protocol.ts'
@@ -217,6 +218,45 @@ afterEach(() => {
 })
 
 describe('DsnAccountServiceRuntime', () => {
+  it('supports public browser login and attempt-scoped cancellation without a community desktop bridge', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) {
+        return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      }
+      throw new Error(`unexpected test URL: ${url}`)
+    }))
+    const harness = makeRuntime()
+    const service: DsnAccountService = harness.runtime
+    expect(DsnAccountServiceRuntime.inject).not.toContain('desktopRuntime')
+    const started = await service.startAuthorization()
+    expect(started.state).toBe('authorizing')
+    if (started.state !== 'authorizing') throw new Error('expected browser authorization')
+    const authorization = new URL(started.authorizationUrl)
+    expect(authorization.searchParams.get('code_challenge_method')).toBe('S256')
+    expect(authorization.searchParams.get('redirect_uri')).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/cqaiclub-dsn-account\/oauth\/callback$/)
+    await expect(service.startAuthorization()).resolves.toMatchObject({ state: 'authorizing', attemptId: started.attemptId })
+
+    await service.cancelAuthorization('an-unrelated-attempt')
+    await expect(service.getStatus()).resolves.toMatchObject({ state: 'authorizing', attemptId: started.attemptId })
+    await service.cancelAuthorization(started.attemptId)
+    await expect(service.getStatus()).resolves.toEqual({ state: 'signed-out' })
+    const retried = await service.startAuthorization()
+    expect(retried.state).toBe('authorizing')
+    if (retried.state !== 'authorizing') throw new Error('expected fresh browser authorization')
+    expect(retried.attemptId).not.toBe(started.attemptId)
+    const oldCallback = new URL(authorization.searchParams.get('redirect_uri') ?? '')
+    oldCallback.searchParams.set('state', authorization.searchParams.get('state') ?? '')
+    oldCallback.searchParams.set('code', 'a-cancelled-authorization-code')
+    const oldCallbackRejected = await nativeFetch(oldCallback, { signal: AbortSignal.timeout(1000) })
+      .then(response => !response.ok, () => true)
+    expect(oldCallbackRejected).toBe(true)
+    await expect(service.getStatus()).resolves.toMatchObject({ state: 'authorizing', attemptId: retried.attemptId })
+    await service.cancelAuthorization(retried.attemptId)
+    expect(harness.records.has(credential)).toBe(false)
+    await expect(service.logout()).resolves.toEqual({ remoteRevoked: true })
+  })
+
   it('provides a Host-only fixed resource lease and retains an existing v3 grant on disable/dispose', async () => {
     const harness = makeRuntime({ clubMcpEnabled: true })
     const original = mcpGrant()
@@ -697,6 +737,11 @@ describe('DsnAccountServiceRuntime', () => {
     })
     expect(harness.defaultModel.saveSelection).toHaveBeenCalledWith({ provider: 'cqaiclub', model: 'chat-model' })
 
+    harness.setDefaultSelection({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    harness.defaultModel.saveSelection.mockClear()
+    await expect(harness.runtime.adoptOnboardingDefaultModel()).resolves.toEqual({ provider: 'cqaiclub', model: 'chat-model' })
+    expect(harness.defaultModel.saveSelection).toHaveBeenCalledWith({ provider: 'cqaiclub', model: 'chat-model' })
+
     harness.defaultModel.saveSelection.mockClear()
     await expect(harness.rpc('models/default/set', { model: 'chat-model' }, new AbortController().signal)).resolves.toMatchObject({
       ok: true,
@@ -715,6 +760,8 @@ describe('DsnAccountServiceRuntime', () => {
       ok: true,
       value: { provider: 'another-provider', model: 'custom-model' },
     })
+    expect(harness.defaultModel.saveSelection).not.toHaveBeenCalled()
+    await expect(harness.runtime.adoptOnboardingDefaultModel()).resolves.toEqual({ provider: 'another-provider', model: 'custom-model' })
     expect(harness.defaultModel.saveSelection).not.toHaveBeenCalled()
   })
 
@@ -1178,13 +1225,14 @@ describe('DsnAccountServiceRuntime', () => {
       },
     })
 
-    const pendingLogout = harness.rpc('session/logout', {}, new AbortController().signal)
+    const pendingLogout = harness.runtime.logout()
     await revocationStarted
     await expect(harness.runtime.getStatus()).resolves.toEqual({ state: 'signed-out' })
     expect(harness.records.has(credential)).toBe(false)
 
     releaseRevocation?.()
-    const result = await pendingLogout as { ok: boolean; value?: { snapshot: { state: string }; remoteRevoked: boolean } }
-    expect(result).toMatchObject({ ok: true, value: { snapshot: { state: 'signed-out' }, remoteRevoked: true } })
+    const result = await pendingLogout
+    expect(result).toEqual({ remoteRevoked: true })
+    await expect(harness.runtime.getStatus()).resolves.toEqual({ state: 'signed-out' })
   })
 })

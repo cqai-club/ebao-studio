@@ -1,8 +1,8 @@
-# Official Desktop development and release boundaries
+# Official Desktop and CQAI account development
 
 [中文](development-release.md)
 
-This repository now uses the pinned official DeepSeek Harness Desktop directly. The former Stable/Beta/Next community Desktop packages and e宝 release workflow are inactive. CQAI business-plugin source is retained for separate future integration. This page replaces the previous community Desktop development and e宝 release instructions.
+The application combines the unmodified official DeepSeek Harness Desktop with an external CQAI account provider. The former community shells and release workflows have been removed. Only the account service and provider adapter are active in source startup; other business plugins remain inactive.
 
 ## Initialize
 
@@ -13,49 +13,56 @@ corepack yarn upstream:install
 corepack yarn upstream:prepare-electron
 ```
 
-`corepack yarn setup` combines upstream initialization, dependency installation, and Electron preparation. pnpm installation does not download Electron; complete `upstream:prepare-electron` before launch or headless Desktop tests, including Windows. If an existing checkout has stale pnpm links, run `corepack yarn upstream:repair-install` to remove stale workspace dependency links, then reinstall from the frozen lockfile.
+Use Node.js `>=24.9.0`, Corepack, and root Yarn `4.18.0`. `corepack yarn setup` combines upstream initialization, dependency installation, and Electron preparation. pnpm installation does not download Electron; complete `upstream:prepare-electron` before graphical startup or headless Desktop tests, including Windows.
 
-Use Node.js `>=24.9.0` and Corepack. The outer entry uses Yarn `4.18.0`; `deepseek-harness/` uses the pnpm release pinned by its package manifest. The outer repository has no active application/plugin workspaces and does not include the official submodule in its Yarn dependency graph.
+For an existing checkout with stale pnpm links, `corepack yarn upstream:repair-install` removes obsolete workspace links and installs from the frozen lockfile. The official submodule owns its pinned pnpm workspace. The outer repository has no active Yarn application workspaces and does not include the official workspace in Yarn's dependency graph.
 
-The official source pin is `fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159`, version `0.2.2-rc.1`. Update the pin and owning metadata in a separate commit; business-feature changes must not edit official source.
+Official source remains pinned to `fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159` (`0.2.2-rc.1`). Update its pin and metadata separately. This account extension does not patch official tracked source.
 
 ## Build and verify
 
 ```bash
 corepack yarn build
 corepack yarn typecheck
+corepack yarn cqai:typecheck
 corepack yarn test
 corepack yarn check
 ```
 
-`build` invokes official `build:artifacts`; `typecheck` checks official `apps/desktop/tsconfig.json`; `test` runs outer launcher Node tests and official Desktop Vitest tests. `check` combines repository layout, launcher tests, official artifacts, Desktop type checking, and Desktop tests in sequence. Root scripts own the exact commands and upstream owns their implementation coverage. Builds, type checking, and tests stay headless-safe. They do not replace actual graphical startup, account login, or platform installer acceptance.
+`build` runs official `build:artifacts` and builds the owned account packages. `typecheck` targets official Desktop; `cqai:typecheck` targets the account and adapter. `test` includes launcher, account, and official Desktop tests. `check` combines layout, builds, both type checks, and headless tests. Record real authorization, model calls, graphical behavior, and installer acceptance separately; unit tests do not establish those outcomes.
 
-## Launch and isolate data
+Prepare the account extension independently with:
+
+```bash
+# Generate server-only packages without modifying a Profile:
+corepack yarn cqai:build
+# Build and install into the isolated Desktop Profile:
+corepack yarn cqai:prepare
+corepack yarn cqai:test
+```
+
+Generated packages use the pinned official toolchain and exclude the CQAI frontend and other business plugins. Quit a running Desktop before Profile preparation; the preparer refuses concurrent modification while the official Profile lock exists.
+
+## Launch and account boundaries
 
 ```bash
 corepack yarn dev
-# Use existing build output:
+# Use existing official artifacts:
 corepack yarn start
 ```
 
-Both commands explicitly open official Desktop with its official product identity and default capabilities. The launcher defaults to `.official-desktop/home` for Harness state and `.official-desktop/electron-user-data` for Electron user data; consult its log for the resolved paths. These local directories are not committed to Git.
+Both entry points prepare the CQAI external Profile before opening the official native UI. The default sign-in action delegates browser OIDC authorization to the CQAI provider, reusing the account plugin's PKCE, loopback callback, Host credential storage, refresh, and cancellation mechanisms. Active authorization scopes cover identity, refresh, and AI access, without activity-publication permission.
 
-Existing `~/.dsh`, `~/.dsh-beta`, and e宝 application data remain in place. Old Profile executable dependencies, lockfiles, installed plugins, and browser partitions are not automatically migrated into the official `desktop` Profile. Design, verify, and record any future data migration separately.
+Add API Key remains an independent optional route for the official provider. CQAI tokens are not returned through the official DeepSeek inference-token interface or injected into official embedded Platform documents. CQAI currency/monetary balances are not mapped into the official balance UI, which reports unavailable; raw quota must not be labeled as money.
 
-First use may need network access to prepare the officially pinned bundled runtime. Address preparation failures directly rather than substituting a community shell or old build output.
+An initial CQAI sign-in may adopt a recommended CQAI model only while the untouched factory default remains selected. Preserve user-selected providers, models, and reasoning settings. Users must still complete authorization on CQAI's browser page; implementation and automated tests do not complete it.
 
-## Business source and integration scope
+State defaults to `.official-desktop/home` and `.official-desktop/electron-user-data`; generated account artifacts live under `.official-desktop/extensions`. Existing `~/.dsh`, `~/.dsh-beta`, accounts, sessions, works, and old Profiles remain in place, without automatically migrating credentials, lockfiles, or dependencies. See the [account adapter reference](../integrations/cqai-desktop-account/README.md) for details.
 
-Preserved `cqai-dsh-plugins/`, `dsh-community-market/`, `dsh-community-fabric/`, and `matrixmedia-publisher/` source does not participate in the current default installation, build, or launch. CQAI accounts, Publisher, business tools, AA, custom markets, and themes are outside this baseline's feature acceptance.
+## Further integration and release
 
-A later integration should identify official extension interfaces, Host/native services, dependency installation, user data, and verification results. The former `desktopRuntime`, channel-mirroring behavior, and other private community-shell interfaces are not official Desktop services.
+The CQAI frontend, image/video tools, Publisher Worker, AA, markets, themes, and MatrixMedia are outside this account change. Later capabilities need explicit official extension interfaces, Host/native service ownership, dependencies, data handling, and verification. Do not restore the private community-shell bridge.
 
-## Release status
+**The CQAI provider currently applies only to source startup.** `package:dir`, `dist:mac:arm64`, `dist:mac:x64`, and `dist:win` still delegate to unsigned pure-official packaging and do not bundle the provider. Product installers, branding, updates, and distribution need separate adaptations. There is no active upload/publication workflow and this change publishes no new e宝 version.
 
-This change only switches the source-development baseline. It does not create a new e宝 version, tag, installer, or public Release. Historical e宝 Releases and `release/` files remain historical records rather than current official Desktop release instructions.
-
-Root `package:dir` delegates to official application-directory packaging; `dist:mac:arm64`, `dist:mac:x64`, and `dist:win` delegate to unsigned packaging for those official targets. No upload or public release workflow is active.
-
-See the [pinned official Desktop reference](../deepseek-harness/apps/desktop/README.md) for platform packaging, signing, updates, and publication. A local build or successful check does not complete those release steps. Reintroducing e宝 product identity and business capabilities requires separate integration and release changes.
-
-The [official Desktop baseline Agent Note](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.md) owns these boundaries.
+Historical e宝 Releases and `release/` files describe the previous product. See the [pinned upstream reference](../deepseek-harness/apps/desktop/README.md) for official packaging. The [official Desktop baseline Agent Note](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.md) records the earlier pure-official cutover; this account change extends that baseline with an external provider.

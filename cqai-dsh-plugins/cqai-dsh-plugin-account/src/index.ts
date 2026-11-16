@@ -101,7 +101,7 @@ export { DsnAccountError } from './errors.ts'
 export { AccountServiceClient, AccountServiceError } from './account-service.ts'
 
 export const name = 'cqaiclub-dsn-account'
-export const inject = ['authorization', 'credentials', 'connection', 'webServer', 'llm', 'agentDefaultModel', 'desktopRuntime']
+export const inject = ['authorization', 'credentials', 'connection', 'webServer', 'llm', 'agentDefaultModel']
 export const CQAI_CATEGORY_DEFAULT_MODELS_SETTINGS_NAMESPACE = 'cqaiclub-dsn-account'
 
 type AgentDefaultModelService = {
@@ -577,7 +577,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     return next
   }
 
-  private async adoptOnboardingDefaultModel(signal?: AbortSignal): Promise<DsnDefaultModelSelection> {
+  async adoptOnboardingDefaultModel(signal?: AbortSignal): Promise<DsnDefaultModelSelection> {
     const current = await this.getDefaultModel()
     if (!mayAdoptCqaiOnboardingDefault(current)) return current
 
@@ -808,7 +808,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     }
   }
 
-  private async startAuthorization(
+  async startAuthorization(
     signal?: AbortSignal,
     prompt: (typeof Prompt)[keyof typeof Prompt] = Prompt.LoginConsent,
   ): Promise<DsnAccountSnapshot> {
@@ -927,16 +927,20 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     return this.snapshot
   }
 
-  private cancelAuthorization(attemptId: string | undefined): void {
-    if (this.activeAttempt === undefined) return
-    if (attemptId !== undefined && attemptId !== this.activeAttempt.id) return
+  async cancelAuthorization(attemptId?: string): Promise<void> {
+    const active = this.activeAttempt
+    if (active === undefined) return
+    if (attemptId !== undefined && attemptId !== active.id) return
     this.authorizationGeneration += 1
     const pending = this.pendingAuthorization
-    if (pending !== undefined && pending.attemptId === this.activeAttempt.id) {
+    if (pending !== undefined && pending.attemptId === active.id) {
       this.clearPendingAuthorization(pending)
       pending.reject(new DsnAccountError('DSN_LOGIN_CANCELLED', 'CQAI Club 登录已取消。'))
     }
     this.authorization.cancel(this.credential)
+    // Native account providers may retry immediately after cancellation. Wait
+    // until this attempt's finally handler releases the active slot first.
+    await active.promise
   }
 
   private noticeForAttempt(attemptId: string, notice: { message: string; url?: string; code?: string }): void {
@@ -1388,7 +1392,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     if (grant !== undefined) this.setSnapshot(this.snapshotFromGrant(grant))
   }
 
-  private async logout(signal?: AbortSignal): Promise<LogoutResult> {
+  async logout(signal?: AbortSignal): Promise<LogoutResult> {
     this.signingOut = true
     this.invalidateResources()
     this.authorizationGeneration += 1
