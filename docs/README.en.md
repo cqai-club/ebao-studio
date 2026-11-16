@@ -2,7 +2,7 @@
 
 [中文](README.md) · [Repository entry](../README.en.md)
 
-The active application is the pinned official DeepSeek Harness Desktop. e宝 business plugins and accounts will be integrated separately. The former community Desktop documents remain historical references.
+The application builds on the pinned official Desktop with CQAI accounts and a local e宝 welcome overlay. The main workspace and Dock/application menus retain official identity; other business plugins remain inactive. Former community Desktop documents are historical references.
 
 ## Current entry points
 
@@ -11,7 +11,10 @@ The active application is the pinned official DeepSeek Harness Desktop. e宝 bus
 | [Official Desktop reference](../deepseek-harness/apps/desktop/README.md) | Current Desktop behavior, development, packaging, plugins, and local settings |
 | [Current development and release boundaries](development-release.en.md) | Root Yarn commands, official pnpm delegation, isolated data, and verification |
 | [Contributing](../CONTRIBUTING.en.md) | Source ownership, submissions, and feedback |
-| [Official Desktop baseline decision](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.md) | Community-shell replacement, inactive business plugins, and future integration boundaries |
+| [CQAI account adapter](../integrations/cqai-desktop-account/README.md) | Official account interfaces, real CQAI sign-in, and credential boundaries |
+| [Local welcome overlay](../integrations/ebao-desktop-welcome/README.md) | e宝 welcome branding, official component reuse, and build order |
+| [Account and welcome ownership decision](../.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.md) | Current implementation, data, and verification boundaries |
+| [Official Desktop baseline decision](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.md) | Prerequisite pure-official cutover history and read-only upstream boundary |
 
 ## Historical product references
 

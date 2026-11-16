@@ -1,6 +1,6 @@
 # CQAI Desktop account provider
 
-本扩展通过官方外部 `desktop` Profile，将现有 CQAI 账号服务适配为官方 `DeepSeekAccount` 接口。默认“登录”打开 CQAI OIDC 授权页；官方 native welcome、主窗口、名称和插件管理继续由未修改的官方 Desktop 提供。这里不包含另一套桌面壳或 CQAI 前端。
+本扩展通过官方外部 `desktop` Profile，将现有 CQAI 账号服务适配为官方 `DeepSeekAccount` 接口。默认登录打开 CQAI OIDC 授权页；官方 Welcome 组件及认证 IPC 继续使用上游实现，本地欢迎页品牌由独立的[欢迎页适配](../ebao-desktop-welcome/README.md)提供。主工作区、Dock/应用菜单与插件管理仍使用官方身份。这里不包含另一套桌面壳或 CQAI 账号前端。
 
 ## 准备与检查
 
@@ -25,7 +25,7 @@ corepack yarn start
 - CQAI token 不通过官方 DeepSeek inference resolver 返回；官方 embedded Platform session 不承载 CQAI token。
 - 登录后的默认模型 adoption 保留用户已有的提供商、模型和推理设置，只替换未修改的出厂默认模型。
 - 官方金额余额未适配 CQAI，返回不可用；不能把原始配额标成官方货币余额。保留的 CQAI 前端、支付和业务插件尚未接回。
-- “添加 API Key”仍属于官方提供商，不是 CQAI 登录凭据输入框。
+- API Key 选项明确标注 DeepSeek，仍属于官方提供商，不是 CQAI 登录凭据输入框。
 
 自动测试覆盖状态映射、取消与重试、凭据边界和模型 adoption 等行为。真实用户授权和真实模型请求需另行验证，不能仅由这些测试断言已完成。
 

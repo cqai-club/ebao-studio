@@ -71,8 +71,8 @@ jobs:
         # Install the runtime binary without launching the graphical application.
         run: corepack yarn upstream:prepare-electron
       - name: Run headless official Desktop checks
-        # The root check builds and validates official source without starting
-        # Electron. Dormant CQAI plugins are outside this application gate.
+        # Build and validate official source plus owned account/welcome adapters
+        # without starting Electron. Other business plugins remain dormant.
         run: corepack yarn check
 
   check:

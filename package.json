@@ -1,7 +1,7 @@
 {
   "name": "ebao-studio",
   "private": true,
-  "description": "Official DeepSeek Harness Desktop with an external CQAI account provider.",
+  "description": "Official DeepSeek Harness Desktop with CQAI login and the e宝 welcome presentation.",
   "license": "MIT",
   "packageManager": "yarn@4.18.0",
   "engines": {
@@ -13,7 +13,7 @@
     "start": "node scripts/official-desktop.mjs start",
     "build": "node scripts/official-desktop.mjs build",
     "typecheck": "node scripts/official-desktop.mjs typecheck",
-    "test:launcher": "node --test scripts/official-desktop.test.mjs scripts/prepare-cqai-account.test.mjs",
+    "test:launcher": "node --test scripts/official-desktop.test.mjs scripts/prepare-cqai-account.test.mjs scripts/prepare-ebao-welcome.test.mjs",
     "test:desktop": "node scripts/official-desktop.mjs test",
     "test": "yarn test:launcher && yarn cqai:test && yarn test:desktop",
     "check:layout": "node scripts/verify-layout.mjs",

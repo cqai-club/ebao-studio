@@ -5,6 +5,7 @@ import { constants } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildAccountExtensions, createPreparationPlan, prepareProfile } from './prepare-cqai-account.mjs'
+import { buildWelcomePresentation, createWelcomePlan } from './prepare-ebao-welcome.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ACTIONS = {
@@ -15,7 +16,8 @@ const ACTIONS = {
   build: ['run', 'build:artifacts'],
   typecheck: ['exec', 'tsc', '-b', 'apps/desktop/tsconfig.json'],
   test: ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000'],
-  dev: ['run', 'dev:desktop'],
+  // Build explicitly before the owned welcome overlay, then use the official no-build launcher.
+  dev: ['run', 'start:desktop'],
   start: ['run', 'start:desktop'],
   'package:dir': ['run', 'package:desktop:dir', '--unsigned'],
   'package:mac:arm64': ['run', 'package:desktop:mac:arm64:unsigned'],
@@ -27,6 +29,7 @@ export const USAGE = `Usage: node scripts/official-desktop.mjs <action> [--print
 
 Actions: ${Object.keys(ACTIONS).join(', ')}
 dev and start open the official graphical application. Other actions stay headless.
+dev builds official artifacts and Desktop before applying the e宝 welcome presentation.
 Package actions produce local unsigned builds; they do not publish or upload.
 repair-install removes stale workspace hoist links before a normal frozen install.
 
@@ -150,13 +153,46 @@ export function runOfficialDesktop(plan, { spawnImpl = spawn, signalTarget = pro
   })
 }
 
+async function prepareAccount(action) {
+  const plan = createPreparationPlan()
+  const artifacts = await buildAccountExtensions(plan)
+  if (action === 'dev' || action === 'start') await prepareProfile(plan, artifacts)
+}
+
+/** Apply owned presentation after the last upstream build and before any graphical launch. */
+export async function executeOfficialDesktopPlan(plan, {
+  run = runOfficialDesktop,
+  account = prepareAccount,
+  welcome = () => buildWelcomePresentation(createWelcomePlan()),
+} = {}) {
+  if (plan.action === 'dev') {
+    for (const script of ['build:artifacts', 'build:desktop']) {
+      const code = await run({ ...plan, args: ['pnpm', 'run', script] })
+      if (code !== 0) return code
+    }
+  }
+  if (plan.action === 'dev' || plan.action === 'start') {
+    await account(plan.action)
+    await welcome()
+    return run(plan)
+  }
+  const code = await run(plan)
+  if (code === 0 && plan.action === 'build') {
+    await account(plan.action)
+    await welcome()
+  }
+  return code
+}
+
 export async function main(args = process.argv.slice(2)) {
   const options = parseArguments(args)
   if (options.help) { process.stdout.write(USAGE); return 0 }
   const plan = createOfficialDesktopPlan(options.action)
   if (options.printConfig) {
     const { action, command, args: commandArgs, cwd, state } = plan
-    process.stdout.write(`${JSON.stringify({ action, command, args: commandArgs, cwd, state }, null, 2)}\n`)
+    const preparation = action === 'dev' ? ['official build:artifacts', 'official build:desktop', 'CQAI account', 'e宝 welcome']
+      : action === 'start' ? ['CQAI account', 'e宝 welcome'] : []
+    process.stdout.write(`${JSON.stringify({ action, command, args: commandArgs, preparation, cwd, state }, null, 2)}\n`)
     return 0
   }
   assertOfficialCheckout(plan.cwd)
@@ -164,14 +200,7 @@ export async function main(args = process.argv.slice(2)) {
     const removed = pruneStaleWorkspaceLinks(plan.cwd)
     process.stdout.write(`Official Desktop: removed ${removed.length} stale workspace hoist links; running frozen install.\n`)
   }
-  if (plan.action === 'dev' || plan.action === 'start') {
-    const accountPlan = createPreparationPlan()
-    const artifacts = await buildAccountExtensions(accountPlan)
-    await prepareProfile(accountPlan, artifacts)
-  }
-  const code = await runOfficialDesktop(plan)
-  if (code === 0 && plan.action === 'build') await buildAccountExtensions(createPreparationPlan())
-  return code
+  return executeOfficialDesktopPlan(plan)
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

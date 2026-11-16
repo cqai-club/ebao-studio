@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [仓库入口](../README.md)
 
-当前应用是固定版本的官方 DeepSeek Harness Desktop。e宝业务插件和账号将另行接入；旧版社区桌面文档仅用于历史追溯。
+当前应用基于固定官方 Desktop，已接入 CQAI 账号和本地 e宝欢迎页适配。主工作区、Dock/应用菜单仍使用官方身份，其余业务插件尚未接回；旧社区桌面文档仅用于历史追溯。
 
 ## 当前入口
 
@@ -11,7 +11,10 @@
 | [官方 Desktop 参考](../deepseek-harness/apps/desktop/README.zh.md) | 当前桌面行为、开发、打包、插件与本地设置 |
 | [当前开发与发行边界](development-release.md) | 根 Yarn 命令、官方 pnpm 委托、隔离数据与验证 |
 | [参与贡献](../CONTRIBUTING.md) | 代码归属、提交与反馈 |
-| [官方 Desktop 基线决策](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.zh.md) | 替换社区桌面壳、停用业务插件与后续接入边界 |
+| [CQAI 账号适配](../integrations/cqai-desktop-account/README.md) | 官方账号接口、真实 CQAI 登录及凭据边界 |
+| [本地欢迎页适配](../integrations/ebao-desktop-welcome/README.md) | e宝欢迎页品牌、官方组件复用与构建顺序 |
+| [账号与欢迎页归属决策](../.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.zh.md) | 当前扩展的实现、数据和验证边界 |
+| [官方 Desktop 基线决策](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.zh.md) | 纯官方切换的前置历史与只读上游边界 |
 
 ## 历史产品参考
 
