@@ -28,7 +28,7 @@ Actions: ${Object.keys(ACTIONS).join(', ')}
 dev and start open the official graphical application. Other actions stay headless.
 dev builds official artifacts before launching. Run build before start on a fresh or updated checkout.
 Package actions produce local unsigned builds; they do not publish or upload.
-repair-install removes stale workspace hoist links before a normal frozen install.
+repair-install removes stale dependency hoist links before a normal frozen install.
 
 State defaults to .official-desktop/official/home and .official-desktop/official/electron-user-data.
 Explicit absolute overrides: EBAO_OFFICIAL_DSH_HOME, EBAO_OFFICIAL_USER_DATA_DIR.
@@ -95,8 +95,8 @@ export function assertOfficialCheckout(directory) {
   if (manifest.name !== '@deepseek-ai/dsh-desktop') throw new Error('Expected the pinned official DeepSeek Harness Desktop checkout')
 }
 
-/** Remove only obsolete workspace projections from pnpm's ignored virtual hoist. */
-export function pruneStaleWorkspaceLinks(officialRoot) {
+/** Remove obsolete workspace projections and dangling store links from pnpm's ignored virtual hoist. */
+export function pruneStaleDependencyLinks(officialRoot) {
   const root = resolve(officialRoot)
   const modules = join(root, 'node_modules')
   const store = join(modules, '.pnpm')
@@ -118,7 +118,12 @@ export function pruneStaleWorkspaceLinks(officialRoot) {
       const suffix = relative(directory, target)
       return suffix !== '' && suffix !== '..' && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix)
     })
-    if (!workspaceTarget || existsSync(join(target, 'package.json'))) return
+    const storeTarget = relative(store, target)
+    const [storeEntry, modulesDirectory, packageName] = storeTarget.split(sep)
+    const missingStoreTarget = storeEntry !== '..' && !isAbsolute(storeTarget)
+      && modulesDirectory === 'node_modules' && packageName !== undefined && !existsSync(target)
+    const missingWorkspaceTarget = workspaceTarget && !existsSync(join(target, 'package.json'))
+    if (!missingStoreTarget && !missingWorkspaceTarget) return
     unlinkSync(path)
     removed.push(path)
   }
@@ -162,10 +167,16 @@ export async function main(args = process.argv.slice(2)) {
   }
   assertOfficialCheckout(plan.cwd)
   if (plan.action === 'repair-install') {
-    const removed = pruneStaleWorkspaceLinks(plan.cwd)
-    process.stdout.write(`Official Desktop: removed ${removed.length} stale workspace hoist links; running frozen install.\n`)
+    const removed = pruneStaleDependencyLinks(plan.cwd)
+    process.stdout.write(`Official Desktop: removed ${removed.length} stale dependency hoist links before frozen install.\n`)
   }
-  return runOfficialDesktop(plan)
+  const code = await runOfficialDesktop(plan)
+  if (code === 0 && (plan.action === 'install' || plan.action === 'repair-install')) {
+    // pnpm can leave links pointing to store entries removed during an upgrade.
+    const removed = pruneStaleDependencyLinks(plan.cwd)
+    if (removed.length) process.stdout.write(`Official Desktop: removed ${removed.length} stale dependency hoist links after frozen install.\n`)
+  }
+  return code
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

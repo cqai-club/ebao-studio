@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { assertOfficialCheckout, createOfficialDesktopPlan, parseArguments, pruneStaleWorkspaceLinks, runOfficialDesktop } from './official-desktop.mjs'
+import { assertOfficialCheckout, createOfficialDesktopPlan, parseArguments, pruneStaleDependencyLinks, runOfficialDesktop } from './official-desktop.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -77,7 +77,7 @@ test('only explicit official-specific absolute directories override isolated sta
   assert.equal(createOfficialDesktopPlan('repair-install', { environment: {} }).env.CI, 'true')
 })
 
-test('repair removes obsolete workspace hoist links while preserving source, packages and other links', () => {
+test('repair removes stale workspace and store hoist links while preserving source, packages and external links', () => {
   const temporary = mkdtempSync(join(tmpdir(), 'official-desktop-repair-'))
   try {
     const official = join(temporary, 'official')
@@ -101,20 +101,29 @@ test('repair removes obsolete workspace hoist links while preserving source, pac
     }
     writeFileSync(join(validPackage, 'package.json'), '{"name":"valid"}\n')
     writeFileSync(join(retiredPackage, 'retained-source.ts'), '// source is never deleted\n')
+    const linkToDeletedPackage = (target, path) => {
+      mkdirSync(target, { recursive: true })
+      link(target, path)
+      rmSync(target, { recursive: true })
+      return path
+    }
     const stale = [
       link(retiredPackage, join(scope, 'retired')),
       link(retiredApp, join(scope, 'retired-app')),
       link(retiredVendor, join(hoist, 'retired-vendor')),
+      linkToDeletedPackage(join(official, 'node_modules/.pnpm/zod@4.4.3/node_modules/zod'), join(hoist, 'zod')),
+      linkToDeletedPackage(join(official, 'node_modules/.pnpm/@deepseek-ai+retired@1/node_modules/@deepseek-ai/retired'), join(scope, 'old-package')),
     ]
     const preserved = [
       link(validPackage, join(scope, 'valid')),
       link(npmStoreTarget, join(hoist, 'npm-package')),
       link(externalTarget, join(hoist, 'external-package')),
+      linkToDeletedPackage(join(temporary, 'outside/store@1/node_modules/external'), join(hoist, 'external-dangling')),
       link(nonWorkspace, join(hoist, 'non-workspace')),
     ]
     const regularDirectory = join(scope, 'ordinary-directory')
     mkdirSync(regularDirectory)
-    assert.deepEqual(pruneStaleWorkspaceLinks(official).sort(), stale.sort())
+    assert.deepEqual(pruneStaleDependencyLinks(official).sort(), stale.sort())
     for (const path of stale) assert.equal(lstatSync(path, { throwIfNoEntry: false }), undefined)
     for (const path of preserved) assert.equal(lstatSync(path).isSymbolicLink(), true)
     assert.equal(lstatSync(regularDirectory).isDirectory(), true)
@@ -122,7 +131,7 @@ test('repair removes obsolete workspace hoist links while preserving source, pac
     assert.equal(readFileSync(join(validPackage, 'package.json'), 'utf8'), '{"name":"valid"}\n')
     assert.equal(lstatSync(retiredApp).isDirectory(), true)
     assert.equal(lstatSync(retiredVendor).isDirectory(), true)
-    assert.deepEqual(pruneStaleWorkspaceLinks(official), [])
+    assert.deepEqual(pruneStaleDependencyLinks(official), [])
   } finally { rmSync(temporary, { recursive: true, force: true }) }
 })
 
@@ -131,12 +140,12 @@ test('repair tolerates uninstalled dependencies and refuses redirected dependenc
   try {
     const official = join(temporary, 'official')
     mkdirSync(official)
-    assert.deepEqual(pruneStaleWorkspaceLinks(official), [])
+    assert.deepEqual(pruneStaleDependencyLinks(official), [])
     const elsewhere = join(temporary, 'retained-dependencies')
     mkdirSync(elsewhere)
     writeFileSync(join(elsewhere, 'retained.txt'), 'keep')
     symlinkSync(elsewhere, join(official, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
-    assert.throws(() => pruneStaleWorkspaceLinks(official), /redirected dependency directory/)
+    assert.throws(() => pruneStaleDependencyLinks(official), /redirected dependency directory/)
     assert.equal(readFileSync(join(elsewhere, 'retained.txt'), 'utf8'), 'keep')
   } finally { rmSync(temporary, { recursive: true, force: true }) }
 })

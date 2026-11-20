@@ -13,7 +13,9 @@ corepack yarn upstream:install
 corepack yarn upstream:prepare-electron
 ```
 
-需要 Node.js `>=24.9.0`、Corepack 和根 Yarn `4.18.0`。`corepack yarn setup` 可组合执行官方子模块初始化、官方依赖安装和 Electron 准备。pnpm 安装依赖时跳过 Electron 二进制下载，启动桌面端或运行 Desktop 测试前需执行 `upstream:prepare-electron`。已有 checkout 的 pnpm 工作区链接失效时，`corepack yarn upstream:repair-install` 可清理失效链接并按锁文件重新安装。
+需要 Node.js `>=24.9.0`、Corepack 和根 Yarn `4.18.0`。`corepack yarn setup` 可组合执行官方子模块初始化、官方依赖安装和 Electron 准备。pnpm 安装依赖时跳过 Electron 二进制下载，启动桌面端或运行 Desktop 测试前需执行 `upstream:prepare-electron`。
+
+`upstream:install` 按锁文件安装成功后，会清理 pnpm 提升目录中过时的工作区链接，以及指向本地虚拟存储中不存在目标的链接。若这些残留链接导致安装失败，运行 `corepack yarn upstream:repair-install`，先清理再按锁文件重试。
 
 ## 启动与插件
 

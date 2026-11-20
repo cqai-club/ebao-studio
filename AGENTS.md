@@ -7,7 +7,7 @@ This repository runs the pinned official DeepSeek Harness Desktop from unmodifie
 - Use Node.js `>=24.9.0`, Corepack, and the root Yarn `4.18.0` release.
 - Initialize only the pinned official checkout with `corepack yarn upstream:init`.
 - Install the outer command wrapper with `corepack yarn install --immutable`, install the official workspace through `corepack yarn upstream:install`, then download its Electron binary with `corepack yarn upstream:prepare-electron`. `corepack yarn setup` combines upstream initialization, installation, and Electron preparation.
-- pnpm dependency installation does not download Electron. Prepare the binary before dev/start and before Desktop tests, including headless Windows tests. If an existing checkout has stale pnpm links, `corepack yarn upstream:repair-install` removes stale workspace dependency links, then reinstalls from the frozen lockfile.
+- Prepare the Electron binary before dev/start and Desktop tests, including headless Windows tests. After a successful frozen install, `corepack yarn upstream:install` removes obsolete workspace links and dangling local virtual-store links from pnpm's hoist directory. If stale links block installation, use `corepack yarn upstream:repair-install` to clean that directory before retrying the frozen install.
 - `deepseek-harness/` owns its pnpm workspace and pinned package-manager release. The outer repository has no active application or plugin Yarn workspaces.
 
 ## Build, run, and verify

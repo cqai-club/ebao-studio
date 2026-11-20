@@ -13,7 +13,9 @@ corepack yarn upstream:install
 corepack yarn upstream:prepare-electron
 ```
 
-Use Node.js `>=24.9.0`, Corepack, and root Yarn `4.18.0`. `corepack yarn setup` combines official submodule initialization, official dependency installation, and Electron preparation. pnpm dependency installation skips the Electron binary download. Run `upstream:prepare-electron` before launching Desktop or running its tests. If an existing checkout has stale workspace links, `corepack yarn upstream:repair-install` removes stale links and reinstalls from the frozen lockfile.
+Use Node.js `>=24.9.0`, Corepack, and root Yarn `4.18.0`. `corepack yarn setup` combines official submodule initialization, official dependency installation, and Electron preparation. pnpm dependency installation skips the Electron binary download. Run `upstream:prepare-electron` before launching Desktop or running its tests.
+
+After a successful frozen install, `upstream:install` removes obsolete workspace links and dangling links to local virtual-store packages from pnpm's hoist directory. If stale links cause installation to fail, run `corepack yarn upstream:repair-install` to clean that directory before retrying the frozen install.
 
 ## Launch and manage plugins
 
