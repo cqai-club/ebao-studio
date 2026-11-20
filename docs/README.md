@@ -2,32 +2,29 @@
 
 [English](README.en.md) · [仓库入口](../README.md)
 
-当前应用基于固定官方 Desktop，已接入 CQAI 账号和本地 e宝欢迎页适配。主工作区、Dock/应用菜单仍使用官方身份，其余业务插件尚未接回；旧社区桌面文档仅用于历史追溯。
+当前仓库运行固定版本的 DeepSeek Harness 官方桌面端。桌面界面、登录和插件管理均由官方实现提供。
 
 ## 当前入口
 
 | 文档 | 范围 |
 | --- | --- |
 | [官方 Desktop 参考](../deepseek-harness/apps/desktop/README.zh.md) | 当前桌面行为、开发、打包、插件与本地设置 |
-| [当前开发与发行边界](development-release.md) | 根 Yarn 命令、官方 pnpm 委托、隔离数据与验证 |
+| [开发与打包](development-release.md) | 根 Yarn 命令、官方 pnpm 委托、隔离数据与验证 |
 | [参与贡献](../CONTRIBUTING.md) | 代码归属、提交与反馈 |
-| [CQAI 账号适配](../integrations/cqai-desktop-account/README.md) | 官方账号接口、真实 CQAI 登录及凭据边界 |
-| [本地欢迎页适配](../integrations/ebao-desktop-welcome/README.md) | e宝欢迎页品牌、官方组件复用与构建顺序 |
-| [账号与欢迎页归属决策](../.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.zh.md) | 当前扩展的实现、数据和验证边界 |
-| [官方 Desktop 基线决策](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.zh.md) | 纯官方切换的前置历史与只读上游边界 |
+| [上游版本记录](../upstream.json) | 当前官方版本、提交与 pnpm 版本 |
 
 ## 历史产品参考
 
-以下文件保留的是旧 e宝/社区桌面的设计或使用说明。其功能、命令、Profile 布局、插件服务和发布流程不适用于当前官方基线；与已移除桌面包相关的旧路径也可能已失效。
-
 | 历史文档 | 原内容 |
 | --- | --- |
+| [官方 Desktop 基线决策](../.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.zh.md) | 首次切换到官方桌面端 |
+| [CQAI 账号与欢迎页](../.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.zh.md) | 已停用的账号 provider 和欢迎页适配 |
 | [旧用户指南](user-guide.md)、[旧常见问题](faq.md) | 旧安装包、Profile、插件、模式与更新 |
 | [旧架构](architecture.md)、[为什么做 Desktop](why-desktop.md) | 社区桌面壳及原生适配设计 |
 | [旧插件开发](plugin-development.md)、[插件生态倡议书](plugin-ecosystem.md) | 旧 Desktop 服务与社区生态设计 |
-| [CQAI 扩展说明](cqai/README.md) | 尚待重新接入的业务插件 |
+| [CQAI 扩展说明](cqai/README.md) | 旧版业务插件 |
 | [Community Market 源码与文档](../dsh-community-market/README.zh.md) | 保留的市场实现，当前未激活 |
 | [Community Fabric 文档](../dsh-community-fabric/README.zh.md) | 保留的互操作提案，当前不参与构建 |
 | [历史 e宝发行版](https://github.com/cqai-club/ebao-studio/releases) | 过去已发布安装包及其版本说明 |
 
-根 `README.md` 和 `README.en.md` 是当前中英入口，`README.zh.md` 保留旧链接兼容作用。日期化 Agent Notes 用于追溯决策；新决策优先于被取代的旧拓扑说明。官方子模块自己的文档负责其实际实现，外层文档负责启动入口与集成边界。
+根 `README.md` 和 `README.en.md` 是当前中英入口。`README.zh.md` 保留对旧链接的兼容。

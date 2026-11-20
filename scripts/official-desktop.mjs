@@ -4,8 +4,6 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, unlinkS
 import { constants } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildAccountExtensions, createPreparationPlan, prepareProfile } from './prepare-cqai-account.mjs'
-import { buildWelcomePresentation, createWelcomePlan } from './prepare-ebao-welcome.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ACTIONS = {
@@ -16,8 +14,7 @@ const ACTIONS = {
   build: ['run', 'build:artifacts'],
   typecheck: ['exec', 'tsc', '-b', 'apps/desktop/tsconfig.json'],
   test: ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000'],
-  // Build explicitly before the owned welcome overlay, then use the official no-build launcher.
-  dev: ['run', 'start:desktop'],
+  dev: ['run', 'dev:desktop'],
   start: ['run', 'start:desktop'],
   'package:dir': ['run', 'package:desktop:dir', '--unsigned'],
   'package:mac:arm64': ['run', 'package:desktop:mac:arm64:unsigned'],
@@ -29,11 +26,11 @@ export const USAGE = `Usage: node scripts/official-desktop.mjs <action> [--print
 
 Actions: ${Object.keys(ACTIONS).join(', ')}
 dev and start open the official graphical application. Other actions stay headless.
-dev builds official artifacts and Desktop before applying the e宝 welcome presentation.
+dev builds official artifacts before launching. Run build before start on a fresh or updated checkout.
 Package actions produce local unsigned builds; they do not publish or upload.
 repair-install removes stale workspace hoist links before a normal frozen install.
 
-State defaults to .official-desktop/home and .official-desktop/electron-user-data.
+State defaults to .official-desktop/official/home and .official-desktop/official/electron-user-data.
 Explicit absolute overrides: EBAO_OFFICIAL_DSH_HOME, EBAO_OFFICIAL_USER_DATA_DIR.
 --print-config prints the selected command and state paths without running it.
 `
@@ -62,8 +59,9 @@ function explicitDirectory(environment, name, fallback) {
 /** Build a command plan without creating files or exposing the inherited environment. */
 export function createOfficialDesktopPlan(action, { root = ROOT, environment = process.env, platform = process.platform } = {}) {
   if (!Object.hasOwn(ACTIONS, action)) throw new Error(`Unknown Desktop action: ${action}`)
-  const home = explicitDirectory(environment, 'EBAO_OFFICIAL_DSH_HOME', join(root, '.official-desktop', 'home'))
-  const userData = explicitDirectory(environment, 'EBAO_OFFICIAL_USER_DATA_DIR', join(root, '.official-desktop', 'electron-user-data'))
+  const stateRoot = join(root, '.official-desktop', 'official')
+  const home = explicitDirectory(environment, 'EBAO_OFFICIAL_DSH_HOME', join(stateRoot, 'home'))
+  const userData = explicitDirectory(environment, 'EBAO_OFFICIAL_USER_DATA_DIR', join(stateRoot, 'electron-user-data'))
   const env = { ...environment }
   // Community launchers and their native bridges do not configure the official application.
   for (const key of Object.keys(env)) {
@@ -153,46 +151,13 @@ export function runOfficialDesktop(plan, { spawnImpl = spawn, signalTarget = pro
   })
 }
 
-async function prepareAccount(action) {
-  const plan = createPreparationPlan()
-  const artifacts = await buildAccountExtensions(plan)
-  if (action === 'dev' || action === 'start') await prepareProfile(plan, artifacts)
-}
-
-/** Apply owned presentation after the last upstream build and before any graphical launch. */
-export async function executeOfficialDesktopPlan(plan, {
-  run = runOfficialDesktop,
-  account = prepareAccount,
-  welcome = () => buildWelcomePresentation(createWelcomePlan()),
-} = {}) {
-  if (plan.action === 'dev') {
-    for (const script of ['build:artifacts', 'build:desktop']) {
-      const code = await run({ ...plan, args: ['pnpm', 'run', script] })
-      if (code !== 0) return code
-    }
-  }
-  if (plan.action === 'dev' || plan.action === 'start') {
-    await account(plan.action)
-    await welcome()
-    return run(plan)
-  }
-  const code = await run(plan)
-  if (code === 0 && plan.action === 'build') {
-    await account(plan.action)
-    await welcome()
-  }
-  return code
-}
-
 export async function main(args = process.argv.slice(2)) {
   const options = parseArguments(args)
   if (options.help) { process.stdout.write(USAGE); return 0 }
   const plan = createOfficialDesktopPlan(options.action)
   if (options.printConfig) {
     const { action, command, args: commandArgs, cwd, state } = plan
-    const preparation = action === 'dev' ? ['official build:artifacts', 'official build:desktop', 'CQAI account', 'e宝 welcome']
-      : action === 'start' ? ['CQAI account', 'e宝 welcome'] : []
-    process.stdout.write(`${JSON.stringify({ action, command, args: commandArgs, preparation, cwd, state }, null, 2)}\n`)
+    process.stdout.write(`${JSON.stringify({ action, command, args: commandArgs, cwd, state }, null, 2)}\n`)
     return 0
   }
   assertOfficialCheckout(plan.cwd)
@@ -200,7 +165,7 @@ export async function main(args = process.argv.slice(2)) {
     const removed = pruneStaleWorkspaceLinks(plan.cwd)
     process.stdout.write(`Official Desktop: removed ${removed.length} stale workspace hoist links; running frozen install.\n`)
   }
-  return executeOfficialDesktopPlan(plan)
+  return runOfficialDesktop(plan)
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

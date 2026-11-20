@@ -2,7 +2,7 @@
 
 [中文](CONTRIBUTING.md)
 
-The current target maintains CQAI account integration and a local e宝 welcome overlay on the pinned official DeepSeek Harness Desktop. The main workspace and system application identity remain official. Read the [repository entry](README.en.md) and [current development guide](docs/development-release.en.md) before making changes.
+This repository maintains the build and launch entry points for the pinned official DeepSeek Harness Desktop. Read the [repository entry](README.en.md) and [development guide](docs/development-release.en.md) before making changes.
 
 ## Development environment
 
@@ -19,18 +19,17 @@ corepack yarn test
 corepack yarn check
 ```
 
-Run `corepack yarn dev` or `corepack yarn start` only when opening a graphical application is intended. Development state defaults to `.official-desktop/`, isolated from existing e宝 user data.
+`corepack yarn dev` builds and launches the graphical application. `corepack yarn start` launches existing build output. Development state defaults to `.official-desktop/official/`, isolated from existing e宝 user data.
 
 ## Change boundaries
 
 - The official application lives in the read-only `deepseek-harness/` submodule. Update its pin and owning metadata in a separate commit; do not edit official source on a product branch.
 - Outer Yarn owns command delegation and repository boundaries. Official dependencies stay in the pinned pnpm workspace. The outer repository currently has no active application or business-plugin workspaces.
-- Active product extensions are the server-side CQAI account/provider and the welcome overlay in `integrations/ebao-desktop-welcome/`. Other CQAI plugins, market/Fabric, and MatrixMedia remain inactive.
-- The welcome overlay reuses official components and preload, wrapping messages and replacing only the unique brand node during a guarded build. Write only ignored output; do not edit official tracked source or authentication IPC. Upstream building must finish before the overlay is applied.
+- Official Desktop owns the welcome page, sign-in, and plugin management. The CQAI account integration, e宝 welcome overlay, business plugins, market/Fabric, and MatrixMedia are retained as historical source.
 - Builds, type checks, and tests remain headless-safe. Record application launch, login, and native installer acceptance separately.
 - Preserve accounts, sessions, attachments, works, and historical application data. User-data migration requires an explicit implementation and verification.
 
-The [account and welcome Agent Note](.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.md) owns these extensions; the [pure-official baseline](.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.md) remains prerequisite history. Stable/Beta mirroring, AA/Market preparation, and e宝 release instructions belong to the historical workflow.
+The [official Desktop baseline decision](.agents/notes/implemented/process/2026-11-16-official-desktop-baseline.md) records the upstream source and package-manager boundaries.
 
 ## Commits and feedback
 

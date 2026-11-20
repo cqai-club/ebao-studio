@@ -57,22 +57,19 @@ jobs:
           # Validate the exact PR head and the official source pin together.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Initialize only the official source
-        run: git submodule update --init --recursive -- deepseek-harness
       - uses: actions/setup-node@v6
         with:
           node-version: 24.18.0
       - name: Install the root command workspace
         run: corepack yarn install --immutable
+      - name: Initialize only the official source
+        run: corepack yarn upstream:init
       - name: Install the pinned official workspace
         run: corepack yarn upstream:install
-      - name: Prepare Electron for Windows signal checks
-        if: runner.os == 'Windows'
+      - name: Prepare Electron for Desktop tests
         # Install the runtime binary without launching the graphical application.
         run: corepack yarn upstream:prepare-electron
       - name: Run headless official Desktop checks
-        # Build and validate official source plus owned account/welcome adapters
-        # without starting Electron. Other business plugins remain dormant.
         run: corepack yarn check
 
   check:

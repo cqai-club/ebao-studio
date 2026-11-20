@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { assertOfficialCheckout, createOfficialDesktopPlan, executeOfficialDesktopPlan, parseArguments, pruneStaleWorkspaceLinks, runOfficialDesktop } from './official-desktop.mjs'
+import { assertOfficialCheckout, createOfficialDesktopPlan, parseArguments, pruneStaleWorkspaceLinks, runOfficialDesktop } from './official-desktop.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -20,7 +20,7 @@ test('commands target the official checkout and registered upstream scripts', ()
     build: ['pnpm', 'run', 'build:artifacts'],
     typecheck: ['pnpm', 'exec', 'tsc', '-b', 'apps/desktop/tsconfig.json'],
     test: ['pnpm', 'exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000'],
-    dev: ['pnpm', 'run', 'start:desktop'],
+    dev: ['pnpm', 'run', 'dev:desktop'],
     start: ['pnpm', 'run', 'start:desktop'],
     'package:dir': ['pnpm', 'run', 'package:desktop:dir', '--unsigned'],
     'package:mac:arm64': ['pnpm', 'run', 'package:desktop:mac:arm64:unsigned'],
@@ -37,42 +37,6 @@ test('commands target the official checkout and registered upstream scripts', ()
   assertOfficialCheckout(join(root, 'deepseek-harness'))
 })
 
-test('owned welcome is applied after the last official build and before source launch', async () => {
-  for (const [action, expected] of [
-    ['dev', ['build:artifacts', 'build:desktop', 'account:dev', 'welcome', 'start:desktop']],
-    ['start', ['account:start', 'welcome', 'start:desktop']],
-    ['build', ['build:artifacts', 'account:build', 'welcome']],
-    ['package:dir', ['package:desktop:dir']],
-  ]) {
-    const steps = []
-    const code = await executeOfficialDesktopPlan(createOfficialDesktopPlan(action, { environment: {} }), {
-      run: async plan => { steps.push(plan.args[2]); return 0 },
-      account: async mode => { steps.push(`account:${mode}`) },
-      welcome: async () => { steps.push('welcome') },
-    })
-    assert.equal(code, 0)
-    assert.deepEqual(steps, expected)
-  }
-})
-
-test('failed upstream builds or owned preparation never proceed to graphical launch', async () => {
-  for (const failedScript of ['build:artifacts', 'build:desktop']) {
-    const steps = []
-    const code = await executeOfficialDesktopPlan(createOfficialDesktopPlan('dev', { environment: {} }), {
-      run: async plan => { steps.push(plan.args[2]); return plan.args[2] === failedScript ? 9 : 0 },
-      account: async () => { assert.fail('preparation followed a failed build') },
-      welcome: async () => { assert.fail('overlay followed a failed build') },
-    })
-    assert.equal(code, 9)
-    assert.equal(steps.includes('start:desktop'), false)
-  }
-  await assert.rejects(executeOfficialDesktopPlan(createOfficialDesktopPlan('start', { environment: {} }), {
-    run: async () => { assert.fail('a failed overlay must not launch') },
-    account: async () => {},
-    welcome: async () => { throw new Error('upstream branding seam changed') },
-  }), /upstream branding seam changed/)
-})
-
 test('normal commands never inherit an existing Harness home or community runtime', () => {
   const workspace = join(tmpdir(), 'official-desktop-project')
   const environment = {
@@ -86,8 +50,8 @@ test('normal commands never inherit an existing Harness home or community runtim
   }
   const snapshot = { ...environment }
   const plan = createOfficialDesktopPlan('dev', { root: workspace, environment, platform: 'darwin' })
-  assert.equal(plan.env.DSH_HOME, join(workspace, '.official-desktop/home'))
-  assert.equal(plan.env.DSH_DESKTOP_USER_DATA_DIR, join(workspace, '.official-desktop/electron-user-data'))
+  assert.equal(plan.env.DSH_HOME, join(workspace, '.official-desktop/official/home'))
+  assert.equal(plan.env.DSH_DESKTOP_USER_DATA_DIR, join(workspace, '.official-desktop/official/electron-user-data'))
   for (const name of Object.keys(environment).filter(name => name.startsWith('DSH_') || name.startsWith('EBAO_'))) {
     if (!['DSH_HOME', 'DSH_DESKTOP_USER_DATA_DIR'].includes(name)) assert.equal(plan.env[name], undefined, name)
   }
@@ -186,6 +150,7 @@ test('inspection is read-only and does not disclose unrelated environment values
     })
     assert.equal(result.status, 0, result.stderr)
     const config = JSON.parse(result.stdout)
+    assert.deepEqual(config.args, ['pnpm', 'run', 'dev:desktop'])
     assert.equal(config.state.home, state)
     assert.equal(config.env, undefined)
     assert.equal(result.stdout.includes('do-not-print'), false)

@@ -1,60 +1,38 @@
-# e宝工坊: official Desktop with CQAI sign-in
+# e宝工坊 runs the official DeepSeek Harness Desktop
 
 [中文](README.md) · [Documentation](docs/README.en.md) · [Contributing](CONTRIBUTING.en.md)
 
-This repository builds on [the official DeepSeek Harness Desktop](deepseek-harness/apps/desktop/README.md), composing CQAI accounts through its external Desktop Profile. Source startup presents an e宝 welcome logo, heading, copy, and branded sign-in labels. The main workspace, Dock/application-menu identity, and plugin manager retain their official implementation. The former community Stable, Beta, and Next shells have been removed; official tracked source is unchanged.
+This repository builds and runs DeepSeek Harness Desktop from pinned official source. Upstream provides the welcome page, application identity, DeepSeek sign-in and API Key setup, bundled plugins, and plugin management. See [upstream.json](upstream.json) for the pinned version, commit, and pnpm release.
 
-Welcome-page sign-in still opens CQAI browser authorization, after which the account plugin provides CQAI models. A recommended CQAI model replaces only the untouched factory default; existing model and reasoning choices remain. The API Key button explicitly identifies DeepSeek and remains an official-provider option: a CQAI login credential is not a DeepSeek API key.
-
-Only the account service and account-provider adapter are active business services; the local welcome-branding overlay is separate. The CQAI account frontend, e图宝, e剪宝, Publisher, e研宝, AA, custom markets, and themes are not loaded. CQAI monetary balances are not mapped into the official balance UI, which reports unavailable; this does not establish the account's actual quota.
-
-The official Git submodule is pinned to `fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159` (`0.2.2-rc.1`). e宝工坊 maintains this repository independently of DeepSeek, without affiliation or endorsement.
+The CQAI account integration, e宝 welcome page, and former business plugins are retained as historical source. The default build and launcher use the official workspace. e宝工坊 maintains this repository independently. The [DeepSeek Harness Desktop documentation](deepseek-harness/apps/desktop/README.md) covers official behavior and plugin usage.
 
 ## Run from source
 
-Use Node.js `>=24.9.0`, Git, Corepack, and root Yarn `4.18.0`. The official submodule retains its own pnpm release.
+Use Node.js `>=24.9.0`, Git, and Corepack. The outer commands use Yarn `4.18.0`, and the official submodule uses its pinned pnpm release.
 
 ```bash
 corepack yarn upstream:init
 corepack yarn install --immutable
 corepack yarn upstream:install
 corepack yarn upstream:prepare-electron
-corepack yarn build
-corepack yarn start
+corepack yarn dev
 ```
 
-`dev` builds official artifacts, applies the owned welcome overlay, then invokes official `start`. `start` applies the overlay to existing artifacts without rebuilding official source. Both prepare the CQAI external Profile and open the graphical application. Initial dependency, Electron, and bundled-runtime preparation may require network access. Windows Git Bash can use `corepack.cmd` instead of `corepack`.
+`dev` builds and launches the graphical application. To launch a prepared build, run `corepack yarn build`, then `corepack yarn start`. Initial preparation of dependencies, Electron, and the official bundled runtime requires network access. Windows Git Bash can use `corepack.cmd`.
 
-Local state defaults to `.official-desktop/home` and `.official-desktop/electron-user-data`. Existing `~/.dsh`, `~/.dsh-beta`, accounts, sessions, works, and browser data remain in place; old credentials and dependencies are not migrated automatically. Users complete real authorization on CQAI's browser page; passing unit tests does not complete user authorization.
+The official development instance stores Harness state in `.official-desktop/official/home` and Electron user data in `.official-desktop/official/electron-user-data`. Existing local Profiles, accounts, sessions, works, and installed-application data stay in their original locations. The [development guide](docs/development-release.en.md) explains how to select custom paths.
 
-## Common commands
+## Verify and package
 
 | Repository-root command | Purpose |
 | --- | --- |
-| `corepack yarn dev` / `start` | Prepare the CQAI Profile and e宝 welcome page, then launch official Desktop |
-| `corepack yarn build` | Build official artifacts and account packages, then apply the welcome overlay |
+| `corepack yarn build` | Run official `build:artifacts` |
 | `corepack yarn typecheck` | Check official Desktop types |
-| `corepack yarn cqai:build` | Build account and adapter artifacts without modifying a Profile |
-| `corepack yarn cqai:prepare` | Build and install into the isolated official Desktop Profile |
-| `corepack yarn cqai:typecheck` / `cqai:test` | Check the account and provider adapter |
-| `corepack yarn test` | Run launcher, account, and official Desktop tests |
-| `corepack yarn check` | Combine layout, build, type, and headless test checks |
+| `corepack yarn test` | Run launcher and official Desktop tests |
+| `corepack yarn check` | Check layout, launcher, build, types, and headless tests |
+| `corepack yarn package:dir` | Generate an unsigned official application directory |
+| `corepack yarn dist:mac:arm64`, `dist:mac:x64`, `dist:win` | Generate unsigned official artifacts for the selected target |
 
-Outer Yarn owns command entry points without including the official pnpm workspace in its dependency graph. Account integration uses a standard external Profile installation; other business source stays outside the default build. See the [account adapter reference](integrations/cqai-desktop-account/README.md) and [development guide](docs/development-release.en.md) for implementation and verification boundaries.
+Historical installers, screenshots, and user guides describe the previous e宝 product. [Historical e宝 Releases](https://github.com/cqai-club/ebao-studio/releases)
 
-## Layout and future integrations
-
-| Directory | Current purpose |
-| --- | --- |
-| `deepseek-harness/` | Unmodified official source and the only Desktop application implementation |
-| `integrations/cqai-desktop-account/` | Adapter between official account interfaces and the CQAI service |
-| `integrations/ebao-desktop-welcome/` | Local welcome branding that reuses official Welcome components and preload |
-| `cqai-dsh-plugins/cqai-dsh-plugin-account/` | Active Host account, OIDC, and model-service source |
-| `.official-desktop/` | Isolated local state and generated account packages, ignored by Git |
-| Other CQAI plugins, Community Market/Fabric, and MatrixMedia | Inactive material for later integrations |
-
-## Release status
-
-CQAI sign-in currently applies to **source startup**. Root `package:dir`, `dist:mac:arm64`, `dist:mac:x64`, and `dist:win` still perform unsigned pure-official packaging and **do not bundle the CQAI provider or welcome overlay**. Full product branding, packaging, updates, and release support require a separate follow-up; this change does not upload or publish a new e宝 installer.
-
-[Historical e宝 Releases](https://github.com/cqai-club/ebao-studio/releases), screenshots, and user guides describe the previous product. See the [pinned upstream reference](deepseek-harness/apps/desktop/README.md) for official behavior and packaging. This repository uses the [MIT License](LICENSE); report issues through [e宝工坊 Issues](https://github.com/cqai-club/ebao-studio/issues).
+This repository uses the [MIT License](LICENSE). Report repository issues through [e宝工坊 Issues](https://github.com/cqai-club/ebao-studio/issues).
