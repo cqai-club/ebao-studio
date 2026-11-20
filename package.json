@@ -15,9 +15,9 @@
     "typecheck": "node scripts/official-desktop.mjs typecheck",
     "test:launcher": "node --test scripts/official-desktop.test.mjs",
     "test:desktop": "node scripts/official-desktop.mjs test",
-    "test": "yarn test:launcher && yarn test:desktop",
+    "test": "yarn test:launcher && yarn test:integrations && yarn test:desktop",
     "check:layout": "node scripts/verify-layout.mjs",
-    "check": "yarn check:layout && yarn test:launcher && yarn build && yarn typecheck && yarn test:desktop",
+    "check": "yarn check:layout && yarn check:components && yarn test:launcher && yarn build && yarn typecheck && yarn test:integrations && yarn test:desktop",
     "package:dir": "node scripts/official-desktop.mjs package:dir",
     "dist:mac:arm64": "node scripts/official-desktop.mjs package:mac:arm64",
     "dist:mac:x64": "node scripts/official-desktop.mjs package:mac:x64",
@@ -28,6 +28,8 @@
     "upstream:build": "node scripts/official-desktop.mjs build",
     "upstream:build:official": "node scripts/official-desktop.mjs build",
     "upstream:prepare-electron": "node scripts/official-desktop.mjs prepare:electron",
-    "upstream:repair-install": "node scripts/official-desktop.mjs repair-install"
+    "upstream:repair-install": "node scripts/official-desktop.mjs repair-install",
+    "check:components": "node scripts/verify-dsh-component-versions.mjs",
+    "test:integrations": "cd deepseek-harness && corepack pnpm exec vitest run --config ../integrations/cqai-desktop-account/vitest.config.mjs"
   }
 }

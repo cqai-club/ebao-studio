@@ -15,7 +15,10 @@ export type { Config } from './adapter.ts'
 export { CqaiDesktopAccountAdapter } from './adapter.ts'
 
 export class CqaiDesktopAccount extends DeepSeekAccount {
-  static inject = ['dsnAccount']
+  // Keep the official RC5 account dependencies alongside the CQAI service.
+  // Static injection replaces the parent declaration, so omitting these
+  // services makes the inherited DeepSeekAccount constructor fail at startup.
+  static inject = ['dsnAccount', 'credentials', 'authorization']
   private readonly adapter: CqaiDesktopAccountAdapter
 
   constructor(ctx: Context, config: Config = {}) {

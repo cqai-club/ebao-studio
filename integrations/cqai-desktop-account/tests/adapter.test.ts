@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import AuthorizationService from '@deepseek-ai/dsh-authorization'
+import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import type { SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { DsnAccountSnapshot } from '@cqaiclub/dsn-account/protocol'
 import { CqaiDesktopAccountAdapter, type CqaiAccountOperations } from '../src/adapter.ts'
 import { CqaiDesktopAccount } from '../src/index.ts'
 
-const client = { version: '0.2.2-rc.1', locale: 'zh-CN', timezoneOffsetSeconds: 28800 }
+const client = { version: '0.2.2-rc.5', locale: 'zh-CN', timezoneOffsetSeconds: 28800 }
 const signedIn: DsnAccountSnapshot = { state: 'signed-in', account: { userId: 42, platform: 'cqai', displayName: 'CQAI member', quota: 500000 }, refreshedAt: 1, stale: false }
 const authorizing = (attemptId = 'cqai-attempt', authorizationUrl = 'https://auth.cqaiclub.asia/oidc/authorize?state=oauth-state&code_challenge=pkce') => ({
   state: 'authorizing' as const, attemptId, authorizationUrl, expiresAt: Date.now() + 60_000, message: 'Continue in browser',
@@ -190,8 +195,13 @@ describe('CQAI adapter for the official Desktop account contract', () => {
 
   it('registers the actual official service and never exports CQAI tokens to official consumers', async () => {
     const f = fixture()
+    const home = mkdtempSync(join(tmpdir(), 'cqai-desktop-account-'))
     const ctx = new Context()
     const remove = ctx.provide('dsnAccount', f.account)
+    const credentials = ctx.plugin(LocalCredentialProvider, { path: join(home, 'credentials.yaml'), watch: false })
+    await credentials
+    const authorization = ctx.plugin(AuthorizationService)
+    await authorization
     const plugin = ctx.plugin(CqaiDesktopAccount)
     await plugin
     try {
@@ -204,6 +214,12 @@ describe('CQAI adapter for the official Desktop account contract', () => {
       expect(await service.getUnnotifiedBonuses(client)).toBeNull()
       expect(await service.ackBonusNotified('u' as never, 'b' as never, client)).toBe(false)
       expect(Object.keys(await service.getDeviceIdentity())).toEqual(['osVersion'])
-    } finally { await plugin.dispose(); remove() }
+    } finally {
+      await plugin.dispose()
+      await authorization.dispose()
+      await credentials.dispose()
+      remove()
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 })

@@ -39,7 +39,7 @@ Harness 和 Electron 默认分别使用 `.official-desktop/official/home` 和 `.
 corepack yarn check
 ```
 
-`check` 依次检查仓库布局和启动器，运行官方 `build:artifacts`、Desktop 类型检查和无界面测试。图形启动、真实账号授权、模型调用和原生安装包需要分别验证。
+`check` 依次检查仓库布局、相关组件的 DSH 版本和启动器，运行官方 `build:artifacts`、Desktop 类型检查、停用 CQAI 适配器兼容性测试和无界面 Desktop 测试。图形启动、真实账号授权、模型调用和原生安装包需要分别验证。
 
 ## 打包与历史集成
 

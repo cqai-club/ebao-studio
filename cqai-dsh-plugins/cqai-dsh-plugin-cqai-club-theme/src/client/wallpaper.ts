@@ -32,8 +32,8 @@ export const CLASSIC_DARK_BACKGROUND = [
 
 // Paint the shared frame once so the artwork stays continuous across the sidebar
 // and conversation. The PPT panel mounts alongside the home dock; exclude it.
-const HOME_FRAME = 'body:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) .dshDesktopFrame:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] .eBaoHomeDock):not(:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] [data-office-ppt-template-panel]))'
-const DARK_HOME_FRAME = 'body[data-ds-dark-theme]:is([data-dsh-desktop-mode="extended"], [data-dsh-desktop-mode="advanced"]) .dshDesktopFrame:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] .eBaoHomeDock):not(:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] [data-office-ppt-template-panel]))'
+const HOME_FRAME = '.dshDesktopFrame:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] .eBaoHomeDock):not(:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] [data-office-ppt-template-panel]))'
+const DARK_HOME_FRAME = 'body[data-ds-dark-theme] .dshDesktopFrame:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] .eBaoHomeDock):not(:has(.dshDesktopMainPanelSurface [data-conversation-content][data-content-phase="hero"] [data-office-ppt-template-panel]))'
 const MODERN_HOME = '[data-conversation-content][data-content-phase="hero"]:has(.eBaoHomeDock):not(:has([data-office-ppt-template-panel]))'
 
 // The default mist fills the shared frame; translucency and blur live on the

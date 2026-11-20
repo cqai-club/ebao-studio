@@ -1,11 +1,19 @@
 /** Edit Agent Markdown images through the public preview extension seam. */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MarkdownImagePreviewProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentType } from 'react'
 import { ChatImagePreview, type ChatImageEditorServices } from './chat-image-editor.tsx'
 import { ImageEditorDialog } from './ImageEditorDialog.tsx'
+
+/** Public preview props retained locally because RC5 no longer exports this legacy primitive type. */
+export interface MarkdownImagePreviewProps {
+  readonly src: string
+  readonly alt: string
+  readonly destination: string
+  readonly labels: { readonly dialog: string; readonly close: string }
+  readonly onClose: () => void
+}
 
 /** The original Markdown props remain owned by its renderer throughout editing. */
 export function MarkdownImageEditor({ src, alt, destination, labels, onClose, editor }: MarkdownImagePreviewProps & {

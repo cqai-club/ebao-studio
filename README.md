@@ -28,8 +28,8 @@ corepack yarn dev
 | --- | --- |
 | `corepack yarn build` | 运行官方 `build:artifacts` |
 | `corepack yarn typecheck` | 检查官方 Desktop 类型 |
-| `corepack yarn test` | 运行启动器和官方 Desktop 测试 |
-| `corepack yarn check` | 组合布局、启动器、构建、类型及无界面测试 |
+| `corepack yarn test` | 运行启动器、停用组件兼容性和官方 Desktop 测试 |
+| `corepack yarn check` | 组合布局、组件版本、启动器、构建、类型及无界面测试 |
 | `corepack yarn package:dir` | 生成未签名的官方应用目录 |
 | `corepack yarn dist:mac:arm64`、`dist:mac:x64`、`dist:win` | 生成对应目标的官方未签名安装产物 |
 

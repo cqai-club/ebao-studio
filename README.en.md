@@ -28,8 +28,8 @@ The official development instance stores Harness state in `.official-desktop/off
 | --- | --- |
 | `corepack yarn build` | Run official `build:artifacts` |
 | `corepack yarn typecheck` | Check official Desktop types |
-| `corepack yarn test` | Run launcher and official Desktop tests |
-| `corepack yarn check` | Check layout, launcher, build, types, and headless tests |
+| `corepack yarn test` | Run launcher, dormant component compatibility, and official Desktop tests |
+| `corepack yarn check` | Check layout, component versions, launcher, build, types, and headless tests |
 | `corepack yarn package:dir` | Generate an unsigned official application directory |
 | `corepack yarn dist:mac:arm64`, `dist:mac:x64`, `dist:win` | Generate unsigned official artifacts for the selected target |
 

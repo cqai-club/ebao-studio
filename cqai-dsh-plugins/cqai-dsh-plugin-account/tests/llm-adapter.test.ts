@@ -32,11 +32,15 @@ function accountService(response: Response, models: DsnModel[] = [textModel, mul
 } {
   return {
     getStatus: vi.fn(),
+    startAuthorization: vi.fn(),
+    cancelAuthorization: vi.fn(),
+    logout: vi.fn(async () => ({ remoteRevoked: false })),
     getIdentity: vi.fn(),
     getAccount: vi.fn(),
     listModels: vi.fn(async () => ({ models, fetchedAt: Date.now(), stale: false })),
     getDefaultModel: vi.fn(),
     setDefaultModel: vi.fn(),
+    adoptOnboardingDefaultModel: vi.fn(),
     getCategoryDefaultModels: vi.fn(),
     setCategoryDefaultModel: vi.fn(),
     getTopUpInfo: vi.fn(),

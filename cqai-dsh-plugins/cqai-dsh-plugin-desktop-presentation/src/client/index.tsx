@@ -211,10 +211,6 @@ function HomeFrame({ hero, children, ctx }: { hero: boolean; children: ReactNode
 
 /** The presentation is a Desktop mode layer, never a compatibility override. */
 export function apply(ctx: Context): void {
-  const mode = new URLSearchParams(window.location.search).get('dsh-desktop-mode')
-  const desktop = (window as Window & { desktopNext?: unknown }).desktopNext !== undefined
-  if (mode === 'compatibility' || (!desktop && mode !== 'extended' && mode !== 'advanced')) return
-
   ctx.inject(['layout'], scope => {
     scope.effect(() => installHomeStyles(), 'cqai-desktop-presentation: styles')
     scope.slots.inject('conversation.hero.brand.mark', () => scope.slots.register({

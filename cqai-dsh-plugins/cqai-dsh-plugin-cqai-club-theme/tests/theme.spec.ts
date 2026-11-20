@@ -156,11 +156,19 @@ describe('CQAI Club palette', () => {
     expect(removeEventListener).toHaveBeenCalledWith('storage', expect.any(Function))
   })
 
-  it('leaves compatibility mode untouched', () => {
-    vi.stubGlobal('window', { location: { search: '?dsh-desktop-mode=compatibility' } })
-    const effect = vi.fn()
-    apply({ effect } as unknown as Context)
-    expect(effect).not.toHaveBeenCalled()
+  it('runs on the official Desktop without a legacy mode parameter', () => {
+    vi.stubGlobal('window', { location: { search: '' }, localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }, addEventListener: () => {}, removeEventListener: () => {} })
+    vi.stubGlobal('document', {
+      createElement: () => ({ dataset: {}, textContent: '', remove: () => {} }),
+      head: { appendChild: () => {} },
+    })
+    const effect = vi.fn((setup: () => unknown) => setup())
+    const overrideTokens = vi.fn()
+    const locale = { register: vi.fn(() => vi.fn()) }
+    const slots = { inject: vi.fn(), register: vi.fn() }
+    apply({ effect, theme: { overrideTokens }, locale, slots } as unknown as Context)
+    expect(effect).toHaveBeenCalled()
+    expect(overrideTokens).toHaveBeenCalledWith('cqai-club-theme', CLUB_THEME_TOKENS)
   })
 
   it.each(['#FFFFFF', '#000000', '#FFEB00', '#4B6AFF', '#087F72'])('keeps a picked accent legible: %s', accent => {

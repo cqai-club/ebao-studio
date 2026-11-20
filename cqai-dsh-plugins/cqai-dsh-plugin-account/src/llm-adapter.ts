@@ -518,12 +518,12 @@ async function errorFromResponse(response: Response): Promise<LlmError> {
   const code = response.status === 401
     ? 'AUTH'
     : response.status === 403
-      ? 'FORBIDDEN'
+      ? 'AUTH'
       : response.status === 429
         ? 'RATE_LIMIT'
         : response.status >= 500
-          ? 'UPSTREAM'
-          : 'UPSTREAM_RESPONSE'
+          ? 'SERVER'
+          : `HTTP_${response.status}` as const
   return new LlmError(message, code, { status: response.status })
 }
 

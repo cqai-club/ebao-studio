@@ -54,3 +54,10 @@
 4. 按仓库规则先在 Beta 验证，再同步 Stable 共享部分，保留渠道差异；Next 单独验证。适配代码和补丁留在桌面拥有的包内，不修改 `deepseek-harness/` 子模块。
 
 本报告其余内容保留初次排查时的证据和验证范围。
+
+## 2026-11-21 RC5 自定义组件同步
+
+- 15 个自定义插件或市场 package manifest，以及 CQAI 适配器测试夹具，已同步到官方 `0.2.2-rc.5`。根目录 `corepack yarn check:components` 校验所有 16 个相关 manifest。
+- 账号适配器补齐官方 RC5 的 `credentials`、`authorization` 注入，CQAI 集成测试为 14 个文件、93 项通过。
+- 首页呈现、主题和插件市场移除旧 Desktop mode 依赖，市场接入官方 `plugins.tab`，并按 RC5 的 `BundleInfo.update` 字段更新。首页 UI smoke 2 项通过，主题 26 项通过，社区市场 22 个文件、405 项通过。
+- 这些组件仍不自动写入官方默认 Profile。官方 RC5 新 Profile 的欢迎页、API Key、工作区和官方插件页通过图形验收。

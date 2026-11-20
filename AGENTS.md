@@ -12,8 +12,8 @@ This repository runs the pinned official DeepSeek Harness Desktop from unmodifie
 
 ## Build, run, and verify
 
-- `corepack yarn build` runs official `build:artifacts`. `typecheck` targets the official Desktop project. `test` runs launcher and official Desktop tests.
-- `corepack yarn check` combines layout and launcher checks, the official build, Desktop type checking, and Desktop tests. Keep this gate headless-safe. Graphical startup, real user authorization, model calls, and installers need separate evidence.
+- `corepack yarn build` runs official `build:artifacts`. `typecheck` targets the official Desktop project. `test` runs launcher tests, the dormant CQAI adapter compatibility suite, and official Desktop tests.
+- `corepack yarn check` combines layout and DSH component-version checks, launcher tests, the official build, Desktop type checking, the dormant CQAI adapter compatibility suite, and Desktop tests. Keep this gate headless-safe. Graphical startup, real user authorization, model calls, and installers need separate evidence.
 - `corepack yarn dev` delegates to official `dev:desktop`. Run `corepack yarn build` before using `corepack yarn start`, which delegates to official `start:desktop` with the existing build.
 - The launcher defaults to `.official-desktop/official/home` and `.official-desktop/official/electron-user-data`. Preserve the former source-launch directories and installed app data. Override the new defaults with absolute paths only through `EBAO_OFFICIAL_DSH_HOME` and `EBAO_OFFICIAL_USER_DATA_DIR`. Use fresh paths to verify official default plugins.
 - Run upstream operations through the root `upstream:*` scripts. Keep the official pnpm workspace out of the outer Yarn dependency graph.

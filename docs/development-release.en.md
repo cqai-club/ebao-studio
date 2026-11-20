@@ -39,7 +39,7 @@ The former source-launch directories `.official-desktop/home` and `.official-des
 corepack yarn check
 ```
 
-`check` validates the repository layout and launcher, runs official `build:artifacts`, checks Desktop types, and runs headless tests. Graphical startup, real user authorization, model requests, and native installers require separate verification.
+`check` validates the repository layout, related component DSH versions, and launcher, runs official `build:artifacts`, checks Desktop types, runs the dormant CQAI adapter compatibility suite, and runs headless Desktop tests. Graphical startup, real user authorization, model requests, and native installers require separate verification.
 
 ## Packaging and historical integrations
 
