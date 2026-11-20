@@ -56,7 +56,7 @@
     "build": "node scripts/clean-lib.mjs && tsdown",
     "watch": "tsdown --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run && yarn build && node scripts/smoke.mjs",
+    "test": "vitest run && pnpm run build && node scripts/smoke.mjs",
     "fetch-templates": "node scripts/fetch-templates.mjs"
   },
   "dependencies": {

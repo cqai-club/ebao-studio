@@ -43,8 +43,8 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "yarn build && node --test tests/home-layout.test.mjs",
-    "test:layout": "yarn test"
+    "test": "pnpm run build && node --test tests/home-layout.test.mjs",
+    "test:layout": "pnpm run test"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2 || 4.0.6-alpha.2",
