@@ -1,7 +1,7 @@
 {
   "name": "ebao-studio",
   "private": true,
-  "description": "Launcher for the pinned official DeepSeek Harness Desktop.",
+  "description": "Official DeepSeek Harness Desktop with e宝工坊 login and welcome presentation.",
   "license": "MIT",
   "packageManager": "yarn@4.18.0",
   "engines": {
@@ -13,7 +13,7 @@
     "start": "node scripts/official-desktop.mjs start",
     "build": "node scripts/official-desktop.mjs build",
     "typecheck": "node scripts/official-desktop.mjs typecheck",
-    "test:launcher": "node --test scripts/official-desktop.test.mjs",
+    "test:launcher": "node --test scripts/official-desktop.test.mjs scripts/prepare-cqai-account.test.mjs scripts/prepare-ebao-welcome.test.mjs",
     "test:desktop": "node scripts/official-desktop.mjs test",
     "test": "yarn test:launcher && yarn test:integrations && yarn test:desktop",
     "check:layout": "node scripts/verify-layout.mjs",
@@ -29,6 +29,10 @@
     "upstream:build:official": "node scripts/official-desktop.mjs build",
     "upstream:prepare-electron": "node scripts/official-desktop.mjs prepare:electron",
     "upstream:repair-install": "node scripts/official-desktop.mjs repair-install",
+    "cqai:build": "node scripts/prepare-cqai-account.mjs --build-only",
+    "cqai:prepare": "node scripts/prepare-cqai-account.mjs",
+    "cqai:typecheck": "node scripts/typecheck-cqai-account.mjs",
+    "cqai:test": "cd deepseek-harness && corepack pnpm exec vitest run --config ../integrations/cqai-desktop-account/vitest.config.mjs",
     "check:components": "node scripts/verify-dsh-component-versions.mjs",
     "test:integrations": "cd deepseek-harness && corepack pnpm exec vitest run --config ../integrations/cqai-desktop-account/vitest.config.mjs"
   }

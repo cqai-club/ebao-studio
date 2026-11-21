@@ -2,9 +2,9 @@
 
 [中文](README.md) · [Documentation](docs/README.en.md) · [Contributing](CONTRIBUTING.en.md)
 
-This repository builds and runs DeepSeek Harness Desktop from pinned official source. Upstream provides the welcome page, application identity, DeepSeek sign-in and API Key setup, bundled plugins, and plugin management. See [upstream.json](upstream.json) for the pinned version, commit, and pnpm release.
+This repository builds and runs DeepSeek Harness Desktop from pinned official source. The upstream runtime and authentication IPC remain in place, while the e宝 layer supplies the branded welcome page and CQAI account sign-in. DeepSeek API Key setup remains an independent optional entry. See [upstream.json](upstream.json) for the pinned version, commit, and pnpm release.
 
-The CQAI account integration, e宝 welcome page, and former business plugins are retained as historical source. The default build and launcher use the official workspace. e宝工坊 maintains this repository independently. The [DeepSeek Harness Desktop documentation](deepseek-harness/apps/desktop/README.md) covers official behavior and plugin usage.
+The CQAI account integration and e宝 welcome page participate in source startup. Former business plugins remain available for separate future integrations. e宝工坊 maintains this repository independently. The [DeepSeek Harness Desktop documentation](deepseek-harness/apps/desktop/README.md) covers official runtime and plugin behavior.
 
 ## Run from source
 
@@ -18,7 +18,7 @@ corepack yarn upstream:prepare-electron
 corepack yarn dev
 ```
 
-`dev` builds and launches the graphical application. To launch a prepared build, run `corepack yarn build`, then `corepack yarn start`. Initial preparation of dependencies, Electron, and the official bundled runtime requires network access. Windows Git Bash can use `corepack.cmd`.
+`dev` builds official artifacts, prepares the CQAI Profile and e宝 welcome layer, and launches the graphical application. To launch a prepared build, run `corepack yarn build`, then `corepack yarn start`. Initial preparation of dependencies, Electron, and the official bundled runtime requires network access. Windows Git Bash can use `corepack.cmd`.
 
 The official development instance stores Harness state in `.official-desktop/official/home` and Electron user data in `.official-desktop/official/electron-user-data`. Existing local Profiles, accounts, sessions, works, and installed-application data stay in their original locations. The [development guide](docs/development-release.en.md) explains how to select custom paths.
 
@@ -26,9 +26,9 @@ The official development instance stores Harness state in `.official-desktop/off
 
 | Repository-root command | Purpose |
 | --- | --- |
-| `corepack yarn build` | Run official `build:artifacts` |
+| `corepack yarn build` | Run official `build:artifacts` and generate the e宝 welcome and account layers |
 | `corepack yarn typecheck` | Check official Desktop types |
-| `corepack yarn test` | Run launcher, dormant component compatibility, and official Desktop tests |
+| `corepack yarn test` | Run launcher, CQAI account compatibility, and official Desktop tests |
 | `corepack yarn check` | Check layout, component versions, launcher, build, types, and headless tests |
 | `corepack yarn package:dir` | Generate an unsigned official application directory |
 | `corepack yarn dist:mac:arm64`, `dist:mac:x64`, `dist:win` | Generate unsigned official artifacts for the selected target |

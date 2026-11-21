@@ -1,5 +1,5 @@
 # e宝本地欢迎页适配
 
-该目录保留旧版 e宝 欢迎页品牌适配源码。当前官方 DeepSeek Harness Desktop 直接提供欢迎页、登录、API Key 和认证 IPC，默认构建不会加载本适配。
+该目录包含 e宝工坊欢迎页品牌适配源码。启动器会在官方 Desktop 最后一次构建后生成欢迎页资源，保留官方认证 IPC 和 API Key 流程，并将默认登录接到 CQAI 账号 provider。
 
-官方欢迎页通过根目录 `corepack yarn dev` 或 `corepack yarn start` 验收。自定义插件和品牌扩展需要单独接入官方 Profile，并完成独立的构建、功能和 UI 回归。
+官方欢迎页通过根目录 `corepack yarn dev` 或 `corepack yarn start` 验收。生成资源位于忽略的官方 Desktop `lib/welcome` 目录，不能在官方构建完成前生成，否则会被上游构建覆盖。

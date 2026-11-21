@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { assertOfficialCheckout, createOfficialDesktopPlan, parseArguments, pruneStaleDependencyLinks, runOfficialDesktop } from './official-desktop.mjs'
+import { assertOfficialCheckout, createOfficialDesktopPlan, executeOfficialDesktopPlan, parseArguments, pruneStaleDependencyLinks, runOfficialDesktop } from './official-desktop.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -20,7 +20,7 @@ test('commands target the official checkout and registered upstream scripts', ()
     build: ['pnpm', 'run', 'build:artifacts'],
     typecheck: ['pnpm', 'exec', 'tsc', '-b', 'apps/desktop/tsconfig.json'],
     test: ['pnpm', 'exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000'],
-    dev: ['pnpm', 'run', 'dev:desktop'],
+    dev: ['pnpm', 'run', 'start:desktop'],
     start: ['pnpm', 'run', 'start:desktop'],
     'package:dir': ['pnpm', 'run', 'package:desktop:dir', '--unsigned'],
     'package:mac:arm64': ['pnpm', 'run', 'package:desktop:mac:arm64:unsigned'],
@@ -35,6 +35,42 @@ test('commands target the official checkout and registered upstream scripts', ()
     if (args[1] === 'run') assert.ok(manifest.scripts[args[2]], `Missing upstream script for ${action}`)
   }
   assertOfficialCheckout(join(root, 'deepseek-harness'))
+})
+
+test('owned account and welcome preparation run after the final upstream build', async () => {
+  for (const [action, expected] of [
+    ['dev', ['build:artifacts', 'build:desktop', 'account:dev', 'welcome', 'start:desktop']],
+    ['start', ['account:start', 'welcome', 'start:desktop']],
+    ['build', ['build:artifacts', 'account:build', 'welcome']],
+    ['package:dir', ['package:desktop:dir']],
+  ]) {
+    const steps = []
+    const code = await executeOfficialDesktopPlan(createOfficialDesktopPlan(action, { environment: {} }), {
+      run: async plan => { steps.push(plan.args[2]); return 0 },
+      account: async mode => { steps.push(`account:${mode}`) },
+      welcome: async () => { steps.push('welcome') },
+    })
+    assert.equal(code, 0)
+    assert.deepEqual(steps, expected)
+  }
+})
+
+test('failed upstream builds or owned preparation never launch the graphical app', async () => {
+  for (const failedScript of ['build:artifacts', 'build:desktop']) {
+    const steps = []
+    const code = await executeOfficialDesktopPlan(createOfficialDesktopPlan('dev', { environment: {} }), {
+      run: async plan => { steps.push(plan.args[2]); return plan.args[2] === failedScript ? 9 : 0 },
+      account: async () => { assert.fail('preparation followed a failed build') },
+      welcome: async () => { assert.fail('overlay followed a failed build') },
+    })
+    assert.equal(code, 9)
+    assert.equal(steps.includes('start:desktop'), false)
+  }
+  await assert.rejects(executeOfficialDesktopPlan(createOfficialDesktopPlan('start', { environment: {} }), {
+    run: async () => { assert.fail('a failed overlay must not launch') },
+    account: async () => {},
+    welcome: async () => { throw new Error('upstream branding seam changed') },
+  }), /upstream branding seam changed/)
 })
 
 test('normal commands never inherit an existing Harness home or community runtime', () => {
@@ -159,7 +195,7 @@ test('inspection is read-only and does not disclose unrelated environment values
     })
     assert.equal(result.status, 0, result.stderr)
     const config = JSON.parse(result.stdout)
-    assert.deepEqual(config.args, ['pnpm', 'run', 'dev:desktop'])
+    assert.deepEqual(config.args, ['pnpm', 'run', 'start:desktop'])
     assert.equal(config.state.home, state)
     assert.equal(config.env, undefined)
     assert.equal(result.stdout.includes('do-not-print'), false)

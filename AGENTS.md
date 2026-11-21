@@ -12,9 +12,9 @@ This repository runs the pinned official DeepSeek Harness Desktop from unmodifie
 
 ## Build, run, and verify
 
-- `corepack yarn build` runs official `build:artifacts`. `typecheck` targets the official Desktop project. `test` runs launcher tests, the dormant CQAI adapter compatibility suite, and official Desktop tests.
-- `corepack yarn check` combines layout and DSH component-version checks, launcher tests, the official build, Desktop type checking, the dormant CQAI adapter compatibility suite, and Desktop tests. Keep this gate headless-safe. Graphical startup, real user authorization, model calls, and installers need separate evidence.
-- `corepack yarn dev` delegates to official `dev:desktop`. Run `corepack yarn build` before using `corepack yarn start`, which delegates to official `start:desktop` with the existing build.
+- `corepack yarn build` runs the official build and generates the owned e宝 welcome layer and CQAI account artifacts. `typecheck` targets the official Desktop project. `test` runs launcher tests, the CQAI adapter compatibility suite, and official Desktop tests.
+- `corepack yarn check` combines layout and DSH component-version checks, launcher tests, the official build, Desktop type checking, the CQAI adapter compatibility suite, and Desktop tests. Keep this gate headless-safe. Graphical startup, real user authorization, model calls, and installers need separate evidence.
+- `corepack yarn dev` builds the official artifacts, prepares the CQAI Profile and e宝 welcome layer, then starts the official Desktop shell. `corepack yarn start` prepares the same owned layers before using the existing official build.
 - The launcher defaults to `.official-desktop/official/home` and `.official-desktop/official/electron-user-data`. Preserve the former source-launch directories and installed app data. Override the new defaults with absolute paths only through `EBAO_OFFICIAL_DSH_HOME` and `EBAO_OFFICIAL_USER_DATA_DIR`. Use fresh paths to verify official default plugins.
 - Run upstream operations through the root `upstream:*` scripts. Keep the official pnpm workspace out of the outer Yarn dependency graph.
 - Let official Desktop initialize its `desktop` Profile and manage any plugins installed by the user.
@@ -23,7 +23,7 @@ This repository runs the pinned official DeepSeek Harness Desktop from unmodifie
 ## Source and data ownership
 
 - `deepseek-harness/` is a pinned Git submodule. Never edit its tracked files from a product feature branch. Update its pin and owning metadata in a separate commit when an upstream change is needed.
-- The CQAI account provider, e宝 welcome overlay, `cqai-dsh-plugins/`, Publisher Worker, AA, Market/Fabric, themes, and MatrixMedia are retained as inactive source. Integrating a business capability requires a separate implementation and verification change.
+- The CQAI account provider and e宝 welcome overlay are active for source startup. Other `cqai-dsh-plugins/` packages, Publisher Worker, AA, Market/Fabric, themes, and MatrixMedia remain inactive source. Integrating each additional business capability requires a separate implementation and verification change.
 - Preserve existing `~/.dsh`, `~/.dsh-beta`, application-support directories, accounts, sessions, attachments, and works. Data migration requires a separate change.
 - Historical product documentation and releases describe the retired e宝/community implementation. Do not infer current feature availability from them.
 - Commit before a major change of direction. Keep migration, upstream pin changes, later product integrations, and releases independently reviewable.

@@ -53,7 +53,7 @@ for (const [script, action] of Object.entries({
   }
 }
 for (const script of Object.keys(workspace.scripts ?? {})) {
-  if (/:beta|:next|^(?:aa|cqai|market):/u.test(script)) fail(`retired integration command remains active: ${script}`)
+  if (/:beta|:next|^(?:aa|market):/u.test(script)) fail(`retired integration command remains active: ${script}`)
 }
 if (!/^nodeLinker:\s*node-modules\s*$/mu.test(readFileSync(resolve(root, '.yarnrc.yml'), 'utf8'))) {
   fail('the outer Yarn workspace must retain the node-modules linker')

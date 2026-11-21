@@ -1,7 +1,7 @@
 /** Product-owned account Provider for the unmodified official Desktop shell. */
 import type { Context } from '@deepseek-ai/cordis'
 import { release } from 'node:os'
-import { DeepSeekAccount, type AccountClientMetadata, type AccountBonusOrderId, type AccountUserId, type SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account'
+import { DeepSeekAccount, type AccountClientMetadata, type AccountUpdate, type SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account'
 import type { DsnAccountService, DsnAccountSnapshot } from '@cqaiclub/dsn-account/protocol'
 import { CqaiDesktopAccountAdapter, type Config } from './adapter.ts'
 
@@ -32,17 +32,27 @@ export class CqaiDesktopAccount extends DeepSeekAccount {
       void this.adapter.observe(snapshot).catch(() => { console.warn('[cqai-desktop-account] Account state update failed.') })
     })
     ctx.effect(() => () => { stop(); this.adapter.dispose() }, 'cqai-desktop-account: account lifecycle')
+    // Keep the official Remote method metadata on DeepSeekAccount's prototype.
+    // Instance overrides preserve RC5 argument descriptors while routing the
+    // implementation through the CQAI adapter.
+    Object.assign(this, {
+      getState: () => this.adapter.getState(),
+      getProfile: (_client: AccountClientMetadata) => this.adapter.getProfile(),
+      getBalance: (_client: AccountClientMetadata) => this.adapter.getBalance(),
+      startSignIn: (_client: AccountClientMetadata, _callbackOrigin: string, _loginSource: 'web' | 'desktop') => this.adapter.startSignIn(),
+      cancelSignIn: (id: SignInAttemptId) => this.adapter.cancelSignIn(id),
+      signOut: (_client: AccountClientMetadata) => this.adapter.signOut(),
+      watchState: (signal: AbortSignal) => this.watchAdapter(signal),
+    })
   }
 
-  getState() { return this.adapter.getState() }
-  getProfile(_client: AccountClientMetadata) { return this.adapter.getProfile() }
-  getBalance(_client: AccountClientMetadata) { return this.adapter.getBalance() }
+  private async *watchAdapter(signal: AbortSignal): AsyncIterable<AccountUpdate> {
+    for await (const state of this.adapter.watch(signal)) yield { type: 'snapshot', state }
+  }
+
+  /** Compatibility no-ops for callers built against older account contracts. */
   async getUnnotifiedBonuses(_client: AccountClientMetadata) { return null }
-  async ackBonusNotified(_accountId: AccountUserId, _orderId: AccountBonusOrderId, _client: AccountClientMetadata) { return false }
-  startSignIn(_client: AccountClientMetadata, _callbackOrigin: string, _loginSource: 'web' | 'desktop') { return this.adapter.startSignIn() }
-  cancelSignIn(id: SignInAttemptId) { return this.adapter.cancelSignIn(id) }
-  signOut(_client: AccountClientMetadata) { return this.adapter.signOut() }
-  watch(signal: AbortSignal, _includeIdentityChanges = false) { return this.adapter.watch(signal) }
+  async ackBonusNotified(_accountId: string, _orderId: string, _client: AccountClientMetadata) { return false }
   // CQAI's own route resolves credentials. Official model and embedded-Platform
   // consumers must never obtain a CQAI token through these service operations.
   async resolveToken(_url: string) { return undefined }

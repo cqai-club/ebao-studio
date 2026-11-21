@@ -27,7 +27,7 @@ corepack yarn build
 corepack yarn start
 ```
 
-`dev` delegates to official `dev:desktop` to build and open the application. `start` delegates to official `start:desktop` to launch existing output. Rebuild before using `start` after changing versions. The first launch may need network access to prepare the official bundled runtime.
+`dev` runs official `build:artifacts` and `build:desktop`, prepares the CQAI Profile and e宝 welcome layer, then delegates to official `start:desktop`. `start` prepares the same owned layers before launching existing output. Rebuild before using `start` after changing versions. The first launch may need network access to prepare the official bundled runtime.
 
 Harness and Electron default to `.official-desktop/official/home` and `.official-desktop/official/electron-user-data` respectively. Use `EBAO_OFFICIAL_DSH_HOME` and `EBAO_OFFICIAL_USER_DATA_DIR` to select absolute paths. Official Desktop initializes or reads the `desktop` Profile in the selected Harness home, and its plugin manager handles plugins installed by the user. Use a fresh directory to verify the official default plugins.
 
@@ -39,10 +39,10 @@ The former source-launch directories `.official-desktop/home` and `.official-des
 corepack yarn check
 ```
 
-`check` validates the repository layout, related component DSH versions, and launcher, runs official `build:artifacts`, checks Desktop types, runs the dormant CQAI adapter compatibility suite, and runs headless Desktop tests. Graphical startup, real user authorization, model requests, and native installers require separate verification.
+`check` validates the repository layout, related component DSH versions, and launcher, runs official `build:artifacts`, checks Desktop types, runs the CQAI adapter compatibility suite, and runs headless Desktop tests. Graphical startup, real user authorization, model requests, and native installers require separate verification.
 
 ## Packaging and historical integrations
 
 `package:dir`, `dist:mac:arm64`, `dist:mac:x64`, and `dist:win` invoke official unsigned packaging for local verification. The [official Desktop development and packaging guide](../deepseek-harness/apps/desktop/README.md) covers signing, updates, and publication.
 
-The CQAI account provider, local e宝 welcome page, other business plugins, market, and MatrixMedia sources are inactive. The [account and welcome Agent Note](../.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.md) records the former integration. Previous product installers and release records are available under [historical e宝 Releases](https://github.com/cqai-club/ebao-studio/releases).
+The CQAI account provider and local e宝 welcome page are active for source startup. Other business plugins, market, and MatrixMedia sources remain inactive until separate integration and verification. The [account and welcome Agent Note](../.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.md) records the account boundary. Previous product installers and release records are available under [historical e宝 Releases](https://github.com/cqai-club/ebao-studio/releases).

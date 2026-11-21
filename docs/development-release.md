@@ -27,7 +27,7 @@ corepack yarn build
 corepack yarn start
 ```
 
-`dev` 调用官方 `dev:desktop`，构建并打开图形应用。`start` 调用官方 `start:desktop`，使用已有产物。切换版本后，先重新构建再使用 `start`。首次启动可能需要联网准备官方内置运行时。
+`dev` 先调用官方 `build:artifacts` 和 `build:desktop`，再准备 CQAI Profile 与 e宝欢迎页，最后调用官方 `start:desktop` 打开图形应用。`start` 使用已有产物并重新确认账号层与欢迎页。切换版本后，先重新构建再使用 `start`。首次启动可能需要联网准备官方内置运行时。
 
 Harness 和 Electron 默认分别使用 `.official-desktop/official/home` 和 `.official-desktop/official/electron-user-data`。可通过 `EBAO_OFFICIAL_DSH_HOME` 与 `EBAO_OFFICIAL_USER_DATA_DIR` 分别指定绝对路径。官方 Desktop 按选定的数据目录初始化或读取 `desktop` Profile，由官方插件管理器处理用户安装的插件。检查官方默认插件时使用全新目录。
 
@@ -39,10 +39,10 @@ Harness 和 Electron 默认分别使用 `.official-desktop/official/home` 和 `.
 corepack yarn check
 ```
 
-`check` 依次检查仓库布局、相关组件的 DSH 版本和启动器，运行官方 `build:artifacts`、Desktop 类型检查、停用 CQAI 适配器兼容性测试和无界面 Desktop 测试。图形启动、真实账号授权、模型调用和原生安装包需要分别验证。
+`check` 依次检查仓库布局、相关组件的 DSH 版本和启动器，运行官方 `build:artifacts`、Desktop 类型检查、CQAI 适配器兼容性测试和无界面 Desktop 测试。图形启动、真实账号授权、模型调用和原生安装包需要分别验证。
 
 ## 打包与历史集成
 
 `package:dir`、`dist:mac:arm64`、`dist:mac:x64`、`dist:win` 调用官方未签名打包流程，产物供本地验证。签名、更新和发布步骤见[官方桌面开发与打包说明](../deepseek-harness/apps/desktop/README.zh.md)。
 
-CQAI 账号 provider、本地 e宝欢迎页、其他业务插件、市场和 MatrixMedia 源码均为停用状态。[账号及欢迎页 Agent Note](../.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.zh.md)记录此前的接入方式。旧产品安装包和发布记录见[历史 e宝 Releases](https://github.com/cqai-club/ebao-studio/releases)。
+CQAI 账号 provider 和本地 e宝欢迎页已接入源码启动流程。其他业务插件、市场和 MatrixMedia 源码仍需单独接入与验收。[账号及欢迎页 Agent Note](../.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.zh.md)记录账号边界。旧产品安装包和发布记录见[历史 e宝 Releases](https://github.com/cqai-club/ebao-studio/releases)。
