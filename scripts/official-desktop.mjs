@@ -16,7 +16,8 @@ const ACTIONS = {
   version: ['--version'],
   build: ['run', 'build:artifacts'],
   typecheck: ['exec', 'tsc', '-b', 'apps/desktop/tsconfig.json'],
-  test: ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000'],
+  // The Windows console suite builds its native probe in a setup hook.
+  test: ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000', '--hookTimeout=30000'],
   // Build explicitly before the owned welcome overlay, then use the official no-build launcher.
   dev: ['run', 'start:desktop'],
   start: ['run', 'start:desktop'],
