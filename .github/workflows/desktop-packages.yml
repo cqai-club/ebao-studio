@@ -7,6 +7,7 @@ on:
       - '.github/workflows/desktop-packages.yml'
       - 'deepseek-harness'
       - 'package.json'
+      - 'assets/desktop-brand/**'
       - 'scripts/official-desktop.mjs'
       - 'scripts/package-ebao-desktop.mjs'
       - 'scripts/prepare-*.mjs'

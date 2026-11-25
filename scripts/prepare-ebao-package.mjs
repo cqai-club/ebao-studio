@@ -1,5 +1,5 @@
 /** Apply the e宝 integration to the generated files consumed by the pinned Desktop packager. */
-import { cpSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { APP_ID, PRODUCT_NAME, replacePackageSeam } from './package-ebao-desktop.mjs'
@@ -10,6 +10,9 @@ import { buildWelcomePresentation, createWelcomePlan } from './prepare-ebao-welc
 const welcomePlan = createWelcomePlan()
 const buildPaths = await import(pathToFileURL(join(welcomePlan.desktop, 'scripts', 'desktop-build-paths.mjs')))
 const productVersion = JSON.parse(readFileSync(join(welcomePlan.root, 'package.json'), 'utf8')).version
+const brandDirectory = join(welcomePlan.root, 'assets', 'desktop-brand')
+const macIcon = join(brandDirectory, 'app-macos.png')
+const windowsIcon = join(brandDirectory, 'app-windows.ico')
 const PACKAGE_NAME = 'ebao-studio-desktop'
 const USER_DATA_NAME = 'eBao Studio Desktop'
 
@@ -25,6 +28,7 @@ export function packageDesktopMain(source) {
   if (source.includes(PRODUCT_IDENTITY)) return source
   source = replacePackageSeam(source, 'let focusPrimaryWindow =', `${PRODUCT_IDENTITY}\nlet focusPrimaryWindow =`)
   source = replacePackageSeam(source, 'app.setAsDefaultProtocolClient("dsh")', 'app.setAsDefaultProtocolClient(ebaoDesktopProtocol)')
+  source = replacePackageSeam(source, 'applicationName: "DeepSeek Harness"', `applicationName: ${JSON.stringify(PRODUCT_NAME)}`)
   return replacePackageSeam(source, 'url === "dsh://open" || url === "dsh://open/"', 'url === `${ebaoDesktopProtocol}://open` || url === `${ebaoDesktopProtocol}://open/`')
 }
 
@@ -59,6 +63,10 @@ function prepareWindowsInstaller(directory) {
   const uninstaller = readFileSync(join(welcomePlan.desktop, 'installer', 'uninstall.nsh'), 'utf8')
   writeFileSync(join(directory, 'ebao-uninstall.nsh'), packageWindowsUninstaller(uninstaller), 'utf8')
   editGenerated(join(directory, 'strings.nsh'), text => text.replaceAll('DeepSeek Harness', PRODUCT_NAME))
+  for (const name of ['brand', 'brand-2x', 'brand-dark', 'brand-dark-2x', 'uninstaller-sidebar']) {
+    const filename = `${name}.bmp`
+    copyFileSync(join(brandDirectory, 'installer', filename), join(directory, filename))
+  }
 }
 
 function editGenerated(path, transform) {
@@ -110,15 +118,28 @@ export function createEbaoBuilderConfig(createOfficialConfig, environment = proc
   const { beforeBuild, beforePack } = config
   const installerDirectory = join(paths.root, 'installer-ui')
   const windows = environment.DSH_DESKTOP_TARGET_PLATFORM === 'win32'
+  const extraResources = config.extraResources.filter(resource =>
+    typeof resource === 'string' || (resource.to !== 'icon.png' && resource.to !== 'tray.ico'))
   return {
     ...config,
     productName: PRODUCT_NAME,
     protocols: [{ name: PRODUCT_NAME, schemes: ['ebao'] }],
     artifactName: 'eBao-Studio-${version}-${os}-${arch}-unsigned.${ext}',
     extraMetadata: { ...metadata, name: PACKAGE_NAME, version: productVersion },
-    mac: { ...config.mac, extendInfo: { ...config.mac.extendInfo, NSMicrophoneUsageDescription: 'e宝工坊 uses your microphone to transcribe speech into message drafts.' } },
+    extraResources: [
+      ...extraResources,
+      { from: windows ? join(brandDirectory, 'app-windows.png') : macIcon, to: 'icon.png' },
+      ...(windows ? [{ from: join(brandDirectory, 'tray.ico'), to: 'tray.ico' }] : []),
+    ],
+    mac: { ...config.mac, icon: macIcon, extendInfo: { ...config.mac.extendInfo, NSMicrophoneUsageDescription: 'e宝工坊 uses your microphone to transcribe speech into message drafts.' } },
     ...(windows ? {
-      nsis: { ...config.nsis, include: join(installerDirectory, 'ebao-installer.nsh') },
+      win: { ...config.win, icon: windowsIcon },
+      nsis: {
+        ...config.nsis,
+        installerIcon: windowsIcon,
+        uninstallerIcon: windowsIcon,
+        include: join(installerDirectory, 'ebao-installer.nsh'),
+      },
       beforeBuild: async context => {
         const includeDependencies = await beforeBuild(context)
         prepareWindowsInstaller(installerDirectory)
