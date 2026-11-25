@@ -6,7 +6,9 @@ import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { test } from 'node:test'
+import { runInNewContext } from 'node:vm'
 import { assertOfficialCheckout, createOfficialDesktopPlan, executeOfficialDesktopPlan, parseArguments, pruneStaleDependencyLinks, runOfficialDesktop } from './official-desktop.mjs'
+import { applyEbaoSourceIcons } from './prepare-ebao-source-icons.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -49,10 +51,10 @@ test('only packaging enables e宝 package preparation and preserves existing Nod
   assert.equal(source.env.NODE_OPTIONS, '--no-warnings')
 })
 
-test('owned account and renderer preparation run after the final upstream build', async () => {
+test('owned account, renderer and source icons are prepared after the final upstream build', async () => {
   for (const [action, expected] of [
-    ['dev', ['build:artifacts', 'build:desktop', 'account:dev', 'renderer', 'welcome', 'start:desktop']],
-    ['start', ['account:start', 'renderer', 'welcome', 'start:desktop']],
+    ['dev', ['build:artifacts', 'build:desktop', 'account:dev', 'renderer', 'welcome', 'sourceIcons', 'start:desktop']],
+    ['start', ['account:start', 'renderer', 'welcome', 'sourceIcons', 'start:desktop']],
     ['build', ['build:artifacts', 'account:build', 'renderer', 'welcome']],
     ['package:dir', ['package:desktop:dir']],
   ]) {
@@ -62,6 +64,7 @@ test('owned account and renderer preparation run after the final upstream build'
       account: async mode => { steps.push(`account:${mode}`) },
       renderer: async () => { steps.push('renderer') },
       welcome: async () => { steps.push('welcome') },
+      sourceIcons: async () => { steps.push('sourceIcons') },
     })
     assert.equal(code, 0)
     assert.deepEqual(steps, expected)
@@ -76,6 +79,7 @@ test('failed upstream builds or owned preparation never launch the graphical app
       account: async () => { assert.fail('preparation followed a failed build') },
       renderer: async () => { assert.fail('renderer overlay followed a failed build') },
       welcome: async () => { assert.fail('overlay followed a failed build') },
+      sourceIcons: async () => { assert.fail('source icons followed a failed build') },
     })
     assert.equal(code, 9)
     assert.equal(steps.includes('start:desktop'), false)
@@ -84,8 +88,55 @@ test('failed upstream builds or owned preparation never launch the graphical app
     run: async () => { assert.fail('a failed overlay must not launch') },
     account: async () => {},
     renderer: async () => {},
-    welcome: async () => { throw new Error('upstream branding seam changed') },
-  }), /upstream branding seam changed/)
+    welcome: async () => {},
+    sourceIcons: async () => { throw new Error('upstream icon seam changed') },
+  }), /upstream icon seam changed/)
+})
+
+test('source shells use e宝 Dock, window, About and tray artwork', async () => {
+  const upstream = `
+function createWindow(preload, show = false, primary = false) {
+\tconst window = new BrowserWindow({ preload });
+\treturn window;
+}
+function openWelcomeWindow(locale) {
+\treturn new BrowserWindow(welcomeWindowOptions(process.platform, locale));
+}
+async function main() {
+\tconst development = !app.isPackaged;
+\tconst applicationIconPath = development ? join(app.getAppPath(), "resources", "icon-windows.png") : join(process.resourcesPath, "icon.png");
+\tconst trayIconPath = development ? join(app.getAppPath(), "resources", "tray-windows.ico") : join(process.resourcesPath, "tray.ico");
+\treturn [applicationIconPath, trayIconPath, createWindow('preload').icon, openWelcomeWindow('zh-CN').icon];
+}
+main();`
+  const branded = applyEbaoSourceIcons(upstream)
+  assert.equal(applyEbaoSourceIcons(branded), branded)
+  assert.throws(() => applyEbaoSourceIcons(upstream.replace('tray-windows.ico', 'other.ico')), /Official Desktop source icon seam changed/)
+
+  const workspace = join(tmpdir(), 'source checkout with spaces')
+  const appRoot = join(workspace, 'deepseek-harness', 'apps', 'desktop')
+  const brandedDirectory = join(workspace, 'assets', 'desktop-brand')
+  const macIcon = join(brandedDirectory, 'app-macos.png')
+  const windowsIcon = join(brandedDirectory, 'app-windows.png')
+  const trayIcon = join(brandedDirectory, 'tray.ico')
+  const resourcesPath = join(workspace, 'packaged', 'resources')
+  for (const [platform, isPackaged, expectedDock, expectedIcons] of [
+    ['darwin', false, [macIcon], [macIcon, trayIcon, undefined, undefined]],
+    ['win32', false, [], [windowsIcon, trayIcon, windowsIcon, windowsIcon]],
+    ['darwin', true, [], [join(resourcesPath, 'icon.png'), join(resourcesPath, 'tray.ico'), undefined, undefined]],
+    ['win32', true, [], [join(resourcesPath, 'icon.png'), join(resourcesPath, 'tray.ico'), undefined, undefined]],
+  ]) {
+    const dock = []
+    const icons = await runInNewContext(branded, {
+      app: { isPackaged, getAppPath: () => appRoot, dock: { setIcon: icon => dock.push(icon) } },
+      process: { platform, resourcesPath },
+      BrowserWindow: class { constructor({ icon }) { this.icon = icon } },
+      welcomeWindowOptions: (platform, locale) => ({ platform, locale }),
+      join,
+    })
+    assert.deepEqual(dock, expectedDock)
+    assert.deepEqual([...icons], expectedIcons)
+  }
 })
 
 test('normal commands never inherit an existing Harness home or community runtime', () => {
@@ -211,6 +262,7 @@ test('inspection is read-only and does not disclose unrelated environment values
     assert.equal(result.status, 0, result.stderr)
     const config = JSON.parse(result.stdout)
     assert.deepEqual(config.args, ['pnpm', 'run', 'start:desktop'])
+    assert.ok(config.preparation.includes('e宝 desktop icons'))
     assert.equal(config.state.home, state)
     assert.equal(config.env, undefined)
     assert.equal(result.stdout.includes('do-not-print'), false)

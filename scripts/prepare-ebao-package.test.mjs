@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { APP_ID, PRODUCT_NAME, createEbaoPackageEnvironment, packageSmokeSource } from './package-ebao-desktop.mjs'
 import { createEbaoBuilderConfig, packageDesktopHost, packageDesktopMain, packageWindowsInstaller, packageWindowsUninstaller } from './prepare-ebao-package.mjs'
@@ -21,8 +22,10 @@ test('Windows unsigned packaging has independent identity and ignores upstream r
 test('e宝 builder keeps upstream packaging checks while selecting its own version, update boundary and protocol', () => {
   const beforePack = () => {}
   const afterPack = () => {}
+  const runtime = { from: '/runtime', to: 'runtime' }
   const fixture = {
     extraMetadata: { dshMandatoryUpdatePolicy: { origin: 'https://download.deepseek.com' }, upstreamField: true },
+    extraResources: [runtime, { from: '/harness/icon.png', to: 'icon.png' }, { from: '/harness/tray.ico', to: 'tray.ico' }],
     mac: { extendInfo: { CFBundleLocalizations: ['zh_CN'] } }, beforePack, afterPack,
   }
   const config = createEbaoBuilderConfig(env => {
@@ -35,6 +38,19 @@ test('e宝 builder keeps upstream packaging checks while selecting its own versi
   assert.deepEqual(config.protocols, [{ name: PRODUCT_NAME, schemes: ['ebao'] }])
   assert.match(config.artifactName, /^eBao-Studio-.*-unsigned\./u)
   assert.deepEqual(config.mac.extendInfo.CFBundleLocalizations, ['zh_CN'])
+  const brand = name => fileURLToPath(new URL(`../assets/desktop-brand/${name}`, import.meta.url))
+  assert.equal(config.mac.icon, brand('app-macos.png'))
+  assert.deepEqual(config.extraResources, [runtime, { from: config.mac.icon, to: 'icon.png' }])
+
+  const windows = createEbaoBuilderConfig(() => fixture,
+    { DSH_DESKTOP_UNSIGNED: '1', DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_TARGET_ARCH: 'x64' })
+  assert.equal(windows.win.icon, brand('app-windows.ico'))
+  assert.equal(windows.nsis.installerIcon, windows.win.icon)
+  assert.equal(windows.nsis.uninstallerIcon, windows.win.icon)
+  assert.deepEqual(windows.extraResources, [runtime,
+    { from: brand('app-windows.png'), to: 'icon.png' },
+    { from: brand('tray.ico'), to: 'tray.ico' },
+  ])
   assert.notEqual(config.beforePack, beforePack)
   assert.equal(config.afterPack, afterPack)
   assert.throws(() => createEbaoBuilderConfig(() => fixture, { DSH_DESKTOP_UNSIGNED: '0' }), /unsigned/u)
@@ -44,11 +60,13 @@ test('generated package transforms isolate installed state and mount the account
   const main = [
     'let focusPrimaryWindow = () => {};',
     'app.setAsDefaultProtocolClient("dsh");',
+    'app.setAboutPanelOptions({ applicationName: "DeepSeek Harness" });',
     'if (url === "dsh://open" || url === "dsh://open/") focusPrimaryWindow();',
   ].join('\n')
   const localized = packageDesktopMain(main)
   assert.match(localized, /if \(app\.isPackaged\) \{[\s\S]*?app\.setPath\("userData", userData\);[\s\S]*?\.ebao-studio/u)
   assert.match(localized, /app\.isPackaged \? "ebao" : "dsh"/u)
+  assert.ok(localized.includes(`applicationName: ${JSON.stringify(PRODUCT_NAME)}`))
   assert.equal(packageDesktopMain(localized), localized)
   assert.throws(() => packageDesktopMain(''), /seam changed/u)
 

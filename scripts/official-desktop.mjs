@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildAccountExtensions, createPreparationPlan, prepareProfile } from './prepare-cqai-account.mjs'
 import { applyEbaoAccountRenderer, ebaoAccountWorkspaceClients } from './prepare-ebao-account-renderer.mjs'
+import { prepareEbaoSourceIcons } from './prepare-ebao-source-icons.mjs'
 import { buildWelcomePresentation, createWelcomePlan } from './prepare-ebao-welcome.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -182,6 +183,7 @@ export async function executeOfficialDesktopPlan(plan, {
   account = prepareAccount,
   renderer = () => applyEbaoAccountRenderer(ebaoAccountWorkspaceClients(plan.cwd)),
   welcome = () => buildWelcomePresentation(createWelcomePlan()),
+  sourceIcons = () => prepareEbaoSourceIcons(plan.cwd),
 } = {}) {
   if (plan.action === 'dev') {
     for (const script of ['build:artifacts', 'build:desktop']) {
@@ -193,6 +195,7 @@ export async function executeOfficialDesktopPlan(plan, {
     await account(plan.action, plan)
     await renderer()
     await welcome()
+    await sourceIcons()
     return run(plan)
   }
   const code = await run(plan)
@@ -211,8 +214,9 @@ export async function main(args = process.argv.slice(2)) {
   if (options.printConfig) {
     const { action, command, args: commandArgs, cwd, state } = plan
     const ownedLayers = ['CQAI account', 'e宝 account renderer', 'e宝 welcome']
-    const preparation = action === 'dev' ? ['official build:artifacts', 'official build:desktop', ...ownedLayers]
-      : action === 'start' || action === 'build' ? ownedLayers : action.startsWith('package:') ? ['e宝 package staging'] : []
+    const sourceLayers = [...ownedLayers, 'e宝 desktop icons']
+    const preparation = action === 'dev' ? ['official build:artifacts', 'official build:desktop', ...sourceLayers]
+      : action === 'start' ? sourceLayers : action === 'build' ? ownedLayers : action.startsWith('package:') ? ['e宝 package staging'] : []
     process.stdout.write(`${JSON.stringify({ action, command, args: commandArgs, preparation, cwd, state }, null, 2)}\n`)
     return 0
   }
