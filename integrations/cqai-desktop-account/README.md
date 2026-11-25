@@ -1,14 +1,13 @@
 # CQAI Desktop account provider
 
-本扩展通过官方外部 `desktop` Profile，将现有 CQAI 账号服务适配为官方 `DeepSeekAccount` 接口。默认登录打开 CQAI OIDC 授权页；官方 Welcome 组件及认证 IPC 继续使用上游实现，本地欢迎页品牌由独立的[欢迎页适配](../ebao-desktop-welcome/README.md)提供。主工作区、Dock/应用菜单与插件管理仍使用官方身份。这里不包含另一套桌面壳或 CQAI 账号前端。
+本扩展将现有 CQAI 账号服务适配为官方 `DeepSeekAccount` 接口。用户从欢迎页、工作区侧栏或设置登录 e宝工坊时，浏览器打开 CQAI OIDC 授权页。欢迎页通过[欢迎页适配](../ebao-desktop-welcome/README.md)沿用官方认证 IPC，工作区账号界面使用 e宝工坊文案。
 
 ## 兼容性检查
 
-该适配器保留为自定义插件的 RC5 兼容性材料，不会被官方 Desktop 默认 Profile 自动安装。
-
-从仓库根目录运行：
+构建官方产物后，从仓库根目录运行兼容性测试。
 
 ```bash
+corepack yarn build
 corepack yarn test:integrations
 ```
 
@@ -28,4 +27,4 @@ corepack yarn test:integrations
 
 ## 打包边界
 
-当前 provider 不接入官方默认 `dev/start` 或 unsigned 打包 Profile。源码和测试保留供后续明确启用自定义插件时使用。
+`dev` 和 `start` 通过启动器准备的 `desktop` Profile 加载账号扩展。e宝工坊未签名安装包通过内置启动配置加载同一扩展，并使用独立的应用数据目录。上游 DeepSeek 账号及其账号推理入口在这两种启动方式中均被禁用。
