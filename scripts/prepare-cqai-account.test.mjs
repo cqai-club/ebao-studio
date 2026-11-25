@@ -79,13 +79,16 @@ test('Profile composition preserves custom fields, existing dependencies and bun
 test('account patch replaces the provider while retaining a real authorization configuration and disabling official-token inference', () => {
   const config = { issuer: 'https://auth.cqaiclub.asia/oidc', clientId: 'public-native-client', clubPortalUrl: 'https://cqaiclub.asia', scopes: ['openid', 'activity:publish', 'unknown:capability'] }
   const patch = composeAccountPatch(config)
-  assert.deepEqual(patch[0].insert[0].config, { ...config, scopes: ['openid', 'offline_access', 'profile', 'email', 'ai:invoke'] })
+  assert.deepEqual(patch[0].insert[0].config, {
+    ...config, desktopProductName: 'e宝工坊', scopes: ['openid', 'offline_access', 'profile', 'email', 'ai:invoke'],
+  })
   assert.deepEqual(config.scopes, ['openid', 'activity:publish', 'unknown:capability'])
   assert.deepEqual(patch[0].insert[1], { id: 'cqai-desktop-account', name: '@cqaiclub/desktop-account', config: {
     issuer: config.issuer, usageUrl: 'https://cqaiclub.asia/', topUpUrl: 'https://cqaiclub.asia/',
   } })
   assert.deepEqual(patch[1], { id: 'deepseek-account', disabled: true })
   assert.deepEqual(patch[2], { id: 'llm-deepseek-account', disabled: true })
+  assert.deepEqual(patch[3], { id: 'web-deepseek-api', config: { searchBilling: 'api-key', fetchBilling: 'api-key' } })
   assert.throws(() => composeAccountPatch({ ...config, issuer: 'http://issuer.invalid' }), /HTTPS/)
   assert.throws(() => composeAccountPatch({ ...config, clubPortalUrl: 'https://user:password@portal.invalid' }), /HTTPS/)
 })

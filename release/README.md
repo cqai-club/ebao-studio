@@ -1,10 +1,8 @@
-# Historical e宝 releases
+# e宝 releases
 
-This directory records the existing e宝 v0.0.x releases. Their version manifest
-and published download identities are preserved for already-installed clients.
+The root package manifest sets the version for current e宝工坊 installers. Use
+the Desktop packages workflow to build the three native installers and publish
+them with SHA256SUMS as an unsigned prerelease after verification.
 
-The current source branch runs the unmodified official DeepSeek Harness Desktop.
-Its local unsigned builds use the official version and identity. They are not
-published through the previous e宝 updater or release workflow. A future e宝
-integration and release contract must be reviewed before publishing a new product
-version.
+The release records through v0.0.16 describe the previous e宝 product. The
+`desktop-version.json` file belongs to the historical updater contract.

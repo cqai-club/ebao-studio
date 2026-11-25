@@ -2,9 +2,9 @@
 
 [English](README.en.md) · [文档索引](docs/README.md) · [参与贡献](CONTRIBUTING.md)
 
-本仓库从固定的官方源码构建运行 DeepSeek Harness 桌面端。欢迎页保留官方运行时和认证 IPC，由 e宝工坊适配层提供 e宝品牌与 CQAI 账号登录。DeepSeek API Key 仍作为独立的可选入口。当前源码版本、提交及 pnpm 版本见 [upstream.json](upstream.json)。
+本仓库从固定的官方源码构建运行 DeepSeek Harness 桌面端。欢迎页和工作台使用由 CQAI 提供的 e宝工坊账号登录。可单独配置 DeepSeek API Key 来使用 DeepSeek 官方模型。当前源码版本、提交及 pnpm 版本见 [upstream.json](upstream.json)。
 
-CQAI 账号 provider 和 e宝欢迎页适配参与源码启动。其他旧版业务插件仍保留供后续单独接入。e宝工坊独立维护本仓库。官方运行时和插件使用方式以 [DeepSeek Harness 桌面端文档](deepseek-harness/apps/desktop/README.zh.md)为准。
+e宝工坊账号适配随源码启动和安装包加载。其他旧版业务插件仍保留供后续单独接入。e宝工坊独立维护本仓库。官方运行时和插件使用方式见 [DeepSeek Harness 桌面端文档](deepseek-harness/apps/desktop/README.zh.md)。
 
 ## 从源码运行
 
@@ -30,9 +30,9 @@ corepack yarn dev
 | `corepack yarn typecheck` | 检查官方 Desktop 类型 |
 | `corepack yarn test` | 运行启动器、CQAI 账号适配和官方 Desktop 测试 |
 | `corepack yarn check` | 组合布局、组件版本、启动器、构建、类型及无界面测试 |
-| `corepack yarn package:dir` | 生成未签名的官方应用目录 |
-| `corepack yarn dist:mac:arm64`、`dist:mac:x64`、`dist:win` | 生成对应目标的官方未签名安装产物 |
+| `corepack yarn package:dir` | 生成未签名的 e宝工坊应用目录 |
+| `corepack yarn dist:mac:arm64`、`dist:mac:x64`、`dist:win` | 生成对应目标的 e宝工坊未签名安装包 |
 
-历史安装包、截图和使用指南记录的是此前的 e宝产品。 [历史 e宝 Releases](https://github.com/cqai-club/ebao-studio/releases)
+安装包见 [e宝工坊 Releases](https://github.com/cqai-club/ebao-studio/releases)。
 
 本仓库采用 [MIT License](LICENSE)。问题反馈见 [e宝工坊 Issues](https://github.com/cqai-club/ebao-studio/issues)。

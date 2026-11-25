@@ -337,6 +337,7 @@ export type DsnAccountConfig = {
   clientId: string
   resource: string
   accountServiceUrl: string
+  desktopProductName?: string
   clubPortalResource: string
   clubPortalUrl: string
   clubMcpEnabled: boolean

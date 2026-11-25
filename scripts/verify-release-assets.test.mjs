@@ -5,13 +5,40 @@ import { join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  expectedPreviewReleaseInstallers,
   expectedReleaseAssets,
   expectedUpdaterMetadata,
+  verifyPreviewReleaseAssets,
   verifyReleaseAssets,
 } from './verify-release-assets.mjs'
 
 const version = '1.2.3'
 const assetNames = expectedReleaseAssets(version)
+
+test('verifies the three native preview installers and rejects mixed release assets', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ebao-preview-assets-'))
+  try {
+    const assets = expectedPreviewReleaseInstallers('0.0.17')
+    assert.deepEqual(assets, [
+      'eBao-Studio-0.0.17-mac-arm64-unsigned.dmg',
+      'eBao-Studio-0.0.17-mac-x64-unsigned.dmg',
+      'eBao-Studio-0.0.17-win-x64-unsigned.exe',
+    ])
+    const checksums = []
+    for (const name of assets) {
+      await writeFile(join(directory, name), name)
+      checksums.push(`${createHash('sha256').update(name).digest('hex')}  ${name}`)
+    }
+    await writeFile(join(directory, 'SHA256SUMS'), `${checksums.join('\n')}\n`)
+    assert.deepEqual((await verifyPreviewReleaseAssets(directory, '0.0.17')).assets, assets)
+    await writeFile(join(directory, assets[2]), 'wrong bytes')
+    await assert.rejects(verifyPreviewReleaseAssets(directory, '0.0.17'), /SHA-256 mismatch/)
+    await writeFile(join(directory, 'latest.yml'), 'legacy')
+    await assert.rejects(verifyPreviewReleaseAssets(directory, '0.0.17'), /Unexpected preview asset set/)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 
 test('macOS naming changes at 0.0.15 while historical releases remain verifiable', () => {
   for (const [release, suffix] of [['0.0.14', '-universal'], ['0.0.15', ''], ['0.0.16', ''], ['0.1.0', ''], ['1.0.0', '']]) {

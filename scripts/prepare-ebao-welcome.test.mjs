@@ -30,15 +30,22 @@ test('copy composition preserves every preload operation, safe account snapshot 
   assert.equal(delivered, snapshot)
   assert.deepEqual(calls, ['start'])
   assert.equal(branded.messages.welcomeTitle, 'e宝工坊')
-  assert.equal(branded.messages.welcomeSignIn, '使用 e宝账号登录')
-  assert.equal(branded.messages.welcomeDescription, '连接 CQAI 账号，开启智能创作')
+  assert.equal(branded.messages.welcomeSignIn, '使用 e宝工坊账号登录')
+  assert.match(branded.messages.welcomeDescription, /e宝工坊账号/)
+  assert.match(branded.messages.welcomeAuthWaiting, /浏览器中登录 e宝工坊/)
   assert.match(branded.messages.welcomeApiKey, /DeepSeek API Key/)
-  assert.match(branded.messages.welcomeKeyDescription, /DeepSeek 官方模型.*CQAI/)
+  assert.match(branded.messages.welcomeKeyDescription, /DeepSeek 官方模型/)
   assert.equal(branded.messages.untouched, 'preserved')
   assert.equal(branded.messages.welcomeKeyFailed, 'upstream error')
   assert.equal(api.messages, sourceMessages)
   assert.equal(api.messages.welcomeTitle, 'DeepSeek Harness')
-  assert.match(createEbaoWelcomeApi({ ...api, id: 'en' }).messages.welcomeKeyDescription, /official DeepSeek models separately from CQAI/)
+  assert.match(createEbaoWelcomeApi({ ...api, id: 'en' }).messages.welcomeKeyDescription, /official DeepSeek models/)
+  for (const id of ['ja', 'es', 'fr', 'de', 'ru', 'pt']) {
+    const messages = createEbaoWelcomeApi({ ...api, id, messages: { welcomeKeyDescription: 'DeepSeek API · Harness' } }).messages
+    assert.match(messages.welcomeSignIn, /e宝工坊/)
+    assert.match(messages.welcomeAuthWaiting, /e宝工坊/)
+    assert.equal(messages.welcomeKeyDescription, 'DeepSeek API · e宝工坊')
+  }
 })
 
 test('the pinned official sources expose exactly one guarded logo and mount seam', () => {
@@ -98,7 +105,7 @@ test('real official Vite builds the owned brand, keeps same-origin assets and le
     const bundle = readFileSync(join(directory, 'welcome.js'), 'utf8')
     const css = readFileSync(join(directory, 'welcome.css'), 'utf8')
     assert.match(bundle, /e宝工坊/)
-    assert.match(bundle, /使用 e宝账号登录/)
+    assert.match(bundle, /使用 e宝工坊账号登录/)
     assert.match(bundle, /\.\.\/lib\/welcome\/ebao-robot\.webp/)
     assert.equal(bundle.includes('assets/welcome-brand.svg'), false)
     assert.equal(bundle.includes('data:image/'), false)

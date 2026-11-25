@@ -26,6 +26,7 @@ export const Config = z.object({
   clientId: z.string().default(''),
   resource: z.string().default(DEFAULT_RESOURCE),
   accountServiceUrl: z.string().default(DEFAULT_ACCOUNT_SERVICE_URL),
+  desktopProductName: z.string(),
   clubPortalResource: z.string().default(DEFAULT_CLUB_PORTAL_RESOURCE),
   clubPortalUrl: z.string().default(DEFAULT_CLUB_PORTAL_URL),
   // Deprecated: read only by resource extensions during first-use migration.
@@ -44,11 +45,13 @@ export const Config = z.object({
 }) as unknown as z<AccountPluginConfig>
 
 export function normalizeConfig(config: AccountConfigInput | undefined): DsnAccountConfig {
+  const desktopProductName = config?.desktopProductName?.trim()
   const value: DsnAccountConfig = {
     issuer: config?.issuer ?? DEFAULT_ISSUER,
     clientId: config?.clientId ?? '',
     resource: config?.resource ?? DEFAULT_RESOURCE,
     accountServiceUrl: config?.accountServiceUrl ?? DEFAULT_ACCOUNT_SERVICE_URL,
+    ...(desktopProductName ? { desktopProductName } : {}),
     clubPortalResource: config?.clubPortalResource ?? DEFAULT_CLUB_PORTAL_RESOURCE,
     clubPortalUrl: config?.clubPortalUrl ?? DEFAULT_CLUB_PORTAL_URL,
     clubMcpEnabled: typeof config?.clubMcpEnabled === 'object' ? config.clubMcpEnabled.get() : config?.clubMcpEnabled ?? false,

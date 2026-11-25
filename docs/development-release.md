@@ -2,7 +2,7 @@
 
 [English](development-release.en.md)
 
-根 Yarn 负责命令入口。官方 Git 子模块 `deepseek-harness/` 负责桌面端、登录、运行时和插件。官方版本、提交和 pnpm 版本记录在 [upstream.json](../upstream.json)。更新官方 pin 时独立提交子模块指针和元数据。
+根 Yarn 负责命令入口。官方 Git 子模块 `deepseek-harness/` 提供桌面壳、认证接口、运行时和插件管理。e宝工坊通过 CQAI 账号服务完成登录。官方版本、提交和 pnpm 版本记录在 [upstream.json](../upstream.json)。更新官方 pin 时独立提交子模块指针和元数据。
 
 ## 初始化
 
@@ -27,7 +27,7 @@ corepack yarn build
 corepack yarn start
 ```
 
-`dev` 先调用官方 `build:artifacts` 和 `build:desktop`，再准备 CQAI Profile 与 e宝欢迎页，最后调用官方 `start:desktop` 打开图形应用。`start` 使用已有产物并重新确认账号层与欢迎页。切换版本后，先重新构建再使用 `start`。首次启动可能需要联网准备官方内置运行时。
+`dev` 先调用官方 `build:artifacts` 和 `build:desktop`，再准备 CQAI Profile、e宝欢迎页和工作台的账号展示，最后调用官方 `start:desktop` 打开图形应用。`start` 在已有产物上应用同一套账号适配。切换版本后，先重新构建再使用 `start`。首次启动可能需要联网准备官方内置运行时。
 
 Harness 和 Electron 默认分别使用 `.official-desktop/official/home` 和 `.official-desktop/official/electron-user-data`。可通过 `EBAO_OFFICIAL_DSH_HOME` 与 `EBAO_OFFICIAL_USER_DATA_DIR` 分别指定绝对路径。官方 Desktop 按选定的数据目录初始化或读取 `desktop` Profile，由官方插件管理器处理用户安装的插件。检查官方默认插件时使用全新目录。
 
@@ -41,8 +41,10 @@ corepack yarn check
 
 `check` 依次检查仓库布局、相关组件的 DSH 版本和启动器，运行官方 `build:artifacts`、Desktop 类型检查、CQAI 适配器兼容性测试和无界面 Desktop 测试。图形启动、真实账号授权、模型调用和原生安装包需要分别验证。
 
-## 打包与历史集成
+## 打包与发布
 
-`package:dir`、`dist:mac:arm64`、`dist:mac:x64`、`dist:win` 调用官方未签名打包流程，产物供本地验证。签名、更新和发布步骤见[官方桌面开发与打包说明](../deepseek-harness/apps/desktop/README.zh.md)。
+`package:dir`、`dist:mac:arm64`、`dist:mac:x64`、`dist:win` 调用官方未签名打包流程，并把 e宝欢迎页、工作台账号展示和 CQAI provider 一同带入产物。安装版使用独立应用标识和数据目录。应用版本由根 `package.json` 声明，底层 Harness 版本仍由 `upstream.json` 固定。
 
-CQAI 账号 provider 和本地 e宝欢迎页已接入源码启动流程。其他业务插件、市场和 MatrixMedia 源码仍需单独接入与验收。[账号及欢迎页 Agent Note](../.agents/notes/implemented/architecture/2026-11-16-cqai-official-desktop-account.zh.md)记录账号边界。旧产品安装包和发布记录见[历史 e宝 Releases](https://github.com/cqai-club/ebao-studio/releases)。
+安装包由 GitHub Actions 的 Desktop packages 工作流按目标构建。测试预发布提供 macOS Apple 芯片版、macOS Intel 版、Windows x64 版和 `SHA256SUMS`，通过 GitHub Releases 和 GitCode 分发，采用手动下载安装。
+
+其他业务插件、市场和 MatrixMedia 源码仍需单独接入与验收。下载见 [e宝工坊 Releases](https://github.com/cqai-club/ebao-studio/releases)。

@@ -76,6 +76,7 @@ function makeRuntime(options: {
   openExternal?: (target: string) => Promise<void>
   show?: () => void
   loginCompletionUrl?: string
+  desktopProductName?: string
   withSettings?: boolean
   categoryDefaults?: Partial<Record<DsnDefaultModelCategory, string>>
   clubMcpEnabled?: boolean | { get(): boolean }
@@ -181,6 +182,7 @@ function makeRuntime(options: {
     clientId: 'client-123',
     resource,
     accountServiceUrl: resource,
+    desktopProductName: options.desktopProductName,
     clubPortalResource: portalResource,
     clubPortalUrl: 'https://club.example.test',
     clubMcpEnabled: options.mcpSettingsStore ? { get: () => options.mcpSettingsStore?.enabled ?? false } : options.clubMcpEnabled,
@@ -232,6 +234,7 @@ describe('DsnAccountServiceRuntime', () => {
     const started = await service.startAuthorization()
     expect(started.state).toBe('authorizing')
     if (started.state !== 'authorizing') throw new Error('expected browser authorization')
+    expect(started.message).toBe('请在浏览器中完成 CQAI Club 登录。')
     const authorization = new URL(started.authorizationUrl)
     expect(authorization.searchParams.get('code_challenge_method')).toBe('S256')
     expect(authorization.searchParams.get('redirect_uri')).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/cqaiclub-dsn-account\/oauth\/callback$/)
@@ -567,13 +570,14 @@ describe('DsnAccountServiceRuntime', () => {
       openExternal,
       show,
       loginCompletionUrl: 'dsh-desktop://oauth/complete',
+      desktopProductName: 'e宝工坊',
     })
 
     const start = await harness.rpc('authorization/start', {}, new AbortController().signal) as {
       ok: boolean
       value: { state: 'authorizing'; authorizationUrl: string; attemptId: string }
     }
-    expect(start).toMatchObject({ ok: true, value: { state: 'authorizing' } })
+    expect(start).toMatchObject({ ok: true, value: { state: 'authorizing', message: '请在浏览器中完成 e宝工坊 登录。' } })
     const authorization = new URL(start.value.authorizationUrl)
     expect(authorization.searchParams.getAll('resource')).toEqual([resource, portalResource])
     const redirectUri = authorization.searchParams.get('redirect_uri')
@@ -581,15 +585,24 @@ describe('DsnAccountServiceRuntime', () => {
     expect(authorization.searchParams.get('prompt')).toBe('login consent')
     expect(openExternal).toHaveBeenCalledWith(start.value.authorizationUrl)
     const callback = new URL(redirectUri ?? '')
+    const invalidState = await nativeFetch(callback)
+    expect(invalidState.status).toBe(400)
+    expect(await invalidState.text()).toContain('请返回 e宝工坊 后重新开始登录。')
     callback.searchParams.set('code', 'authorization-code')
     callback.searchParams.set('state', authorization.searchParams.get('state') ?? '')
     const response = await nativeFetch(callback)
     expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
     const callbackPage = await response.text()
     expect(callbackPage).toContain('已收到登录回调')
+    expect(callbackPage).toContain('浏览器登录已完成，e宝工坊 正在验证账号。')
+    expect(callbackPage).toContain('打开 e宝工坊')
     expect(callbackPage).toContain('href="dsh-desktop://oauth/complete"')
     expect(callbackPage).not.toContain('authorization-code')
     expect(show).toHaveBeenCalledOnce()
+    await harness.settleAuthorization()
+    const accountUpdates = harness.emit.mock.calls.filter(([event]) => event === 'dsn-account/changed')
+    expect(accountUpdates.at(-1)?.[1]).toMatchObject({ state: 'signed-in' })
     await waitForSignedIn(harness.runtime)
 
     const snapshot = await harness.runtime.getStatus()

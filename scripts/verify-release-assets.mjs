@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-/** Verify stable release artifacts, SHA256SUMS, and Electron Updater metadata. */
+/** Verify e宝 release artifacts, SHA256SUMS, and historical Electron Updater metadata. */
 
-// Historical eBao release validation only; official Desktop follows upstream packaging.
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat, readdir, readFile } from 'node:fs/promises'
@@ -10,6 +9,29 @@ import { pathToFileURL } from 'node:url'
 
 export const MAX_RELEASE_CHECKSUM_BYTES = 16 * 1024
 export const MAX_UPDATER_METADATA_BYTES = 64 * 1024
+
+export function expectedPreviewReleaseInstallers(version) {
+  if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u.test(version)) {
+    throw new Error('The e宝 preview version must be canonical SemVer')
+  }
+  return [
+    `eBao-Studio-${version}-mac-arm64-unsigned.dmg`,
+    `eBao-Studio-${version}-mac-x64-unsigned.dmg`,
+    `eBao-Studio-${version}-win-x64-unsigned.exe`,
+  ]
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]))
+  }
+  return value
+}
+
+export function provenanceMessage(provenance) {
+  return JSON.stringify(canonical(provenance), null, 2)
+}
 
 function usage() {
   return 'Usage: node scripts/verify-release-assets.mjs --directory <dir> --version <MAJOR.MINOR.PATCH>'
@@ -114,6 +136,25 @@ async function hashFile(path, algorithm) {
   const hash = createHash(algorithm)
   for await (const chunk of createReadStream(path)) hash.update(chunk)
   return hash.digest(algorithm === 'sha512' ? 'base64' : 'hex')
+}
+
+export async function verifyPreviewReleaseAssets(directory, version) {
+  const assets = expectedPreviewReleaseInstallers(version)
+  const checksumPath = resolve(directory, 'SHA256SUMS')
+  const names = [...assets, 'SHA256SUMS'].sort()
+  const actual = (await readdir(directory)).sort()
+  if (actual.length !== names.length || actual.some((name, index) => name !== names[index])) {
+    throw new Error(`Unexpected preview asset set. Expected: ${names.join(', ')}; found: ${actual.join(', ')}`)
+  }
+  await requireRegularFile(checksumPath, 'SHA256SUMS')
+  const checksums = parseChecksumManifest(decodeChecksumManifest(await readFile(checksumPath), checksumPath), assets)
+  for (const asset of assets) {
+    const path = resolve(directory, asset)
+    if ((await requireRegularFile(path, asset)).size === 0 || await hashFile(path, 'sha256') !== checksums.get(asset)) {
+      throw new Error(`SHA-256 mismatch for ${asset}`)
+    }
+  }
+  return { assets, checksumPath }
 }
 
 function requireSingleMatch(lines, expression, label, metadataPath) {

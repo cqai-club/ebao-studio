@@ -2,9 +2,9 @@
 
 [中文](README.md) · [Documentation](docs/README.en.md) · [Contributing](CONTRIBUTING.en.md)
 
-This repository builds and runs DeepSeek Harness Desktop from pinned official source. The upstream runtime and authentication IPC remain in place, while the e宝 layer supplies the branded welcome page and CQAI account sign-in. DeepSeek API Key setup remains an independent optional entry. See [upstream.json](upstream.json) for the pinned version, commit, and pnpm release.
+This repository builds and runs DeepSeek Harness Desktop from pinned official source. The welcome window and workspace use e宝工坊 accounts backed by CQAI. Users can also configure a DeepSeek API key for official DeepSeek models. See [upstream.json](upstream.json) for the pinned version, commit, and pnpm release.
 
-The CQAI account integration and e宝 welcome page participate in source startup. Former business plugins remain available for separate future integrations. e宝工坊 maintains this repository independently. The [DeepSeek Harness Desktop documentation](deepseek-harness/apps/desktop/README.md) covers official runtime and plugin behavior.
+The e宝 account integration loads in source and packaged applications. Former business plugins remain available for separate future integrations. e宝工坊 maintains this repository independently. The [DeepSeek Harness Desktop documentation](deepseek-harness/apps/desktop/README.md) covers official runtime and plugin behavior.
 
 ## Run from source
 
@@ -30,9 +30,9 @@ The official development instance stores Harness state in `.official-desktop/off
 | `corepack yarn typecheck` | Check official Desktop types |
 | `corepack yarn test` | Run launcher, CQAI account compatibility, and official Desktop tests |
 | `corepack yarn check` | Check layout, component versions, launcher, build, types, and headless tests |
-| `corepack yarn package:dir` | Generate an unsigned official application directory |
-| `corepack yarn dist:mac:arm64`, `dist:mac:x64`, `dist:win` | Generate unsigned official artifacts for the selected target |
+| `corepack yarn package:dir` | Generate an unsigned e宝工坊 application directory |
+| `corepack yarn dist:mac:arm64`, `dist:mac:x64`, `dist:win` | Generate an unsigned e宝工坊 installer for the selected target |
 
-Historical installers, screenshots, and user guides describe the previous e宝 product. [Historical e宝 Releases](https://github.com/cqai-club/ebao-studio/releases)
+See [e宝工坊 Releases](https://github.com/cqai-club/ebao-studio/releases) for installers.
 
 This repository uses the [MIT License](LICENSE). Report repository issues through [e宝工坊 Issues](https://github.com/cqai-club/ebao-studio/issues).

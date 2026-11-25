@@ -4,7 +4,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { test } from 'node:test'
 import { assertOfficialCheckout, createOfficialDesktopPlan, executeOfficialDesktopPlan, parseArguments, pruneStaleDependencyLinks, runOfficialDesktop } from './official-desktop.mjs'
 
@@ -37,17 +37,30 @@ test('commands target the official checkout and registered upstream scripts', ()
   assertOfficialCheckout(join(root, 'deepseek-harness'))
 })
 
-test('owned account and welcome preparation run after the final upstream build', async () => {
+test('only packaging enables e宝 package preparation and preserves existing Node options', () => {
+  const environment = { NODE_OPTIONS: '--no-warnings', EBAO_DESKTOP_PACKAGE: '1' }
+  const root = join(tmpdir(), 'project with spaces')
+  const packaging = createOfficialDesktopPlan('package:dir', { root, environment })
+  assert.equal(packaging.env.EBAO_DESKTOP_PACKAGE, '1')
+  const hook = pathToFileURL(join(root, 'scripts', 'package-ebao-desktop.mjs')).href
+  assert.equal(packaging.env.NODE_OPTIONS, `--no-warnings --import=${hook}`)
+  const source = createOfficialDesktopPlan('start', { root, environment })
+  assert.equal(source.env.EBAO_DESKTOP_PACKAGE, undefined)
+  assert.equal(source.env.NODE_OPTIONS, '--no-warnings')
+})
+
+test('owned account and renderer preparation run after the final upstream build', async () => {
   for (const [action, expected] of [
-    ['dev', ['build:artifacts', 'build:desktop', 'account:dev', 'welcome', 'start:desktop']],
-    ['start', ['account:start', 'welcome', 'start:desktop']],
-    ['build', ['build:artifacts', 'account:build', 'welcome']],
+    ['dev', ['build:artifacts', 'build:desktop', 'account:dev', 'renderer', 'welcome', 'start:desktop']],
+    ['start', ['account:start', 'renderer', 'welcome', 'start:desktop']],
+    ['build', ['build:artifacts', 'account:build', 'renderer', 'welcome']],
     ['package:dir', ['package:desktop:dir']],
   ]) {
     const steps = []
     const code = await executeOfficialDesktopPlan(createOfficialDesktopPlan(action, { environment: {} }), {
       run: async plan => { steps.push(plan.args[2]); return 0 },
       account: async mode => { steps.push(`account:${mode}`) },
+      renderer: async () => { steps.push('renderer') },
       welcome: async () => { steps.push('welcome') },
     })
     assert.equal(code, 0)
@@ -61,6 +74,7 @@ test('failed upstream builds or owned preparation never launch the graphical app
     const code = await executeOfficialDesktopPlan(createOfficialDesktopPlan('dev', { environment: {} }), {
       run: async plan => { steps.push(plan.args[2]); return plan.args[2] === failedScript ? 9 : 0 },
       account: async () => { assert.fail('preparation followed a failed build') },
+      renderer: async () => { assert.fail('renderer overlay followed a failed build') },
       welcome: async () => { assert.fail('overlay followed a failed build') },
     })
     assert.equal(code, 9)
@@ -69,6 +83,7 @@ test('failed upstream builds or owned preparation never launch the graphical app
   await assert.rejects(executeOfficialDesktopPlan(createOfficialDesktopPlan('start', { environment: {} }), {
     run: async () => { assert.fail('a failed overlay must not launch') },
     account: async () => {},
+    renderer: async () => {},
     welcome: async () => { throw new Error('upstream branding seam changed') },
   }), /upstream branding seam changed/)
 })

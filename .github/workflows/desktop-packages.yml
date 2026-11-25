@@ -1,0 +1,68 @@
+name: Desktop packages
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/desktop-packages.yml'
+      - 'deepseek-harness'
+      - 'package.json'
+      - 'scripts/official-desktop.mjs'
+      - 'scripts/package-ebao-desktop.mjs'
+      - 'scripts/prepare-*.mjs'
+      - 'integrations/**'
+      - 'cqai-dsh-plugins/cqai-dsh-plugin-account/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  package:
+    name: Package / ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: mac-arm64
+            runner: macos-latest
+            command: dist:mac:arm64
+            extension: dmg
+          - target: mac-x64
+            runner: macos-15-intel
+            command: dist:mac:x64
+            extension: dmg
+          - target: win-x64
+            runner: windows-latest
+            command: dist:win
+            extension: exe
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.18.0
+      - name: Install the root command workspace
+        run: corepack yarn install --immutable
+      - name: Initialize the pinned official workspace
+        run: corepack yarn setup
+      - name: Build and verify unsigned e宝 installer
+        run: corepack yarn ${{ matrix.command }}
+      - name: Upload installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: ebao-${{ matrix.target }}
+          path: deepseek-harness/apps/desktop/.desktop-build/targets/${{ matrix.target }}/unsigned-artifacts/eBao-Studio-*-${{ matrix.target }}-unsigned.${{ matrix.extension }}
+          if-no-files-found: error

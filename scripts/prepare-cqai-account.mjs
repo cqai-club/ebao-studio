@@ -109,13 +109,14 @@ export function composeAccountPatch(config) {
   }
   return [
     { insert: [
-      { id: 'cqaiclub-dsn-account', name: ACCOUNT, config: { ...config, scopes: [...LOGIN_SCOPES] } },
+      { id: 'cqaiclub-dsn-account', name: ACCOUNT, config: { ...config, desktopProductName: 'e宝工坊', scopes: [...LOGIN_SCOPES] } },
       { id: 'cqai-desktop-account', name: ADAPTER, config: { issuer: config.issuer, usageUrl: portal.href, topUpUrl: portal.href } },
     ] },
     // In the official Include grammar, `name` guards an existing row; it does
     // not rename its plugin. Mount the CQAI provider as its own entry instead.
     { id: 'deepseek-account', disabled: true },
     { id: 'llm-deepseek-account', disabled: true },
+    { id: 'web-deepseek-api', config: { searchBilling: 'api-key', fetchBilling: 'api-key' } },
   ]
 }
 

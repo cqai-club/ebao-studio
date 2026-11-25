@@ -3,8 +3,9 @@ import { spawn } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, unlinkSync } from 'node:fs'
 import { constants } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildAccountExtensions, createPreparationPlan, prepareProfile } from './prepare-cqai-account.mjs'
+import { applyEbaoAccountRenderer, ebaoAccountWorkspaceClients } from './prepare-ebao-account-renderer.mjs'
 import { buildWelcomePresentation, createWelcomePlan } from './prepare-ebao-welcome.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -30,7 +31,7 @@ export const USAGE = `Usage: node scripts/official-desktop.mjs <action> [--print
 Actions: ${Object.keys(ACTIONS).join(', ')}
 dev and start open the official graphical application. Other actions stay headless.
 dev builds official artifacts and Desktop before applying the e宝 welcome presentation.
-Package actions produce local unsigned builds; they do not publish or upload.
+Package actions produce unsigned e宝工坊 builds for manual distribution.
 repair-install removes stale dependency hoist links before a normal frozen install.
 
 State defaults to .official-desktop/official/home and .official-desktop/official/electron-user-data.
@@ -78,6 +79,12 @@ export function createOfficialDesktopPlan(action, { root = ROOT, environment = p
   env.DSH_HOME = home
   env.DSH_DESKTOP_USER_DATA_DIR = userData
   if (action === 'install' || action === 'repair-install') env.CI = 'true'
+  delete env.EBAO_DESKTOP_PACKAGE
+  if (action.startsWith('package:')) {
+    env.EBAO_DESKTOP_PACKAGE = '1'
+    const hook = pathToFileURL(join(root, 'scripts', 'package-ebao-desktop.mjs')).href
+    env.NODE_OPTIONS = [env.NODE_OPTIONS, `--import=${hook}`].filter(Boolean).join(' ')
+  }
   return {
     action,
     command: 'corepack',
@@ -172,6 +179,7 @@ async function prepareAccount(action, plan) {
 export async function executeOfficialDesktopPlan(plan, {
   run = runOfficialDesktop,
   account = prepareAccount,
+  renderer = () => applyEbaoAccountRenderer(ebaoAccountWorkspaceClients(plan.cwd)),
   welcome = () => buildWelcomePresentation(createWelcomePlan()),
 } = {}) {
   if (plan.action === 'dev') {
@@ -182,12 +190,14 @@ export async function executeOfficialDesktopPlan(plan, {
   }
   if (plan.action === 'dev' || plan.action === 'start') {
     await account(plan.action, plan)
+    await renderer()
     await welcome()
     return run(plan)
   }
   const code = await run(plan)
   if (code === 0 && plan.action === 'build') {
     await account(plan.action, plan)
+    await renderer()
     await welcome()
   }
   return code
@@ -199,8 +209,9 @@ export async function main(args = process.argv.slice(2)) {
   const plan = createOfficialDesktopPlan(options.action)
   if (options.printConfig) {
     const { action, command, args: commandArgs, cwd, state } = plan
-    const preparation = action === 'dev' ? ['official build:artifacts', 'official build:desktop', 'CQAI account', 'e宝 welcome']
-      : action === 'start' || action === 'build' ? ['CQAI account', 'e宝 welcome'] : []
+    const ownedLayers = ['CQAI account', 'e宝 account renderer', 'e宝 welcome']
+    const preparation = action === 'dev' ? ['official build:artifacts', 'official build:desktop', ...ownedLayers]
+      : action === 'start' || action === 'build' ? ownedLayers : action.startsWith('package:') ? ['e宝 package staging'] : []
     process.stdout.write(`${JSON.stringify({ action, command, args: commandArgs, preparation, cwd, state }, null, 2)}\n`)
     return 0
   }

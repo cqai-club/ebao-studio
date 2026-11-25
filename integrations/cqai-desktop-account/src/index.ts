@@ -1,7 +1,8 @@
 /** Product-owned account Provider for the unmodified official Desktop shell. */
-import type { Context } from '@deepseek-ai/cordis'
+import { Service, type Context } from '@deepseek-ai/cordis'
 import { release } from 'node:os'
-import { DeepSeekAccount, type AccountClientMetadata, type AccountUpdate, type SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account'
+import { DeepSeekAccount, type AccountClientMetadata, type AccountNotificationEvent, type AccountNotificationId,
+  type AccountUpdate, type SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account'
 import type { DsnAccountService, DsnAccountSnapshot } from '@cqaiclub/dsn-account/protocol'
 import { CqaiDesktopAccountAdapter, type Config } from './adapter.ts'
 
@@ -39,12 +40,18 @@ export class CqaiDesktopAccount extends DeepSeekAccount {
       getState: () => this.adapter.getState(),
       getProfile: (_client: AccountClientMetadata) => this.adapter.getProfile(),
       getBalance: (_client: AccountClientMetadata) => this.adapter.getBalance(),
+      getNotifications: async (_client: AccountClientMetadata) => null,
+      getNotificationContent: async (_id: AccountNotificationId, _client: AccountClientMetadata) => null,
+      reportNotificationEvent: async (_id: AccountNotificationId, _event: AccountNotificationEvent, _client: AccountClientMetadata) => false,
       startSignIn: (_client: AccountClientMetadata, _callbackOrigin: string, _loginSource: 'web' | 'desktop') => this.adapter.startSignIn(),
       cancelSignIn: (id: SignInAttemptId) => this.adapter.cancelSignIn(id),
       signOut: (_client: AccountClientMetadata) => this.adapter.signOut(),
       watchState: (signal: AbortSignal) => this.watchAdapter(signal),
     })
   }
+
+  /** CQAI owns its grant lifecycle. Leave any legacy Platform record untouched. */
+  async [Service.init](): Promise<void> {}
 
   private async *watchAdapter(signal: AbortSignal): AsyncIterable<AccountUpdate> {
     for await (const state of this.adapter.watch(signal)) yield { type: 'snapshot', state }

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AuthorizationService from '@deepseek-ai/dsh-authorization'
+import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import type { SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { DsnAccountSnapshot } from '@cqaiclub/dsn-account/protocol'
@@ -200,6 +201,8 @@ describe('CQAI adapter for the official Desktop account contract', () => {
     const remove = ctx.provide('dsnAccount', f.account)
     const credentials = ctx.plugin(LocalCredentialProvider, { path: join(home, 'credentials.yaml'), watch: false })
     await credentials
+    const legacyKey = credentialKey('deepseek-account-platform', 'default')
+    await ctx.credentials.modifyRecord(legacyKey, async () => ({ kind: 'grant', payload: { old: 'legacy record' } }))
     const authorization = ctx.plugin(AuthorizationService)
     await authorization
     const plugin = ctx.plugin(CqaiDesktopAccount)
@@ -209,6 +212,10 @@ describe('CQAI adapter for the official Desktop account contract', () => {
       expect(await service.resolveToken('https://api.deepseek.com')).toBeUndefined()
       expect(await service.resolveToken('https://account.cqaiclub.asia')).toBeUndefined()
       expect(await service.getPlatformSession()).toBeNull()
+      expect(await service.getNotifications(client)).toBeNull()
+      expect(await service.getNotificationContent('notice' as never, client)).toBeNull()
+      expect(await service.reportNotificationEvent('notice' as never, 'dismiss' as never, client)).toBe(false)
+      expect(await ctx.credentials.readRecord(legacyKey)).toMatchObject({ kind: 'grant', payload: { old: 'legacy record' } })
       await service.rejectToken('unrelated-token')
       expect(f.account.logout).not.toHaveBeenCalled()
       expect(await service.getUnnotifiedBonuses(client)).toBeNull()
