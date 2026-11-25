@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -91,30 +90,6 @@ test('account patch replaces the provider while retaining a real authorization c
   assert.deepEqual(patch[3], { id: 'web-deepseek-api', config: { searchBilling: 'api-key', fetchBilling: 'api-key' } })
   assert.throws(() => composeAccountPatch({ ...config, issuer: 'http://issuer.invalid' }), /HTTPS/)
   assert.throws(() => composeAccountPatch({ ...config, clubPortalUrl: 'https://user:password@portal.invalid' }), /HTTPS/)
-})
-
-test('the real official Include composer activates only CQAI while disabling the original account provider', () => {
-  const require = createRequire(join(ROOT, 'deepseek-harness', 'node_modules', '.pnpm', 'cqai-composition-test.cjs'))
-  const { applyEntryPatches, entryListSchema } = require('@deepseek-ai/cordis-plugin-include')
-  const yaml = require('js-yaml')
-  const base = yaml.load(readFileSync(join(ROOT, 'deepseek-harness', 'packages', 'bundle', 'base', 'cordis.patch.yml'), 'utf8'), { schema: entryListSchema })
-  const warnings = []
-  const warn = (...args) => warnings.push(args)
-  const officialEntries = applyEntryPatches([], base, warn)
-  const composed = applyEntryPatches(officialEntries, composeAccountPatch({
-    issuer: 'https://auth.cqaiclub.asia/oidc', clientId: 'public-native-client', clubPortalUrl: 'https://cqaiclub.asia',
-  }), warn)
-  const flatten = entries => entries.flatMap(entry => [entry, ...(entry.group && Array.isArray(entry.config) ? flatten(entry.config) : [])])
-  const entries = flatten(composed)
-  assert.deepEqual(warnings, [])
-  const original = entries.find(entry => entry.id === 'deepseek-account')
-  assert.equal(original.name, '@deepseek-ai/dsh-deepseek-account')
-  assert.equal(original.disabled, true)
-  const accountProviders = entries.filter(entry => ['@deepseek-ai/dsh-deepseek-account', '@cqaiclub/desktop-account'].includes(entry.name) && entry.disabled !== true)
-  assert.deepEqual(accountProviders.map(entry => ({ id: entry.id, name: entry.name })), [{ id: 'cqai-desktop-account', name: '@cqaiclub/desktop-account' }])
-  assert.equal(accountProviders[0].config.issuer, 'https://auth.cqaiclub.asia/oidc')
-  assert.equal(entries.find(entry => entry.id === 'cqaiclub-dsn-account').disabled === true, false)
-  assert.equal(entries.find(entry => entry.id === 'llm-deepseek-account').disabled, true)
 })
 
 test('unchanged complete artifacts avoid recompilation and file writes; changed source gets a new package version', async () => {

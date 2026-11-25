@@ -24,7 +24,7 @@ export default {
   test: {
     environment: 'node',
     include: [
-      'integrations/cqai-desktop-account/tests/**/*.test.ts',
+      'integrations/cqai-desktop-account/tests/**/*.test.{ts,mjs}',
       'cqai-dsh-plugins/cqai-dsh-plugin-account/tests/**/*.test.ts',
     ],
     exclude: [
