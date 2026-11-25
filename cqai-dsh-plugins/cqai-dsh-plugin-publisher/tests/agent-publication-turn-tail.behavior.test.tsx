@@ -74,7 +74,7 @@ function chat() {
   }) }
   return {
     nodes, turnSource,
-    useChat: ((selector: (value: { nodes: typeof nodes }) => unknown) => selector({ nodes })) as ComponentProps<typeof AgentPublicationTurnTail>['useChat'],
+    useChat: ((selector: (value: { nodes: typeof nodes }) => unknown) => selector({ nodes })) as unknown as ComponentProps<typeof AgentPublicationTurnTail>['useChat'],
   }
 }
 

@@ -1,4 +1,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { createElement } from 'react'
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -10,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { MarketLocaleKey } from './locales.js'
 import { MarketLauncher } from './MarketLauncher.js'
 import { MarketOverlay } from './MarketOverlay.js'
-import { MarketSettingsTab } from './MarketSettingsTab.js'
+import { MarketSettingsTab, MarketSurface } from './MarketSettingsTab.js'
 import { MarketUpdateNotice } from './MarketUpdateNotice.js'
 import { PluginManagementMarket } from './PluginManagementMarket.js'
 import { PluginUpdatesSummary } from './PluginUpdatesSummary.js'
@@ -44,6 +47,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const inject = ['slots', 'locale']
 export const NS = 'community-market'
 
+type OfficialMarketTabProps = PropsRuntime<'plugins.tab'> & PropsLocale<'community-market'> & {
+  readonly readLocale: () => string
+}
+
+function OfficialMarketTab({ readLocale, t }: OfficialMarketTabProps) {
+  return createElement(MarketSurface, { readLocale, t, showHeader: false })
+}
+
 function isCqaiPrimaryDesktop(): boolean {
   return (globalThis as typeof globalThis & { dshDesktop?: { cqaiPrimaryLogin?: unknown } })
     .dshDesktop?.cqaiPrimaryLogin === true
@@ -68,6 +79,16 @@ export function apply(ctx: ClientContext): void {
   }, MarketSettingsTab))
   const primaryDesktop = isCqaiPrimaryDesktop()
   const modernDesktop = typeof (globalThis as typeof globalThis & { desktopNext?: { state?: unknown } }).desktopNext?.state === 'function'
+  if (!primaryDesktop && !modernDesktop) {
+    ctx.slots.inject('plugins.tab', () => ctx.slots.register({
+      name: 'plugins.tab',
+      id: 'community-market',
+      order: 20,
+      label: () => ctx.locale.bind(NS)('tab'),
+      locale: NS,
+      inject: () => ({ readLocale }),
+    }, OfficialMarketTab))
+  }
   if (primaryDesktop || modernDesktop) {
     ctx.slots.inject('cqai.pluginManagement.market', () => ctx.slots.register({
       name: 'cqai.pluginManagement.market',

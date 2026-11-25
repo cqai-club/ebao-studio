@@ -277,11 +277,15 @@ describe('CQAI plugin management Client', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
-  it('does not contribute CQAI controls outside primary Desktop mode', () => {
+  it('contributes the market tab on official Desktop without legacy globals', () => {
     vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: false })
     const test = testContext()
     apply(test.ctx)
-    expect(test.registrations).toEqual([])
+    expect(test.registrations).toHaveLength(1)
+    expect(test.registrations[0]?.options).toMatchObject({
+      name: 'plugins.tab', id: 'cqai-market',
+      children: { 'cqai.pluginManagement.market': { kind: 'list', scope: 'root' } },
+    })
   })
 
   it('contributes the market to the official Plugins page in modern Desktop', () => {

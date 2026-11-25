@@ -337,6 +337,7 @@ export type DsnAccountConfig = {
   clientId: string
   resource: string
   accountServiceUrl: string
+  desktopProductName?: string
   clubPortalResource: string
   clubPortalUrl: string
   clubMcpEnabled: boolean
@@ -392,11 +393,19 @@ export type DsnResourceSession = {
 
 export type DsnAccountService = {
   getStatus(options?: { refreshAccount?: boolean; signal?: AbortSignal }): Promise<DsnAccountSnapshot>
+  /** Host account providers share this PKCE flow without receiving its credentials. */
+  startAuthorization(signal?: AbortSignal): Promise<DsnAccountSnapshot>
+  /** Cancel a matching attempt and settle its flow before a caller starts another login. */
+  cancelAuthorization(attemptId?: string): Promise<void>
+  /** Remove the local grant before best-effort remote revocation. */
+  logout(signal?: AbortSignal): Promise<LogoutResult>
   getIdentity(): Promise<{ issuer: string; sub: string } | undefined>
   getAccount(signal?: AbortSignal): Promise<PublicAccount>
   listModels(options?: DsnModelListOptions): Promise<DsnModelCatalog>
   getDefaultModel(): Promise<DsnDefaultModelSelection>
   setDefaultModel(model: string): Promise<DsnDefaultModelSelection>
+  /** Adopt an available CQAI chat model only while the untouched default remains selected. */
+  adoptOnboardingDefaultModel(signal?: AbortSignal): Promise<DsnDefaultModelSelection>
   getCategoryDefaultModels(): Promise<DsnCategoryDefaultModels>
   setCategoryDefaultModel(category: DsnDefaultModelCategory, model: string): Promise<DsnCategoryDefaultModels>
   getTopUpInfo(signal?: AbortSignal): Promise<DsnTopUpInfo>

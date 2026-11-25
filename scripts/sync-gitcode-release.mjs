@@ -8,14 +8,17 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { pathToFileURL } from 'node:url'
-import { provenanceMessage } from './release-flow.mjs'
-import { expectedReleaseAssets, verifyReleaseAssets } from './verify-release-assets.mjs'
+import {
+  expectedPreviewReleaseInstallers, expectedReleaseAssets, provenanceMessage,
+  verifyPreviewReleaseAssets, verifyReleaseAssets,
+} from './verify-release-assets.mjs'
 
 const exec = promisify(execFile)
 const SOURCE_REPOSITORY = 'cqai-club/ebao-studio'
 const TAG = /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u
 const SHA = /^[a-f0-9]{40}$/u
 const DIGEST = /^sha256:[a-f0-9]{64}$/u
+const PREVIEW_MODE = 'unsigned-preview'
 
 export function gitcodeConfig(env) {
   if (!env.GITCODE_TOKEN?.trim()) throw new Error('Missing GITCODE_TOKEN; configure the GitHub Actions repository secret')
@@ -36,10 +39,17 @@ export function validateMirrorSource(source) {
   // Never promote one to latest or change GitCode's stable channel implicitly.
   if (source.prerelease !== true) throw new Error('Only verified eBao prereleases are supported by this mirror')
   if (typeof source.name !== 'string' || !source.name || typeof source.body !== 'string') throw new Error('Missing source release title or body')
-  const expected = [...expectedReleaseAssets(source.tag.slice(1)), 'latest.yml', 'latest-mac.yml', 'SHA256SUMS'].sort()
+  if (source.mode !== undefined && source.mode !== PREVIEW_MODE) throw new Error('Unsupported eBao packaging mode')
+  const version = source.tag.slice(1)
+  const expected = source.mode === PREVIEW_MODE
+    ? [...expectedPreviewReleaseInstallers(version), 'SHA256SUMS']
+    : [...expectedReleaseAssets(version), 'latest.yml', 'latest-mac.yml', 'SHA256SUMS']
+  expected.sort()
   if (!Array.isArray(source.assets)) throw new Error('Missing source assets')
   const names = source.assets.map(asset => asset.name).sort()
-  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) throw new Error('Source release must contain exactly the seven verified assets')
+  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
+    throw new Error(`Source release must contain exactly these verified assets: ${expected.join(', ')}`)
+  }
   for (const asset of source.assets) {
     if (!Number.isSafeInteger(asset.size) || asset.size <= 0 || !DIGEST.test(asset.digest || '')) {
       throw new Error(`Invalid asset size or SHA-256 digest: ${asset.name}`)
@@ -65,7 +75,7 @@ export function assertSourceProvenance(release, annotatedTag) {
 
 export function mirrorMarker(source) {
   return `<!-- ebao-gitcode-mirror\n${provenanceMessage({
-    schema: 1, repository: source.repository, tag: source.tag, sha: source.sha,
+    schema: 1, repository: source.repository, tag: source.tag, sha: source.sha, mode: source.mode,
     assets: Object.fromEntries([...source.assets].sort((a, b) => a.name.localeCompare(b.name)).map(asset => [asset.name, { size: asset.size, digest: asset.digest }])),
   })}\n-->`
 }
@@ -246,6 +256,7 @@ export async function main(env = process.env) {
   const provenance = assertSourceProvenance(release, tag)
   const source = {
     repository: config.sourceRepository, tag: config.tag, sha: provenance.sha,
+    mode: provenance.mode,
     name: release.name, body: release.body, prerelease: release.prerelease,
     assets: release.assets.map(asset => ({ name: asset.name, size: asset.size, digest: asset.digest })),
   }
@@ -257,7 +268,8 @@ export async function main(env = process.env) {
   try {
     console.log(`Downloading and checking ${config.tag} from GitHub (${source.assets.reduce((sum, asset) => sum + asset.size, 0)} bytes)`)
     await exec('gh', ['release', 'download', config.tag, '--repo', config.sourceRepository, '--dir', directory], { maxBuffer: 1024 * 1024 })
-    await verifyReleaseAssets(directory, config.tag.slice(1))
+    const verify = source.mode === PREVIEW_MODE ? verifyPreviewReleaseAssets : verifyReleaseAssets
+    await verify(directory, config.tag.slice(1))
     for (const asset of source.assets) {
       asset.path = join(directory, asset.name)
       if ((await stat(asset.path)).size !== asset.size || await localDigest(asset.path) !== asset.digest) throw new Error(`Downloaded GitHub asset differs from provenance: ${asset.name}`)

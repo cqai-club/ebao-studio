@@ -1,3 +1,5 @@
+> 本文记录历史 CQAI 自定义插件组合。当前官方 Desktop 默认 Profile 不自动安装这些插件，组件版本和 RC5 兼容性检查以仓库根目录为准。
+
 # CQAI 易宝工坊 扩展
 
 这个目录保存 CQAI 的架构说明；Profile 模板位于 `dsh-desktop/profiles`，可构建的 DSH 插件源码统一位于

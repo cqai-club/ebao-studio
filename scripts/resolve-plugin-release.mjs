@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * Dormant CQAI package resolver; automatic plugin publication is disabled.
  * Resolve which CQAI plugin package and version the publish workflow should
  * release, and emit the job outputs GitHub Actions consumes.
  *

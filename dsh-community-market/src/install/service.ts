@@ -394,7 +394,7 @@ export function marketInstallationView(bundle: BundleInfo, updates = false): Mar
     toggleable: editable && (bundle.enabled || bundle.error === undefined),
     removable: editable && bundle.removable,
     // Releases before 0.2.2 report no `updatable` flag.
-    updatable: updates && editable && bundle.updatable === true,
+    updatable: updates && editable && bundle.update !== undefined,
     ...(bundle.error === undefined ? {} : { error: bundle.error.code }),
   }
 }

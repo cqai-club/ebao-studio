@@ -10,24 +10,24 @@ import {
   anonymousAssetDigest, assertSourceProvenance, createGitcodeApi, gitcodeConfig,
   mirrorMarker, mirrorVerifiedRelease, uploadGitcodeAsset, validateMirrorSource,
 } from './sync-gitcode-release.mjs'
-import { provenanceMessage } from './release-flow.mjs'
-import { expectedReleaseAssets } from './verify-release-assets.mjs'
+import { expectedPreviewReleaseInstallers, expectedReleaseAssets, provenanceMessage } from './verify-release-assets.mjs'
 
 const tag = 'v1.2.3'
 const names = [...expectedReleaseAssets('1.2.3'), 'SHA256SUMS', 'latest.yml', 'latest-mac.yml']
+function verifiedAsset(name, index) {
+  const bytes = Buffer.from(`verified-asset-${index}`)
+  return { name, size: bytes.length, digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}` }
+}
 const source = {
   repository: 'cqai-club/ebao-studio', tag, name: `e宝工坊 ${tag}（预发布）`,
   body: 'Reviewed release notes.\n\nWindows 和 macOS 安装包。', sha: 'a'.repeat(40),
   prerelease: true,
-  assets: names.map((name, index) => {
-    const bytes = Buffer.from(`verified-asset-${index}`)
-    return { name, size: bytes.length, digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}` }
-  }),
+  assets: names.map(verifiedAsset),
 }
 
 test.beforeEach(context => { context.mock.method(console, 'log', () => {}) })
 
-function fixture() {
+function fixture(tag = source.tag) {
   const state = { release: null, writes: [], uploads: [], downloads: [], bytes: new Map() }
   const api = async (endpoint, body, allow404, method) => {
     if (body !== undefined) state.writes.push({ endpoint, method: method ?? 'POST', body: structuredClone(body) })
@@ -90,6 +90,26 @@ test('only the exact seven verified prerelease assets can enter the mirror', asy
     assert.equal(calls, 0)
     assert.deepEqual(f.state.uploads, [])
   }
+})
+
+test('unsigned preview mirrors exactly its three installers and verified checksum manifest', async () => {
+  const previewTag = 'v0.0.17'
+  const previewNames = [...expectedPreviewReleaseInstallers('0.0.17'), 'SHA256SUMS']
+  const preview = { ...source, mode: 'unsigned-preview', tag: previewTag, assets: previewNames.map(verifiedAsset) }
+  for (const candidate of [
+    { ...preview, mode: undefined },
+    { ...preview, mode: 'unknown' },
+    { ...preview, assets: preview.assets.slice(1) },
+    { ...preview, assets: [...preview.assets, verifiedAsset('latest.yml', 9)] },
+    { ...source, mode: preview.mode },
+  ]) assert.throws(() => validateMirrorSource(candidate))
+  const f = fixture(previewTag)
+  await mirrorVerifiedRelease(preview, f.api, f.upload, f.verifyDownload)
+  assert.deepEqual(f.state.uploads.toSorted(), previewNames.toSorted())
+  assert.deepEqual(f.state.downloads.toSorted(), previewNames.toSorted())
+  assert.equal(f.state.release.release_status, 'pre')
+  assert.match(mirrorMarker(preview), /"mode": "unsigned-preview"/u)
+  assert.doesNotMatch(mirrorMarker(source), /"mode"/u)
 })
 
 test('new mirror remains a prerelease and completes only after every anonymous download matches', async () => {
@@ -200,6 +220,7 @@ test('GitHub mirror input must have matching annotated-tag and release provenanc
   assert.doesNotThrow(() => assertSourceProvenance(f.release, f.annotatedTag))
   for (const change of [
     { message: 'A manually created tag' },
+    { message: provenanceMessage({ ...f.provenance, mode: 'unsigned-preview' }) },
     { object: { type: 'commit', sha: 'b'.repeat(40) } },
     { object: { type: 'tag', sha: source.sha } },
   ]) assert.throws(() => assertSourceProvenance(f.release, { ...f.annotatedTag, ...change }))

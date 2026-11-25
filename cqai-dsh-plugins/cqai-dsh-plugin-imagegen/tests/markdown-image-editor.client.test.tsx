@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
-import type { MarkdownImagePreviewProps } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownImagePreviewProps } from '../src/client/markdown-image-editor.tsx'
 import type { ComponentType } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'

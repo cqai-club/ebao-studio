@@ -62,7 +62,6 @@ function bundle(name: string, overrides: Partial<BundleInfo> = {}): BundleInfo {
     installed: true,
     optional: false,
     removable: true,
-    updatable: false,
     rows: [],
     overrides: [],
     ...overrides,
@@ -195,14 +194,14 @@ describe('official inventory projection', () => {
   })
 
   it('offers updates only for bundles the manager updates, and only from releases with version operations', () => {
-    expect(marketInstallationView(bundle('dsh-plugin-user', { updatable: true }), true)).toMatchObject({ updatable: true })
-    expect(marketInstallationView(bundle('dsh-plugin-user', { updatable: true }))).toMatchObject({ updatable: false })
-    expect(marketInstallationView(bundle('dsh-plugin-git', { updatable: false }), true)).toMatchObject({ updatable: false })
+    expect(marketInstallationView(bundle('dsh-plugin-user', { update: 'registry' }), true)).toMatchObject({ updatable: true })
+    expect(marketInstallationView(bundle('dsh-plugin-user', { update: 'registry' }))).toMatchObject({ updatable: false })
+    expect(marketInstallationView(bundle('dsh-plugin-git', {  }), true)).toMatchObject({ updatable: false })
     expect(marketInstallationView(bundle('dsh-plugin-locked', {
-      updatable: true, removable: false, readOnlyReason: 'management-required',
+      update: 'registry', removable: false, readOnlyReason: 'management-required',
     }), true)).toMatchObject({ updatable: false })
-    // DSH releases before 0.2.2 report no `updatable` flag at all.
-    const { updatable: _, ...legacy } = bundle('dsh-plugin-legacy')
+    // Older manager entries can omit the RC5 update operation.
+    const { update: _, ...legacy } = bundle('dsh-plugin-legacy')
     expect(marketInstallationView(legacy as BundleInfo, true)).toMatchObject({ updatable: false })
   })
 
@@ -590,7 +589,7 @@ describe('Profile package operations through the official manager', () => {
 
 describe('community plugin updates through the official manager', () => {
   const signal = () => new AbortController().signal
-  const updatable = (version = '1.0.0') => bundle(packageName, { version, updatable: true })
+  const updatable = (version = '1.0.0') => bundle(packageName, { version, update: 'registry' })
   const incompatible = (version: string) => ({
     name: packageName, version, runtimeVersion: '0.2.2-alpha.2', requirements: { '@deepseek-ai/dsh': '>=0.3.0' },
   })
@@ -598,7 +597,7 @@ describe('community plugin updates through the official manager', () => {
   it('offers no update while the manager has no version operations', async () => {
     const service = new MarketInstallService(profile, manager([updatable()]), { verify: vi.fn() })
 
-    await expect(service.listInstallations(signal())).resolves.toMatchObject([{ packageName, updatable: false }])
+    await expect(service.listInstallations(signal())).resolves.toMatchObject([{ packageName,  }])
     await expect(service.checkUpdate(packageName, signal())).rejects.toMatchObject({ code: 'not-available' })
     await expect(service.previewUpdatePackage(packageName, signal())).rejects.toMatchObject({ code: 'not-available' })
   })
@@ -656,8 +655,8 @@ describe('community plugin updates through the official manager', () => {
 
   it('refuses checks the Installed view does not offer', async () => {
     const official = versioned([
-      bundle('dsh-plugin-git', { updatable: false }),
-      bundle('dsh-community-market', { updatable: true }),
+      bundle('dsh-plugin-git', {  }),
+      bundle('dsh-community-market', { update: 'registry' }),
       updatable(),
     ], listed('1.0.0', []))
     const service = new MarketInstallService(profile, official, { verify: vi.fn() })
@@ -907,7 +906,7 @@ describe('market Profile inventory routes', () => {
         }),
       },
     }
-    const official = versioned([bundle('dsh-other-market', { version: '1.0.0', updatable: true })], listed('1.0.0', [published('1.1.0')]))
+    const official = versioned([bundle('dsh-other-market', { version: '1.0.0', update: 'registry' })], listed('1.0.0', [published('1.1.0')]))
     const install = new MarketInstallService(profile, official, { verify: vi.fn() })
     const dispose = registerMarketRoutes(ctx as never, new MemoryMarketStateStore(), { get: () => install })
 

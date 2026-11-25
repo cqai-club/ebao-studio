@@ -41,10 +41,8 @@ test('modern Desktop uses declared hero frame and brand slots without an obsolet
   assert.match(styles.join('\n'), /\.eBaoHomeFrame\s*\{\s*display:\s*contents/)
 })
 
-test('compatibility and non-Desktop clients do not install the presentation', () => {
-  for (const [search, desktop] of [['?dsh-desktop-mode=compatibility', true], ['', false]]) {
-    const result = register(search, desktop)
-    assert.equal(result.slots.length, 0)
-    assert.equal(result.styles.length, 0)
-  }
+test('official Desktop installs the presentation without legacy shell globals', () => {
+  const result = register('', false)
+  assert.deepEqual(result.slots.map(entry => entry.options.name), ['conversation.hero.brand.mark', 'conversation.hero.frame'])
+  assert.equal(result.styles.length, 1)
 })

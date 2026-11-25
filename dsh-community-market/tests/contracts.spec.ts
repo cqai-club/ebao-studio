@@ -27,9 +27,8 @@ const sourceFixture = () => readJson('../docs/examples/catalog-source.example.js
 const queryFixture = () => readJson('../docs/examples/catalog-query.example.json')
 const providerFixture = () => readJson('../docs/examples/catalog-provider-page.example.json')
 const snapshotFixture = () => readJson('../docs/examples/catalog-snapshot.example.json')
-const upstream = readJson('../../upstream.json') as { channels: Record<'stable' | 'beta' | 'next', { sourceVersion: string }> }
-const marketPeerRange = [...new Set((['stable', 'beta', 'next'] as const).map(channel =>
-  upstream.channels[channel].sourceVersion))].join(' || ')
+const upstream = readJson('../../upstream.json') as { sourceVersion: string }
+const marketPeerRange = upstream.sourceVersion
 
 describe('package integration contract', () => {
   it('loads the Client through the official settings, sidebar, and shell features', () => {

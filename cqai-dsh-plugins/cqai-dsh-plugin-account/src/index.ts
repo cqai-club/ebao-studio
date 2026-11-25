@@ -101,7 +101,7 @@ export { DsnAccountError } from './errors.ts'
 export { AccountServiceClient, AccountServiceError } from './account-service.ts'
 
 export const name = 'cqaiclub-dsn-account'
-export const inject = ['authorization', 'credentials', 'connection', 'webServer', 'llm', 'agentDefaultModel', 'desktopRuntime']
+export const inject = ['authorization', 'credentials', 'connection', 'webServer', 'llm', 'agentDefaultModel']
 export const CQAI_CATEGORY_DEFAULT_MODELS_SETTINGS_NAMESPACE = 'cqaiclub-dsn-account'
 
 type AgentDefaultModelService = {
@@ -187,6 +187,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
   private readonly authorization: AuthorizationLike
   private readonly connection: HostConnectionHandle
   private readonly desktopLoginRuntime: DesktopLoginRuntime | undefined
+  private readonly authorizationAccountName: string
   private readonly agentDefaultModel: AgentDefaultModelService
   private readonly config: DsnAccountConfig
   private readonly credential = credentialKey(CREDENTIAL_SCOPE, CREDENTIAL_ID)
@@ -221,6 +222,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     this.desktopLoginRuntime = readDesktopLoginRuntime(ctx)
     this.agentDefaultModel = ctx.agentDefaultModel
     this.config = normalizeConfig(config)
+    this.authorizationAccountName = this.config.desktopProductName ?? 'CQAI Club'
     this.oidc = new OidcClient({
       issuer: this.config.issuer,
       clientId: this.config.clientId,
@@ -577,7 +579,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     return next
   }
 
-  private async adoptOnboardingDefaultModel(signal?: AbortSignal): Promise<DsnDefaultModelSelection> {
+  async adoptOnboardingDefaultModel(signal?: AbortSignal): Promise<DsnDefaultModelSelection> {
     const current = await this.getDefaultModel()
     if (!mayAdoptCqaiOnboardingDefault(current)) return current
 
@@ -808,7 +810,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     }
   }
 
-  private async startAuthorization(
+  async startAuthorization(
     signal?: AbortSignal,
     prompt: (typeof Prompt)[keyof typeof Prompt] = Prompt.LoginConsent,
   ): Promise<DsnAccountSnapshot> {
@@ -868,7 +870,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     this.setSnapshot({
       state: 'authorizing',
       attemptId,
-      message: '请在浏览器中完成 CQAI Club 登录。',
+      message: `请在浏览器中完成 ${this.authorizationAccountName} 登录。`,
       authorizationUrl: request.authorizationUrl,
       expiresAt: request.expiresAt,
     })
@@ -927,21 +929,26 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     return this.snapshot
   }
 
-  private cancelAuthorization(attemptId: string | undefined): void {
-    if (this.activeAttempt === undefined) return
-    if (attemptId !== undefined && attemptId !== this.activeAttempt.id) return
+  async cancelAuthorization(attemptId?: string): Promise<void> {
+    const active = this.activeAttempt
+    if (active === undefined) return
+    if (attemptId !== undefined && attemptId !== active.id) return
     this.authorizationGeneration += 1
     const pending = this.pendingAuthorization
-    if (pending !== undefined && pending.attemptId === this.activeAttempt.id) {
+    if (pending !== undefined && pending.attemptId === active.id) {
       this.clearPendingAuthorization(pending)
       pending.reject(new DsnAccountError('DSN_LOGIN_CANCELLED', 'CQAI Club 登录已取消。'))
     }
     this.authorization.cancel(this.credential)
+    // Native account providers may retry immediately after cancellation. Wait
+    // until this attempt's finally handler releases the active slot first.
+    await active.promise
   }
 
   private noticeForAttempt(attemptId: string, notice: { message: string; url?: string; code?: string }): void {
     const active = this.activeAttempt
-    if (active === undefined || active.id !== attemptId || active.generation !== this.authorizationGeneration || this.signingOut) return
+    if (this.snapshot.state !== 'authorizing' || active === undefined || active.id !== attemptId
+      || active.generation !== this.authorizationGeneration || this.signingOut) return
     this.setSnapshot({
       state: 'authorizing',
       attemptId,
@@ -960,10 +967,10 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     if (attempt === undefined) throw new DsnAccountError('DSN_PROTOCOL_ERROR', 'CQAI Club 登录流程已失效。')
     this.assertCurrentAuthorization(attempt, session.signal)
 
-    session.notify({ message: '请在浏览器中完成 CQAI Club 登录。', url: attempt.request.authorizationUrl })
+    session.notify({ message: `请在浏览器中完成 ${this.authorizationAccountName} 登录。`, url: attempt.request.authorizationUrl })
     const code = await this.waitForAuthorizationCode(attempt.id, session.signal)
     this.assertCurrentAuthorization(attempt, session.signal)
-    session.notify({ message: '正在验证 CQAI Club 登录凭据…' })
+    session.notify({ message: `正在验证 ${this.authorizationAccountName} 登录凭据…` })
     let token = await this.oidc.exchangeAuthorizationCode(
       code,
       attempt.redirectUri,
@@ -983,7 +990,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     const expiresAt = attempt.request.expiresAt
     let transientFailures = 0
     let account: PublicAccount
-    session.notify({ message: '正在读取 CQAI Club 账号…' })
+    session.notify({ message: `正在读取 ${this.authorizationAccountName} 账号…` })
     while (true) {
       try {
         account = await this.accountService.getAccount(token.accessToken, session.signal)
@@ -1024,7 +1031,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     this.setSnapshot(this.snapshotFromGrant(payload))
     for (const lease of this.resourceLeases) if (lease.active && !lease.disposed) this.notifyLease(lease, 'authorized')
     void this.listModels({ refresh: true }).catch(() => undefined)
-    session.notify({ message: 'CQAI Club 登录成功。' })
+    session.notify({ message: `${this.authorizationAccountName} 登录成功。` })
   }
 
   private assertCurrentAuthorization(attempt: ActiveAttempt, signal: AbortSignal): void {
@@ -1066,8 +1073,9 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
   }
 
   private async handleOAuthCallback(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const desktopName = this.config.desktopProductName ?? 'DSH'
     if (request.method !== 'GET') {
-      respondOAuth(response, 405, '登录回调方法不支持', '请返回 DSH 后重新登录。')
+      respondOAuth(response, 405, '登录回调方法不支持', `请返回 ${desktopName} 后重新登录。`)
       return
     }
 
@@ -1075,13 +1083,13 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     try {
       callback = new URL(request.url ?? '/', 'http://127.0.0.1')
     } catch {
-      respondOAuth(response, 400, '登录回调无效', '请返回 DSH 后重新登录。')
+      respondOAuth(response, 400, '登录回调无效', `请返回 ${desktopName} 后重新登录。`)
       return
     }
 
     const pending = this.pendingAuthorization
     if (pending === undefined || callback.searchParams.get('state') !== pending.state) {
-      respondOAuth(response, 400, '登录回调已失效', '请返回 DSH 后重新开始登录。')
+      respondOAuth(response, 400, '登录回调已失效', `请返回 ${desktopName} 后重新开始登录。`)
       return
     }
 
@@ -1092,13 +1100,13 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
         ? new DsnAccountError('DSN_LOGIN_CANCELLED', 'CQAI Club 登录被取消。')
         : new DsnAccountError('DSN_PROTOCOL_ERROR', 'CQAI Club 登录未完成。'))
       this.showDesktop()
-      respondOAuth(response, 200, '登录未完成', '本次登录未完成，请返回 DSH 重试。')
+      respondOAuth(response, 200, '登录未完成', `本次登录未完成，请返回 ${desktopName} 重试。`)
       return
     }
 
     const code = callback.searchParams.get('code')
     if (code === null || code.length === 0) {
-      respondOAuth(response, 400, '登录回调缺少授权码', '请返回 DSH 后重新开始登录。')
+      respondOAuth(response, 400, '登录回调缺少授权码', `请返回 ${desktopName} 后重新开始登录。`)
       return
     }
 
@@ -1108,7 +1116,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       this.setSnapshot({
         state: 'authorizing',
         attemptId: pending.attemptId,
-        message: '已返回 DSH，正在安全写入账号信息…',
+        message: `已返回 ${desktopName}，正在安全写入账号信息…`,
         authorizationUrl: active.request.authorizationUrl,
         expiresAt: active.request.expiresAt,
       })
@@ -1119,8 +1127,8 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
       response,
       200,
       '已收到登录回调',
-      '浏览器登录已完成，DSH 正在验证账号。',
-      this.desktopLoginRuntime?.loginCompletionUrl,
+      `浏览器登录已完成，${desktopName} 正在验证账号。`,
+      { url: this.desktopLoginRuntime?.loginCompletionUrl, productName: this.config.desktopProductName ?? 'e宝工坊' },
     )
   }
 
@@ -1388,7 +1396,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     if (grant !== undefined) this.setSnapshot(this.snapshotFromGrant(grant))
   }
 
-  private async logout(signal?: AbortSignal): Promise<LogoutResult> {
+  async logout(signal?: AbortSignal): Promise<LogoutResult> {
     this.signingOut = true
     this.invalidateResources()
     this.authorizationGeneration += 1
@@ -1716,13 +1724,13 @@ function respondOAuth(
   status: number,
   title: string,
   message: string,
-  loginCompletionUrl?: string,
+  completion?: { url: string | undefined; productName: string },
 ): void {
-  const success = title === '已收到登录回调'
+  const success = completion !== undefined
   const safeTitle = escapeHtml(title)
   const safeMessage = escapeHtml(message)
-  const openDesktop = success && loginCompletionUrl !== undefined
-    ? `<a class="open" href="${escapeHtml(loginCompletionUrl)}">打开 e宝工坊</a><p class="return">如果没有自动返回，请点击按钮继续。</p>`
+  const openDesktop = completion?.url !== undefined
+    ? `<a class="open" href="${escapeHtml(completion.url)}">打开 ${escapeHtml(completion.productName)}</a><p class="return">如果没有自动返回，请点击按钮继续。</p>`
     : ''
   response.writeHead(status, {
     'Cache-Control': 'no-store',

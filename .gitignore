@@ -11,9 +11,8 @@ node_modules/
 .npm-cache/
 *.tsbuildinfo
 .build/
+.official-desktop/
 
-dsh-plugin-desktop/dist/
-dsh-plugin-desktop/lib/
 dsh-community-market/lib/
 cqai-dsh-plugins/*/lib/
 
@@ -28,9 +27,6 @@ vendor/matrixmedia/*/matrixmedia-win-x64/
 .portable/
 __pycache__/
 *.pyc
-dsh-desktop-next/lib/
-dsh-desktop-next/dist/
-dsh-desktop-next/.desktop-next/
 
 # Scratch artifacts produced by the plugin publish gate:
 # `npm pack --json` output, packed tarballs, and the registry check.

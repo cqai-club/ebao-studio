@@ -6,7 +6,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from 'dsh-community-market/client'
 import { useEffect, type ReactNode } from 'react'
-import { PRODUCT_PACKAGES } from '../product-bundles.js'
 import { createViewState, PluginManagementShell, ProductInstalledCards } from './PluginManagementShell.js'
 
 const PANEL = 'plugins' as MainPanelId
@@ -35,10 +34,6 @@ function isCqaiDesktop(): boolean {
     .dshDesktop?.cqaiPrimaryLogin === true
 }
 
-function isModernDesktop(): boolean {
-  return typeof (globalThis as typeof globalThis & { desktopNext?: { state?: unknown } }).desktopNext?.state === 'function'
-}
-
 function AccountAction({ registerAction, open, label }: PropsRuntime<'cqaiclub.account.menu.action'> & { open: () => void; label: () => string }) {
   useEffect(() => registerAction({
     id: 'cqai-plugin-management', label, onSelect: open,
@@ -51,7 +46,6 @@ export const inject = ['slots', 'locale']
 
 export function apply(ctx: Context): void {
   if (!isCqaiDesktop()) {
-    if (!isModernDesktop()) return
     // Current Harness owns the installed list. Contribute a market tab through
     // its public extension point instead of replacing its page or hiding bundles.
     ctx.slots.inject('plugins.tab', () => ctx.slots.register({
@@ -89,10 +83,5 @@ export function apply(ctx: Context): void {
     scope.slots.inject('plugins.installed.cards', () => scope.slots.register({
       name: 'plugins.installed.cards', id: 'cqai-product-bundles',
     }, (props: PropsRuntime<'plugins.installed.cards'>) => <ProductInstalledCards {...props} ctx={scope} />))
-    for (const packageName of PRODUCT_PACKAGES) {
-      scope.slots.inject('plugins.bundle.hidden', () => scope.slots.register({
-        name: 'plugins.bundle.hidden', key: packageName,
-      }, () => null))
-    }
   })
 }

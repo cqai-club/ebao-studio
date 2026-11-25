@@ -1,19 +1,10 @@
-# CQAI Profiles
+# Official Desktop Profile
 
-Profile 只负责组合已安装的插件，不放置插件业务源码。
+当前只启动官方 DeepSeek Harness Desktop。官方启动器管理自己的 `desktop`
+Profile，默认位于外层仓库的 `.official-desktop/official/home/profiles/desktop/`。
 
-当前开发 Profile：
+旧的 CQAI 桌面组合模板已移除。`cqai-dsh-plugins/` 和市场插件源码保留为后续
+适配材料，不会自动安装或加载到官方 Profile。原有 `~/.dsh`、`~/.dsh-beta`
+及账号、会话、作品数据保持独立。
 
-```text
-cqai-dsh-plugin-desktop/
-```
-
-后续如果需要不同产品组合，可以增加：
-
-```text
-cqai-dsh-plugin-desktop-minimal/
-cqai-dsh-plugin-desktop-market/
-cqai-dsh-plugin-desktop-dev/
-```
-
-Profile 目录不加入 `dsh-desktop` 根 Yarn workspace，避免把 DSH 运行时依赖和 CQAI 插件开发依赖混在一起。
+外层 Yarn 只管理启动命令；官方运行时与外部 Profile 的依赖由官方 pnpm 流程管理。

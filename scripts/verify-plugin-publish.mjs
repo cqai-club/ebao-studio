@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * Dormant CQAI package verifier; automatic plugin publication is disabled.
  * Verify that one CQAI plugin package is publishable, that its packed tarball
  * carries every runtime entry the manifest promises, and that the Community
  * Market would accept the published manifest.

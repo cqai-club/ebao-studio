@@ -99,15 +99,3 @@ test('workflow preflight rejects changed execution SHA, bad modes/tags and absen
     env: { ...env, ...change }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   }), error => error.status === 1)
 })
-
-test('automatic release mirroring follows successful publication and passes only a trusted SHA', () => {
-  const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8')
-  const mirror = release.slice(release.indexOf('\n  mirror-gitcode:'))
-  assert.match(mirror, /needs: publish/u)
-  assert.match(mirror, /if: vars\.GITCODE_SYNC_ENABLED == 'true'/u)
-  assert.match(mirror, /uses: \.\/\.github\/workflows\/sync-gitcode\.yml/u)
-  assert.match(mirror, /source_ref: \$\{\{ github\.sha \}\}/u)
-  assert.match(mirror, /release_tag: \$\{\{ inputs\.release_tag \}\}/u)
-  assert.match(mirror, /GITCODE_TOKEN: \$\{\{ secrets\.GITCODE_TOKEN \}\}/u)
-  assert.doesNotMatch(mirror, /always\(\)|continue-on-error: true/u)
-})
