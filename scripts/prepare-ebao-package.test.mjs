@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { APP_ID, PRODUCT_NAME, createEbaoPackageEnvironment, packageSmokeSource } from './package-ebao-desktop.mjs'
-import { createEbaoBuilderConfig, packageDesktopHost, packageDesktopMain, packageWindowsUninstaller } from './prepare-ebao-package.mjs'
+import { createEbaoBuilderConfig, packageDesktopHost, packageDesktopMain, packageWindowsInstaller, packageWindowsUninstaller } from './prepare-ebao-package.mjs'
 
 test('Windows unsigned packaging has independent identity and ignores upstream release credentials', () => {
   const environment = createEbaoPackageEnvironment({
@@ -65,6 +65,20 @@ test('packaged runtime smoke runs the renamed applications on both platforms', (
   for (const name of [PRODUCT_NAME, `${PRODUCT_NAME}.app`, `${PRODUCT_NAME}.exe`]) assert.ok(changed.includes(JSON.stringify(name)))
   assert.doesNotMatch(changed, /DeepSeek Harness/u)
   assert.throws(() => packageSmokeSource(''), /smoke path changed/u)
+})
+
+test('generated Windows installer resolves pinned script includes from its new directory', () => {
+  const desktop = new URL('../deepseek-harness/apps/desktop/', import.meta.url)
+  const source = readFileSync(new URL('scripts/installer.nsh', desktop), 'utf8')
+  const changed = packageWindowsInstaller(source)
+  const includes = [...changed.matchAll(/^ *!include "\$\{__FILEDIR__\}\\([^"\r\n]+)"$/gmu)]
+    .map(([, path]) => path.replaceAll('\\', '/'))
+  assert.deepEqual(includes, [
+    '../../../../scripts/restart-banner.nsh',
+    '../../../../scripts/installer-directories.nsh',
+  ])
+  const generatedDirectory = new URL('.desktop-build/targets/win-x64/installer-ui/', desktop)
+  for (const path of includes) assert.ok(readFileSync(new URL(path, generatedDirectory), 'utf8').length > 0)
 })
 
 test('Windows uninstaller cleans the e宝 data path without deleting stock or old product directories', () => {

@@ -43,13 +43,19 @@ export function packageWindowsUninstaller(source) {
   return replacePackageSeam(source, source.slice(startIndex, endIndex), `  StrCpy $UnTarget "$APPDATA\\${USER_DATA_NAME}"\n  Call un.RemoveData\n`)
 }
 
-function prepareWindowsInstaller(directory) {
-  const installer = readFileSync(join(welcomePlan.desktop, 'scripts', 'installer.nsh'), 'utf8')
-  let source = replacePackageSeam(installer, '!include "${__FILEDIR__}\\restart-banner.nsh"', '!include "${__FILEDIR__}\\..\\..\\..\\..\\scripts\\restart-banner.nsh"')
+export function packageWindowsInstaller(source) {
+  const scripts = '${__FILEDIR__}\\..\\..\\..\\..\\scripts'
+  for (const name of ['restart-banner.nsh', 'installer-directories.nsh']) {
+    source = replacePackageSeam(source, `!include "\${__FILEDIR__}\\${name}"`, `!include "${scripts}\\${name}"`)
+  }
   source = replacePackageSeam(source, '!define INSTALLER_SOURCE_DIR "${__FILEDIR__}\\..\\installer"', '!define INSTALLER_SOURCE_DIR "${__FILEDIR__}\\..\\..\\..\\..\\installer"')
   source = replacePackageSeam(source, '!define /ifndef INSTALLER_BUILD_DIR "${__FILEDIR__}\\..\\.desktop-build\\targets\\win-x64\\installer-ui"', '!define /ifndef INSTALLER_BUILD_DIR "${__FILEDIR__}"')
-  source = replacePackageSeam(source, '!include "${INSTALLER_SOURCE_DIR}\\uninstall.nsh"', '!include "${INSTALLER_BUILD_DIR}\\ebao-uninstall.nsh"')
-  writeFileSync(join(directory, 'ebao-installer.nsh'), source, 'utf8')
+  return replacePackageSeam(source, '!include "${INSTALLER_SOURCE_DIR}\\uninstall.nsh"', '!include "${INSTALLER_BUILD_DIR}\\ebao-uninstall.nsh"')
+}
+
+function prepareWindowsInstaller(directory) {
+  const installer = readFileSync(join(welcomePlan.desktop, 'scripts', 'installer.nsh'), 'utf8')
+  writeFileSync(join(directory, 'ebao-installer.nsh'), packageWindowsInstaller(installer), 'utf8')
   const uninstaller = readFileSync(join(welcomePlan.desktop, 'installer', 'uninstall.nsh'), 'utf8')
   writeFileSync(join(directory, 'ebao-uninstall.nsh'), packageWindowsUninstaller(uninstaller), 'utf8')
   editGenerated(join(directory, 'strings.nsh'), text => text.replaceAll('DeepSeek Harness', PRODUCT_NAME))
