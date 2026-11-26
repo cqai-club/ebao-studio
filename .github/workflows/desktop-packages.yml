@@ -67,7 +67,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           set -euo pipefail
-          git submodule update --init --recursive -- matrixmedia-publisher
+          git -c core.autocrlf=false submodule update --init --recursive -- matrixmedia-publisher
           node scripts/verify-publisher-source.mjs
           corepack enable
           node scripts/install-matrixmedia-ci.mjs
