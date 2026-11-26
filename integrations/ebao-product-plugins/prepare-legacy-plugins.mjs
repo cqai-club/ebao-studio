@@ -59,9 +59,31 @@ const legacySeats = [
 
 const seats = [
   composerSeat('conversation.hero.options', 'dsh-ppt', 'OfficePptStandardModeAction'),
-  composerSeat('conversation.input.dock', 'dsh-ppt-selection', 'OfficePptStandardInputAccessory'),
   composerSeat('conversation.input.dock', 'dsh-ppt-chooser', 'OfficePptStandardComposerDock'),
+  composerSeat('conversation.input.dock', 'dsh-ppt-selection', 'OfficePptStandardInputAccessory'),
 ].join('\n')
+
+// RC5 mounts the blank-session dock above the composer. Reserve layout space
+// for the chooser and scroll its grid within the dock.
+const dockStyles = `
+[data-placement="dock"] > [data-office-ppt-template-panel] {
+  position: static;
+  width: 100%;
+  height: auto;
+  max-height: min(38dvh, 22rem);
+  margin: 0;
+  transform: none;
+}
+[data-placement="dock"] [data-office-ppt-template-viewport] {
+  scrollbar-width: thin;
+}
+[data-placement="dock"] [role="tab"][aria-selected="false"]:not(:hover) {
+  color: var(--dsw-alias-label-secondary);
+}
+[data-office-ppt-selection] {
+  padding: 4px calc(var(--dsh-composer-side-clearance, 0px) + 6px);
+}
+`
 
 const catalogState = [
   '\t\t\t\tthis.setMode(sessionId, activeMode);',
@@ -100,7 +122,19 @@ export function prepareLegacyPluginArtifacts(modulesDir) {
   const engineManifest = manifest(engine, 'dsh-ppt')
   const composerManifest = manifest(composer, 'dsh-ppt-composer')
 
-  patchFile(join(composer, 'lib', 'client.js'), [[legacySeats, seats], [catalogState, stableCatalogState]])
+  const styleStart = 'tag.textContent = css + `\nbutton[data-desktop-ppt]'
+  const selectionClass = 'className: OfficePptHero_module_css_default.selection,'
+  patchFile(join(composer, 'lib', 'client.js'), [
+    [legacySeats, seats],
+    [catalogState, stableCatalogState],
+    ['placement: "fixed",', 'placement: "dock",'],
+    ['if (placement === "fixed" && state.activeMode === null) return null;',
+      'if (placement === "dock" && state.activeMode === null) return null;'],
+    ['if (placement === "trigger") return;', 'if (placement === "trigger" || placement === "dock") return;'],
+    [styleStart, `tag.textContent = css + \`${dockStyles}button[data-desktop-ppt]`],
+    [selectionClass + '\n\t\t\t\t"aria-label":',
+      selectionClass + '\n\t\t\t\t"data-office-ppt-selection": "",\n\t\t\t\t"aria-label":'],
+  ])
   // The Browser RPC client uses the same HTTP envelope. Keep the routes that bound template uploads.
   patchFile(join(engine, 'lib', 'index.js'), [
     [legacyRoutes, nativeRoutes],
