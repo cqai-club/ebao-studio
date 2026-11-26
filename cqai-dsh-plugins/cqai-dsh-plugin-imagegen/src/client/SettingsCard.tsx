@@ -2,8 +2,8 @@
  * The dsh-imagegen settings card: channel management (list rows with status
  * dots, an editor dialog with the model-catalog alias → upstream mapping, and
  * built-in provider presets), plus the prompt-enhancement model and the plugin
- * switches. Renders on the plugin bundle's detail page and binds to the
- * plugin's bridge settings scope.
+ * switches. Renders in Settings and on the plugin bundle's detail page, and
+ * binds to the plugin's bridge settings scope.
  *
  * The interaction mirrors the host's model-provider page: one row per channel
  * (status dot + edit/delete), two add buttons (built-in provider / custom),
@@ -12,8 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { CardForm, booleanField, secretField, textField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
 import { ChannelsForm, type ChannelDraft, type ChannelsFormActions, type ChannelsFormState } from './channels-form.ts'
@@ -194,10 +193,7 @@ export class ImageGenSettingsCardController {
 }
 
 /** Props the renderer binds for this card. */
-export type ImageGenSettingsCardProps =
-  PropsRuntime<'plugins.bundle.config'>
-  & PropsLocale<'dsh-imagegen'>
-  & InjectFace<ImageGenSettingsCardFace>
+export type ImageGenSettingsCardProps = InjectFace<ImageGenSettingsCardFace>
 
 /** Host-computed usage counters (generation-count badges). */
 interface UsageCounters {

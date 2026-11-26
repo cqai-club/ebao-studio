@@ -15,6 +15,7 @@ import { createElement as h } from 'react'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the LocaleNamespaceMap merge table.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { ImageGenApi } from './api.ts'
@@ -113,8 +114,16 @@ export function apply(ctx: ClientContext): void {
     return () => { for (const dispose of disposers) dispose() }
   }, 'dsh-imagegen: settings scope invalidation')
 
-  // The Plugins page renders this form on the installed bundle's detail page.
+  // The shipped profile activates this plugin directly, so it also needs a
+  // Settings entry when the Plugins page has no separate bundle detail.
   const settingsCard = new ImageGenSettingsCardController(scope)
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'cqai-dsh-plugin-imagegen',
+    order: 45,
+    label: () => tt('settings.title'),
+    inject: () => settingsCard.inject(),
+  }, ImageGenSettingsCard))
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
     key: 'cqai-dsh-plugin-imagegen',

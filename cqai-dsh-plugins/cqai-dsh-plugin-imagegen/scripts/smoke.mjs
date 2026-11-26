@@ -3712,7 +3712,8 @@ await check('E1 client apply registers and renders the official image studio (js
     view.querySelector('[data-gallery-clear]')?.dispatchEvent(new jsdomWindow.MouseEvent('click', { bubbles: true }))
     await new Promise(resolve => setTimeout(resolve, 20))
     assert.equal(confirmationCalls, 2, 'gallery clear asks for confirmation')
-    // The settings card registered into the official plugin-config slot.
+    // The form is available for the shipped profile and separately installed bundles.
+    assert.ok(registered.some(entry => entry.options.name === 'settings.section' && entry.options.id === 'cqai-dsh-plugin-imagegen'), 'image settings section registered')
     const settingsRegistration = registered.find(entry => entry.options.name === 'plugins.bundle.config' && entry.options.key === 'cqai-dsh-plugin-imagegen')
     assert.ok(settingsRegistration !== undefined, 'image settings card registered')
 
