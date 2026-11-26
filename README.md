@@ -4,7 +4,7 @@
 
 本仓库从固定的官方源码构建运行 DeepSeek Harness 桌面端。欢迎页和工作台使用由 CQAI 提供的 e宝工坊账号登录。可单独配置 DeepSeek API Key 来使用 DeepSeek 官方模型。当前源码版本、提交及 pnpm 版本见 [upstream.json](upstream.json)。
 
-e宝工坊账号适配随源码启动和安装包加载。其他旧版业务插件仍保留供后续单独接入。e宝工坊独立维护本仓库。官方运行时和插件使用方式见 [DeepSeek Harness 桌面端文档](deepseek-harness/apps/desktop/README.zh.md)。
+源码启动和安装包默认加载 e图宝、多平台发布、IM、插件市场、Skills／MCP、PPT Composer、e宝首页和 CQAI Club 主题。e宝工坊独立维护本仓库。官方运行时和插件使用方式见 [DeepSeek Harness 桌面端文档](deepseek-harness/apps/desktop/README.zh.md)。
 
 ## 从源码运行
 

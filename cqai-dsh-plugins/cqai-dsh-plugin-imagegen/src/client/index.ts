@@ -13,7 +13,9 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { createElement as h } from 'react'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the LocaleNamespaceMap merge table.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { ImageGenApi } from './api.ts'
@@ -41,26 +43,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 
   interface SlotMap {
-    /**
-     * The official plugin-configuration slot the Settings → Plugins →
-     * Configurable tab declares and renders. This card registers there as its
-     * own standalone card — independent of the dsh-web-ui family group — so
-     * this plugin never reads as part of that family. Spelled here with the
-     * same shape so this package can register without depending on the
-     * sibling UI package.
-     */
-    'settings.plugin.item': { kind: 'keyed'; scope: 'root'; owner: ImageGenPluginItemOwnerProps }
     /** Image-generation results render their durable image blocks inline. */
     'tool.call.toolview': { kind: 'keyed'; scope: 'session'; owner: ImageToolViewOwnerProps }
     /** `/edit_image` renders its durable generated attachments inside its command row. */
     'conversation.chat.commandview': { kind: 'keyed'; scope: 'session'; owner: ImageCommandViewOwnerProps }
   }
-}
-
-/** Owner share of a plugin card (the section supplies nothing). */
-export interface ImageGenPluginItemOwnerProps {
-  /** Marker field: card owner props are intentionally empty. */
-  children?: never
 }
 
 /** Required services (fiber inject waiting — the runtime must be up first). */
@@ -110,7 +97,8 @@ export function apply(ctx: ClientContext): void {
   }, 'dsh-imagegen: follow host locale')
 
   const connection = ctx.get('connection') as ConnectionHandle | undefined
-  const loopback = connection?.isLoopback === true
+  const desktop = globalThis.location?.protocol === 'dsh-app:' && globalThis.location.hostname === 'app'
+  const loopback = connection?.isLoopback === true || desktop
   // The bridge routes are loopback-fenced; remote browsers get an unavailable
   // scope (the card explains the gap) instead of failing fetches.
   const scope: ImageGenScope = bindImageGenScope(loopback
@@ -126,13 +114,19 @@ export function apply(ctx: ClientContext): void {
     return () => { for (const dispose of disposers) dispose() }
   }, 'dsh-imagegen: settings scope invalidation')
 
-  // Plugin configuration card: one staged form over the `dsh-imagegen` scope,
-  // registered into the official plugin-configuration slot (Settings →
-  // Plugins → Configurable) as a standalone card.
+  // The shipped profile activates this plugin directly, so it also needs a
+  // Settings entry when the Plugins page has no separate bundle detail.
   const settingsCard = new ImageGenSettingsCardController(scope)
-  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-    name: 'settings.plugin.item',
-    key: 'dsh-imagegen',
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'cqai-dsh-plugin-imagegen',
+    order: 45,
+    label: () => tt('settings.title'),
+    inject: () => settingsCard.inject(),
+  }, ImageGenSettingsCard))
+  ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+    name: 'plugins.bundle.config',
+    key: 'cqai-dsh-plugin-imagegen',
     locale: NS,
     inject: () => settingsCard.inject(),
   }, ImageGenSettingsCard))

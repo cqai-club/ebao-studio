@@ -77,7 +77,6 @@ const nodeConfig: UserConfig = {
       '@deepseek-ai/dsh-client-connection',
       '@deepseek-ai/dsh-llm',
       '@deepseek-ai/dsh-llm/message',
-      '@cqaiclub/dsn-account',
       'schemastery',
     ],
   },

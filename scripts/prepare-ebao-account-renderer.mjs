@@ -4,19 +4,21 @@ import { isAbsolute, join } from 'node:path'
 import { Script } from 'node:vm'
 
 const LOCALES = ['en', 'zh', 'ja', 'es', 'fr', 'de', 'ru', 'pt']
-const SETTINGS_PACKAGES = {
+const ACCOUNT_RENDERER_PACKAGES = {
   accountClient: 'ui-settings-account',
+  chatClient: 'ui-chat',
+  layoutClient: 'ui-layout',
   modelsClient: 'ui-settings-models',
   webSearchClient: 'ui-settings-web-search',
 }
 
 export function ebaoAccountWorkspaceClients(official) {
-  return Object.fromEntries(Object.entries(SETTINGS_PACKAGES)
+  return Object.fromEntries(Object.entries(ACCOUNT_RENDERER_PACKAGES)
     .map(([key, name]) => [key, join(official, 'packages', 'client', name, 'lib', 'client.js')]))
 }
 
 export function ebaoAccountPackagedClients(nodeModules) {
-  return Object.fromEntries(Object.entries(SETTINGS_PACKAGES)
+  return Object.fromEntries(Object.entries(ACCOUNT_RENDERER_PACKAGES)
     .map(([key, name]) => [key, join(nodeModules, '@deepseek-ai', `dsh-client-${name}`, 'lib', 'client.js')]))
 }
 
@@ -25,6 +27,27 @@ function rebrandAccountText(dictionary) {
   const branded = Object.fromEntries(Object.entries(dictionary)
     .map(([key, value]) => [key, value.replace(/DeepSeek(?: Harness)?( (?=账号))?/g, 'e宝工坊')]))
   return { ...branded, settingsSignedOutDescription: branded.signInDescription }
+}
+
+function rebrandChatAccountErrors(dictionary, signInMessage) {
+  const signedOut = 'message.failure.accountSignedOut'
+  const signInRequired = 'message.failure.accountSignInRequired'
+  return {
+    ...dictionary,
+    [signedOut]: dictionary[signedOut].replace('DeepSeek 登录', 'e宝工坊账号').replace('DeepSeek', 'e宝工坊'),
+    [signInRequired]: signInMessage,
+  }
+}
+
+const CHAT_SIGN_IN_COPY = {
+  en: 'Sign in to your e宝工坊 account and try again.',
+  zh: '请先登录 e宝工坊账号，再重试。',
+  ja: 'e宝工坊のアカウントにログインしてから、もう一度お試しください。',
+  es: 'Inicia sesión en tu cuenta de e宝工坊 y vuelve a intentarlo.',
+  fr: 'Connectez-vous à votre compte e宝工坊, puis réessayez.',
+  de: 'Melden Sie sich bei Ihrem e宝工坊-Konto an und versuchen Sie es erneut.',
+  ru: 'Войдите в свой аккаунт e宝工坊 и повторите попытку.',
+  pt: 'Entre na sua conta do e宝工坊 e tente novamente.',
 }
 
 function openEbaoAccountPage(links, page, onClose, refresh) {
@@ -93,6 +116,17 @@ function patchModels(source) {
     'models account label')
 }
 
+function patchChat(source) {
+  return patchDictionaries(source, 'ctx.locale.register(NS,{zh,en,ja,es,fr,de,ru,pt}),`ui-chat: dictionaries`',
+    locale => `(${rebrandChatAccountErrors})(${locale},${JSON.stringify(CHAT_SIGN_IN_COPY[locale])})`,
+    'chat account error dictionaries')
+}
+
+function patchLayout(source) {
+  return patchOnce(source, 'const productTitle={}.DSH_CLIENT_TITLE??t(`brand.localBuild`);',
+    'const productTitle=`e宝工坊`;', 'workspace window title')
+}
+
 function patchWebSearch(source) {
   source = patchDictionaries(source, 'ctx.locale.register(NS,{zh,en,ja,es,fr,de,ru,pt}),`ui-settings-web-search: dictionaries`',
     locale => {
@@ -107,7 +141,10 @@ function patchWebSearch(source) {
     'const BILLINGS=[`auto`,`api-key`];', 'web search billing choices')
 }
 
-const RENDERER_PATCHES = { accountClient: patchAccount, modelsClient: patchModels, webSearchClient: patchWebSearch }
+const RENDERER_PATCHES = {
+  accountClient: patchAccount, chatClient: patchChat, layoutClient: patchLayout,
+  modelsClient: patchModels, webSearchClient: patchWebSearch,
+}
 const MARKER = '/* eBao desktop account renderer */\n'
 
 export function applyEbaoAccountRenderer(paths) {

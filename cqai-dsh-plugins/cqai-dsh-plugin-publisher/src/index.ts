@@ -1,8 +1,10 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-client-connection'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   API,
   ARTICLE_THEMES,
@@ -52,27 +54,19 @@ import { openPublicationFromSource } from './publication-preparation.ts'
 import { listWorks } from './works.ts'
 import { serveVideoPreview, VideoPreviewError, type LocalVideoReader } from './video-preview.ts'
 import { compressDouyinSummary, summaryCompressionRequest, type SummaryCompressionRequest, type SummaryCompressionServices } from './summary-compression.ts'
+import { PublisherSupervisor } from './publisher-supervisor.ts'
+import { type PublisherWorkerMethod } from './publisher-worker-protocol.ts'
 
 export const name = 'cqai-publisher'
-export const inject = ['webServer', 'desktopRuntime']
+export const inject = ['webServer']
 
 const MAX_BODY_BYTES = 64 * 1024
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 
-type WorkerMethod =
-  | 'accounts.list' | 'accounts.create' | 'accounts.update' | 'accounts.delete'
-  | 'accounts.openLogin' | 'accounts.checkLogin' | 'accounts.openDashboard'
-  | 'accounts.importPreview' | 'accounts.importApply'
-  | 'submissions.create' | 'submissions.list' | 'submissions.delete' | 'submissions.openTarget' | 'system.capabilities'
-
 interface PublisherRuntime extends LocalVideoReader {
   status(): PublisherCapability
   selectLocalVideo(): Promise<PublisherLocalVideo | null>
-  request<T = unknown>(method: WorkerMethod, params?: unknown, signal?: AbortSignal): Promise<T>
-}
-
-interface PublisherContext extends Context {
-  desktopRuntime: { publisher: PublisherRuntime }
+  request<T = unknown>(method: PublisherWorkerMethod, params?: unknown, signal?: AbortSignal): Promise<T>
 }
 
 function json(res: ServerResponse, code: number, data: unknown): void {
@@ -444,7 +438,15 @@ async function dispatch(runtime: PublisherRuntime, action: string, req: Incoming
 }
 
 export function apply(ctx: Context): void {
-  const runtime = (ctx as PublisherContext).desktopRuntime.publisher
+  const legacyRuntime = (ctx.get('desktopRuntime') as { publisher: PublisherRuntime } | undefined)?.publisher
+  const runtime = legacyRuntime ?? new PublisherSupervisor({
+    platform: process.platform,
+    workerPath: process.env.EBAO_PUBLISHER_WORKER,
+    dataRoot: join(resolveDshHome(), 'publisher', 'worker'),
+    logger: console,
+  })
+  const supervisor = runtime instanceof PublisherSupervisor ? runtime : undefined
+  if (supervisor) ctx.effect(() => () => supervisor.shutdown(), '多平台发布 Worker')
   let summaryServices: SummaryCompressionServices = {}
   const summaryAborts = new Set<AbortController>()
   ctx.inject(['llm', 'agentDefaultModel'], (modelCtx) => {
@@ -627,11 +629,26 @@ export function apply(ctx: Context): void {
     path: API,
     handler: async (req, res) => {
       if (!permitted(req)) { json(res, 403, { error: '仅允许 e宝工坊本机页面访问' }); return }
+      if (supervisor) {
+        const connection = ctx.get('connection')
+        const admission = connection?.admit(req)
+        if (!admission || !('peer' in admission) || admission.peer !== connection?.browserPeer) {
+          json(res, 403, { error: '仅允许 e宝工坊本机页面访问' }); return
+        }
+      }
       try {
         const url = new URL(req.url ?? '', 'http://localhost')
         const prefix = `${API}/`
         if (!url.pathname.startsWith(prefix) || url.search !== '') { json(res, 404, { error: '接口不存在' }); return }
         const action = url.pathname.slice(prefix.length)
+        if (req.method === 'POST' && action === 'local-video-upload' && supervisor) {
+          const name = req.headers['x-publisher-file-name']
+          const bytes = req.headers['x-publisher-file-bytes']
+          if (typeof name !== 'string' || name.length > 2300 || typeof bytes !== 'string' || !/^\d{1,10}$/u.test(bytes)
+            || req.headers['content-type'] !== 'application/octet-stream') throw new Error('视频文件参数无效')
+          json(res, 201, await supervisor.saveLocalVideo(decodeURIComponent(name), Number(bytes), req))
+          return
+        }
         if (req.method === 'GET' && action.startsWith('article-handoff/')) {
           const parts = action.slice('article-handoff/'.length).split('/')
           if (parts.length !== 2) throw new Error('文章转交路径无效')

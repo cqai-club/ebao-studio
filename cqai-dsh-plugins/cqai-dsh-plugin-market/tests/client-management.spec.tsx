@@ -277,29 +277,19 @@ describe('CQAI plugin management Client', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
-  it('contributes the market tab on official Desktop without legacy globals', () => {
-    vi.stubGlobal('dshDesktop', { cqaiPrimaryLogin: false })
+  it('declares the Skills and MCP editors in the official Plugins page', () => {
     const test = testContext()
     apply(test.ctx)
-    expect(test.registrations).toHaveLength(1)
-    expect(test.registrations[0]?.options).toMatchObject({
-      name: 'plugins.tab', id: 'cqai-market',
-      children: { 'cqai.pluginManagement.market': { kind: 'list', scope: 'root' } },
-    })
-  })
-
-  it('contributes the market to the official Plugins page in modern Desktop', () => {
-    vi.stubGlobal('dshDesktop', { protocolVersion: 1 })
-    vi.stubGlobal('desktopNext', { state: vi.fn() })
-    const test = testContext()
-    apply(test.ctx)
-    expect(test.registrations).toHaveLength(1)
-    expect(test.registrations[0]?.options).toMatchObject({
-      name: 'plugins.tab', id: 'cqai-market',
-      children: { 'cqai.pluginManagement.market': { kind: 'list', scope: 'root' } },
-    })
-    expect(test.registrations.some(entry => entry.options.name === 'plugins.shell')).toBe(false)
-    expect(test.registrations.some(entry => entry.options.name === 'plugins.bundle.hidden')).toBe(false)
+    expect(test.registrations.map(entry => entry.options)).toEqual([
+      expect.objectContaining({
+        name: 'plugins.tab', id: 'cqai-skills',
+        children: { 'cqai.pluginManagement.skills': { kind: 'list', scope: 'root' } },
+      }),
+      expect.objectContaining({
+        name: 'plugins.tab', id: 'cqai-mcp',
+        children: { 'cqai.pluginManagement.mcp': { kind: 'list', scope: 'root' } },
+      }),
+    ])
   })
 
   it('registers shell, cards and menu when the relevant owners appear after the plugin', () => {

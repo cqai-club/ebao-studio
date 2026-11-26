@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, type ComponentProps } from 'react'
 import { Button, Modal, Tag, observeComposition } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  API, type CreativeStatement, type Platform, PLATFORM_LABELS,
-  type PublisherAccount, type PublisherCapability, type PublisherContent, type PublisherContentType,
+  API, MAX_LOCAL_VIDEO_BYTES, type CreativeStatement, type Platform, PLATFORM_LABELS,
+  type PublisherAccount, type PublisherCapability, type PublisherContent, type PublisherContentType, type PublisherLocalVideo,
 } from '../protocol.ts'
 import { contentPreviewCss } from './content-preview-style.ts'
 import { draftGalleryCss } from './draft-gallery-style.ts'
@@ -52,6 +52,25 @@ export async function uploadAsset(contentId: string, file: File): Promise<import
   const result = await response.json() as { error?: string }
   if (!response.ok) throw new Error(result.error || '上传素材失败')
   return result as import('../protocol.ts').PublisherContent
+}
+
+export async function uploadLocalVideo(file: File): Promise<PublisherLocalVideo> {
+  if (!file.name.toLowerCase().endsWith('.mp4')) throw new Error('请选择 MP4 视频文件')
+  if (file.size < 1 || file.size > MAX_LOCAL_VIDEO_BYTES) throw new Error('视频为空或超过 4 GB')
+  const response = await fetch(`${API}/local-video-upload`, {
+    method: 'POST',
+    headers: {
+      'x-ejianbao': '1',
+      'x-publisher-file-name': encodeURIComponent(file.name),
+      'x-publisher-file-bytes': String(file.size),
+      'content-type': 'application/octet-stream',
+    },
+    body: file,
+  })
+  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('无法保存本地视频，请重试')
+  const result = await response.json() as PublisherLocalVideo & { error?: string }
+  if (!response.ok) throw new Error(result.error || '无法保存本地视频，请重试')
+  return result
 }
 
 export function capabilityMessage(capability: PublisherCapability | undefined): string {

@@ -8,8 +8,10 @@ import { buildAccountExtensions, createPreparationPlan, prepareProfile } from '.
 import { applyEbaoAccountRenderer, ebaoAccountWorkspaceClients } from './prepare-ebao-account-renderer.mjs'
 import { prepareEbaoSourceIcons } from './prepare-ebao-source-icons.mjs'
 import { buildWelcomePresentation, createWelcomePlan } from './prepare-ebao-welcome.mjs'
+import { buildProductPlugins } from './prepare-ebao-product-plugins.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const DESKTOP_TEST_ARGS = ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1']
 const ACTIONS = {
   install: ['install', '--frozen-lockfile'],
   'repair-install': ['install', '--frozen-lockfile'],
@@ -17,8 +19,7 @@ const ACTIONS = {
   version: ['--version'],
   build: ['run', 'build:artifacts'],
   typecheck: ['exec', 'tsc', '-b', 'apps/desktop/tsconfig.json'],
-  // The Windows console suite builds its native probe in a setup hook.
-  test: ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000', '--hookTimeout=30000'],
+  test: [...DESKTOP_TEST_ARGS, '--testTimeout=15000', '--hookTimeout=30000'],
   // Build explicitly before the owned welcome overlay, then use the official no-build launcher.
   dev: ['run', 'start:desktop'],
   start: ['run', 'start:desktop'],
@@ -81,7 +82,14 @@ export function createOfficialDesktopPlan(action, { root = ROOT, environment = p
   env.DSH_HOME = home
   env.DSH_DESKTOP_USER_DATA_DIR = userData
   if (action === 'install' || action === 'repair-install') env.CI = 'true'
+  let actionArgs = ACTIONS[action]
+  if (platform === 'win32' && action === 'test') {
+    // The pinned Vitest projects use this budget for native fixture setup and tests.
+    env.DSH_COVERAGE_TEST_TIMEOUT_MS = '30000'
+    actionArgs = DESKTOP_TEST_ARGS
+  }
   delete env.EBAO_DESKTOP_PACKAGE
+  delete env.EBAO_DESKTOP_DEVELOPMENT
   if (action.startsWith('package:')) {
     env.EBAO_DESKTOP_PACKAGE = '1'
     const hook = pathToFileURL(join(root, 'scripts', 'package-ebao-desktop.mjs')).href
@@ -90,7 +98,7 @@ export function createOfficialDesktopPlan(action, { root = ROOT, environment = p
   return {
     action,
     command: 'corepack',
-    args: ['pnpm', ...ACTIONS[action]],
+    args: ['pnpm', ...actionArgs],
     cwd: join(root, 'deepseek-harness'),
     env,
     shell: platform === 'win32',
@@ -184,6 +192,10 @@ export async function executeOfficialDesktopPlan(plan, {
   renderer = () => applyEbaoAccountRenderer(ebaoAccountWorkspaceClients(plan.cwd)),
   welcome = () => buildWelcomePresentation(createWelcomePlan()),
   sourceIcons = () => prepareEbaoSourceIcons(plan.cwd),
+  productPlugins = async () => {
+    const artifacts = await buildProductPlugins(createPreparationPlan({ root: dirname(plan.cwd), environment: {} }))
+    artifacts.dispose()
+  },
 } = {}) {
   if (plan.action === 'dev') {
     for (const script of ['build:artifacts', 'build:desktop']) {
@@ -196,13 +208,19 @@ export async function executeOfficialDesktopPlan(plan, {
     await renderer()
     await welcome()
     await sourceIcons()
-    return run(plan)
+    const hook = pathToFileURL(join(dirname(plan.cwd), 'scripts', 'package-ebao-desktop.mjs')).href
+    const env = {
+      ...plan.env, EBAO_DESKTOP_DEVELOPMENT: '1',
+      NODE_OPTIONS: [plan.env.NODE_OPTIONS, `--import=${hook}`].filter(Boolean).join(' '),
+    }
+    return run({ ...plan, env })
   }
   const code = await run(plan)
   if (code === 0 && plan.action === 'build') {
     await account(plan.action, plan)
     await renderer()
     await welcome()
+    await productPlugins()
   }
   return code
 }
@@ -213,7 +231,7 @@ export async function main(args = process.argv.slice(2)) {
   const plan = createOfficialDesktopPlan(options.action)
   if (options.printConfig) {
     const { action, command, args: commandArgs, cwd, state } = plan
-    const ownedLayers = ['CQAI account', 'e宝 account renderer', 'e宝 welcome']
+    const ownedLayers = ['CQAI account', 'e宝 account renderer', 'e宝 welcome', 'e宝 product plugins']
     const sourceLayers = [...ownedLayers, 'e宝 desktop icons']
     const preparation = action === 'dev' ? ['official build:artifacts', 'official build:desktop', ...sourceLayers]
       : action === 'start' ? sourceLayers : action === 'build' ? ownedLayers : action.startsWith('package:') ? ['e宝 package staging'] : []

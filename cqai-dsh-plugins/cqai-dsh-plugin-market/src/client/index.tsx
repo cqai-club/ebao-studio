@@ -46,16 +46,22 @@ export const inject = ['slots', 'locale']
 
 export function apply(ctx: Context): void {
   if (!isCqaiDesktop()) {
-    // Current Harness owns the installed list. Contribute a market tab through
-    // its public extension point instead of replacing its page or hiding bundles.
-    ctx.slots.inject('plugins.tab', () => ctx.slots.register({
-      name: 'plugins.tab', id: 'cqai-market', order: 20,
-      label: () => ctx.locale.getLocale().active.startsWith('zh') ? '插件市场' : 'Plugin market',
-      children: { 'cqai.pluginManagement.market': { kind: 'list', scope: 'root' } },
-    }, (props: PropsRuntime<'plugins.tab'> & PropsRenderSlots<'cqai.pluginManagement.market'>) =>
-      props.renderSlot('cqai.pluginManagement.market', {}, {
-        fallback: <p role="status">{ctx.locale.getLocale().active.startsWith('zh') ? '当前插件市场不可用。' : 'The plugin market is unavailable.'}</p>,
-      })))
+    // Community Market supplies the storefront. The official Plugins page
+    // owns installed bundles and provides the entry for the editors below.
+    const isChinese = () => ctx.locale.getLocale().active.startsWith('zh')
+    const tabs = [
+      { id: 'cqai-skills', order: 30, slot: 'cqai.pluginManagement.skills', label: () => isChinese() ? '技能' : 'Skills' },
+      { id: 'cqai-mcp', order: 40, slot: 'cqai.pluginManagement.mcp', label: () => 'MCP' },
+    ] as const
+    for (const { id, order, slot, label } of tabs) {
+      ctx.slots.inject('plugins.tab', () => ctx.slots.register({
+        name: 'plugins.tab', id, order, label,
+        children: { [slot]: { kind: 'list', scope: 'root' } },
+      }, (props: PropsRuntime<'plugins.tab'> & PropsRenderSlots<typeof slot>) =>
+        props.renderSlot(slot, {}, {
+          fallback: <p role="status">{isChinese() ? '当前管理页面不可用。' : 'This management page is unavailable.'}</p>,
+        })))
+    }
     return
   }
   const viewState = createViewState()

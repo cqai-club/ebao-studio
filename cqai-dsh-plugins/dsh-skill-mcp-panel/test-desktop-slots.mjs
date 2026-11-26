@@ -7,6 +7,7 @@ const injections = []
 const dictionaries = new Map()
 const styles = []
 let captured
+let contribution
 
 const jsx = (type, props) => ({ type, props: props ?? {} })
 const react = {
@@ -40,14 +41,19 @@ const plugin = captured.factory(require)
 
 const ctx = {
   effect: callback => callback(),
-  get: () => undefined,
+  get: name => name === 'remote.ebaoMcpPanel' ? {
+    list: async () => ({ ok: true, value: { servers: [] } }),
+  } : undefined,
   locale: {
     register: (namespace, translations) => { dictionaries.set(namespace, translations); return () => {} },
     bind: namespace => key => dictionaries.get(namespace)?.zh?.[key] ?? key,
     subscribe: () => () => {},
     getSnapshot: () => ({ revision: 0 }),
   },
-  remote: { $mount: async () => {}, $on: () => () => {} },
+  remote: {
+    $mount: async manifest => { contribution = manifest },
+    $on: () => () => {},
+  },
   slots: {
     inject: (name, callback) => { injections.push(name); callback() },
     register: (options, component) => { registrations.push({ options, component }); return () => {} },
@@ -55,8 +61,8 @@ const ctx = {
 }
 plugin.apply(ctx)
 
-assert.deepEqual(injections.sort(), ['cqai.pluginManagement.mcp', 'cqai.pluginManagement.skills', 'plugins.tab', 'plugins.tab'])
-assert.equal(registrations.length, 4)
+assert.deepEqual(injections.sort(), ['cqai.pluginManagement.mcp', 'cqai.pluginManagement.skills'])
+assert.equal(registrations.length, 2)
 assert.equal(registrations.some(({ options }) => options.name === 'main' || options.name === 'sidebar.panellist'), false)
 for (const name of ['skills', 'mcp']) {
   const registration = registrations.find(({ options }) => options.name === `cqai.pluginManagement.${name}`)
@@ -66,11 +72,8 @@ for (const name of ['skills', 'mcp']) {
   assert.equal(page.props.className, 'SKV_page')
   assert.equal(JSON.stringify(page).includes('SKV_pageBack'), false)
 }
-for (const [id, title] of [['cqai-skills', '技能'], ['cqai-mcp', 'MCP']]) {
-  const tab = registrations.find(({ options }) => options.name === 'plugins.tab' && options.id === id)
-  assert.equal(tab?.options.label(), title)
-  assert.equal(typeof tab.options.inject, 'function')
-  assert.equal(tab.component({ ...tab.options.inject(), t: () => title }).props.className, 'SKV_page')
-}
+assert.equal(contribution.descriptors.filter(({ namespace }) => namespace === 'ebaoMcpPanel').length, 6)
+const mcp = registrations.find(({ options }) => options.id === 'mcp')
+assert.deepEqual(await mcp.options.inject().listMcp(), { servers: [] })
 assert.equal(styles.some(style => style.textContent.includes('.SKV_page{')), true)
 console.log('desktop skill/MCP slot checks passed')

@@ -114,6 +114,7 @@ async function startMarketServer(
   initialSources: readonly LocalSourceRecord[],
   sharedState?: MarketStateStore,
   setCatalogCacheOverride?: MarketStateStore['setCatalogCache'],
+  connection?: unknown,
 ): Promise<MarketServer> {
   const routes = new Map<string, RouteHandler>()
   const backing = sharedState ?? new MemoryMarketStateStore({ sources: initialSources })
@@ -154,6 +155,7 @@ async function startMarketServer(
       },
     },
     logger,
+    get: (name: string) => name === 'connection' ? connection : undefined,
   } as unknown as Context
   const disposeRoutes = registerMarketRoutes(ctx, state)
   return {
@@ -550,6 +552,28 @@ describe('community market Host routes', () => {
       })
       const state = await readRoute(server, marketRoutes.state)
       await expect(state.json()).resolves.toMatchObject({ sources: [] })
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('allows a Desktop-forwarded mutation only for its admitted browser peer', async () => {
+    const browserPeer = {}
+    const admit = vi.fn((req: IncomingMessage) => req.headers.cookie === 'fixture=browser'
+      ? { peer: browserPeer } : { rejection: 401 })
+    const server = await startMarketServer([], undefined, undefined, { admit, browserPeer })
+    const send = (headers: Record<string, string>) => fetch(`${server.baseUrl}${marketRoutes.sources}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ action: 'add-builtin', key: DSH_1024STORE_KEY }),
+    })
+    try {
+      const forwarded = { 'x-dsh-community-market': '1', cookie: 'fixture=browser' }
+      expect((await send({ ...forwarded, origin: 'http://other.example' })).status).toBe(405)
+      expect((await send({ cookie: forwarded.cookie })).status).toBe(405)
+      expect((await send({ 'x-dsh-community-market': '1' })).status).toBe(405)
+      expect((await send(forwarded)).status).toBe(200)
+      expect(admit).toHaveBeenCalledTimes(2)
     } finally {
       await server.close()
     }

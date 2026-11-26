@@ -541,18 +541,18 @@ const css = cssPage + cssChrome + cssCards + cssAdd + cssScope + cssMigrate + cs
 					result: codec("dsh-skill-mcp-panel#AddResult")
 				},
 				{
-					id: "dsh-skill-mcp-panel#mcpManager/list",
-					service: "mcpManager",
-					namespace: "mcpManager",
+					id: "dsh-skill-mcp-panel#ebaoMcpPanel/list",
+					service: "ebaoMcpPanel",
+					namespace: "ebaoMcpPanel",
 					method: "list",
 					invocation: { kind: "direct" },
 					parameters: [],
 					result: codec("dsh-skill-mcp-panel#McpListResult")
 				},
 				{
-					id: "dsh-skill-mcp-panel#mcpManager/save",
-					service: "mcpManager",
-					namespace: "mcpManager",
+					id: "dsh-skill-mcp-panel#ebaoMcpPanel/save",
+					service: "ebaoMcpPanel",
+					namespace: "ebaoMcpPanel",
 					method: "save",
 					invocation: { kind: "direct" },
 					parameters: [
@@ -561,9 +561,9 @@ const css = cssPage + cssChrome + cssCards + cssAdd + cssScope + cssMigrate + cs
 					result: codec("dsh-skill-mcp-panel#McpSaveResult")
 				},
 				{
-					id: "dsh-skill-mcp-panel#mcpManager/removeServer",
-					service: "mcpManager",
-					namespace: "mcpManager",
+					id: "dsh-skill-mcp-panel#ebaoMcpPanel/removeServer",
+					service: "ebaoMcpPanel",
+					namespace: "ebaoMcpPanel",
 					method: "removeServer",
 					invocation: { kind: "direct" },
 					parameters: [
@@ -572,9 +572,9 @@ const css = cssPage + cssChrome + cssCards + cssAdd + cssScope + cssMigrate + cs
 					result: codec("dsh-skill-mcp-panel#McpRemoveResult")
 				},
 				{
-					id: "dsh-skill-mcp-panel#mcpManager/setEnabled",
-					service: "mcpManager",
-					namespace: "mcpManager",
+					id: "dsh-skill-mcp-panel#ebaoMcpPanel/setEnabled",
+					service: "ebaoMcpPanel",
+					namespace: "ebaoMcpPanel",
 					method: "setEnabled",
 					invocation: { kind: "direct" },
 					parameters: [
@@ -583,9 +583,9 @@ const css = cssPage + cssChrome + cssCards + cssAdd + cssScope + cssMigrate + cs
 					result: codec("dsh-skill-mcp-panel#McpSaveResult")
 				},
 				{
-					id: "dsh-skill-mcp-panel#mcpManager/test",
-					service: "mcpManager",
-					namespace: "mcpManager",
+					id: "dsh-skill-mcp-panel#ebaoMcpPanel/test",
+					service: "ebaoMcpPanel",
+					namespace: "ebaoMcpPanel",
 					method: "test",
 					invocation: { kind: "direct" },
 					parameters: [
@@ -594,9 +594,9 @@ const css = cssPage + cssChrome + cssCards + cssAdd + cssScope + cssMigrate + cs
 					result: codec("dsh-skill-mcp-panel#McpTestResult")
 				},
 				{
-					id: "dsh-skill-mcp-panel#mcpManager/reload",
-					service: "mcpManager",
-					namespace: "mcpManager",
+					id: "dsh-skill-mcp-panel#ebaoMcpPanel/reload",
+					service: "ebaoMcpPanel",
+					namespace: "ebaoMcpPanel",
 					method: "reload",
 					invocation: { kind: "direct" },
 					parameters: [],
@@ -2849,7 +2849,6 @@ const cssMcp = ".MCP_section{position:relative;width:100%;max-width:760px;color:
 			ctx.effect(() => ctx.locale.register(MCP_NS, { zh: mcpZh, en: mcpEn }), "ui-skill-mcp-panel: mcp dictionaries");
 
 
-			const t = ctx.locale.bind(NS);
 			const mt = ctx.locale.bind(MCP_NS);
 			// 挂载远程贡献；所有远程调用都等待挂载完成后再取命名空间服务。
 			const mount = ctx.remote.$mount(CONTRIBUTION);
@@ -2902,9 +2901,9 @@ const cssMcp = ".MCP_section{position:relative;width:100%;max-width:760px;color:
 			};
 			const callMcp = async (method, ...args) => {
 				await mount;
-				const remote = ctx.get("remote.mcpManager");
+				const remote = ctx.get("remote.ebaoMcpPanel");
 				const result = await remote[method](...args);
-				if (!result.ok) throw new Error("mcpManager." + method + " failed: " + result.error.code + ": " + result.error.message);
+				if (!result.ok) throw new Error("ebaoMcpPanel." + method + " failed: " + result.error.code + ": " + result.error.message);
 				return result.value;
 			};
 			const sectionFace = () => ({
@@ -2946,17 +2945,6 @@ const cssMcp = ".MCP_section{position:relative;width:100%;max-width:760px;color:
 				id: "mcp",
 				locale: MCP_NS,
 				inject: mcpSectionFace
-			}, McpPanelPage));
-
-			// Modern Harness exposes list tabs on its official Plugins page.
-			// Keep the legacy slots above for older compatible Desktop shells.
-			ctx.slots.inject("plugins.tab", () => ctx.slots.register({
-				name: "plugins.tab", id: "cqai-skills", order: 50,
-				label: () => t("nav"), locale: NS, inject: sectionFace
-			}, SkillsPanelPage));
-			ctx.slots.inject("plugins.tab", () => ctx.slots.register({
-				name: "plugins.tab", id: "cqai-mcp", order: 60,
-				label: () => mt("nav"), locale: MCP_NS, inject: mcpSectionFace
 			}, McpPanelPage));
 		}
 

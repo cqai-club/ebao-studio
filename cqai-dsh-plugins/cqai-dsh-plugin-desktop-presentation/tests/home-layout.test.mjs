@@ -33,9 +33,17 @@ function register(search, desktop) {
   return { slots, styles }
 }
 
-test('modern Desktop uses declared hero frame and brand slots without an obsolete mode parameter', () => {
+const presentationSlots = ['sidebar.brand.mark', 'sidebar.brand.name', 'conversation.hero.brand.mark', 'conversation.hero.frame']
+
+test('modern Desktop uses the sidebar brand slots and the declared hero slots', () => {
   const { slots, styles } = register('', true)
-  assert.deepEqual(slots.map(entry => entry.options.name), ['conversation.hero.brand.mark', 'conversation.hero.frame'])
+  assert.deepEqual(slots.map(entry => entry.options.name), presentationSlots)
+  const mark = slots.find(entry => entry.options.name === 'sidebar.brand.mark').component({ size: 24 })
+  assert.equal(mark.props['aria-hidden'], 'true')
+  assert.equal(mark.props.style.width, 24)
+  assert.match(mark.props.style.maskImage, /^url\(data:image\/png;base64,/)
+  const wordmark = slots.find(entry => entry.options.name === 'sidebar.brand.name').component()
+  assert.equal(wordmark.props.children, 'e宝工坊')
   assert.equal(slots.find(entry => entry.options.name === 'conversation.hero.brand.mark').options.priority, -110)
   assert.match(styles.join('\n'), /data-slot="conversation\.hero\.brand\.mark"/)
   assert.match(styles.join('\n'), /\.eBaoHomeFrame\s*\{\s*display:\s*contents/)
@@ -43,6 +51,6 @@ test('modern Desktop uses declared hero frame and brand slots without an obsolet
 
 test('official Desktop installs the presentation without legacy shell globals', () => {
   const result = register('', false)
-  assert.deepEqual(result.slots.map(entry => entry.options.name), ['conversation.hero.brand.mark', 'conversation.hero.frame'])
+  assert.deepEqual(result.slots.map(entry => entry.options.name), presentationSlots)
   assert.equal(result.styles.length, 1)
 })

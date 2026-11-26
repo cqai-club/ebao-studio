@@ -25,7 +25,7 @@ export default defineConfig([
     sourcemap: true,
     dts: false,
     // The DSH Client loader needs self-contained artwork in client.js.
-    loader: { '.webp': 'dataurl' },
+    loader: { '.png': 'dataurl', '.webp': 'dataurl' },
     external: [
       'react',
       'react-dom',

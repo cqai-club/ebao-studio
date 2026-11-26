@@ -5,7 +5,7 @@ import type {
   DsnAccountSnapshot,
   DsnModel,
 } from '@cqaiclub/dsn-account'
-import { isChatModel, isImageGenerationModel } from '@cqaiclub/dsn-account'
+import { isChatModel, isImageGenerationModel } from '../../cqai-dsh-plugin-account/src/protocol.ts'
 import { ImageGenError } from './engine.ts'
 import type { RuntimeChannel } from './generation-runtime.ts'
 import { stripReasoning, type ChatOptions } from './prompt-enhancer.ts'

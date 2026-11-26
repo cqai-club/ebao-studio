@@ -100,6 +100,43 @@ describe('e剪宝 work resolution', () => {
 })
 
 describe('the Host publisher route', () => {
+  it('serves drafts on the official Host without a legacy runtime or a Worker', async () => {
+    const previousHome = process.env.DSH_HOME
+    const previousWorker = process.env.EBAO_PUBLISHER_WORKER
+    process.env.DSH_HOME = temp()
+    delete process.env.EBAO_PUBLISHER_WORKER
+    const ctx = new Context()
+    const browserPeer = {}
+    try {
+      await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
+      ctx.provide('connection', {
+        browserPeer,
+        admit(req: IncomingMessage) {
+          return req.headers.cookie === 'test-browser=owner' ? { peer: browserPeer } : { rejection: 401 }
+        },
+      } as never)
+      await ctx.plugin(plugin)
+      const base = `http://127.0.0.1:${String(ctx.webServer.port)}${API}`
+      expect((await fetch(`${base}/capability`)).status).toBe(403)
+      const headers = { cookie: 'test-browser=owner', 'x-ejianbao': '1', 'content-type': 'application/json' }
+      const capability = await fetch(`${base}/capability`, { headers })
+      expect(capability.status).toBe(200)
+      expect(await capability.json()).toMatchObject({ supported: false, running: false })
+      const created = await fetch(`${base}/contents`, {
+        method: 'POST', headers, body: JSON.stringify({ contentType: 'article', title: 'RC5 草稿' }),
+      })
+      expect(created.status).toBe(201)
+      expect(await created.json()).toMatchObject({ contentType: 'article', title: 'RC5 草稿' })
+      expect((await fetch(`${base}/accounts`, { headers })).status).toBe(501)
+    } finally {
+      await ctx.fiber.dispose()
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      if (previousWorker === undefined) delete process.env.EBAO_PUBLISHER_WORKER
+      else process.env.EBAO_PUBLISHER_WORKER = previousWorker
+    }
+  })
+
   it('forwards only validated work ids and sanitizes Worker data', async () => {
     const home = temp()
     const directory = writeWork(home)

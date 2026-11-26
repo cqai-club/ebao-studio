@@ -231,6 +231,7 @@ export interface PublisherSessionContent {
 export interface PublisherCapability {
   supported: boolean
   running: boolean
+  localVideoUpload?: true
   /** Legacy MatrixMedia account import has a platform-specific safety gate. */
   legacyAccountImportSupported?: boolean
   reason?: 'publisher-not-supported' | 'publisher-worker-missing'
@@ -248,7 +249,9 @@ export interface Work {
   bytes: number
 }
 
-/** A native file chooser selection; the absolute path stays in Electron main's private registry. */
+export const MAX_LOCAL_VIDEO_BYTES = 4 * 1024 ** 3
+
+/** A picked file's safe metadata. The Host keeps its local path private. */
 export interface PublisherLocalVideo {
   id: string
   fileName: string
@@ -266,7 +269,7 @@ export interface PublisherImportPreview {
   }>
 }
 
-/** Browser request; Host resolves works while Electron main resolves native-picked videos. */
+/** Browser request; the Host resolves works and picked videos. */
 export type CreateVideoSubmissionRequest = {
   contentType?: 'video'
   title: string

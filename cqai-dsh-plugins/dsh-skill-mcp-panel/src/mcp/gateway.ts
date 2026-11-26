@@ -1,5 +1,5 @@
 /**
- * dsh-skill-mcp-panel —— MCP 宿主服务（mcpManager）。
+ * dsh-skill-mcp-panel —— MCP 宿主服务。
  */
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import { fileURLToPath } from "node:url";
@@ -22,7 +22,7 @@ import {
   serverNameFromRowId,
   type McpServerInput
 } from "./model.js";
-import { mcpRemovePayloadSchema, mcpSavePayloadSchema, mcpSetEnabledPayloadSchema, mcpTestPayloadSchema } from "./wire.js";
+import { MCP_PANEL_SERVICE, mcpRemovePayloadSchema, mcpSavePayloadSchema, mcpSetEnabledPayloadSchema, mcpTestPayloadSchema } from "./wire.js";
 import { fiberPhaseOf, getLoaderEntry, mcpToolCount, waitForLoaderState } from "./status.js";
 import { probeMcpServer } from "./probe.js";
 
@@ -59,7 +59,7 @@ function parseWirePayload(schema: { safeParse: (value: unknown) => any }, raw: u
 
 export class McpManagerGateway extends TypertRemoteService {
   constructor(ctx: any) {
-    super(ctx, "mcpManager");
+    super(ctx, MCP_PANEL_SERVICE);
   }
 
   get C(): any {
@@ -67,11 +67,14 @@ export class McpManagerGateway extends TypertRemoteService {
   }
 
   patchPath(): string {
+    const profilePatch = this.C.get("profileContext")?.patchPath;
+    if (typeof profilePatch === "string" && profilePatch.length > 0) return profilePatch;
+
     const base = this.C.baseUrl;
     if (typeof base === "string" && base.length > 0) {
       try {
         const url = new URL(base);
-        if (url.protocol === "file:") return join(fileURLToPath(url), "cordis.patch.yml");
+        if (url.protocol === "file:") return fileURLToPath(new URL("cordis.patch.yml", url));
       } catch {
         // fall through to package-location fallback
       }
