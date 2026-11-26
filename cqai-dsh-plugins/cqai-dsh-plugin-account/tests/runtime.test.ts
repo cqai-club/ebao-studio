@@ -1051,6 +1051,66 @@ describe('DsnAccountServiceRuntime', () => {
     expect(JSON.stringify(launched)).not.toContain('https://pay.example')
   })
 
+  it('prepares an opaque payment link without requiring the legacy desktop service', async () => {
+    const fetchTopUp = vi.fn(async (input: string, init?: RequestInit) => {
+      const request = new Request(input, init)
+      expect(request.url).toBe(`${resource}/api/billing/topups`)
+      expect(request.method).toBe('POST')
+      expect(request.headers.get('authorization')).toBe('Bearer account-cached')
+      expect(await request.json()).toEqual({ payment_option_id: 'card', amount: 10 })
+      return json({ success: true, data: {
+        payment_url: 'https://pay.example/submit', payment_fields: { signature: 'payment-signature' }, order_id: 'order-1',
+      } })
+    })
+    vi.stubGlobal('fetch', fetchTopUp)
+    const harness = makeRuntime()
+    harness.records.set(credential, mcpGrant())
+    const request = { paymentOptionId: 'card', amount: 10, account: { userId: account.userId, platform: account.platform } }
+    const signal = new AbortController().signal
+
+    await expect(harness.rpc('billing/topups/prepare-payment', {
+      ...request, account: { ...request.account, userId: 8 },
+    }, signal)).resolves.toMatchObject({ ok: false, error: { code: 'DSN_AUTH_REQUIRED' } })
+    expect(fetchTopUp).not.toHaveBeenCalled()
+
+    const result = await harness.rpc('billing/topups/prepare-payment', request, signal) as { ok: true; value: { paymentUrl: string } }
+    expect(result).toEqual({ ok: true, value: { paymentUrl: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/cqaiclub-dsn-account\/payment\/[A-Za-z0-9_-]+$/) } })
+    expect(JSON.stringify(result)).not.toContain('payment-signature')
+    const checkout = await nativeFetch(result.value.paymentUrl)
+    expect(checkout.status).toBe(200)
+    expect(await checkout.text()).toContain('name="signature" value="payment-signature"')
+    expect(fetchTopUp).toHaveBeenCalledTimes(1)
+  })
+
+  it('withholds a prepared checkout when the account session changes during order creation', async () => {
+    const starting = Promise.withResolvers<void>()
+    const reply = Promise.withResolvers<Response>()
+    const fetchTopUp = vi.fn(async (input: string) => {
+      if (input === `${resource}/api/billing/topups`) {
+        starting.resolve()
+        return reply.promise
+      }
+      if (input.endsWith('/.well-known/openid-configuration')) {
+        return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token` })
+      }
+      throw new Error(`unexpected test URL: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchTopUp)
+    const harness = makeRuntime()
+    harness.records.set(credential, mcpGrant())
+    const pending = harness.rpc('billing/topups/prepare-payment', {
+      paymentOptionId: 'card', amount: 10, account: { userId: account.userId, platform: account.platform },
+    }, new AbortController().signal)
+
+    await starting.promise
+    await harness.runtime.logout()
+    harness.records.set(credential, mcpGrant({ accessToken: 'new-session-token' }))
+    reply.resolve(json({ success: true, data: { payment_url: 'https://pay.example/checkout' } }))
+
+    await expect(pending).resolves.toMatchObject({ ok: false, error: { code: 'DSN_AUTH_REQUIRED' } })
+    expect(fetchTopUp.mock.calls.filter(([url]) => url === `${resource}/api/billing/topups`)).toHaveLength(1)
+  })
+
   it('refreshes the token once after a model-list 401', async () => {
     let modelRequests = 0
     let refreshRequests = 0

@@ -19,20 +19,10 @@ import {
   Tag,
   type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import {
-  type DsnAccountSnapshot,
-  type DsnTopUpHistory,
-  type DsnTopUpInfo,
-  type DsnTopUpOption,
-  type DsnTopUpRequest,
-} from '../protocol.ts'
-import {
-  formatQuotaBalance,
-  formatTopUpAmount,
-  formatTopUpCredit,
-  formatUsdAmount,
-  quotaDisplayUnit,
-} from '../quota-display.ts'
+import type { DsnAccountSnapshot } from '../protocol.ts'
+import { AccountConnectCard, BrowserIcon, accountConnectEn, accountConnectZh } from './account-connect-card.tsx'
+import { AccountDetailsCard, accountDetailsEn, accountDetailsZh, cardStyle, insetStyle, mutedTextStyle } from './account-details-card.tsx'
+import { BillingPanel, billingEn, billingZh } from './billing-panel.tsx'
 import {
   CqaiModelsSettingsCard,
   modelsSettingsEn,
@@ -54,68 +44,31 @@ function isModernDesktop(): boolean {
 }
 
 const zh = {
+  ...accountConnectZh,
+  ...accountDetailsZh,
+  ...billingZh,
   tab: 'CQAI Club',
   back: '返回',
   eyebrow: '账户与云服务',
   title: 'CQAI Club',
   description: '连接会员账号，在桌面端共享模型、额度与服务。',
-  login: '使用浏览器登录',
-  openingBrowser: '正在打开浏览器…',
   signedOut: '未连接',
   authorizing: '等待浏览器',
   openLogin: '重新打开浏览器',
   cancel: '取消登录',
   signedIn: '已连接',
   loading: '正在读取账号状态…',
-  connectTitle: '连接你的 CQAI Club 账号',
-  connectDescription: '我们会打开系统默认浏览器完成安全登录。完成后，这里会自动更新。',
-  browserStep: '在系统浏览器中验证身份',
-  returnStep: '验证完成后自动返回桌面端',
-  localSecurity: '登录凭据由桌面 Host 安全保存，不会发送到界面或业务插件。',
   waitingTitle: '请在浏览器中完成登录',
   waitingDescription: '此窗口可以保持打开，CQAI Club 会在授权完成后自动连接。',
-  connectedAs: '当前账号',
-  account: '账号',
-  username: '用户名',
-  email: '邮箱',
   quota: '剩余额度',
-  quotaDescription: 'CQAI Club 可用额度',
-  pointsInfo: '积分信息',
   membershipInfo: '会员信息',
   clubActivities: '俱乐部活动',
-  billing: '账户充值',
-  billingDescription: '选择充值方式与金额，随后在系统浏览器中完成支付。',
-  billingLoading: '正在读取充值方式…',
-  billingUnavailable: '暂时没有可用的在线充值方式。',
-  paymentMethod: '充值方式',
-  paymentChoice: '支付渠道',
-  amount: '充值金额',
-  customAmount: '输入其他金额',
-  minimumAmount: '最低充值金额',
-  creditedEstimate: '预计到账',
-  settlementHint: '实际付款金额以支付页面显示为准。',
-  paidAmount: '实付',
-  creditedAmount: '到账',
-  product: '充值套餐',
-  continuePayment: '前往支付',
-  creatingPayment: '正在创建订单…',
-  paymentOpened: '支付页面已在系统浏览器中打开。',
-  paymentReturnHint: '支付完成后返回 e宝工坊，额度会自动刷新。',
-  paymentRefresh: '我已完成支付，刷新额度',
-  recentTopUps: '最近充值',
-  noTopUps: '暂无充值记录。',
-  refreshBilling: '刷新充值信息',
-  invalidAmount: '请输入不低于最低金额的整数。',
-  refresh: '刷新账号',
-  refreshing: '刷新中…',
-  logout: '退出登录',
   launcherMenu: 'CQAI Club 账号菜单',
   launcherSignIn: '登录 CQAI Club',
   launcherOpenSettings: '打开设置',
   launcherAccountUnavailable: '账号状态暂时不可用',
   launcherNeedsAttention: '账号需要处理',
   accountTab: '账户',
-  billingTab: '充值',
   configurationError: '当前插件尚未完成管理员配置。',
   unavailable: '账号服务暂时不可用。',
   onboardingTitle: '登录 CQAI Club',
@@ -131,68 +84,31 @@ const zh = {
 } as const
 
 const en: Record<keyof typeof zh, string> = {
+  ...accountConnectEn,
+  ...accountDetailsEn,
+  ...billingEn,
   tab: 'CQAI Club',
   back: 'Back',
   eyebrow: 'ACCOUNT & CLOUD',
   title: 'CQAI Club',
   description: 'Connect your membership to share models, quota, and services on desktop.',
-  login: 'Continue in browser',
-  openingBrowser: 'Opening browser…',
   signedOut: 'Not connected',
   authorizing: 'Waiting for browser',
   openLogin: 'Reopen browser',
   cancel: 'Cancel sign-in',
   signedIn: 'Connected',
   loading: 'Checking account status…',
-  connectTitle: 'Connect your CQAI Club account',
-  connectDescription: 'Your default browser will open for secure sign-in. This page updates automatically when you finish.',
-  browserStep: 'Verify your identity in the system browser',
-  returnStep: 'Return automatically after authorization',
-  localSecurity: 'Credentials stay in the desktop Host and are never sent to the interface or business plugins.',
   waitingTitle: 'Finish signing in in your browser',
   waitingDescription: 'Keep this window open. CQAI Club connects automatically when authorization finishes.',
-  connectedAs: 'Current account',
-  account: 'Account',
-  username: 'Username',
-  email: 'Email',
   quota: 'Remaining quota',
-  quotaDescription: 'Available CQAI Club quota',
-  pointsInfo: 'Points',
   membershipInfo: 'Membership',
   clubActivities: 'Club activities',
-  billing: 'Add funds',
-  billingDescription: 'Choose a payment method and amount, then finish payment in your system browser.',
-  billingLoading: 'Loading payment methods…',
-  billingUnavailable: 'No online payment method is currently available.',
-  paymentMethod: 'Payment method',
-  paymentChoice: 'Payment channel',
-  amount: 'Amount',
-  customAmount: 'Enter another amount',
-  minimumAmount: 'Minimum amount',
-  creditedEstimate: 'Estimated credit',
-  settlementHint: 'The payment page shows the final amount charged.',
-  paidAmount: 'Paid',
-  creditedAmount: 'Credited',
-  product: 'Package',
-  continuePayment: 'Continue to payment',
-  creatingPayment: 'Creating order…',
-  paymentOpened: 'The payment page opened in your system browser.',
-  paymentReturnHint: 'Return to e宝工坊 after payment and your balance will refresh automatically.',
-  paymentRefresh: 'Payment complete, refresh balance',
-  recentTopUps: 'Recent top-ups',
-  noTopUps: 'No top-up records yet.',
-  refreshBilling: 'Refresh billing',
-  invalidAmount: 'Enter a whole number at or above the minimum.',
-  refresh: 'Refresh account',
-  refreshing: 'Refreshing…',
-  logout: 'Sign out',
   launcherMenu: 'CQAI Club account menu',
   launcherSignIn: 'Sign in to CQAI Club',
   launcherOpenSettings: 'Open settings',
   launcherAccountUnavailable: 'Account status is temporarily unavailable',
   launcherNeedsAttention: 'Account needs attention',
   accountTab: 'Account',
-  billingTab: 'Add funds',
   configurationError: 'The administrator has not finished configuring this plugin.',
   unavailable: 'The account service is temporarily unavailable.',
   onboardingTitle: 'Sign in to CQAI Club',
@@ -245,7 +161,6 @@ type AccountLauncherProps = PropsRuntime<'settings.launcher'> & PropsRenderSlots
   readonly openClub: () => void
 }
 type AccountTranslator = AccountSettingsSectionProps['t']
-type SignedInSnapshot = Extract<DsnAccountSnapshot, { state: 'signed-in' }>
 type ExtensionSection = `extension:${string}`
 type ClubSection = 'points' | 'membership' | ExtensionSection
 
@@ -341,48 +256,6 @@ const panelStyle: CSSProperties = {
   color: 'var(--dsw-alias-label-primary, #18202a)',
 }
 
-const cardStyle: CSSProperties = {
-  overflow: 'hidden',
-  border: '0.5px solid var(--dsw-alias-border-l2, #dfe3e8)',
-  borderRadius: 16,
-  background: 'var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, #fff))',
-  boxShadow: '0 10px 30px color-mix(in srgb, var(--dsw-alias-label-primary, #18202a) 7%, transparent)',
-}
-
-const mutedTextStyle: CSSProperties = {
-  color: 'var(--dsw-alias-label-secondary, #667180)',
-  fontSize: 14,
-  lineHeight: 1.6,
-}
-
-const insetStyle: CSSProperties = {
-  borderRadius: 12,
-  background: 'var(--dsw-alias-bg-module-platform, #f4f6f8)',
-}
-
-function BrowserIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3.6 9h16.8M8 3.9 9.5 9m6.5-5.1L14.5 9M9 14.5l3 1.8 3-1.8" /></svg>
-}
-
-function RefreshIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 8.5A7 7 0 0 1 18.8 7M17.9 15.5A7 7 0 0 1 5.2 17" /></svg>
-}
-
-function ShieldIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 5.5 5.8v5.4c0 4.2 2.7 7.8 6.5 9.8 3.8-2 6.5-5.6 6.5-9.8V5.8L12 3Z" /><path d="m9 12 2 2 4-4" /></svg>
-}
-
-function WalletIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6.5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-12a2 2 0 0 1 2-2h12" /><path d="M15 11h5v4h-5a2 2 0 0 1 0-4Z" /></svg>
-}
-
-function accountName(snapshot: SignedInSnapshot): string {
-  return snapshot.account.displayName
-    ?? snapshot.account.username
-    ?? snapshot.account.email
-    ?? String(snapshot.account.userId)
-}
-
 function snapshotMessage(snapshot: DsnAccountSnapshot | undefined, t: AccountSettingsSectionProps['t']): string | undefined {
   if (snapshot?.state === 'error') {
     if (snapshot.code === 'DSN_CONFIG_INVALID') return t('configurationError')
@@ -390,42 +263,6 @@ function snapshotMessage(snapshot: DsnAccountSnapshot | undefined, t: AccountSet
   }
   if (snapshot?.state === 'reauth-required') return snapshot.reason
   return undefined
-}
-
-const fieldLabelStyle: CSSProperties = {
-  display: 'grid',
-  gap: 8,
-  color: 'var(--dsw-alias-label-secondary, #667180)',
-  fontSize: 12,
-  fontWeight: 600,
-}
-
-const fieldControlStyle: CSSProperties = {
-  boxSizing: 'border-box',
-  width: '100%',
-  minHeight: 40,
-  padding: '8px 11px',
-  border: '0.5px solid var(--dsw-alias-border-l2, #dfe3e8)',
-  borderRadius: 9,
-  outline: 'none',
-  background: 'var(--dsw-alias-bg-layer-2, #fff)',
-  color: 'var(--dsw-alias-label-primary, #18202a)',
-  font: 'inherit',
-}
-
-function paymentProductPrice(price: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(price)
-  } catch {
-    return `${price} ${currency}`
-  }
-}
-
-function topUpTime(value: number | undefined): string {
-  if (value === undefined) return '—'
-  const milliseconds = value < 10_000_000_000 ? value * 1000 : value
-  const date = new Date(milliseconds)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString()
 }
 
 type SignedInSection = 'account' | 'billing' | ExtensionSection
@@ -458,189 +295,6 @@ function SignedInTabs({ active, setActive, t, hasAccount, extensions, accountBut
           {tab.label}
         </button>
       ))}
-    </div>
-  )
-}
-
-function BillingPanel({ ctx, t, account, refreshAccount }: {
-  readonly ctx: ClientContext
-  readonly t: AccountTranslator
-  readonly account: SignedInSnapshot['account']
-  readonly refreshAccount: () => Promise<void>
-}) {
-  const [info, setInfo] = useState<DsnTopUpInfo>()
-  const [history, setHistory] = useState<DsnTopUpHistory>()
-  const [selectedOptionId, setSelectedOptionId] = useState('')
-  const [amountInput, setAmountInput] = useState('')
-  const [selectedProductId, setSelectedProductId] = useState('')
-  const [selectedChoiceId, setSelectedChoiceId] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [creating, setCreating] = useState(false)
-  const [paymentPending, setPaymentPending] = useState(false)
-  const [notice, setNotice] = useState<string>()
-  const [billingError, setBillingError] = useState<string>()
-
-  const reloadBilling = useCallback(async () => {
-    setLoading(true)
-    setBillingError(undefined)
-    try {
-      const nextInfo = await rpcCall<DsnTopUpInfo>(ctx, 'billing/topup/info', {})
-      setInfo(nextInfo)
-      try {
-        setHistory(await rpcCall<DsnTopUpHistory>(ctx, 'billing/topups/list', { page: 1, pageSize: 5 }))
-      } catch {
-        setHistory(undefined)
-      }
-    } catch (cause) {
-      setBillingError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setLoading(false)
-    }
-  }, [ctx])
-
-  useEffect(() => { void reloadBilling() }, [reloadBilling])
-
-  useEffect(() => {
-    if (info === undefined || info.paymentOptions.length === 0) return
-    if (!info.paymentOptions.some(option => option.id === selectedOptionId)) {
-      setSelectedOptionId(info.paymentOptions[0]!.id)
-    }
-  }, [info, selectedOptionId])
-
-  const selectedOption: DsnTopUpOption | undefined = info?.paymentOptions.find(option => option.id === selectedOptionId)
-  const minimumAmount = selectedOption?.minTopUp ?? info?.minTopUp ?? 1
-
-  useEffect(() => {
-    if (selectedOption === undefined) return
-    if (selectedOption.kind === 'amount') {
-      setAmountInput(String(info?.amountOptions[0] ?? minimumAmount))
-    }
-    setSelectedProductId(selectedOption.products?.[0]?.id ?? '')
-    setSelectedChoiceId(selectedOption.choices?.[0]?.id ?? '')
-  }, [info?.amountOptions, minimumAmount, selectedOption])
-
-  const amount = Number(amountInput)
-  const validAmount = selectedOption?.kind !== 'amount'
-    || (Number.isSafeInteger(amount) && amount >= minimumAmount)
-  const validProduct = selectedOption?.kind !== 'product' || selectedProductId.length > 0
-  const canCreate = selectedOption !== undefined && validAmount && validProduct && !creating
-
-  const refreshAfterPayment = useCallback(async () => {
-    setPaymentPending(false)
-    const results = await Promise.allSettled([refreshAccount(), reloadBilling()])
-    const failure = results.find(result => result.status === 'rejected')
-    if (failure?.status === 'rejected') {
-      setBillingError(failure.reason instanceof Error ? failure.reason.message : String(failure.reason))
-    }
-  }, [refreshAccount, reloadBilling])
-
-  useEffect(() => {
-    if (!paymentPending) return
-    const focus = () => { void refreshAfterPayment() }
-    window.addEventListener('focus', focus)
-    return () => window.removeEventListener('focus', focus)
-  }, [paymentPending, refreshAfterPayment])
-
-  const createPayment = async () => {
-    if (!canCreate || selectedOption === undefined) return
-    const request: DsnTopUpRequest = selectedOption.kind === 'product'
-      ? { paymentOptionId: selectedOption.id, productId: selectedProductId }
-      : {
-          paymentOptionId: selectedOption.id,
-          amount,
-          ...(selectedChoiceId ? { choiceId: selectedChoiceId } : {}),
-        }
-    setCreating(true)
-    setBillingError(undefined)
-    setNotice(undefined)
-    try {
-      await rpcCall<{ orderId?: string }>(ctx, 'billing/topups/launch', request)
-      setNotice(t('paymentOpened'))
-      setPaymentPending(true)
-    } catch (cause) {
-      setBillingError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  return (
-    <div style={cardStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', padding: '18px 20px', borderBottom: '0.5px solid var(--dsw-alias-border-l1, #edf0f3)' }}>
-        <div>
-          <strong style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15 }}><WalletIcon />{t('billing')}</strong>
-          <p style={{ ...mutedTextStyle, margin: '4px 0 0', fontSize: 12 }}>{t('billingDescription')}</p>
-        </div>
-        <Button variant="ghost" size="sm" icon={<RefreshIcon />} disabled={loading || creating} onClick={() => { void reloadBilling() }}>{t('refreshBilling')}</Button>
-      </div>
-      <div style={{ display: 'grid', gap: 18, padding: 20 }}>
-        {billingError !== undefined ? <div role="alert" style={{ color: 'var(--dsw-alias-state-error-primary, #b42318)', fontSize: 13 }}>{billingError}</div> : null}
-        {notice !== undefined ? (
-          <div role="status" style={{ padding: '11px 13px', borderRadius: 10, background: 'color-mix(in srgb, var(--dsw-alias-state-business-primary, #2f6fda) 8%, transparent)', color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 13 }}>
-            <strong style={{ display: 'block', color: 'var(--dsw-alias-label-primary, #18202a)' }}>{notice}</strong>
-            <span>{t('paymentReturnHint')}</span>
-          </div>
-        ) : null}
-        {loading && info === undefined ? <p style={{ ...mutedTextStyle, margin: 0 }}>{t('billingLoading')}</p> : info === undefined || info.paymentOptions.length === 0 ? <p style={{ ...mutedTextStyle, margin: 0 }}>{t('billingUnavailable')}</p> : (
-          <>
-            <div style={fieldLabelStyle}>
-              <span>{t('paymentMethod')}</span>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {info.paymentOptions.map(option => <Button key={option.id} variant={selectedOptionId === option.id ? 'primary' : 'outline'} size="sm" disabled={creating} onClick={() => setSelectedOptionId(option.id)}>{option.name}</Button>)}
-              </div>
-            </div>
-            {selectedOption?.kind === 'amount' ? (
-              <div style={{ display: 'grid', gap: 12 }}>
-                <div style={fieldLabelStyle}>
-                  <span>{t('amount')}</span>
-                  {info.amountOptions.length > 0 ? <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{info.amountOptions.map(optionAmount => <Button key={optionAmount} variant={amount === optionAmount ? 'primary' : 'outline'} size="sm" disabled={creating} onClick={() => setAmountInput(String(optionAmount))}>{formatTopUpAmount(optionAmount)}</Button>)}</div> : null}
-                  <input aria-label={t('customAmount')} type="number" min={minimumAmount} step="1" value={amountInput} disabled={creating} onChange={event => setAmountInput(event.target.value)} style={fieldControlStyle} />
-                  <span style={{ color: validAmount ? 'var(--dsw-alias-label-tertiary, #8993a1)' : 'var(--dsw-alias-state-error-primary, #b42318)', fontWeight: 400 }}>{validAmount ? `${t('minimumAmount')}: ${formatTopUpAmount(minimumAmount)}` : t('invalidAmount')}</span>
-                  {validAmount ? <strong style={{ color: 'var(--dsw-alias-label-primary, #18202a)', fontSize: 13 }}>{t('creditedEstimate')}: {formatTopUpCredit(amount, account)}</strong> : null}
-                </div>
-                {selectedOption.choices !== undefined && selectedOption.choices.length > 0 ? (
-                  <label style={fieldLabelStyle}>{t('paymentChoice')}<select value={selectedChoiceId} disabled={creating} onChange={event => setSelectedChoiceId(event.target.value)} style={fieldControlStyle}>{selectedOption.choices.map(choice => <option key={choice.id} value={choice.id}>{choice.name}</option>)}</select></label>
-                ) : null}
-              </div>
-            ) : null}
-            {selectedOption?.kind === 'product' ? (
-              <div style={fieldLabelStyle}>
-                <span>{t('product')}</span>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 9 }}>
-                  {selectedOption.products?.map(product => (
-                    <button key={product.id} type="button" disabled={creating} onClick={() => setSelectedProductId(product.id)} style={{ ...insetStyle, padding: 14, border: selectedProductId === product.id ? '1px solid var(--dsw-alias-state-business-primary, #2f6fda)' : '1px solid transparent', color: 'inherit', cursor: creating ? 'default' : 'pointer', textAlign: 'left' }}>
-                      <strong style={{ display: 'block', marginBottom: 5 }}>{product.name}</strong>
-                      <span style={{ color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 12 }}>{paymentProductPrice(product.price, product.currency)} · {formatQuotaBalance(product.quota, account)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {selectedOption?.kind === 'amount' ? <span style={{ ...mutedTextStyle, fontSize: 12 }}>{t('settlementHint')}</span> : null}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-              {paymentPending ? <Button variant="outline" disabled={creating} onClick={() => { void refreshAfterPayment() }}>{t('paymentRefresh')}</Button> : null}
-              <Button variant="primary" icon={<WalletIcon />} disabled={!canCreate} onClick={() => { void createPayment() }}>{creating ? t('creatingPayment') : t('continuePayment')}</Button>
-            </div>
-          </>
-        )}
-      </div>
-      <div style={{ padding: '15px 20px 18px', borderTop: '0.5px solid var(--dsw-alias-border-l1, #edf0f3)' }}>
-        <strong style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>{t('recentTopUps')}</strong>
-        {history === undefined || history.items.length === 0 ? <span style={{ ...mutedTextStyle, fontSize: 12 }}>{t('noTopUps')}</span> : (
-          <div style={{ display: 'grid', gap: 1, background: 'var(--dsw-alias-border-l1, #edf0f3)' }}>
-            {history.items.map((record, index) => (
-              <div key={record.id ?? record.tradeNo ?? index} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 12, padding: '9px 0', background: 'var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, #fff))', color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 12 }}>
-                <span>{record.paymentProvider ?? record.paymentMethod ?? record.tradeNo ?? '—'}</span>
-                <strong style={{ display: 'grid', justifyItems: 'end', color: 'var(--dsw-alias-label-primary, #18202a)' }}>
-                  {record.money === undefined ? null : <span>{t('paidAmount')}: {formatTopUpAmount(record.money)}</span>}
-                  {record.amount === undefined ? null : <span>{t('creditedAmount')}: {formatUsdAmount(record.amount, account)}</span>}
-                </strong>
-                <span>{record.status ?? topUpTime(record.completeTime ?? record.createTime)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
@@ -1149,34 +803,7 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false, renderSl
           </div>
         </div>
       ) : signedIn !== undefined && visibleSection === 'account' ? (
-        <div style={cardStyle}>
-          <div style={{ display: 'grid', gridTemplateColumns: clubView ? 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))' : 'minmax(0, 1fr) minmax(180px, .45fr)', gap: 20, alignItems: 'stretch', padding: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 15, minWidth: 0 }}>
-              <div aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: 52, height: 52, flex: 'none', borderRadius: '50%', background: 'color-mix(in srgb, var(--dsw-alias-state-business-primary, #2f6fda) 13%, var(--dsw-alias-bg-base, #fff))', color: 'var(--dsw-alias-state-business-primary, #2f6fda)', fontSize: 19, fontWeight: 700 }}>{accountName(signedIn).slice(0, 1).toUpperCase()}</div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ marginBottom: 4, color: 'var(--dsw-alias-label-tertiary, #8993a1)', fontSize: 12 }}>{t('connectedAs')}</div>
-                <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 17, whiteSpace: 'nowrap' }}>{accountName(signedIn)}</strong>
-                <div style={{ ...mutedTextStyle, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, whiteSpace: 'nowrap' }}>{signedIn.account.email ?? signedIn.account.username ?? '—'}</div>
-              </div>
-            </div>
-            <div style={{ ...insetStyle, display: 'grid', alignContent: 'center', padding: '16px 18px' }}>
-              <span style={{ color: 'var(--dsw-alias-label-tertiary, #8993a1)', fontSize: 12 }}>{t('quotaDescription')} · {quotaDisplayUnit(signedIn.account)}</span>
-              <strong style={{ marginTop: 3, fontSize: 25, lineHeight: 1.2, letterSpacing: '-0.03em' }}>{formatQuotaBalance(signedIn.remainingQuota, signedIn.account)}</strong>
-            </div>
-          </div>
-          <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 1, margin: 0, borderTop: '0.5px solid var(--dsw-alias-border-l1, #edf0f3)', background: 'var(--dsw-alias-border-l1, #edf0f3)' }}>
-            {[[t('account'), accountName(signedIn)], [t('username'), signedIn.account.username ?? '—'], [t('email'), signedIn.account.email ?? '—']].map(([label, value]) => (
-              <div key={label} style={{ minWidth: 0, padding: '14px 18px', background: 'var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-base, #fff))' }}>
-                <dt style={{ marginBottom: 5, color: 'var(--dsw-alias-label-tertiary, #8993a1)', fontSize: 11 }}>{label}</dt>
-                <dd style={{ margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, whiteSpace: 'nowrap' }}>{value}</dd>
-              </div>
-            ))}
-          </dl>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap', padding: '16px 18px', borderTop: '0.5px solid var(--dsw-alias-border-l1, #edf0f3)' }}>
-            <Button variant="outline" icon={<RefreshIcon />} disabled={busy} onClick={() => { void refreshAccount() }}>{busy ? t('refreshing') : t('refresh')}</Button>
-            <Button variant="ghost" disabled={busy} onClick={() => { void logout() }}>{t('logout')}</Button>
-          </div>
-        </div>
+        <AccountDetailsCard t={t} snapshot={signedIn} responsive={clubView} busy={busy} refreshAccount={refreshAccount} logout={logout} />
       ) : signedIn !== undefined && visibleSection === 'billing' ? (
         <BillingPanel ctx={ctx} t={t} account={signedIn.account} refreshAccount={refreshAccount} />
       ) : snapshot === undefined ? (
@@ -1185,24 +812,7 @@ function AccountSettingsTab({ t, accountContext: ctx, clubView = false, renderSl
           <span style={mutedTextStyle}>{t(error === undefined ? 'loading' : 'unavailable')}</span>
         </div>
       ) : (
-        <div style={cardStyle}>
-          <div style={{ padding: '30px 30px 24px' }}>
-            <h3 style={{ margin: 0, fontSize: 19, lineHeight: 1.35 }}>{t('connectTitle')}</h3>
-            <p style={{ ...mutedTextStyle, maxWidth: 560, margin: '8px 0 22px' }}>{t('connectDescription')}</p>
-            <div style={{ ...insetStyle, display: 'grid', gap: 12, padding: '15px 16px' }}>
-              {[t('browserStep'), t('returnStep')].map((step, index) => (
-                <div key={step} style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 13 }}>
-                  <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: 22, height: 22, flex: 'none', borderRadius: '50%', background: 'var(--dsw-alias-bg-layer-2, #fff)', color: 'var(--dsw-alias-state-business-primary, #2f6fda)', fontSize: 11, fontWeight: 700 }}>{index + 1}</span>
-                  {step}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap', padding: '17px 22px', borderTop: '0.5px solid var(--dsw-alias-border-l1, #edf0f3)', background: 'var(--dsw-alias-bg-module-platform, #f7f8fa)' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 420, color: 'var(--dsw-alias-label-tertiary, #8993a1)', fontSize: 12, lineHeight: 1.5 }}><ShieldIcon />{t('localSecurity')}</span>
-            <Button variant="primary" icon={<BrowserIcon />} disabled={busy} onClick={() => { void startLogin() }}>{busy ? t('openingBrowser') : t('login')}</Button>
-          </div>
-        </div>
+        <AccountConnectCard t={t} busy={busy} startSignIn={startLogin} />
       )}
     </div>
   )

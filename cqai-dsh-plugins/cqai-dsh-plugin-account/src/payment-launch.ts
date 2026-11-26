@@ -12,23 +12,25 @@ export async function launchTopUpPayment(
   result: DsnTopUpResult,
   openExternal: PaymentLauncher,
 ): Promise<void> {
+  const payment = await prepareTopUpPayment(result)
+  try {
+    await openExternal(payment.url)
+  } catch (error) {
+    payment.close()
+    throw error
+  }
+}
+
+/** Keep POST payment fields in the loopback bridge, outside the Desktop renderer. */
+export async function prepareTopUpPayment(
+  result: DsnTopUpResult,
+): Promise<{ readonly url: string; close(): void }> {
   const target = readPaymentTarget(result.paymentUrl)
   const fields = result.paymentFields === undefined
     ? []
     : Object.entries(result.paymentFields)
 
-  if (fields.length === 0) {
-    await openExternal(target.href)
-    return
-  }
-
-  const bridge = await createPaymentFormBridge(target, fields)
-  try {
-    await openExternal(bridge.url)
-  } catch (error) {
-    bridge.close()
-    throw error
-  }
+  return fields.length === 0 ? { url: target.href, close() {} } : createPaymentFormBridge(target, fields)
 }
 
 function readPaymentTarget(value: string | undefined): URL {

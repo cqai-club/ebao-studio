@@ -17,7 +17,7 @@ import { CQAI_PROVIDER } from './llm-adapter.ts'
 
 import { AccountServiceClient, AccountServiceError } from './account-service.ts'
 import { ClubPortalClient, tokenHasAudience } from './club-portal.ts'
-import { launchTopUpPayment } from './payment-launch.ts'
+import { launchTopUpPayment, prepareTopUpPayment } from './payment-launch.ts'
 import {
   mayAdoptCqaiOnboardingDefault,
   preferredCqaiOnboardingModel,
@@ -171,6 +171,7 @@ type DesktopLoginRuntime = {
 const OAUTH_CALLBACK_PATH = `${RPC_CHANNEL}/oauth/callback`
 
 type RpcPayload = Record<string, unknown>
+type TopUpAccount = Pick<PublicAccount, 'userId' | 'platform'>
 
 function sameSnapshot(left: DsnAccountSnapshot, right: DsnAccountSnapshot): boolean {
   // Snapshots are deliberately small, JSON-safe wire values. Suppressing an
@@ -509,6 +510,38 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
     return result.orderId === undefined ? {} : { orderId: result.orderId }
   }
 
+  private async preparePayment(
+    request: DsnTopUpRequest,
+    account: TopUpAccount,
+    signal: AbortSignal,
+  ): Promise<{ paymentUrl: string }> {
+    const generation = this.authorizationGeneration
+    const assertCurrentAccount = async () => {
+      signal.throwIfAborted()
+      const grant = await this.readGrant()
+      signal.throwIfAborted()
+      if (this.signingOut || generation !== this.authorizationGeneration || grant === undefined
+        || grant.account.userId !== account.userId || grant.account.platform !== account.platform) {
+        throw new DsnAccountError('DSN_AUTH_REQUIRED', '登录账号已变化，请重新打开充值页面。')
+      }
+    }
+
+    await assertCurrentAccount()
+    const result = await this.requestWithTokenRefresh(async (accessToken) => {
+      await assertCurrentAccount()
+      return this.accountService.createTopUp(accessToken, request, signal)
+    }, signal)
+    await assertCurrentAccount()
+    const payment = await prepareTopUpPayment(result)
+    try {
+      await assertCurrentAccount()
+      return { paymentUrl: payment.url }
+    } catch (error) {
+      payment.close()
+      throw error
+    }
+  }
+
   async listModels(options: DsnModelListOptions = {}): Promise<DsnModelCatalog> {
     const grant = await this.readGrant()
     if (grant === undefined) {
@@ -798,6 +831,8 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
           return ok(await this.createTopUp(readTopUpRequest(payload), signal))
         case 'billing/topups/launch':
           return ok(await this.launchTopUp(readTopUpRequest(payload), signal))
+        case 'billing/topups/prepare-payment':
+          return ok(await this.preparePayment(readTopUpRequest(payload), readTopUpAccount(payload), signal))
         case 'session/logout': {
           const result = await this.logout(signal)
           return ok({ snapshot: this.snapshot, ...result })
@@ -1480,7 +1515,7 @@ export class DsnAccountServiceRuntime extends Service implements DsnAccountServi
 
 export function apply(ctx: Context, config?: Partial<DsnAccountConfig>): void {
   const runtime = new DsnAccountServiceRuntime(ctx, config)
-  bindCqaiModelRoute(ctx, runtime)
+  bindCqaiModelRoute(ctx, runtime, config?.desktopProductName?.trim())
 }
 
 function readGrantPayload(record: CredentialRecord | undefined): GrantPayload | undefined {
@@ -1560,6 +1595,15 @@ function readTopUpRequest(payload: unknown): DsnTopUpRequest {
     ...(productId === undefined ? {} : { productId }),
     ...(choiceId === undefined ? {} : { choiceId }),
   }
+}
+
+function readTopUpAccount(payload: unknown): TopUpAccount {
+  if (!isObject(payload) || !isObject(payload.account)) {
+    throw new DsnAccountError('DSN_PROTOCOL_ERROR', '充值账号无效')
+  }
+  const userId = readOptionalPositiveInteger(payload.account.userId, '充值账号')
+  if (userId === undefined) throw new DsnAccountError('DSN_PROTOCOL_ERROR', '充值账号无效')
+  return { userId, platform: readRequiredText(payload.account.platform, '充值平台') }
 }
 
 function readCategoryDefaultModelRequest(payload: unknown): {

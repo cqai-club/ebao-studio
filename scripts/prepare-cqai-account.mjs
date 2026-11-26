@@ -13,15 +13,23 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ACCOUNT = '@cqaiclub/dsn-account'
 const ADAPTER = '@cqaiclub/desktop-account'
+const CLIENT_INJECT = [
+  '@deepseek-ai/dsh-client-connection',
+  '@deepseek-ai/dsh-client-locale',
+  '@deepseek-ai/dsh-client-ui-settings',
+  '@deepseek-ai/dsh-client-ui-settings-account',
+  '@deepseek-ai/dsh-client-ui-settings-models',
+  '@deepseek-ai/dsh-client-ui-slots',
+]
 const DEFAULT_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
 const LOGIN_SCOPES = ['openid', 'offline_access', 'profile', 'email', 'ai:invoke']
 const PROFILE_WORKSPACE = 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n'
 const ARTIFACT_FILES = ['account/lib/index.js', 'account/lib/protocol.js', 'account/package.json',
-  'desktop-account/lib/index.js', 'desktop-account/package.json', 'desktop-account/cordis.patch.yml']
+  'desktop-account/lib/index.js', 'desktop-account/lib/client.js', 'desktop-account/package.json', 'desktop-account/cordis.patch.yml']
 
 export const USAGE = `Usage: node scripts/prepare-cqai-account.mjs [--build-only] [--print-config]
 
-Builds server-only CQAI account packages using the pinned official toolchain.
+Builds the CQAI account provider and desktop settings using the pinned official toolchain.
 The default action installs them into the isolated official Desktop Profile.
 --build-only never modifies a Profile. --print-config never writes or installs.
 EBAO_OFFICIAL_DSH_HOME may explicitly select another non-legacy absolute home.
@@ -143,7 +151,7 @@ function cachedArtifactsMatch(directory, artifacts) {
   } catch { return false }
 }
 
-/** Compile only owned server code; official SDK modules remain shared runtime peers. */
+/** Compile owned account code with the official SDK and browser platform modules shared at runtime. */
 export async function buildAccountExtensions(plan, { loadToolchain = toolchain } = {}) {
   assertOwnedPath(plan.root, plan.state)
   assertOwnedPath(plan.state, plan.extensions)
@@ -177,6 +185,19 @@ export async function buildAccountExtensions(plan, { loadToolchain = toolchain }
   }
   await esbuild.build({ ...common, entryPoints: { index: join(plan.accountSource, 'src', 'index.ts'), protocol: join(plan.accountSource, 'src', 'protocol.ts') }, outdir: join(account, 'lib') })
   await esbuild.build({ ...common, entryPoints: [join(plan.adapterSource, 'src', 'index.ts')], outfile: join(adapter, 'lib', 'index.js') })
+  await esbuild.build({
+    bundle: true,
+    platform: 'browser',
+    format: 'cjs',
+    target: 'es2024',
+    jsx: 'automatic',
+    entryPoints: [join(plan.adapterSource, 'src', 'client', 'index.tsx')],
+    outfile: join(adapter, 'lib', 'client.js'),
+    external: ['react', '@deepseek-ai/dsh-client-ui-primitives'],
+    banner: { js: `window.__ModuleLoader__.load({ id: ${JSON.stringify(ADAPTER)}, factory: (require) => { const module = { exports: {} };` },
+    footer: { js: 'return module.exports; } });' },
+    logLevel: 'warning',
+  })
   writeJson(join(account, 'package.json'), {
     name: ACCOUNT, version: artifacts.accountVersion, type: 'module', private: true,
     main: './lib/index.js', exports: { '.': './lib/index.js', './protocol': './lib/protocol.js', './package.json': './package.json' },
@@ -184,9 +205,12 @@ export async function buildAccountExtensions(plan, { loadToolchain = toolchain }
   })
   writeJson(join(adapter, 'package.json'), {
     name: ADAPTER, version: artifacts.adapterVersion, type: 'module', private: true,
-    main: './lib/index.js', exports: { '.': './lib/index.js', './package.json': './package.json' },
+    main: './lib/index.js', exports: { '.': './lib/index.js', './client': './lib/client.js', './package.json': './package.json' },
     peerDependencies: { [ACCOUNT]: '*', '@deepseek-ai/cordis': '^4.1.0', '@deepseek-ai/dsh-deepseek-account': JSON.parse(readFileSync(join(plan.official, 'package.json'), 'utf8')).version },
-    dsh: { bundle: { patch: './cordis.patch.yml' } },
+    dsh: {
+      bundle: { patch: './cordis.patch.yml' },
+      client: { platform: 'web', inject: CLIENT_INJECT },
+    },
   })
   writeFileSync(join(adapter, 'cordis.patch.yml'), yaml.stringify(patch), { mode: 0o600 })
   writeJson(join(directory, 'build-receipt.json'), { schemaVersion: 1, fingerprint,
