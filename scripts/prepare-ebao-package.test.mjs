@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { APP_ID, PRODUCT_NAME, createEbaoPackageEnvironment, packageSmokeSource, prepareDevelopmentSource } from './package-ebao-desktop.mjs'
+import { APP_ID, PRODUCT_NAME, createEbaoPackageEnvironment, packageOfficeSmokeSource, packageSmokeSource, prepareDevelopmentSource } from './package-ebao-desktop.mjs'
 import { createEbaoBuilderConfig, packageDesktopHost, packageDesktopMain, packageWindowsInstaller, packageWindowsUninstaller } from './prepare-ebao-package.mjs'
 import { PRODUCT_PLUGIN_BUNDLES, PRODUCT_PLUGIN_PACKAGE, installProductPlugins, linkOfficialSdkPackages } from './prepare-ebao-product-plugins.mjs'
 import { publisherWorkerBuild } from './publisher-worker-paths.mjs'
@@ -164,6 +164,18 @@ test('packaged runtime smoke runs the renamed applications on both platforms', (
   for (const name of [PRODUCT_NAME, `${PRODUCT_NAME}.app`, `${PRODUCT_NAME}.exe`]) assert.ok(changed.includes(JSON.stringify(name)))
   assert.doesNotMatch(changed, /DeepSeek Harness/u)
   assert.throws(() => packageSmokeSource(''), /smoke path changed/u)
+})
+
+test('Intel macOS extends Office deadlines only in the isolated packaging smoke profile', () => {
+  const source = readFileSync(new URL('../deepseek-harness/apps/desktop/scripts/smoke-runtime.ts', import.meta.url), 'utf8')
+  const intel = { DSH_DESKTOP_TARGET_PLATFORM: 'darwin', DSH_DESKTOP_TARGET_ARCH: 'x64' }
+  const changed = packageOfficeSmokeSource(source, intel)
+  assert.ok(changed.includes(String.raw`appendFileSync(join(profile, 'cordis.patch.yml'), "- id: office-kit\n  config:\n    outputDirectory: !!js dshHomePath('office-kit', 'outputs')\n    timeoutMs: 120000\n")`))
+  assert.match(changed, /\/desktop-smoke-office\/\$\{extension\}[^\n]*\n[^\n]*AbortSignal\.timeout\(150000\)/u)
+  assert.match(changed, /\/desktop-smoke-office-operations\/\$\{extension\}[^\n]*\n[^\n]*AbortSignal\.timeout\(390000\)/u)
+  assert.equal(packageOfficeSmokeSource(source, { ...intel, DSH_DESKTOP_TARGET_ARCH: 'arm64' }), source)
+  assert.equal(packageOfficeSmokeSource(source, { ...intel, DSH_DESKTOP_TARGET_PLATFORM: 'win32' }), source)
+  assert.throws(() => packageOfficeSmokeSource('', intel), /seam changed/u)
 })
 
 test('generated Windows installer resolves pinned script includes from its new directory', () => {
