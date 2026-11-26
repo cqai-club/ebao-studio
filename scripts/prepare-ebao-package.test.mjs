@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { APP_ID, PRODUCT_NAME, createEbaoPackageEnvironment, packageSmokeSource, prepareDevelopmentSource } from './package-ebao-desktop.mjs'
 import { createEbaoBuilderConfig, packageDesktopHost, packageDesktopMain, packageWindowsInstaller, packageWindowsUninstaller } from './prepare-ebao-package.mjs'
-import { PRODUCT_PLUGIN_BUNDLES, PRODUCT_PLUGIN_PACKAGE, installProductPlugins } from './prepare-ebao-product-plugins.mjs'
+import { PRODUCT_PLUGIN_BUNDLES, PRODUCT_PLUGIN_PACKAGE, installProductPlugins, linkOfficialSdkPackages } from './prepare-ebao-product-plugins.mjs'
 import { publisherWorkerBuild } from './publisher-worker-paths.mjs'
 
 test('Windows unsigned packaging has independent identity and ignores upstream release credentials', () => {
@@ -92,6 +92,31 @@ test('source product overlay is applied after official development project prepa
   assert.match(prepareDevelopmentSource(source),
     /prepareDevelopmentProject\(\{[\s\S]*?await prepareEbaoDevelopment\(join\(DEVELOPMENT_ROOT, "project"\)\)\s+await preparePrimaryRuntime\(\)/u)
   assert.throws(() => prepareDevelopmentSource(''), /seam changed/u)
+})
+
+test('product build resolves the pinned SDK without a pnpm workspace hoist', t => {
+  const fixture = mkdtempSync(join(tmpdir(), 'ebao-product-sdk-'))
+  t.after(() => rmSync(fixture, { force: true, recursive: true }))
+  const official = join(fixture, 'official')
+  const modules = join(fixture, 'build', 'node_modules')
+  mkdirSync(modules, { recursive: true })
+  const packages = [
+    ['vendor/cordis', '@deepseek-ai/cordis'],
+    ['packages/boot/app-boot', '@deepseek-ai/dsh-app-boot'],
+    ['apps/cli', '@deepseek-ai/dsh'],
+  ]
+  for (const [relativePath, name] of packages) {
+    const source = join(official, relativePath)
+    mkdirSync(source, { recursive: true })
+    writeFileSync(join(source, 'package.json'), JSON.stringify({ name }))
+  }
+  const scope = join(modules, '@deepseek-ai')
+  linkOfficialSdkPackages(official, scope)
+  for (const [relativePath, name] of packages) {
+    assert.equal(realpathSync(join(modules, ...name.split('/'))), realpathSync(join(official, relativePath)))
+  }
+  rmSync(scope, { recursive: true })
+  assert.ok(packages.every(([path]) => existsSync(join(official, path, 'package.json'))))
 })
 
 test('generated runtime keeps official defaults first and resolves every bundled product patch', t => {

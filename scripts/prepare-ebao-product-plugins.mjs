@@ -1,7 +1,7 @@
 /** Compile e宝's default plugins in a separate, locked pnpm project. */
 import { spawn } from 'node:child_process'
 import {
-  cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync,
+  cpSync, existsSync, globSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync,
   renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { delimiter, dirname, join, resolve } from 'node:path'
@@ -38,6 +38,23 @@ const writeJson = (path, data) => writeFileSync(path, `${JSON.stringify(data, nu
 const excluded = new Set(['node_modules', 'lib', '.git', '.DS_Store'])
 const sourceFilter = source => !excluded.has(source.split(/[/\\]/u).at(-1))
 const artifactFilter = source => !['.bin', '.DS_Store', '.gitkeep', '.pnpm-workspace-state-v1.json'].includes(source.split(/[/\\]/u).at(-1))
+
+/** Link the pinned SDK source packages into the temporary build's module tree. */
+export function linkOfficialSdkPackages(official, scope) {
+  const prefix = '@deepseek-ai/'
+  const manifests = globSync([
+    'apps/*/package.json', 'packages/*/*/package.json', 'vendor/*/package.json',
+    'native/system/package.json', 'native/system/packages/*/package.json',
+  ], { cwd: official })
+  mkdirSync(scope)
+  for (const relativePath of manifests) {
+    const path = join(official, relativePath)
+    const { name } = readJson(path)
+    if (name?.startsWith(prefix)) {
+      symlinkSync(dirname(path), join(scope, name.slice(prefix.length)), process.platform === 'win32' ? 'junction' : 'dir')
+    }
+  }
+}
 
 function runPnpm(plan, project, args, env = process.env) {
   const invocation = officialPnpmCommand(plan)
@@ -94,8 +111,8 @@ export async function buildProductPlugins(plan) {
     }
     const manifest = readJson(join(temporary, 'package.json'))
     await install([])
-    symlinkSync(join(plan.official, 'node_modules', '.pnpm', 'node_modules', '@deepseek-ai'),
-      sdkScope, process.platform === 'win32' ? 'junction' : 'dir')
+    // Resolve the SDK by its pinned workspace manifests on every platform.
+    linkOfficialSdkPackages(plan.official, sdkScope)
     const sources = OWNED_SOURCES.map(path => {
       const target = join(temporary, path)
       cpSync(join(plan.root, path), target, { recursive: true, filter: sourceFilter })
@@ -109,7 +126,7 @@ export async function buildProductPlugins(plan) {
     // Each source uses the shared locked install above. Disable pnpm 11's
     // automatic installation for lifecycle commands in these copied packages.
     const build = directory => runPnpm(plan, directory, ['run', 'build'], {
-      ...process.env, PATH, npm_config_verify_deps_before_run: 'false',
+      ...process.env, PATH, pnpm_config_verify_deps_before_run: 'false',
     })
     const [market, ...otherSources] = sources
     await build(market)
@@ -117,7 +134,7 @@ export async function buildProductPlugins(plan) {
     symlinkSync(market, marketLink, process.platform === 'win32' ? 'junction' : 'dir')
     const results = await Promise.allSettled(otherSources.map(build))
     for (const result of results) if (result.status === 'rejected') throw result.reason
-    unlinkSync(sdkScope)
+    rmSync(sdkScope, { recursive: true })
     unlinkSync(marketLink)
     await install(['--prod'])
     for (const source of sources) copyOwnedArtifact(source, modules)
