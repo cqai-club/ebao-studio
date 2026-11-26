@@ -6,6 +6,7 @@ import type {
   RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 
+import { DsnAccountError } from '../src/errors.ts'
 import { CqaiClubAdapter, CQAI_PROVIDER } from '../src/llm-adapter.ts'
 import type { DsnAccountService, DsnModel } from '../src/protocol.ts'
 
@@ -118,6 +119,37 @@ describe('CqaiClubAdapter', () => {
     const adapter = new CqaiClubAdapter(accountService(new Response(''), [imageOnly]))
 
     await expect(adapter.listModels(CQAI_PROVIDER)).resolves.toEqual([])
+  })
+
+  it.each(['DSN_AUTH_REQUIRED', 'DSN_REAUTH_REQUIRED'] as const)('reports %s during model discovery and request preparation as a sign-in requirement', async code => {
+    const service = accountService(new Response(''))
+    const error = new DsnAccountError(code, 'CQAI login required')
+    vi.mocked(service.listModels).mockRejectedValue(error)
+    const adapter = new CqaiClubAdapter(service)
+    const failure = { code: 'ACCOUNT_SIGN_IN_REQUIRED', cause: error }
+
+    await expect(adapter.listModels(CQAI_PROVIDER)).rejects.toMatchObject(failure)
+    await expect(adapter.prepareCall(CQAI_PROVIDER, textModel.id)).rejects.toMatchObject(failure)
+    expect(service.fetchAi).not.toHaveBeenCalled()
+  })
+
+  it.each(['DSN_AUTH_REQUIRED', 'DSN_REAUTH_REQUIRED'] as const)('reports %s during completion as a sign-in requirement', async code => {
+    const service = accountService(new Response(''))
+    const error = new DsnAccountError(code, 'CQAI login required')
+    service.fetchAi.mockRejectedValue(error)
+    const adapter = new CqaiClubAdapter(service)
+    const call = await adapter.prepareCall(CQAI_PROVIDER, textModel.id)
+
+    await expect(drain(call.stream({ provider: CQAI_PROVIDER, model: textModel.id, messages: [] })))
+      .rejects.toMatchObject({ code: 'ACCOUNT_SIGN_IN_REQUIRED', cause: error })
+  })
+
+  it.each([401, 403])('preserves the authentication error for an HTTP %s response', async status => {
+    const service = accountService(new Response('', { status }))
+    const adapter = new CqaiClubAdapter(service)
+
+    await expect(drain(adapter.stream({ provider: CQAI_PROVIDER, model: textModel.id, messages: [] })))
+      .rejects.toMatchObject({ code: 'AUTH', failure: { status } })
   })
 
   it('routes selected model calls through the host account service and translates SSE', async () => {

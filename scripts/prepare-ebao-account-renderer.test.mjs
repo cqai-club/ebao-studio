@@ -26,6 +26,18 @@ globalThis.quota={...nativePlatform===void 0?{}:{openPlatformPage:platformPageOp
 globalThis.onboarding={...nativePlatform===void 0?{}:{openPlatformPage:platformPageOpener(refresh)}};
 globalThis.native=nativePlatform;
 `
+const chatBundle = `
+const en={"message.failure.accountSignedOut":"Stopped because you signed out of DeepSeek.","message.failure.accountSignInRequired":"Sign in to DeepSeek and ensure the request destination supports account authentication.","message.failure.auth":"API key is invalid"};
+const zh={"message.failure.accountSignedOut":"任务已因退出 DeepSeek 登录而停止。","message.failure.accountSignInRequired":"请先登录 DeepSeek，并确认请求地址支持账号认证。","message.failure.auth":"API 密钥无效"};
+const [ja,es,fr,de,ru,pt]=Array(6).fill(en);
+const ctx={locale:{register(ns,copy){globalThis.copy=copy}},effect(fn){fn()}};
+const NS='chat';
+ctx.effect(()=>ctx.locale.register(NS,{zh,en,ja,es,fr,de,ru,pt}),\`ui-chat: dictionaries\`);
+`
+const layoutBundle = `
+const productTitle={}.DSH_CLIENT_TITLE??t(\`brand.localBuild\`);
+globalThis.productTitle=productTitle;
+`
 const modelsBundle = `
 const snapshot={rows:[{entry:{provider:'cqaiclub',displayName:'CQAI Club'}},{entry:{provider:'deepseek-official',displayName:'DeepSeek'}}]};
 const t=key=>key;
@@ -47,7 +59,10 @@ function fixtures(t, webSearchClient = webSearchBundle) {
   const directory = mkdtempSync(join(tmpdir(), 'ebao-account-renderer-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const paths = ebaoAccountPackagedClients(join(directory, 'node_modules'))
-  for (const [key, fixture] of Object.entries({ accountClient: accountBundle, modelsClient: modelsBundle, webSearchClient })) {
+  const bundles = {
+    accountClient: accountBundle, chatClient: chatBundle, layoutClient: layoutBundle, modelsClient: modelsBundle, webSearchClient,
+  }
+  for (const [key, fixture] of Object.entries(bundles)) {
     mkdirSync(dirname(paths[key]), { recursive: true })
     writeFileSync(paths[key], fixture)
   }
@@ -56,7 +71,7 @@ function fixtures(t, webSearchClient = webSearchBundle) {
 
 test('brands account copy in all locales and opens Club account pages in the browser', t => {
   const paths = fixtures(t)
-  assert.equal(applyEbaoAccountRenderer(paths), 3)
+  assert.equal(applyEbaoAccountRenderer(paths), 5)
   assert.equal(applyEbaoAccountRenderer(paths), 0)
   const calls = []
   const close = []
@@ -85,6 +100,29 @@ test('brands account copy in all locales and opens Club account pages in the bro
   assert.equal(context.refreshes, 1)
 })
 
+test('brands account errors from stored chat turns and preserves API-key guidance', t => {
+  const paths = fixtures(t)
+  applyEbaoAccountRenderer(paths)
+  const context = {}
+  runInNewContext(readFileSync(paths.chatClient, 'utf8'), context)
+  assert.equal(Object.keys(context.copy).length, 8)
+  for (const copy of Object.values(context.copy)) {
+    assert.match(copy['message.failure.accountSignedOut'], /e宝工坊/u)
+    assert.match(copy['message.failure.accountSignInRequired'], /e宝工坊/u)
+  }
+  assert.equal(context.copy.zh['message.failure.accountSignedOut'], '任务已因退出 e宝工坊账号而停止。')
+  assert.equal(context.copy.zh['message.failure.accountSignInRequired'], '请先登录 e宝工坊账号，再重试。')
+  assert.equal(context.copy.en['message.failure.auth'], 'API key is invalid')
+})
+
+test('uses the e宝 product name in the workspace window title', t => {
+  const paths = fixtures(t)
+  applyEbaoAccountRenderer(paths)
+  const context = {}
+  runInNewContext(readFileSync(paths.layoutClient, 'utf8'), context)
+  assert.equal(context.productTitle, 'e宝工坊')
+})
+
 test('labels the CQAI model route and leaves legacy DeepSeek search billing editable', t => {
   const paths = fixtures(t)
   applyEbaoAccountRenderer(paths)
@@ -104,5 +142,7 @@ test('requires the pinned generated anchors before changing any of the bundles',
   const paths = fixtures(t, 'const unrelated = true')
   assert.throws(() => applyEbaoAccountRenderer(paths), /web search dictionaries anchor/)
   assert.equal(readFileSync(paths.accountClient, 'utf8'), accountBundle)
+  assert.equal(readFileSync(paths.chatClient, 'utf8'), chatBundle)
+  assert.equal(readFileSync(paths.layoutClient, 'utf8'), layoutBundle)
   assert.equal(readFileSync(paths.modelsClient, 'utf8'), modelsBundle)
 })

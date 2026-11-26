@@ -25,11 +25,14 @@ import type {
   RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 
+import { DsnAccountError } from './errors.ts'
 import {
   isChatModel,
   isVisionChatModel,
   type DsnAccountService,
   type DsnModel,
+  type DsnModelCatalog,
+  type DsnModelListOptions,
 } from './protocol.ts'
 
 /** Provider route used by the DSH model selector and session headers. */
@@ -139,7 +142,7 @@ export class CqaiClubAdapter extends LlmAdapter {
   }
 
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    const catalog = await this.account.listModels()
+    const catalog = await this.loadModelCatalog()
     return catalog.models
       .filter(isChatModel)
       .map((model) => modelInfo(provider, model))
@@ -169,8 +172,16 @@ export class CqaiClubAdapter extends LlmAdapter {
     return this.streamWithCatalog(options)
   }
 
+  private async loadModelCatalog(options?: DsnModelListOptions): Promise<DsnModelCatalog> {
+    try {
+      return await this.account.listModels(options)
+    } catch (error) {
+      throw accountSignInError(error) ?? error
+    }
+  }
+
   private async catalogModel(model: string, signal?: AbortSignal): Promise<DsnModel | undefined> {
-    const catalog = await this.account.listModels({ signal })
+    const catalog = await this.loadModelCatalog({ signal })
     return catalog.models.find(entry => entry.id === model && isChatModel(entry))
   }
 
@@ -231,7 +242,7 @@ export class CqaiClubAdapter extends LlmAdapter {
       )
     } catch (error) {
       if (error instanceof LlmError) throw error
-      throw new LlmError('CQAI Club AI 请求失败', 'TRANSPORT', { cause: error })
+      throw accountSignInError(error) ?? new LlmError('CQAI Club AI 请求失败', 'TRANSPORT', { cause: error })
     }
 
     if (!response.ok) throw await errorFromResponse(response)
@@ -241,6 +252,12 @@ export class CqaiClubAdapter extends LlmAdapter {
 
     yield* translateStream(parseSse(response.body))
   }
+}
+
+function accountSignInError(error: unknown): LlmError | undefined {
+  if (!(error instanceof DsnAccountError)) return undefined
+  if (error.code !== 'DSN_AUTH_REQUIRED' && error.code !== 'DSN_REAUTH_REQUIRED') return undefined
+  return new LlmError(error.message, 'ACCOUNT_SIGN_IN_REQUIRED', { cause: error })
 }
 
 function modelInfo(provider: string, model: DsnModel): LlmModelInfo {
