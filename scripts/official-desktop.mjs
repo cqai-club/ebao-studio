@@ -11,6 +11,7 @@ import { buildWelcomePresentation, createWelcomePlan } from './prepare-ebao-welc
 import { buildProductPlugins } from './prepare-ebao-product-plugins.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const DESKTOP_TEST_ARGS = ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1']
 const ACTIONS = {
   install: ['install', '--frozen-lockfile'],
   'repair-install': ['install', '--frozen-lockfile'],
@@ -18,8 +19,7 @@ const ACTIONS = {
   version: ['--version'],
   build: ['run', 'build:artifacts'],
   typecheck: ['exec', 'tsc', '-b', 'apps/desktop/tsconfig.json'],
-  // The Windows console suite builds its native probe in a setup hook.
-  test: ['exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1', '--testTimeout=15000', '--hookTimeout=30000'],
+  test: [...DESKTOP_TEST_ARGS, '--testTimeout=15000', '--hookTimeout=30000'],
   // Build explicitly before the owned welcome overlay, then use the official no-build launcher.
   dev: ['run', 'start:desktop'],
   start: ['run', 'start:desktop'],
@@ -82,6 +82,12 @@ export function createOfficialDesktopPlan(action, { root = ROOT, environment = p
   env.DSH_HOME = home
   env.DSH_DESKTOP_USER_DATA_DIR = userData
   if (action === 'install' || action === 'repair-install') env.CI = 'true'
+  let actionArgs = ACTIONS[action]
+  if (platform === 'win32' && action === 'test') {
+    // The pinned Vitest projects use this budget for native fixture setup and tests.
+    env.DSH_COVERAGE_TEST_TIMEOUT_MS = '30000'
+    actionArgs = DESKTOP_TEST_ARGS
+  }
   delete env.EBAO_DESKTOP_PACKAGE
   delete env.EBAO_DESKTOP_DEVELOPMENT
   if (action.startsWith('package:')) {
@@ -92,7 +98,7 @@ export function createOfficialDesktopPlan(action, { root = ROOT, environment = p
   return {
     action,
     command: 'corepack',
-    args: ['pnpm', ...ACTIONS[action]],
+    args: ['pnpm', ...actionArgs],
     cwd: join(root, 'deepseek-harness'),
     env,
     shell: platform === 'win32',

@@ -30,13 +30,25 @@ test('commands target the official checkout and registered upstream scripts', ()
     'package:win:x64': ['pnpm', 'run', 'package:desktop:win:x64:unsigned'],
   }
   for (const [action, args] of Object.entries(expected)) {
-    const plan = createOfficialDesktopPlan(action, { environment: {} })
+    const plan = createOfficialDesktopPlan(action, { environment: {}, platform: 'linux' })
     assert.equal(plan.command, 'corepack')
     assert.equal(plan.cwd, join(root, 'deepseek-harness'))
     assert.deepEqual(plan.args, args)
     if (args[1] === 'run') assert.ok(manifest.scripts[args[2]], `Missing upstream script for ${action}`)
   }
   assertOfficialCheckout(join(root, 'deepseek-harness'))
+})
+
+test('Windows Desktop tests use the pinned inline-project time budget', () => {
+  const windows = createOfficialDesktopPlan('test', { environment: {}, platform: 'win32' })
+  assert.deepEqual(windows.args, ['pnpm', 'exec', 'vitest', 'run', 'apps/desktop/tests', '--maxWorkers=1'])
+  assert.equal(windows.env.DSH_COVERAGE_TEST_TIMEOUT_MS, '30000')
+  assert.equal(windows.env.DSH_COVERAGE_PARTITION_MODE, undefined)
+
+  for (const [action, platform] of [['test', 'darwin'], ['package:win:x64', 'win32']]) {
+    const plan = createOfficialDesktopPlan(action, { environment: {}, platform })
+    assert.equal(plan.env.DSH_COVERAGE_TEST_TIMEOUT_MS, undefined)
+  }
 })
 
 test('only packaging enables e宝 package preparation and preserves existing Node options', () => {
