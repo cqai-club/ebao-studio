@@ -1,5 +1,5 @@
 /**
- * dsh-skill-mcp-panel —— mcpManager Typert wire manifest。
+ * dsh-skill-mcp-panel —— MCP Typert wire manifest。
  */
 import { z } from "zod";
 import { strictCodec } from "../codec.js";
@@ -10,7 +10,7 @@ import { mcpServerInputSchema } from "./model.js";
  * handler（save/removeServer/setEnabled/test 各自 parse 一次严格 schema）。
  *
  * 背景：边界 codec 内嵌 mcpServerInputSchema 时，名称不合法会在边界上就被拒，
- * 宿主只回 `gateway/input-invalid: typert gateway: mcpManager/save: wire field
+ * 宿主只回 `gateway/input-invalid: typert gateway: ebaoMcpPanel/save: wire field
  * "payload" failed boundary validation` —— zod 的字段说明到不了前端。
  * 校验下沉后抛出的是 `describeSchemaError` 生成的中文错误，用户能看懂。
  */
@@ -94,24 +94,26 @@ export const mcpTestResultSchema = z.object({
   error: z.string().optional()
 });
 
+export const MCP_PANEL_SERVICE = "ebaoMcpPanel";
+
 export const MCP_MANIFEST = {
   package: "dsh-skill-mcp-panel",
   face: "host",
   schemas: [],
   invocations: [
     {
-      id: "dsh-skill-mcp-panel#mcpManager/list",
-      service: "mcpManager",
-      namespace: "mcpManager",
+      id: `dsh-skill-mcp-panel#${MCP_PANEL_SERVICE}/list`,
+      service: MCP_PANEL_SERVICE,
+      namespace: MCP_PANEL_SERVICE,
       method: "list",
       invocation: { kind: "direct" },
       parameters: [],
       result: strictCodec("dsh-skill-mcp-panel#McpListResult", mcpListResultSchema)
     },
     {
-      id: "dsh-skill-mcp-panel#mcpManager/save",
-      service: "mcpManager",
-      namespace: "mcpManager",
+      id: `dsh-skill-mcp-panel#${MCP_PANEL_SERVICE}/save`,
+      service: MCP_PANEL_SERVICE,
+      namespace: MCP_PANEL_SERVICE,
       method: "save",
       invocation: { kind: "direct" },
       parameters: [
@@ -120,9 +122,9 @@ export const MCP_MANIFEST = {
       result: strictCodec("dsh-skill-mcp-panel#McpSaveResult", mcpSaveResultSchema)
     },
     {
-      id: "dsh-skill-mcp-panel#mcpManager/removeServer",
-      service: "mcpManager",
-      namespace: "mcpManager",
+      id: `dsh-skill-mcp-panel#${MCP_PANEL_SERVICE}/removeServer`,
+      service: MCP_PANEL_SERVICE,
+      namespace: MCP_PANEL_SERVICE,
       method: "removeServer",
       invocation: { kind: "direct" },
       parameters: [
@@ -131,9 +133,9 @@ export const MCP_MANIFEST = {
       result: strictCodec("dsh-skill-mcp-panel#McpRemoveResult", mcpRemoveResultSchema)
     },
     {
-      id: "dsh-skill-mcp-panel#mcpManager/setEnabled",
-      service: "mcpManager",
-      namespace: "mcpManager",
+      id: `dsh-skill-mcp-panel#${MCP_PANEL_SERVICE}/setEnabled`,
+      service: MCP_PANEL_SERVICE,
+      namespace: MCP_PANEL_SERVICE,
       method: "setEnabled",
       invocation: { kind: "direct" },
       parameters: [
@@ -142,9 +144,9 @@ export const MCP_MANIFEST = {
       result: strictCodec("dsh-skill-mcp-panel#McpSaveResult", mcpSaveResultSchema)
     },
     {
-      id: "dsh-skill-mcp-panel#mcpManager/test",
-      service: "mcpManager",
-      namespace: "mcpManager",
+      id: `dsh-skill-mcp-panel#${MCP_PANEL_SERVICE}/test`,
+      service: MCP_PANEL_SERVICE,
+      namespace: MCP_PANEL_SERVICE,
       method: "test",
       invocation: { kind: "direct" },
       parameters: [
@@ -153,9 +155,9 @@ export const MCP_MANIFEST = {
       result: strictCodec("dsh-skill-mcp-panel#McpTestResult", mcpTestResultSchema)
     },
     {
-      id: "dsh-skill-mcp-panel#mcpManager/reload",
-      service: "mcpManager",
-      namespace: "mcpManager",
+      id: `dsh-skill-mcp-panel#${MCP_PANEL_SERVICE}/reload`,
+      service: MCP_PANEL_SERVICE,
+      namespace: MCP_PANEL_SERVICE,
       method: "reload",
       invocation: { kind: "direct" },
       parameters: [],

@@ -15,6 +15,14 @@ import type {
 
 const CATALOG_PAGE_LIMIT = 50
 
+function mutationHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (globalThis.location?.protocol === 'dsh-app:' && globalThis.location.hostname === 'app') {
+    headers['x-dsh-community-market'] = '1'
+  }
+  return headers
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   const value = await response.json() as T & { error?: unknown; code?: unknown; details?: unknown }
   if (!response.ok) {
@@ -93,7 +101,7 @@ export async function readMoreMarketCatalog(
 export async function mutateMarketSource(mutation: MarketSourceMutation, signal?: AbortSignal): Promise<MarketStateResponse['sources']> {
   const response = await readJson<{ sources: MarketStateResponse['sources'] }>(await fetch('/api/community-market/sources', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: mutationHeaders(),
     body: JSON.stringify(mutation),
     ...(signal === undefined ? {} : { signal }),
   }))
@@ -157,7 +165,7 @@ export async function previewMarketOperation(
 ): Promise<MarketOperationPreviewResponse> {
   return await readJson(await fetch('/api/community-market/operations/preview', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: mutationHeaders(),
     body: JSON.stringify(request),
     ...(signal === undefined ? {} : { signal }),
   }))
@@ -169,7 +177,7 @@ export async function executeMarketOperation(
 ): Promise<MarketOperationExecuteResponse> {
   return await readJson(await fetch('/api/community-market/operations/execute', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: mutationHeaders(),
     body: JSON.stringify({ previewId }),
     ...(signal === undefined ? {} : { signal }),
   }))
@@ -178,7 +186,7 @@ export async function executeMarketOperation(
 export async function openMarketTerminal(signal?: AbortSignal): Promise<MarketDesktopActionResponse> {
   return await readJson(await fetch('/api/community-market/desktop/open-terminal', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: mutationHeaders(),
     body: JSON.stringify({}),
     ...(signal === undefined ? {} : { signal }),
   }))
@@ -191,7 +199,7 @@ export async function setMarketInstallationEnabled(
 ): Promise<MarketInstallationToggleResponse> {
   return await readJson(await fetch('/api/community-market/installations/enabled', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: mutationHeaders(),
     body: JSON.stringify({ packageName, enabled }),
     ...(signal === undefined ? {} : { signal }),
   }))

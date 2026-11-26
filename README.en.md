@@ -4,7 +4,7 @@
 
 This repository builds and runs DeepSeek Harness Desktop from pinned official source. The welcome window and workspace use e宝工坊 accounts backed by CQAI. Users can also configure a DeepSeek API key for official DeepSeek models. See [upstream.json](upstream.json) for the pinned version, commit, and pnpm release.
 
-The e宝 account integration loads in source and packaged applications. Former business plugins remain available for separate future integrations. e宝工坊 maintains this repository independently. The [DeepSeek Harness Desktop documentation](deepseek-harness/apps/desktop/README.md) covers official runtime and plugin behavior.
+Source and packaged applications load e图宝, multi-platform publishing, IM, the plugin market, Skills and MCP, PPT Composer, the e宝 home screen, and the CQAI Club theme by default. e宝工坊 maintains this repository independently. The [DeepSeek Harness Desktop documentation](deepseek-harness/apps/desktop/README.md) covers official runtime and plugin behavior.
 
 ## Run from source
 

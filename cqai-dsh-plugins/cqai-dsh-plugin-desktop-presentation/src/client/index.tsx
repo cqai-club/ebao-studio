@@ -2,7 +2,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type { SidebarBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import brandArtwork from '../../assets/ebao-brand-mark.png'
 import robotArtwork from '../../assets/ebao-robot.webp'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -209,8 +210,20 @@ function HomeFrame({ hero, children, ctx }: { hero: boolean; children: ReactNode
   </div>
 }
 
-/** The presentation is a Desktop mode layer, never a compatibility override. */
+function EbaoSidebarMark({ size }: SidebarBrandMarkOwnerProps) {
+  return <span className="eBaoSidebarMark" aria-hidden="true" style={{
+    width: size, height: size, maskImage: `url(${brandArtwork})`,
+  }} />
+}
+
+/** Contribute e宝 identity and home content through the official slots. */
 export function apply(ctx: Context): void {
+  ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.register({
+    name: 'sidebar.brand.mark', priority: -110,
+  }, EbaoSidebarMark))
+  ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({
+    name: 'sidebar.brand.name', priority: -110,
+  }, () => <span className="eBaoSidebarName">e宝工坊</span>))
   ctx.inject(['layout'], scope => {
     scope.effect(() => installHomeStyles(), 'cqai-desktop-presentation: styles')
     scope.slots.inject('conversation.hero.brand.mark', () => scope.slots.register({

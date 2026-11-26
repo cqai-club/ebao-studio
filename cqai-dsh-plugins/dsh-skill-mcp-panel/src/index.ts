@@ -1003,8 +1003,8 @@ class SkillsViewerGateway extends TypertRemoteService {
   }
 }
 
-export function apply(ctx: any) {
-  ensureGlobalShim(ctx.logger);
+export function apply(ctx: any, config?: { installGlobalShim?: boolean }) {
+  if (config?.installGlobalShim !== false) ensureGlobalShim(ctx.logger);
   new SkillsViewerGateway(ctx);
   new McpManagerGateway(ctx);
   ctx.effect(() => ctx.typert.register(PANEL_MANIFEST), "dsh-skill-mcp-panel: typert manifest");

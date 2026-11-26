@@ -26,6 +26,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { IMAGEGEN_PROFILE_ENTRY_ID, IMAGEGEN_SETTINGS_NAMESPACE, type CanvasSkillConfigApplyRequest, type CanvasSkillConfigApplyResult, type CanvasSkillConfigPreviewRequest, type CanvasSkillConfigPreviewResult, type CanvasSkillConfigSaveRequest, type CanvasSkillConfigSaveResult, type CanvasSkillConfigView, type CanvasSkillInstallRequest, type CanvasSkillInstallResult, type CanvasSkillLibrary, type CanvasSkillRemoveResult, type ChannelConfig, type ModelMapping } from './protocol.ts'
 import { makeRoutes, type SettingsSeam } from './routes.ts'
+import type {} from '@deepseek-ai/dsh-client-connection'
 import { disposeEcommerceRoutes } from './ecommerce-routes.ts'
 import { syncAllTemplates } from './templates-store.ts'
 import { setStorageSyncHandler, putObject, type StorageSyncConfig } from './storage-sync.ts'
@@ -1114,8 +1115,9 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
   // read resolve() per request, so config edits apply live. The settings
   // bridge deliberately keeps serving while the plugin is disabled — it is
   // how the user re-enables the plugin from the settings card.
-  ctx.inject(['settings', 'attachments'], (sctx) => {
+  ctx.inject(['settings', 'attachments', 'connection'], (sctx) => {
     const seam = sctx.get('settings') as unknown as SettingsSeam
+    const connection = sctx.connection
     const secureMutate = async (ns: string, ops: readonly unknown[], expectedRevision?: number): Promise<void> => {
       await vaultReady
       const publicOps = await secretVault.extractSecretOps(ops)
@@ -1129,9 +1131,9 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
     }
     settingsStartup = (async () => {
       await vaultReady
-      const profileHome = (ctx as Context & { profileContext?: { home: string } }).profileContext?.home
+      const profileHome = (ctx.get('profileContext') as { home: string } | undefined)?.home
       if (profileHome) {
-        const loader = (ctx.root as unknown as { loader?: { await(): Promise<void> } }).loader
+        const loader = ctx.get('loader') as { await(): Promise<void> } | undefined
         if (loader) await loader.await()
         await migrateLegacyImageGenSettings(profileHome, seam)
       }
@@ -1185,7 +1187,19 @@ export function apply(ctx: Context, config?: ConfigSource): () => void {
           try {
             // The skill bridge shares the same startup gate as every data
             // writer; no run credential can be used before migration settles.
-            for (const route of [skillImageBridge.route(), ...routes]) disposers.push(ctx.webServer.register(route))
+            disposers.push(ctx.webServer.register(skillImageBridge.route()))
+            for (const route of routes) disposers.push(ctx.webServer.register({
+              ...route,
+              handler: (req, res) => {
+                const admission = connection.admit(req)
+                if (!('peer' in admission) || admission.peer !== connection.browserPeer) {
+                  res.writeHead(403, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+                  res.end(JSON.stringify({ error: 'forbidden: owner browser required' }))
+                  return
+                }
+                return route.handler(req, res)
+              },
+            }))
           } catch (error) {
             for (const dispose of disposers.splice(0)) dispose()
             ecommerceTeardown = disposeEcommerceRoutes(runtime)

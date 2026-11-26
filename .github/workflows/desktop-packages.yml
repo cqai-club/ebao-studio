@@ -10,9 +10,14 @@ on:
       - 'assets/desktop-brand/**'
       - 'scripts/official-desktop.mjs'
       - 'scripts/package-ebao-desktop.mjs'
+      - 'scripts/publisher-worker-paths.mjs'
       - 'scripts/prepare-*.mjs'
       - 'integrations/**'
-      - 'cqai-dsh-plugins/cqai-dsh-plugin-account/**'
+      - 'cqai-dsh-plugins/**'
+      - 'dsh-community-market/**'
+      - 'matrixmedia-publisher'
+      - 'vendor/matrixmedia/publisher-worker.json'
+      - 'vendor/ppt-runtime/**'
   workflow_dispatch:
 
 permissions:
@@ -52,6 +57,32 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.5
+      - name: Build the pinned Publisher Worker
+        id: publisher-worker
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          git submodule update --init --recursive -- matrixmedia-publisher
+          node scripts/verify-publisher-source.mjs
+          corepack enable
+          node scripts/install-matrixmedia-ci.mjs
+          cd matrixmedia-publisher
+          corepack yarn@1.22.22 test:publisher-worker
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            corepack yarn@1.22.22 build:dir
+            corepack yarn@1.22.22 electron-builder --config electron-builder.publisher.yml --win dir --x64 --publish never
+            node ../scripts/smoke-windows-publisher-worker.mjs
+          else
+            corepack yarn@1.22.22 build:publisher-worker:universal
+          fi
+      - name: Restore the Publisher Worker lock if interrupted
+        if: ${{ always() && (steps.publisher-worker.outcome == 'failure' || steps.publisher-worker.outcome == 'cancelled') }}
+        run: node scripts/install-matrixmedia-ci.mjs --restore
       - uses: actions/setup-node@v6
         with:
           node-version: 24.18.0

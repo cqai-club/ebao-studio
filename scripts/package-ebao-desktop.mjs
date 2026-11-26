@@ -1,12 +1,14 @@
 /** Install packaging hooks only in the unsigned e宝 Desktop build subprocesses. */
 import { readFileSync } from 'node:fs'
-import { registerHooks } from 'node:module'
+import { registerHooks, stripTypeScriptTypes } from 'node:module'
 
 const app = new URL('../deepseek-harness/apps/desktop/', import.meta.url)
 const configUrl = new URL('electron-builder.config.mjs', app).href
 const environmentUrl = new URL('scripts/desktop-package-environment.mjs', app).href
 const smokeUrl = new URL('scripts/smoke-packaged-runtime.ts', app).href
 const overridesUrl = new URL('./prepare-ebao-package.mjs', import.meta.url).href
+const developmentUrl = new URL('scripts/dev.ts', app).href
+const developmentOverlayUrl = new URL('./prepare-ebao-development.mjs', import.meta.url).href
 
 export const PRODUCT_NAME = 'e宝工坊'
 export const APP_ID = 'asia.cqaiclub.ebao-studio'
@@ -61,5 +63,22 @@ export { loadEbaoPackageEnvironment as loadDesktopPackageEnvironment };` }
     if (url !== smokeUrl) return loaded
     const source = typeof loaded.source === 'string' ? loaded.source : Buffer.from(loaded.source).toString()
     return { ...loaded, source: packageSmokeSource(source) }
+  },
+})
+
+export function prepareDevelopmentSource(source) {
+  return replacePackageSeam(source, '  await preparePrimaryRuntime()',
+    '  await prepareEbaoDevelopment(join(DEVELOPMENT_ROOT, "project"))\n  await preparePrimaryRuntime()')
+}
+
+if (process.env.EBAO_DESKTOP_DEVELOPMENT === '1') registerHooks({
+  load(url, context, nextLoad) {
+    if (url !== developmentUrl) return nextLoad(url, context)
+    const source = prepareDevelopmentSource(readFileSync(new URL(url), 'utf8'))
+    return {
+      shortCircuit: true,
+      format: 'module',
+      source: `import { prepareEbaoDevelopment } from ${JSON.stringify(developmentOverlayUrl)};\n${stripTypeScriptTypes(source)}`,
+    }
   },
 })

@@ -596,10 +596,10 @@ async function requestOneImage(
     if (typeof request.image !== 'string' || request.image === '') {
       throw new ImageGenError('图生图需要上传参考图片', 'edit-image-missing')
     }
-    const decodeReference = (dataUrl: string): { bytes: Buffer; mime: string; filename: string } => {
+    const decodeReference = (dataUrl: string): { bytes: Buffer<ArrayBuffer>; mime: string; filename: string } => {
       const parsed = parseDataUrl(dataUrl)
       if (parsed === undefined) throw new ImageGenError('参考图片格式无效', 'edit-image-invalid')
-      let bytes: Buffer
+      let bytes: Buffer<ArrayBuffer>
       try {
         bytes = Buffer.from(parsed.base64, 'base64')
       } catch {

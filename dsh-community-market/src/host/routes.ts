@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-client-connection'
 import type { CatalogSourceManifest } from '../contracts/index.js'
 import { parseCatalogSnapshot, parseCatalogSource, validateLocalSourceRecords } from '../contracts/validate.js'
 import type { CatalogHttpClient } from '../contracts/types.js'
@@ -347,12 +348,6 @@ function requestAllowed(req: IncomingMessage, expectedPort: number | undefined):
   return expectedPort !== undefined && marketRequestAllowed(requestContext(req, expectedPort))
 }
 
-function mutationAllowed(req: IncomingMessage, expectedPort: number | undefined): boolean {
-  return expectedPort !== undefined && marketMutationAllowed({
-    ...requestContext(req, expectedPort),
-  })
-}
-
 function asMutation(value: unknown): MarketSourceMutation {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid mutation')
   const mutation = value as Record<string, unknown>
@@ -604,6 +599,20 @@ export function registerMarketRoutes(
   marketPolicies?: CommunityMarketService,
 ): () => void {
   const expectedPort = ctx.webServer.port
+  const mutationAllowed = (req: IncomingMessage): boolean => {
+    if (expectedPort === undefined) return false
+    const request = requestContext(req, expectedPort)
+    if (marketMutationAllowed(request)) return true
+    // Official Desktop checks its renderer origin, strips browser-only
+    // headers and supplies its authority-bound Host cookie when forwarding.
+    if (request.origin !== undefined || request.secFetchSite !== undefined
+      || req.headers['x-dsh-community-market'] !== '1'
+      || req.headers['content-type'] !== 'application/json' || !marketRequestAllowed(request)) return false
+    const connection = ctx.get('connection')
+    if (connection === undefined) return false
+    const admission = connection.admit(req)
+    return 'peer' in admission && admission.peer === connection.browserPeer
+  }
   const generationController = new AbortController()
   const store = new PersistentCatalogSourceStore(state)
   const media = createMarketMediaService({
@@ -902,7 +911,7 @@ export function registerMarketRoutes(
       }
     }}),
     ctx.webServer.register({ kind: 'exact', path: ROUTE_SOURCES, handler: async (req, res) => {
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req)) {
         sendJson(res, 405, { error: 'source changes require a local same-origin POST' })
         return
       }
@@ -925,7 +934,7 @@ export function registerMarketRoutes(
   if (desktopActionsProvider !== undefined) {
     routes.push(
       ctx.webServer.register({ kind: 'exact', path: ROUTE_OPEN_TERMINAL, handler: async (req, res) => {
-        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        if (req.method !== 'POST' || !mutationAllowed(req)) {
           sendJson(res, 405, { error: 'opening DSH Terminal requires a local same-origin POST' })
           return
         }
@@ -1110,7 +1119,7 @@ export function registerMarketRoutes(
         }
       }}),
       ctx.webServer.register({ kind: 'exact', path: ROUTE_OPERATION_PREVIEW, handler: async (req, res) => {
-        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        if (req.method !== 'POST' || !mutationAllowed(req)) {
           sendJson(res, 405, { error: 'market package previews require a local same-origin POST' })
           return
         }
@@ -1138,7 +1147,7 @@ export function registerMarketRoutes(
         }
       }}),
       ctx.webServer.register({ kind: 'exact', path: ROUTE_OPERATION_EXECUTE, handler: async (req, res) => {
-        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        if (req.method !== 'POST' || !mutationAllowed(req)) {
           sendJson(res, 405, { error: 'market package execution requires a local same-origin POST' })
           return
         }
@@ -1162,7 +1171,7 @@ export function registerMarketRoutes(
         }
       }}),
       ctx.webServer.register({ kind: 'exact', path: ROUTE_INSTALLATION_ENABLED, handler: async (req, res) => {
-        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        if (req.method !== 'POST' || !mutationAllowed(req)) {
           sendJson(res, 405, { error: 'market plugin toggles require a local same-origin POST' })
           return
         }

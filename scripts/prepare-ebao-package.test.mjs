@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { APP_ID, PRODUCT_NAME, createEbaoPackageEnvironment, packageSmokeSource } from './package-ebao-desktop.mjs'
+import { APP_ID, PRODUCT_NAME, createEbaoPackageEnvironment, packageSmokeSource, prepareDevelopmentSource } from './package-ebao-desktop.mjs'
 import { createEbaoBuilderConfig, packageDesktopHost, packageDesktopMain, packageWindowsInstaller, packageWindowsUninstaller } from './prepare-ebao-package.mjs'
+import { PRODUCT_PLUGIN_BUNDLES, PRODUCT_PLUGIN_PACKAGE, installProductPlugins } from './prepare-ebao-product-plugins.mjs'
+import { publisherWorkerBuild } from './publisher-worker-paths.mjs'
 
 test('Windows unsigned packaging has independent identity and ignores upstream release credentials', () => {
   const environment = createEbaoPackageEnvironment({
@@ -40,7 +44,11 @@ test('e宝 builder keeps upstream packaging checks while selecting its own versi
   assert.deepEqual(config.mac.extendInfo.CFBundleLocalizations, ['zh_CN'])
   const brand = name => fileURLToPath(new URL(`../assets/desktop-brand/${name}`, import.meta.url))
   assert.equal(config.mac.icon, brand('app-macos.png'))
-  assert.deepEqual(config.extraResources, [runtime, { from: config.mac.icon, to: 'icon.png' }])
+  const root = fileURLToPath(new URL('../', import.meta.url))
+  const workerLicense = { from: fileURLToPath(new URL('../matrixmedia-publisher/LICENSE', import.meta.url)), to: 'publisher/LICENSE' }
+  assert.deepEqual(config.extraResources, [
+    runtime, { from: config.mac.icon, to: 'icon.png' }, publisherWorkerBuild(root, 'darwin').resource, workerLicense,
+  ])
 
   const windows = createEbaoBuilderConfig(() => fixture,
     { DSH_DESKTOP_UNSIGNED: '1', DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_TARGET_ARCH: 'x64' })
@@ -50,6 +58,7 @@ test('e宝 builder keeps upstream packaging checks while selecting its own versi
   assert.deepEqual(windows.extraResources, [runtime,
     { from: brand('app-windows.png'), to: 'icon.png' },
     { from: brand('tray.ico'), to: 'tray.ico' },
+    publisherWorkerBuild(root, 'win32').resource, workerLicense,
   ])
   assert.notEqual(config.beforePack, beforePack)
   assert.equal(config.afterPack, afterPack)
@@ -66,6 +75,7 @@ test('generated package transforms isolate installed state and mount the account
   const localized = packageDesktopMain(main)
   assert.match(localized, /if \(app\.isPackaged\) \{[\s\S]*?app\.setPath\("userData", userData\);[\s\S]*?\.ebao-studio/u)
   assert.match(localized, /app\.isPackaged \? "ebao" : "dsh"/u)
+  assert.match(localized, /EBAO_PUBLISHER_WORKER = process\.platform === "win32"/u)
   assert.ok(localized.includes(`applicationName: ${JSON.stringify(PRODUCT_NAME)}`))
   assert.equal(packageDesktopMain(localized), localized)
   assert.throws(() => packageDesktopMain(''), /seam changed/u)
@@ -75,6 +85,52 @@ test('generated package transforms isolate installed state and mount the account
   assert.match(host, /patchFiles: \[join\(runtimeDir, "node_modules", "@cqaiclub\/fixture", "cordis.patch.yml"\)\]/u)
   assert.equal(packageDesktopHost(host, adapter), host)
   assert.throws(() => packageDesktopHost('patchFiles: []', adapter), /seam changed/u)
+})
+
+test('source product overlay is applied after official development project preparation', () => {
+  const source = readFileSync(new URL('../deepseek-harness/apps/desktop/scripts/dev.ts', import.meta.url), 'utf8')
+  assert.match(prepareDevelopmentSource(source),
+    /prepareDevelopmentProject\(\{[\s\S]*?await prepareEbaoDevelopment\(join\(DEVELOPMENT_ROOT, "project"\)\)\s+await preparePrimaryRuntime\(\)/u)
+  assert.throws(() => prepareDevelopmentSource(''), /seam changed/u)
+})
+
+test('generated runtime keeps official defaults first and resolves every bundled product patch', t => {
+  const fixture = mkdtempSync(join(tmpdir(), 'ebao-product-overlay-'))
+  t.after(() => rmSync(fixture, { force: true, recursive: true }))
+  const modules = join(fixture, 'source')
+  const runtime = join(fixture, 'runtime')
+  const runtimeModules = join(runtime, 'node_modules')
+  const manifest = (directory, data) => {
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(directory, 'package.json'), JSON.stringify(data))
+  }
+  const readManifest = directory => JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
+  const web = join(runtimeModules, '@deepseek-ai', 'dsh-web-app')
+  const cli = join(runtimeModules, '@deepseek-ai', 'dsh')
+  manifest(web, { dsh: { bundle: { patch: './official.yml' } } })
+  manifest(cli, { dependencies: { '@deepseek-ai/dsh-web-app': '0.2.2-rc.5' } })
+  const dependencies = Object.fromEntries(PRODUCT_PLUGIN_BUNDLES.map(name => [name, '1.0.0']))
+  for (const name of PRODUCT_PLUGIN_BUNDLES) {
+    const directory = join(modules, ...name.split('/'))
+    manifest(directory, { name, version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } } })
+    writeFileSync(join(directory, 'cordis.patch.yml'), `${name}: {}\n`)
+  }
+
+  const artifacts = { modules, version: '0.1.0', dependencies }
+  installProductPlugins(runtime, artifacts)
+  installProductPlugins(runtime, artifacts)
+  const [official, ...productPatches] = readManifest(web).dsh.bundle.patch
+  assert.equal(official, './official.yml')
+  assert.deepEqual(productPatches.map(path => readFileSync(join(web, path), 'utf8')),
+    PRODUCT_PLUGIN_BUNDLES.map(name => `${name}: {}\n`))
+  assert.deepEqual(readManifest(cli).dependencies, {
+    '@deepseek-ai/dsh-web-app': '0.2.2-rc.5', [PRODUCT_PLUGIN_PACKAGE]: artifacts.version,
+  })
+  const product = join(runtimeModules, ...PRODUCT_PLUGIN_PACKAGE.split('/'))
+  assert.deepEqual(readManifest(product).dependencies, dependencies)
+  for (const [name, version] of Object.entries(dependencies)) {
+    assert.equal(readManifest(join(product, 'node_modules', ...name.split('/'))).version, version)
+  }
 })
 
 test('packaged runtime smoke runs the renamed applications on both platforms', () => {

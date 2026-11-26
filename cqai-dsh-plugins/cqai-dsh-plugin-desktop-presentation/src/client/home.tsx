@@ -140,6 +140,16 @@ export function HomeDock({ ctx }: { ctx: Context }) {
   }, [ctx])
 
   useEffect(() => {
+    const applyProfile = (name: string) => {
+      setProfile(name)
+      setPreference(readPreference(STORAGE_PREFIX + name))
+    }
+    // Official Desktop always manages its desktop Profile, and Electron
+    // already scopes localStorage to the app origin and user-data directory.
+    if (window.location.protocol === 'dsh-app:' && window.location.hostname === 'app') {
+      applyProfile('desktop')
+      return
+    }
     let alive = true
     void fetch('/api/desktop/settings', {
       method: 'GET', credentials: 'same-origin', redirect: 'error', cache: 'no-store',
@@ -149,10 +159,7 @@ export function HomeDock({ ctx }: { ctx: Context }) {
       const data: unknown = await response.json()
       const current = (data as { current?: unknown } | null)?.current
       if (typeof current !== 'string' || current.length === 0) throw new Error('Missing profile')
-      if (alive) {
-        setProfile(current)
-        setPreference(readPreference(STORAGE_PREFIX + current))
-      }
+      if (alive) applyProfile(current)
     }).catch(() => { if (alive) setProfile(null) })
     return () => { alive = false }
   }, [])

@@ -1,0 +1,6 @@
+packages: []
+nodeLinker: hoisted
+autoInstallPeers: false
+overrides:
+  dsh-ppt: $dsh-ppt
+  "@deepseek-ai/schemastery": "-"

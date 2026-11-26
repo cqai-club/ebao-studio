@@ -500,8 +500,6 @@ describe('community market launcher', () => {
       useWorkspaces: (() => undefined) as MarketLauncherProps['useWorkspaces'],
       useWorkspaceAccess: (() => true) as MarketLauncherProps['useWorkspaceAccess'],
       usePanelInfo: (select => select({ activePanelId: null })) as MarketLauncherProps['usePanelInfo'],
-      useRemoteAccess: (() => undefined) as unknown as MarketLauncherProps['useRemoteAccess'],
-      useContextMenu: (() => undefined) as unknown as MarketLauncherProps['useContextMenu'],
     } satisfies MarketLauncherProps
 
     const { rerender } = render(<MarketLauncher {...props} />)

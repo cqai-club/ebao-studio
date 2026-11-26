@@ -3713,7 +3713,7 @@ await check('E1 client apply registers and renders the official image studio (js
     await new Promise(resolve => setTimeout(resolve, 20))
     assert.equal(confirmationCalls, 2, 'gallery clear asks for confirmation')
     // The settings card registered into the official plugin-config slot.
-    const settingsRegistration = registered.find(entry => entry.options.name === 'settings.plugin.item' && entry.options.key === 'dsh-imagegen')
+    const settingsRegistration = registered.find(entry => entry.options.name === 'plugins.bundle.config' && entry.options.key === 'cqai-dsh-plugin-imagegen')
     assert.ok(settingsRegistration !== undefined, 'image settings card registered')
 
     // Neither the asset library nor ordinary generation renders the retired

@@ -42,8 +42,6 @@ describe('community market launcher', () => {
       useSessionAccess: (() => undefined) as unknown as MarketLauncherProps['useSessionAccess'],
       useWorkspaceAccess: (() => undefined) as unknown as MarketLauncherProps['useWorkspaceAccess'],
       usePanelInfo: (select => select({ activePanelId: null })) as MarketLauncherProps['usePanelInfo'],
-      useRemoteAccess: (() => undefined) as unknown as MarketLauncherProps['useRemoteAccess'],
-      useContextMenu: (() => undefined) as unknown as MarketLauncherProps['useContextMenu'],
     } satisfies MarketLauncherProps
 
     const { rerender } = render(<MarketLauncher {...props} />)
@@ -82,8 +80,6 @@ describe('community market launcher', () => {
       useSessionAccess: (() => undefined) as unknown as MarketLauncherProps['useSessionAccess'],
       useWorkspaceAccess: (() => undefined) as unknown as MarketLauncherProps['useWorkspaceAccess'],
       usePanelInfo: (select => select({ activePanelId: null })) as MarketLauncherProps['usePanelInfo'],
-      useRemoteAccess: (() => undefined) as unknown as MarketLauncherProps['useRemoteAccess'],
-      useContextMenu: (() => undefined) as unknown as MarketLauncherProps['useContextMenu'],
       registerAction,
     }
     const view = render(<MarketAccountAction {...props} />)

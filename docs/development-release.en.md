@@ -27,7 +27,9 @@ corepack yarn build
 corepack yarn start
 ```
 
-`dev` runs official `build:artifacts` and `build:desktop`, prepares the CQAI Profile, e宝 welcome page, and workspace account presentation, then delegates to official `start:desktop`. `start` applies the same account integration to an existing build. Rebuild before using `start` after changing versions. The first launch may need network access to prepare the official bundled runtime.
+`dev` runs official `build:artifacts` and `build:desktop`, prepares the CQAI Profile, e宝 welcome page, workspace account presentation, and product plugins, then delegates to official `start:desktop`. `start` prepares the same product features on an existing build. Rebuild before using `start` after changing versions. The first launch may need network access to prepare the runtime and plugin dependencies.
+
+The bundled product features include e图宝, multi-platform publishing, IM, the plugin market, Skills and MCP, PPT Composer, the e宝 home screen, and the CQAI Club theme. Plugin dependencies are pinned in `integrations/ebao-product-plugins/pnpm-lock.yaml` and installed in the generated runtime. Product defaults load after official defaults and before user configuration. Official Desktop handles plugin management.
 
 Harness and Electron default to `.official-desktop/official/home` and `.official-desktop/official/electron-user-data` respectively. Use `EBAO_OFFICIAL_DSH_HOME` and `EBAO_OFFICIAL_USER_DATA_DIR` to select absolute paths. Official Desktop initializes or reads the `desktop` Profile in the selected Harness home, and its plugin manager handles plugins installed by the user. Use a fresh directory to verify the official default plugins.
 
@@ -43,8 +45,10 @@ corepack yarn check
 
 ## Packaging and release
 
-`package:dir`, `dist:mac:arm64`, `dist:mac:x64`, and `dist:win` use the official unsigned builder and include the e宝 welcome page, workspace account presentation, and CQAI provider. Packaged applications have their own application identity and data directories. The root `package.json` declares the product version, and `upstream.json` pins the Harness version.
+`package:dir`, `dist:mac:arm64`, `dist:mac:x64`, and `dist:win` use the official unsigned builder and include the e宝 welcome page, workspace account presentation, CQAI provider, and default product plugins. Packaged applications have their own application identity and data directories. The root `package.json` declares the product version, and `upstream.json` pins the Harness version.
+
+Multi-platform publishing uses the pinned MatrixMedia Publisher Worker. See [publisher-worker.json](../vendor/matrixmedia/publisher-worker.json) for build commands and artifact paths. The Desktop packages workflow builds the Worker before packaging each installer. For a local package, follow that workflow to initialize `matrixmedia-publisher` and build the Worker with Node.js `20.19.5`, then switch back to the root project's Node.js version for packaging. macOS uses the universal Worker and Windows uses the x64 Worker.
 
 The Desktop packages GitHub Actions workflow builds each installer target. Test prereleases include macOS installers for Apple silicon and Intel, a Windows x64 installer, and `SHA256SUMS`. Users install them manually from GitHub Releases or GitCode.
 
-Other business plugins, the market, and MatrixMedia require separate integration and verification. See [e宝工坊 Releases](https://github.com/cqai-club/ebao-studio/releases) for downloads.
+See [e宝工坊 Releases](https://github.com/cqai-club/ebao-studio/releases) for downloads.

@@ -23,7 +23,7 @@ This repository runs the pinned official DeepSeek Harness Desktop from unmodifie
 ## Source and data ownership
 
 - `deepseek-harness/` is a pinned Git submodule. Never edit its tracked files from a product feature branch. Update its pin and owning metadata in a separate commit when an upstream change is needed.
-- The CQAI account provider and e宝 sign-in presentation are active for source startup and in packaged applications. Other `cqai-dsh-plugins/` packages, Publisher Worker, AA, Market/Fabric, themes, and MatrixMedia remain inactive source. Integrating each additional business capability requires a separate implementation and verification change.
+- Source startup and packaged applications load the CQAI account provider, the e宝 sign-in presentation, and the default plugins listed in the development guide. Multi-platform publishing uses the pinned MatrixMedia Publisher Worker. Integrating additional business capabilities requires a separate implementation and verification change.
 - Preserve existing `~/.dsh`, `~/.dsh-beta`, application-support directories, accounts, sessions, attachments, and works. Data migration requires a separate change.
 - Historical product documentation and releases describe the retired e宝/community implementation. Do not infer current feature availability from them.
 - Commit before a major change of direction. Keep migration, upstream pin changes, later product integrations, and releases independently reviewable.

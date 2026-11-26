@@ -5,7 +5,7 @@ import {
   type CreateSubmissionResult, type Platform, type PublisherAccount, type PublisherCapability,
   type PublisherContent, type PublisherContentPatch, type PublisherLocalVideo, type Work,
 } from '../protocol.ts'
-import { api, capabilityMessage, ConfirmDialog, errorMessage, PublisherModal, STATEMENT_LABELS, type PublisherConfirmation } from './shared.tsx'
+import { api, capabilityMessage, ConfirmDialog, errorMessage, PublisherModal, STATEMENT_LABELS, uploadLocalVideo, type PublisherConfirmation } from './shared.tsx'
 import { usePublisherTips } from './tips.tsx'
 import { PublisherContentPreview } from './content-preview.tsx'
 import { ProjectDirectoryInfo } from './project-directory-info.tsx'
@@ -37,6 +37,7 @@ export function VideoPage({ active, selectedContentId, initialMode = 'edit', age
 }) {
   const { showError, showSuccess, clearTip } = usePublisherTips()
   const [capability, setCapability] = useState<PublisherCapability>()
+  const localVideoInput = useRef<HTMLInputElement>(null)
   const [works, setWorks] = useState<Work[]>([])
   const [accounts, setAccounts] = useState<PublisherAccount[]>([])
   const [draft, setDraft] = useState<PublisherContent>()
@@ -273,13 +274,18 @@ export function VideoPage({ active, selectedContentId, initialMode = 'edit', age
     setTagsInput(work.tags.join(' '))
     clearTip()
   }
-  const chooseLocalVideo = () => void act(async () => {
-    const selected = await api<PublisherLocalVideo | null>('local-video-select', {})
-    if (!selected) return
+  const saveLocalVideo = (file?: File) => void act(async () => {
+    const generation = activeDraftRef.current.generation
+    const selected = file ? await uploadLocalVideo(file) : await api<PublisherLocalVideo | null>('local-video-select', {})
+    if (!selected || activeDraftRef.current.generation !== generation) return
     update({ videoSource: { kind: 'local', localVideoId: selected.id, fileName: selected.fileName, bytes: selected.bytes },
       title: selected.title, description: '', shortTitle: '', tags: [], creativeStatement: 'none' })
     setTagsInput('')
   })
+  const chooseLocalVideo = () => {
+    if (capability?.localVideoUpload) localVideoInput.current?.click()
+    else saveLocalVideo()
+  }
 
   const requestConfirm = () => void act(async () => {
     const current = await flush()
@@ -356,9 +362,14 @@ export function VideoPage({ active, selectedContentId, initialMode = 'edit', age
       <h3>e剪宝成片</h3>
       {works.length === 0 ? <p className="pub-muted">暂无 e剪宝成片，也可以直接选择本地视频。</p> : works.map(work => <button type="button" className="pub-work" disabled={busy} aria-pressed={source?.kind === 'work' && source.workId === work.id} key={work.id} onClick={() => chooseWork(work)}><strong>{work.title}</strong><small>{new Date(work.createdAt).toLocaleString()} · {(work.bytes / 1048576).toFixed(1)} MB</small></button>)}
       <h3>本地视频</h3>
+      {capability?.localVideoUpload && <input ref={localVideoInput} type="file" accept=".mp4,video/mp4" hidden onChange={event => {
+        const file = event.currentTarget.files?.[0]
+        event.currentTarget.value = ''
+        if (file) saveLocalVideo(file)
+      }}/>}
       <Button size="sm" variant="outline" disabled={busy || capability?.supported !== true} onClick={chooseLocalVideo}>选择本地文件…</Button>
       {source?.kind === 'local' && <div className="pub-work" aria-label="已选择的本地视频"><strong>{source.fileName}</strong><small>{(source.bytes / 1048576).toFixed(1)} MB · 已选择</small></div>}
-      <p className="pub-muted">目前支持 MP4；本地草稿只保存文件引用，不复制视频。提交后请保留原文件，直到平台后台确认。</p>
+      <p className="pub-muted">{capability?.localVideoUpload ? '支持 4 GB 以内的 MP4。视频副本保存在本地草稿数据中。' : '目前支持 MP4；本地草稿只保存文件引用，不复制视频。提交后请保留原文件，直到平台后台确认。'}</p>
       </EditorSection>
     </div>
     <div className="pub-card"><h2>发布内容</h2>

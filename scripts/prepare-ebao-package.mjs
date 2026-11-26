@@ -1,11 +1,13 @@
 /** Apply the e宝 integration to the generated files consumed by the pinned Desktop packager. */
-import { copyFileSync, cpSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { APP_ID, PRODUCT_NAME, replacePackageSeam } from './package-ebao-desktop.mjs'
 import { buildAccountExtensions, createPreparationPlan } from './prepare-cqai-account.mjs'
 import { applyEbaoAccountRenderer, ebaoAccountPackagedClients } from './prepare-ebao-account-renderer.mjs'
 import { buildWelcomePresentation, createWelcomePlan } from './prepare-ebao-welcome.mjs'
+import { prepareProductPluginRuntime } from './prepare-ebao-product-plugins.mjs'
+import { MAC_WORKER_EXECUTABLE, WORKER_RESOURCE_DIRECTORY, publisherWorkerBuild } from './publisher-worker-paths.mjs'
 
 const welcomePlan = createWelcomePlan()
 const buildPaths = await import(pathToFileURL(join(welcomePlan.desktop, 'scripts', 'desktop-build-paths.mjs')))
@@ -22,6 +24,10 @@ if (app.isPackaged) {
   mkdirSync(userData, { recursive: true });
   app.setPath("userData", userData);
   process.env.DSH_HOME = join(app.getPath("home"), ".ebao-studio");
+  const publisher = join(process.resourcesPath, ${JSON.stringify(WORKER_RESOURCE_DIRECTORY)});
+  process.env.EBAO_PUBLISHER_WORKER = process.platform === "win32"
+    ? join(publisher, ${JSON.stringify(MAC_WORKER_EXECUTABLE + '.exe')})
+    : join(publisher, ${JSON.stringify(MAC_WORKER_EXECUTABLE + '.app')}, "Contents", "MacOS", ${JSON.stringify(MAC_WORKER_EXECUTABLE)});
 }`
 
 export function packageDesktopMain(source) {
@@ -100,8 +106,11 @@ async function preparePackageRuntime(plan, paths) {
   const accountPlan = createPreparationPlan({ root: plan.root, environment: {} })
   const artifacts = await buildAccountExtensions(accountPlan)
   const sharedNames = packageAccount(plan, paths.dsh, artifacts)
+  sharedNames.push(await prepareProductPluginRuntime(accountPlan, paths.dsh))
   applyEbaoAccountRenderer(ebaoAccountPackagedClients(join(paths.dsh, 'node_modules')))
 
+  const { prepareRuntimeManifests } = await import(pathToFileURL(join(plan.desktop, 'scripts', 'prepare-runtime-manifests.ts')))
+  await prepareRuntimeManifests(paths.dsh)
   const runtimeTree = await import(pathToFileURL(join(plan.desktop, 'lib', 'types', 'runtime-tree.js')))
   const { release, sharedPackages, platform, arch } = runtimeTree.readDesktopRuntime(paths.dsh)
   await runtimeTree.writeDesktopRuntimeAsync(paths.dsh, release, [...sharedPackages.map(entry => entry.name), ...sharedNames], { platform, arch })
@@ -118,6 +127,7 @@ export function createEbaoBuilderConfig(createOfficialConfig, environment = proc
   const { beforeBuild, beforePack } = config
   const installerDirectory = join(paths.root, 'installer-ui')
   const windows = environment.DSH_DESKTOP_TARGET_PLATFORM === 'win32'
+  const worker = publisherWorkerBuild(welcomePlan.root, windows ? 'win32' : 'darwin')
   const extraResources = config.extraResources.filter(resource =>
     typeof resource === 'string' || (resource.to !== 'icon.png' && resource.to !== 'tray.ico'))
   return {
@@ -130,6 +140,8 @@ export function createEbaoBuilderConfig(createOfficialConfig, environment = proc
       ...extraResources,
       { from: windows ? join(brandDirectory, 'app-windows.png') : macIcon, to: 'icon.png' },
       ...(windows ? [{ from: join(brandDirectory, 'tray.ico'), to: 'tray.ico' }] : []),
+      worker.resource,
+      { from: join(welcomePlan.root, 'matrixmedia-publisher', 'LICENSE'), to: 'publisher/LICENSE' },
     ],
     mac: { ...config.mac, icon: macIcon, extendInfo: { ...config.mac.extendInfo, NSMicrophoneUsageDescription: 'e宝工坊 uses your microphone to transcribe speech into message drafts.' } },
     ...(windows ? {
@@ -147,6 +159,7 @@ export function createEbaoBuilderConfig(createOfficialConfig, environment = proc
       },
     } : {}),
     beforePack: async context => {
+      if (!existsSync(worker.executable)) throw new Error(`Build the pinned MatrixMedia Publisher Worker before packaging: ${worker.executable}`)
       await preparePackageRuntime(welcomePlan, paths)
       await beforePack(context)
     },

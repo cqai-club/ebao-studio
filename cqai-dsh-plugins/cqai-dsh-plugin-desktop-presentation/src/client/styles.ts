@@ -30,6 +30,15 @@ const HERO_TITLE_GROUP = `${HERO_HOME} span:has(> ${HERO_SLOT}):has(.eBaoHeroSlo
 const HERO_ROOT = `${HERO_HOME} div:has(> div > div > span > ${HERO_SLOT}):has(.eBaoHeroSlot)`
 
 const CSS = `
+.eBaoSidebarMark {
+  display: block;
+  background-color: currentColor;
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+.eBaoSidebarName { letter-spacing: normal; white-space: nowrap; }
+
 /* Keep navigation quiet while the same plugin artwork stays colorful elsewhere. */
 [data-pane="sidebar"] .cqai-plugin-panel-icon { filter: grayscale(1) contrast(1.2); }
 

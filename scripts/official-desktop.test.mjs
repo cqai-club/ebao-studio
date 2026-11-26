@@ -55,7 +55,7 @@ test('owned account, renderer and source icons are prepared after the final upst
   for (const [action, expected] of [
     ['dev', ['build:artifacts', 'build:desktop', 'account:dev', 'renderer', 'welcome', 'sourceIcons', 'start:desktop']],
     ['start', ['account:start', 'renderer', 'welcome', 'sourceIcons', 'start:desktop']],
-    ['build', ['build:artifacts', 'account:build', 'renderer', 'welcome']],
+    ['build', ['build:artifacts', 'account:build', 'renderer', 'welcome', 'productPlugins']],
     ['package:dir', ['package:desktop:dir']],
   ]) {
     const steps = []
@@ -65,6 +65,7 @@ test('owned account, renderer and source icons are prepared after the final upst
       renderer: async () => { steps.push('renderer') },
       welcome: async () => { steps.push('welcome') },
       sourceIcons: async () => { steps.push('sourceIcons') },
+      productPlugins: async () => { steps.push('productPlugins') },
     })
     assert.equal(code, 0)
     assert.deepEqual(steps, expected)
