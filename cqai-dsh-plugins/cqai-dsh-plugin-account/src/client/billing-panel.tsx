@@ -26,6 +26,8 @@ export const billingZh = {
   creatingPayment: '正在创建订单…',
   paymentOpened: '支付页面已在系统浏览器中打开。',
   paymentReturnHint: '支付完成后返回 e宝工坊，额度会自动刷新。',
+  reopenPayment: '重新打开支付页',
+  invalidPaymentPage: '支付服务返回了无效的支付链接。',
   paymentRefresh: '我已完成支付，刷新额度',
   recentTopUps: '最近充值',
   historyLoading: '正在读取充值记录…',
@@ -57,6 +59,8 @@ export const billingEn: Record<BillingKey, string> = {
   creatingPayment: 'Creating order…',
   paymentOpened: 'The payment page opened in your system browser.',
   paymentReturnHint: 'Return to e宝工坊 after payment and your balance will refresh automatically.',
+  reopenPayment: 'Reopen payment page',
+  invalidPaymentPage: 'The payment service returned an invalid payment link.',
   paymentRefresh: 'Payment complete, refresh balance',
   recentTopUps: 'Recent top-ups',
   historyLoading: 'Loading top-up records…',
@@ -107,12 +111,20 @@ function WalletIcon() {
 
 type HistoryState = { status: 'loading' } | { status: 'unavailable' } | { status: 'ready'; value: DsnTopUpHistory }
 
+export function safePaymentPageUrl(value: string): string | undefined {
+  if (typeof value !== 'string' || !URL.canParse(value)) return undefined
+  const target = new URL(value)
+  if (target.username || target.password) return undefined
+  const loopback = target.hostname === '127.0.0.1' || target.hostname === 'localhost' || target.hostname === '[::1]'
+  if (target.protocol === 'https:' || (target.protocol === 'http:' && loopback)) return value
+}
+
 export function BillingPanel({ ctx, t, account, refreshAccount, openPayment }: {
   readonly ctx: Context
   readonly t: (key: BillingKey) => string
   readonly account: PublicAccount
   readonly refreshAccount: () => Promise<void>
-  readonly openPayment?: (request: DsnTopUpRequest) => Promise<void>
+  readonly openPayment?: (request: DsnTopUpRequest) => Promise<void | { paymentUrl: string }>
 }) {
   const amountFeedback = useId()
   const [info, setInfo] = useState<DsnTopUpInfo>()
@@ -124,7 +136,7 @@ export function BillingPanel({ ctx, t, account, refreshAccount, openPayment }: {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [paymentPending, setPaymentPending] = useState(false)
-  const [notice, setNotice] = useState<string>()
+  const [notice, setNotice] = useState<{ text: string; paymentUrl?: string }>()
   const [billingError, setBillingError] = useState<string>()
 
   const reloadBilling = useCallback(async () => {
@@ -204,9 +216,17 @@ export function BillingPanel({ ctx, t, account, refreshAccount, openPayment }: {
     setBillingError(undefined)
     setNotice(undefined)
     try {
-      if (openPayment === undefined) await rpcCall<{ orderId?: string }>(ctx, 'billing/topups/launch', request)
-      else await openPayment(request)
-      setNotice(t('paymentOpened'))
+      let paymentUrl: string | undefined
+      if (openPayment === undefined) {
+        await rpcCall<{ orderId?: string }>(ctx, 'billing/topups/launch', request)
+      } else {
+        const payment = await openPayment(request)
+        if (payment !== undefined) {
+          paymentUrl = safePaymentPageUrl(payment.paymentUrl)
+          if (paymentUrl === undefined) throw new Error(t('invalidPaymentPage'))
+        }
+      }
+      setNotice({ text: t('paymentOpened'), paymentUrl })
       setPaymentPending(true)
     } catch (cause) {
       setBillingError(cause instanceof Error ? cause.message : String(cause))
@@ -231,8 +251,15 @@ export function BillingPanel({ ctx, t, account, refreshAccount, openPayment }: {
         {billingError !== undefined ? <div role="alert" style={{ color: 'var(--dsw-alias-state-error-primary, #b42318)', fontSize: 13 }}>{billingError}</div> : null}
         {notice !== undefined ? (
           <div role="status" style={{ padding: '11px 13px', borderRadius: 10, background: 'color-mix(in srgb, var(--dsw-alias-state-business-primary, #2f6fda) 8%, transparent)', color: 'var(--dsw-alias-label-secondary, #667180)', fontSize: 13 }}>
-            <strong style={{ display: 'block', color: 'var(--dsw-alias-label-primary, #18202a)' }}>{notice}</strong>
+            <strong style={{ display: 'block', color: 'var(--dsw-alias-label-primary, #18202a)' }}>{notice.text}</strong>
             <span>{t('paymentReturnHint')}</span>
+            {notice.paymentUrl !== undefined ? (
+              <div style={{ marginTop: 6 }}>
+                <a href={notice.paymentUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--dsw-alias-state-business-primary, #2f6fda)', textDecoration: 'underline' }}>
+                  {t('reopenPayment')}
+                </a>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {loading && info === undefined ? <p role="status" style={{ ...mutedTextStyle, margin: 0 }}>{t('billingLoading')}</p> : info === undefined || info.paymentOptions.length === 0 ? <p role="status" style={{ ...mutedTextStyle, margin: 0 }}>{t('billingUnavailable')}</p> : (

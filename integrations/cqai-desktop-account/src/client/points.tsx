@@ -9,7 +9,7 @@ import {
 import {
   AccountDetailsCard, accountDetailsEn, accountDetailsZh, cardStyle, mutedTextStyle,
 } from '../../../../cqai-dsh-plugins/cqai-dsh-plugin-account/src/client/account-details-card.tsx'
-import { BillingPanel, billingEn, billingZh } from '../../../../cqai-dsh-plugins/cqai-dsh-plugin-account/src/client/billing-panel.tsx'
+import { BillingPanel, billingEn, billingZh, safePaymentPageUrl } from '../../../../cqai-dsh-plugins/cqai-dsh-plugin-account/src/client/billing-panel.tsx'
 import { rpcCall } from '../../../../cqai-dsh-plugins/cqai-dsh-plugin-account/src/client/rpc.ts'
 import type { DsnAccountSnapshot, DsnTopUpRequest } from '../../../../cqai-dsh-plugins/cqai-dsh-plugin-account/src/protocol.ts'
 
@@ -17,6 +17,7 @@ const en = {
   ...accountConnectEn,
   ...accountDetailsEn,
   ...billingEn,
+  paymentOpened: 'Requested to open the payment page in your system browser.',
   title: 'Account points',
   connectTitle: 'Connect your e宝工坊 account',
   connectDescription: 'Complete sign-in in your browser to use your points and models in e宝工坊.',
@@ -38,6 +39,7 @@ export const pointsLocales = {
     ...accountConnectZh,
     ...accountDetailsZh,
     ...billingZh,
+    paymentOpened: '已请求在系统浏览器打开支付页面。',
     title: '账号积分',
     connectTitle: '连接你的 e宝工坊账号',
     connectDescription: '在浏览器中完成登录，即可在 e宝工坊使用账号积分和模型。',
@@ -153,11 +155,19 @@ function SignedInPoints({ ctx, snapshot, refreshing, refresh, message, t }: {
   const billingRegion = useRef<HTMLElement>(null)
   const { userId, platform } = snapshot.account
   const openPayment = async (request: DsnTopUpRequest) => {
-    const { paymentUrl } = await rpcCall<{ paymentUrl: string }>(
+    const payment = await rpcCall<{ paymentUrl: string }>(
       ctx, 'billing/topups/prepare-payment', { ...request, account: { userId, platform } },
     )
-    // Official Desktop forwards these window requests to the system browser.
-    window.open(paymentUrl, '_blank', 'noopener,noreferrer')
+    const paymentUrl = safePaymentPageUrl(payment.paymentUrl)
+    if (paymentUrl !== undefined) {
+      try {
+        // Official Desktop forwards this request to the system browser without a result.
+        window.open(paymentUrl, '_blank', 'noopener,noreferrer')
+      } catch {
+        // The payment link remains available in the billing panel.
+      }
+    }
+    return payment
   }
   const focusBilling = () => {
     billingRegion.current?.focus({ preventScroll: true })

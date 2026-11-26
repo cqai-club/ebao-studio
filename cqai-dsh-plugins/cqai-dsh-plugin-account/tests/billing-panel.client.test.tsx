@@ -78,8 +78,8 @@ describe('shared account recharge panel', () => {
 
   it('exposes amount validity and lets the desktop opener own the payment submission', async () => {
     rpcCall.mockResolvedValueOnce(topUpInfo).mockResolvedValueOnce(emptyHistory)
-    let opened!: () => void
-    const openPayment = vi.fn(() => new Promise<void>(resolve => { opened = resolve }))
+    let opened!: (payment: { paymentUrl: string }) => void
+    const openPayment = vi.fn(() => new Promise<{ paymentUrl: string }>(resolve => { opened = resolve }))
     await mount(openPayment)
     const amount = container.querySelector('input')!
     expect(amount.style.outline).toBe('')
@@ -97,8 +97,20 @@ describe('shared account recharge panel', () => {
     expect(rpcCall).toHaveBeenCalledTimes(2)
     expect(button(billingZh.creatingPayment).disabled).toBe(true)
     expect(statuses().join('')).not.toContain(billingZh.paymentOpened)
-    await act(async () => opened())
+    const paymentUrl = 'https://pay.example/checkout?order=order-1'
+    await act(async () => opened({ paymentUrl }))
     expect(statuses().join('')).toContain(billingZh.paymentOpened)
+    const link = container.querySelector('a')!
+    expect(link.textContent).toBe(billingZh.reopenPayment)
+    expect(link.getAttribute('href')).toBe(paymentUrl)
+    expect(link.target).toBe('_blank')
+    expect(link.rel).toBe('noopener noreferrer')
+    const onReopen = vi.fn((event: MouseEvent) => event.preventDefault())
+    link.addEventListener('click', onReopen)
+    await act(async () => link.click())
+    expect(onReopen).toHaveBeenCalledOnce()
+    expect(openPayment).toHaveBeenCalledOnce()
+    expect(rpcCall).toHaveBeenCalledTimes(2)
   })
 
   it('uses the original host launch RPC when no opener is supplied', async () => {
@@ -109,5 +121,27 @@ describe('shared account recharge panel', () => {
       paymentOptionId: 'qr', amount: 10, choiceId: 'wallet',
     })
     expect(statuses().join('')).toContain(billingZh.paymentOpened)
+    expect(container.querySelector('a')).toBeNull()
+  })
+
+  it('offers the same local checkout link after window focus refreshes the balance', async () => {
+    rpcCall.mockResolvedValueOnce(topUpInfo).mockResolvedValueOnce(emptyHistory)
+      .mockResolvedValueOnce(topUpInfo).mockResolvedValueOnce(emptyHistory)
+    const paymentUrl = 'http://127.0.0.1:12345/cqaiclub-dsn-account/payment/order-1'
+    const openPayment = vi.fn(async () => ({ paymentUrl }))
+    await mount(openPayment)
+    await act(async () => button(billingZh.continuePayment).click())
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    expect(container.querySelector('a')?.getAttribute('href')).toBe(paymentUrl)
+    expect(openPayment).toHaveBeenCalledOnce()
+    expect(rpcCall).toHaveBeenCalledTimes(4)
+  })
+
+  it('rejects unsafe payment links', async () => {
+    rpcCall.mockResolvedValueOnce(topUpInfo).mockResolvedValueOnce(emptyHistory)
+    await mount(async () => ({ paymentUrl: 'http://pay.example/checkout' }))
+    await act(async () => button(billingZh.continuePayment).click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(billingZh.invalidPaymentPage)
+    expect(container.querySelector('a')).toBeNull()
   })
 })
