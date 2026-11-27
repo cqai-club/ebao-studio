@@ -121,6 +121,24 @@ describe('model capability predicates', () => {
     expect(modelCatalogCategories(shared)).toEqual(['text-multimodal', 'embedding', 'rerank'])
   })
 
+  it('separates Qwen speech recognition from chat models with matching transport and modalities', () => {
+    const asr = model({
+      id: 'qwen-audio-3.0-asr-flash',
+      supportedEndpointTypes: ['openai'],
+      architecture: { inputModalities: ['text', 'audio'], outputModalities: ['text'] },
+    })
+    const omni = model({ ...asr, id: 'qwen3.8-omni-flash' })
+
+    expect(isChatModel(asr)).toBe(false)
+    expect(isModelInCategory(asr, 'audio')).toBe(true)
+    expect(modelCatalogCategories(asr)).toEqual(['audio'])
+    expect(isChatModel({ ...asr, architecture: undefined })).toBe(false)
+    expect(isModelInCategory({ ...asr, architecture: undefined }, 'other')).toBe(false)
+
+    expect(isChatModel(omni)).toBe(true)
+    expect(modelCatalogCategories(omni)).toEqual(['text-multimodal', 'audio'])
+  })
+
   it('keeps known catalog identities without inventing callable endpoints', () => {
     const embedding = model({
       architecture: { inputModalities: ['text'], outputModalities: ['embeddings'] },

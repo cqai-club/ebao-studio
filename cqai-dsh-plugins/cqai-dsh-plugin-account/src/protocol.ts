@@ -78,9 +78,15 @@ export type DsnModel = {
   supportedEndpointTypes: readonly string[]
 }
 
+function isQwenAudioAsrModel(model: DsnModel): boolean {
+  return /^qwen-audio-\d+(?:\.\d+)*-asr-flash$/i.test(model.id)
+}
+
 /** Whether a model can be used by the ordinary CQAI Club conversation route. */
 export function isChatModel(model: DsnModel): boolean {
   if (!model.supportedEndpointTypes.includes('openai')) return false
+  // Qwen Audio ASR uses the chat transport, with text input for transcription context and hotwords.
+  if (isQwenAudioAsrModel(model)) return false
   if (model.architecture !== undefined) {
     return model.architecture.inputModalities.includes('text')
       && model.architecture.outputModalities.includes('text')
@@ -119,6 +125,7 @@ export function isVideoModel(model: DsnModel): boolean {
 
 /** Whether a catalog entry consumes or produces an audio-family modality. */
 export function isAudioModel(model: DsnModel): boolean {
+  if (isQwenAudioAsrModel(model)) return true
   if (model.architecture === undefined) return model.categories.includes('audio')
   return model.architecture.inputModalities.some(modality => AUDIO_MODALITIES.has(modality))
     || model.architecture.outputModalities.some(modality => AUDIO_MODALITIES.has(modality))
@@ -136,6 +143,7 @@ export function isRerankModel(model: DsnModel): boolean {
 
 /** Catalog identities for display and filtering, independent of default eligibility. */
 export function modelCatalogCategories(model: DsnModel): readonly DsnModelCategory[] {
+  if (isQwenAudioAsrModel(model)) return ['audio']
   const categories = new Set<DsnModelCategory>()
   const embedding = isEmbeddingModel(model)
   const rerank = isRerankModel(model)
@@ -179,7 +187,7 @@ export function isModelInCategory(model: DsnModel, category: DsnDefaultModelCate
     case 'audio': return isAudioModel(model)
     case 'embedding': return isEmbeddingModel(model)
     case 'other':
-      if (isEmbeddingModel(model) || isRerankModel(model)) return false
+      if (isEmbeddingModel(model) || isRerankModel(model) || isQwenAudioAsrModel(model)) return false
       if (model.architecture === undefined) return model.categories.includes('other')
       return !isChatModel(model)
         && !isImageGenerationModel(model)

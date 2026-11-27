@@ -8,6 +8,7 @@
 
 ```bash
 corepack yarn build
+corepack yarn cqai:typecheck
 corepack yarn test:integrations
 ```
 
@@ -20,7 +21,8 @@ corepack yarn test:integrations
 - provider 只将安全账号状态和授权链接投影到官方 UI，不向 renderer 返回 token、PKCE verifier 或原始服务错误。
 - CQAI token 不通过官方 DeepSeek inference resolver 返回；官方 embedded Platform session 不承载 CQAI token。
 - 登录后的默认模型 adoption 保留用户已有的提供商、模型和推理设置，只替换未修改的出厂默认模型。
-- 官方金额余额未适配 CQAI，返回不可用；不能把原始配额标成官方货币余额。保留的 CQAI 前端、支付和业务插件尚未接回。
+- 「设置 → 账号积分」展示 CQAI 账号的可用额度和实际单位，支持刷新。限额密钥显示密钥额度，无限额密钥显示账号额度。充值沿用旧版面板，展示当前可用的渠道、金额和最近充值记录，付款在系统浏览器完成。
+- 「设置 → 模型 → e宝工坊模型」展示账号模型目录和各类默认模型。会话内可通过输入框右下角切换当前模型。
 - API Key 选项明确标注 DeepSeek，仍属于官方提供商，不是 CQAI 登录凭据输入框。
 
 自动测试覆盖状态映射、取消与重试、凭据边界和模型 adoption 等行为。真实用户授权和真实模型请求需另行验证，不能仅由这些测试断言已完成。

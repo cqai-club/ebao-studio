@@ -6,8 +6,9 @@ import { CqaiClubAdapter, CQAI_PROVIDER } from './llm-adapter.ts'
 import { isChatModel, type DsnAccountService, type DsnAccountSnapshot } from './protocol.ts'
 
 /** Keep the CQAI provider route aligned with authenticated catalog readiness. */
-export function bindCqaiModelRoute(ctx: Context, account: DsnAccountService): void {
+export function bindCqaiModelRoute(ctx: Context, account: DsnAccountService, providerName?: string): void {
   const registration = ctx.llm.registerAdapter([CQAI_PROVIDER], new CqaiClubAdapter(account, {
+    ...(providerName ? { providerName } : {}),
     resolveAttachments: () => ctx.get('attachments'),
   }))
   // An initial registration cannot be empty, so release the bootstrap route

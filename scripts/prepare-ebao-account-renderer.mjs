@@ -107,6 +107,18 @@ function patchAccount(source) {
     'openPlatformPage:platformPageOpener(refresh)', 'onboarding page opener')
 }
 
+function patchAccountSection(source) {
+  source = patchOnce(source,
+    'ctx.provide(`accountUi`,{getSnapshot:()=>snapshot,clientMetadata:client});',
+    'ctx.provide(`accountUi`,{getSnapshot:()=>snapshot,clientMetadata:client,startSignIn:()=>operations.start()});',
+    'account sign-in action')
+  // Keep the stock sidebar and login dialog while the owned plugin renders the account section.
+  return patchOnce(source,
+    'ctx.remoteAccess.whenAccess(`account/watch`,()=>ctx.slots.inject(`settings.section`,()=>{let unregister;const update=()=>{if(snapshot.view?.status===`credential-stored`)unregister??=ctx.slots.register({name:`settings.section`,id:`account`,order:-10,label:()=>t(`nav`),locale:`settings.account`,inject:()=>operations},AccountSection);else{unregister?.();unregister=void 0}};listeners.add(update);update();return()=>{listeners.delete(update);unregister?.()}}))',
+    'void 0',
+    'account section registration')
+}
+
 function patchModels(source) {
   // The old account provider is disabled in the Profile. Retain its display label if
   // an external provider happens to expose an identically named route.
@@ -146,6 +158,7 @@ const RENDERER_PATCHES = {
   modelsClient: patchModels, webSearchClient: patchWebSearch,
 }
 const MARKER = '/* eBao desktop account renderer */\n'
+const ACCOUNT_SECTION_MARKER = '/* eBao desktop account section */\n'
 
 export function applyEbaoAccountRenderer(paths) {
   const updates = []
@@ -155,8 +168,11 @@ export function applyEbaoAccountRenderer(paths) {
       throw new Error(`Expected a generated Desktop browser bundle for ${key}`)
     }
     const source = readFileSync(path, 'utf8')
-    if (source.startsWith(MARKER)) continue
-    const updated = MARKER + patch(source)
+    let updated = source.startsWith(MARKER) || source.startsWith(ACCOUNT_SECTION_MARKER) ? source : MARKER + patch(source)
+    if (key === 'accountClient' && !updated.startsWith(ACCOUNT_SECTION_MARKER)) {
+      updated = ACCOUNT_SECTION_MARKER + patchAccountSection(updated)
+    }
+    if (updated === source) continue
     new Script(updated, { filename: path })
     updates.push({ path, updated })
   }

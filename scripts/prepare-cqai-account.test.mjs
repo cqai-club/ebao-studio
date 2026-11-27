@@ -20,9 +20,11 @@ const artifacts = { account: '/owned/extensions/hash/account', adapter: '/owned/
 function buildFixture() {
   const f = fixture()
   for (const directory of [join(f.plan.accountSource, 'src'), join(f.plan.adapterSource, 'src'), f.plan.official]) mkdirSync(directory, { recursive: true })
+  mkdirSync(join(f.plan.adapterSource, 'src', 'client'))
   writeFileSync(join(f.plan.accountSource, 'src', 'index.ts'), 'export const account = 1\n')
   writeFileSync(join(f.plan.accountSource, 'src', 'protocol.ts'), 'export const protocol = 1\n')
   writeFileSync(join(f.plan.adapterSource, 'src', 'index.ts'), 'export const adapter = 1\n')
+  writeFileSync(join(f.plan.adapterSource, 'src', 'client', 'index.tsx'), 'export const client = 1\n')
   writeFileSync(join(f.plan.accountSource, 'package.json'), JSON.stringify({ version: '0.1.1', dependencies: { '@deepseek-ai/schemastery': '3.19.0' }, peerDependencies: {} }))
   writeFileSync(join(f.plan.accountSource, 'cordis.patch.yml'), JSON.stringify([{ insert: [{ id: 'cqaiclub-dsn-account', name: '@cqaiclub/dsn-account', config: {
     issuer: 'https://auth.cqaiclub.asia/oidc', clientId: 'public-native-client', clubPortalUrl: 'https://cqaiclub.asia', scopes: ['openid', 'activity:publish'],
@@ -97,7 +99,10 @@ test('unchanged complete artifacts avoid recompilation and file writes; changed 
   try {
     const first = await buildAccountExtensions(f.plan, { loadToolchain: f.loadToolchain })
     assert.equal(first.cached, false)
-    assert.equal(f.compiles(), 2)
+    assert.equal(f.compiles(), 3)
+    const manifest = JSON.parse(readFileSync(join(first.adapter, 'package.json'), 'utf8'))
+    assert.equal(manifest.exports['./client'], './lib/client.js')
+    assert.equal(manifest.dsh.client.platform, 'web')
     const output = join(first.account, 'lib', 'index.js')
     utimesSync(output, 946684800, 946684800)
     const mtime = statSync(output).mtimeMs
@@ -105,7 +110,7 @@ test('unchanged complete artifacts avoid recompilation and file writes; changed 
     assert.equal(second.cached, true)
     assert.equal(second.accountVersion, first.accountVersion)
     assert.equal(statSync(output).mtimeMs, mtime)
-    assert.equal(f.compiles(), 2)
+    assert.equal(f.compiles(), 3)
     writeFileSync(join(f.plan.accountSource, 'src', 'index.ts'), 'export const account = 2\n')
     const changed = await buildAccountExtensions(f.plan, { loadToolchain: f.loadToolchain })
     assert.notEqual(changed.fingerprint, first.fingerprint)
@@ -113,7 +118,7 @@ test('unchanged complete artifacts avoid recompilation and file writes; changed 
     assert.equal(changed.cached, false)
     assert.equal(statSync(output).mtimeMs, mtime)
     assert.equal(readFileSync(output, 'utf8'), 'export const account = 1\n')
-    assert.equal(f.compiles(), 4)
+    assert.equal(f.compiles(), 6)
   } finally { f.dispose() }
 })
 
@@ -124,12 +129,12 @@ test('missing or modified generated files invalidate the artifact receipt', asyn
     writeFileSync(join(first.adapter, 'package.json'), '{"name":"wrong","version":"wrong"}\n')
     const rebuilt = await buildAccountExtensions(f.plan, { loadToolchain: f.loadToolchain })
     assert.equal(rebuilt.cached, false)
-    assert.equal(f.compiles(), 4)
-    unlinkSync(join(rebuilt.account, 'lib', 'protocol.js'))
+    assert.equal(f.compiles(), 6)
+    unlinkSync(join(rebuilt.adapter, 'lib', 'client.js'))
     const repaired = await buildAccountExtensions(f.plan, { loadToolchain: f.loadToolchain })
     assert.equal(repaired.cached, false)
-    assert.equal(f.compiles(), 6)
-    assert.equal(existsSync(join(repaired.account, 'lib', 'protocol.js')), true)
+    assert.equal(f.compiles(), 9)
+    assert.equal(existsSync(join(repaired.adapter, 'lib', 'client.js')), true)
   } finally { f.dispose() }
 })
 

@@ -104,6 +104,8 @@ type OpenBlock = {
 }
 
 export interface CqaiClubAdapterOptions {
+  /** Product-facing label. The route ID remains stable for saved model selections. */
+  providerName?: string
   /** Resolve the current durable attachment service only when a request contains images. */
   resolveAttachments?: () => AttachmentStore | undefined
 }
@@ -138,7 +140,7 @@ export class CqaiClubAdapter extends LlmAdapter {
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
-    return { id: provider, name: 'CQAI Club' }
+    return { id: provider, name: this.options.providerName ?? 'CQAI Club' }
   }
 
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {

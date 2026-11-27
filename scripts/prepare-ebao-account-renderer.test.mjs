@@ -12,10 +12,16 @@ const zh={loginDescription:"登录 DeepSeek 账号",signInDescription:"登录 De
 const [ja,es,fr,de,ru,pt]=Array(6).fill(en);
 `
 const accountBundle = `${dictionaries}
-const ctx={locale:{register(ns,copy){ globalThis.copy=copy }}};
+const ctx={locale:{register(ns,copy){ globalThis.copy=copy }},
+  provide(key, value){ globalThis[key] = value },
+  remoteAccess:{whenAccess(){ globalThis.stockSection = true }}};
 ctx.locale.register(\`settings.account\`,{en,zh,ja,es,fr,de,ru,pt});
 const nativePlatform=globalThis.dshPlatform;
 const snapshot={view:{links:{usageUrl:'https://cqaiclub.asia/usage',topUpUrl:'https://cqaiclub.asia/top-up'}}};
+const client=()=>({});
+ctx.provide(\`accountUi\`,{getSnapshot:()=>snapshot,clientMetadata:client});
+const operations={start:async()=>{globalThis.signIns++}};
+ctx.remoteAccess.whenAccess(\`account/watch\`,()=>ctx.slots.inject(\`settings.section\`,()=>{let unregister;const update=()=>{if(snapshot.view?.status===\`credential-stored\`)unregister??=ctx.slots.register({name:\`settings.section\`,id:\`account\`,order:-10,label:()=>t(\`nav\`),locale:\`settings.account\`,inject:()=>operations},AccountSection);else{unregister?.();unregister=void 0}};listeners.add(update);update();return()=>{listeners.delete(update);unregister?.()}}))
 const refresh=()=>globalThis.refreshes++;
 const refreshAccount=refresh;
 const refreshing=undefined;
@@ -69,7 +75,7 @@ function fixtures(t, webSearchClient = webSearchBundle) {
   return paths
 }
 
-test('brands account copy in all locales and opens Club account pages in the browser', t => {
+test('brands account copy, replaces the stock account section and retains native sign-in', async t => {
   const paths = fixtures(t)
   assert.equal(applyEbaoAccountRenderer(paths), 5)
   assert.equal(applyEbaoAccountRenderer(paths), 0)
@@ -79,10 +85,13 @@ test('brands account copy in all locales and opens Club account pages in the bro
   const window = new EventTarget()
   window.open = (...args) => calls.push(args)
   window.setTimeout = () => {}
-  const context = { window, URL, AbortController, queueMicrotask: callback => pending.push(callback), refreshes: 0,
+  const context = { window, URL, AbortController, queueMicrotask: callback => pending.push(callback), refreshes: 0, signIns: 0,
     dshPlatform: { open: () => assert.fail('The DeepSeek platform bridge must stay disabled') } }
   runInNewContext(readFileSync(paths.accountClient, 'utf8'), context)
   assert.equal(context.native, undefined)
+  assert.equal(context.stockSection, undefined)
+  await context.accountUi.startSignIn()
+  assert.equal(context.signIns, 1)
   assert.equal(Object.keys(context.copy).length, 8)
   assert.equal(context.copy.zh.loginDescription, '登录 e宝工坊账号')
   assert.equal(context.copy.en.settingsSignedOutDescription, 'Use your e宝工坊 account')
